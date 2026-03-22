@@ -41,6 +41,12 @@
 - **Proxy Service(WebFlux)**: **로컬 JVM**에서 실행하는 것을 기본으로 합니다. 브라우저·클라이언트는 `localhost`의 Proxy 포트로 연결합니다.
 - 그 외 마이크로서비스도 **로컬 실행**을 기본으로 하며, 필요 시 통합 테스트용으로 Compose에 포함할 수 있습니다.
 
+## 모노레포 레이아웃(요약)
+실행 가능한 앱은 `services/` 하위에 둡니다. (`docs/repository-structure.md` 참고)
+- `services/proxy-gateway-service` — 프록시(WebFlux), usage 이벤트 발행
+- `services/identity-service` — 계정·조직·API Key 등(Identity)
+- `libs/usage-events` — 공유 이벤트(`UsageRecordedEvent` 등)
+
 ## 문서
 - 아키텍처 문서: `docs/architecture.md`
 - 시퀀스 다이어그램(AI 호출·이벤트·대시보드 조회): `docs/sequence-diagrams.md`

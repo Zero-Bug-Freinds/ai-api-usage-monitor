@@ -1,5 +1,8 @@
 # Role: Identity & Management Service Developer (Member B)
 
+## 소스 위치
+- Gradle 프로젝트 루트: `services/identity-service/` (모노레포 `services/` 하위)
+
 ## Project Overview
 - 서비스 명칭: Identity & Management Service
 - 주요 목적: 유저 인증, 조직/팀 계층 구조 관리, 외부 API Key(OpenAI 등) 보안 저장.
