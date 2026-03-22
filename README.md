@@ -43,6 +43,7 @@
 
 ## 문서
 - 아키텍처 문서: `docs/architecture.md`
+- 시퀀스 다이어그램(AI 호출·이벤트·대시보드 조회): `docs/sequence-diagrams.md`
 - 저장소·디렉터리 구조(모노레포): `docs/repository-structure.md`
 - MSA 이론 배경: `docs/msa-architecture-theory.md`
 - 코드 컨벤션(네이밍·스타일): `docs/code-conventions.md`

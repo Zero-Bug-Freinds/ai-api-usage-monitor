@@ -1,12 +1,12 @@
 ---
 description: Spring WebFlux Proxy — reactive I/O, streaming, Rabbit, provider relay
-globs: "proxy/**/*.java"
+globs: "services/proxy-gateway-service/**/*.java"
 alwaysApply: false
 ---
 
 # Proxy Service (WebFlux)
 
-Applies under `proxy/` (adjust `globs` in this file if the proxy module path changes).
+Applies under `services/proxy-gateway-service/` (adjust `globs` in this file if the proxy module path changes).
 
 ## Reactive runtime
 
