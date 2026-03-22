@@ -1,4 +1,4 @@
-package com.Zero_Bug_Freinds.identity_service;
+package com.zerobugfreinds.identity_service;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

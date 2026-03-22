@@ -2,9 +2,8 @@
 #
 # 필수 시크릿 (Docker 푸시 시): DOCKERHUB_USERNAME, DOCKERHUB_TOKEN
 #
-# Gradle 래퍼는 현재 identity-service 모듈에만 있습니다.
-# 루트에서 멀티 모듈로 확장 시 settings.gradle + 루트 gradlew 추가 후
-# working-directory / build-root-directory 만 조정하면 됩니다.
+# Gradle 래퍼: services/identity-service
+# 루트 멀티 모듈로 확장 시 settings.gradle + 루트 gradlew 추가 후 경로만 조정하면 됩니다.
 
 name: CI
 
@@ -21,7 +20,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GRADLE_MODULE_DIR: identity-service
+  GRADLE_MODULE_DIR: services/identity-service
 
 jobs:
   gradle-build:
