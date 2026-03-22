@@ -55,6 +55,7 @@
 - 코드 컨벤션(네이밍·스타일): `docs/code-conventions.md`
 - 브랜치·Git Flow·보호 규칙: `docs/branch-conventions.md`
 - 커밋 메시지 규칙: `docs/commit-conventions.md`
+- GitHub Actions CI: `docs/CI.md`
 
 ## 팀 정보
 - 팀원: 김민진, 박예나, 조민선
