@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Project Common (Java)
 
-Applies to every chat. Domain-specific rules live in `proxy-webflux.mdc` and `domain-mvc-jpa.mdc` (path-based globs).
+Applies to every chat. Domain-specific rules live in `proxy-webflux.mdc`, `domain-mvc-jpa.mdc` (path-based globs), and **`project-common-nextjs.mdc`** for the dashboard/frontend tree (Next.js).
 
 ## Architecture
 
@@ -26,8 +26,8 @@ Canonical rules: **`docs/repository-structure.md`**.
 
 ## Stack (summary)
 
-- Java 21, Spring Boot 3.4, Maven
-- RabbitMQ (Spring AMQP), PostgreSQL, Redis as needed
+- **Backend (Java):** Java 21, Spring Boot 4.x, Gradle (per service modules) — RabbitMQ (Spring AMQP), PostgreSQL, Redis as needed.
+- **Frontend (팀원 C — Analytics & dashboard):** Next.js (App Router), React, TypeScript, Tailwind CSS, Shadcn UI, Recharts or Chart.js — see `project-common-nextjs.mdc` and root `.cursorrules` §팀원 C.
 
 ## Layering (all services)
 

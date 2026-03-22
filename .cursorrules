@@ -1,14 +1,50 @@
-# Role: Identity & Management Service Developer (Member B)
+# AI Usage & Billing Platform — 팀 역할별 가이드
 
-## Project Overview
-- 서비스 명칭: Identity & Management Service
-- 주요 목적: 유저 인증, 조직/팀 계층 구조 관리, 외부 API Key(OpenAI 등) 보안 저장.
-- 기술 스택: Java 17, Spring Boot 4.0.3, PostgreSQL, gRPC, Jasypt.
+## 프로젝트 개요 (공통)
+- MSA 기반: Proxy, Identity, Usage, Billing, Analytics, Quota, Notification 등 서비스 경계로 분리.
+- 비동기 연계: RabbitMQ 이벤트(`usage-recorded` 등). 로컬 인프라는 루트 `docker-compose.yml` 전제.
+- 상세 아키텍처: `docs/architecture.md`, 저장소 구조: `docs/repository-structure.md`.
 
-## Coding Standards & Rules
+---
+
+# Role: Identity & Management Service Developer (팀원 B)
+
+## 담당
+- Identity & Management Service — 유저 인증, 조직/팀 계층, 외부 API Key(OpenAI 등) 보안 저장.
+
+## 기술 스택
+- Java 21, Spring Boot 4.0.3, PostgreSQL, gRPC, Jasypt.
+
+## 코딩 규칙
 1. 모든 API 응답은 일관된 공통 응답 객체(예: `ApiResponse<T>`)로 감싸서 반환한다.
 2. 계층형 조직 구조(조직 > 팀 > 멤버)를 JPA Entity로 설계할 때 성능을 고려하여 Fetch 전략을 설정한다.
 3. 외부 API Key는 반드시 Jasypt를 이용해 암호화하여 DB에 저장하며, 로그에 평문이 찍히지 않도록 주의한다.
 4. 팀원 A(Proxy)와의 통신은 gRPC를 사용하며, `.proto` 파일에 정의된 인터페이스를 엄격히 준수한다.
 5. 보안 관련 설정은 Spring Security 6.x(또는 4.0.3 호환 버전)의 최신 보안 관행을 따른다.
-6. 변수명은 camelCase, 클래스명은 PascalCase를 사용하며 주석은 한글로 작성한다.
+6. 변수명은 camelCase, 클래스명은 PascalCase, 주석은 한글로 작성한다.
+
+---
+
+# Role: Analytics & Notification / Frontend (팀원 C)
+
+## 담당
+- 수집 데이터 기반 집계·시각화, 대시보드(관리자/개인), 알림(Slack/Email 등), 리포트(PDF/JSON 등)와 이를 위한 프론트엔드.
+- 팀원 A·B가 제공하는 HTTP/gRPC(또는 BFF) API와 계약을 맞춰 연동한다.
+
+## 기술 스택 (권장)
+- **Framework:** Next.js (App Router), React, TypeScript
+- **UI:** Tailwind CSS, Shadcn UI, Radix UI
+- **차트:** Recharts 또는 Chart.js
+- **검증:** Zod (폼·스키마)
+- **알림 연동:** Slack Webhook, Resend 등(서버/서버리스 라우트 또는 별도 워커와 연계)
+- **(선택)** 데이터 패칭: TanStack Query; 서버 액션 패턴 도입 시 `next-safe-action` 등 팀 합의 후 사용
+
+## 코딩 규칙 (요약)
+1. 함수형·선언적 스타일을 우선하고, 불필요한 클래스 지양.
+2. 디렉터리는 `kebab-case` 등 일관된 네이밍으로 유지(`components/usage-summary` 등).
+3. 컴포넌트는 `function` 선언과 named export를 기본으로 한다.
+4. `'use client'`는 최소화하고, RSC·서버 데이터 페칭을 우선한다.
+5. 반응형·접근성: Tailwind 기반 mobile-first, Shadcn/Radix 패턴 활용.
+6. 예상 가능한 오류는 Server Action 반환값 등으로 모델링하고, 예기치 않은 오류는 `error.tsx` / `global-error.tsx` 등으로 처리한다.
+7. 팀원 B·백엔드와 맞출 공통 응답 타입·에러 형식이 있으면 프론트 타입과 동기화한다.
+8. 상세 규칙은 `.cursor/rules/project-common-nextjs.mdc`를 따른다.

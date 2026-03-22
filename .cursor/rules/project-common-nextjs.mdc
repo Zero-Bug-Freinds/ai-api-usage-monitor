@@ -1,0 +1,72 @@
+---
+description: Project-wide Next.js dashboard — App Router, TypeScript, Tailwind, Shadcn (path-based globs)
+globs:
+  - "frontend/**/*"
+  - "apps/web/**/*"
+  - "dashboard/**/*"
+alwaysApply: false
+---
+
+# Project Common (Next.js)
+
+Applies when editing paths matched by **`globs`** above (adjust `globs` if the team chooses another folder). Canonical layout: **`docs/repository-structure.md`**. Backend-oriented rules: **`project-common-java.mdc`**, **`domain-mvc-jpa.mdc`**, **`proxy-webflux.mdc`**. Root role summary: **`.cursorrules`** (팀원 C).
+
+## Architecture
+
+- Service boundaries and infrastructure decisions follow **`docs/architecture.md`**.
+- Dashboard and admin views consume **team-owned HTTP APIs** (Identity, Analytics, Usage aggregates, etc.). Do not embed secrets or provider API keys in client bundles.
+- Enforce tenant scope (`user` / `org` / `team`) and **role checks on the server**; do not trust UI-only gating.
+- For Data Fetching, Rendering, and Routing patterns, follow **https://nextjs.org/docs**.
+
+## Repository layout (monorepo)
+
+Canonical rules: **`docs/repository-structure.md`**.
+
+- Use a **single repo**; place the web app under **`frontend/`**, **`apps/web/`**, or **`dashboard/`** (folder name = team choice, not fixed).
+- Put **`libs/`** only for thin shared code (**API contracts, types, small utilities**) — not other services’ domain logic copied into the FE tree.
+- After the real frontend path exists, update **`globs`** in this file if Cursor should match a different directory.
+
+## Principles
+
+- SOLID, DRY, KISS, YAGNI, and OWASP-oriented practices (XSS, unsafe HTML, tokens in URLs/logs).
+
+## Stack (summary)
+
+- **Framework:** Next.js (App Router), React, TypeScript.
+- **UI:** Tailwind CSS, Shadcn UI, Radix UI; charts: Recharts or Chart.js.
+- **Validation:** Zod; forms often **react-hook-form** + Zod — align with whatever the repo already uses.
+- **Optional:** TanStack Query (client fetching); **next-safe-action** if the team standardizes server actions and a shared response type.
+
+## Layering (frontend)
+
+1. Prefer **React Server Components**; add `'use client'` only when browser APIs, local state, or event handlers require it.
+2. Minimize **`useEffect`** for data loading; prefer `fetch` in Server Components, **`loading.tsx`**, or agreed client libraries (e.g. TanStack Query).
+3. Keep routes and UI **resource-oriented** and feature-colocated; use **kebab-case** directories (e.g. `components/usage-chart`, `app/(admin)/reports`).
+4. Centralize HTTP calls in hooks or **`lib/`** / **`services/`** modules; map errors so users see safe messages (no raw stack traces).
+5. Use **declarative JSX**; wrap client-only subtrees in **Suspense** with a sensible fallback when lazy-loading or streaming.
+6. Optimize images (`next/image`, sizes, lazy loading where applicable); prioritize **Web Vitals** (LCP, CLS, INP).
+
+## TypeScript and modules
+
+1. Use **TypeScript** for all application code.
+2. Prefer **`interface`** for object shapes; use **`type`** for unions and utility aliases. Avoid **`enum`**; prefer `as const` maps or string unions.
+3. Use the **`function`** keyword for components and pure functions; prefer **named exports**.
+4. Omit semicolons only if the existing FE tree already does; stay consistent within the frontend project.
+
+## Forms, server actions, and errors
+
+1. Validate inbound data with **Zod** (forms, server action inputs, env parsing where used).
+2. Model **expected errors** as return values in Server Actions where possible; avoid `try/catch` solely for control flow.
+3. Use **error boundaries** (`error.tsx`, `global-error.tsx`) for unexpected failures.
+4. If the team adopts **next-safe-action**, define inputs with Zod and a shared success/error payload type (e.g. `ActionResponse`).
+
+## Security and multi-tenancy (UI)
+
+1. Never commit secrets; use **environment variables** / server-only config for API keys and webhooks.
+2. Do not expose tenant or role escalation paths in client-only code without server validation.
+3. Mask authorization headers and tokens in client logs and error reporting.
+
+## Naming
+
+- Use clear component, hook, and file names; follow the team style guide document when it exists.
+- 주석은 팀 컨벤션에 맞추되, 복잡한 대시보드 집계·권한 분기에는 한글로 의도를 남겨도 된다.
