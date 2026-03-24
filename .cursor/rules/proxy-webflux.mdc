@@ -1,12 +1,16 @@
 ---
 description: Spring WebFlux Proxy — reactive I/O, streaming, Rabbit, provider relay
-globs: "services/proxy-gateway-service/**/*.java"
+globs: "services/proxy-service/**/*.java"
 alwaysApply: false
 ---
 
 # Proxy Service (WebFlux)
 
-Applies under `services/proxy-gateway-service/` (adjust `globs` in this file if the proxy module path changes).
+This rule’s `globs` target **`services/proxy-service/`** only (Provider relay, WebClient, RabbitMQ usage events).
+
+The separated **API Gateway** app lives under **`services/api-gateway-service/`** and is covered by **`.cursor/rules/api-gateway.mdc`** (Spring Cloud Gateway, JWT at edge, routes to Proxy). Do not merge both paths into this file: Gateway and Proxy follow different patterns.
+
+Service contract: `docs/contracts/gateway-proxy.md`.
 
 ## Reactive runtime
 
@@ -22,4 +26,5 @@ Applies under `services/proxy-gateway-service/` (adjust `globs` in this file if 
 
 ## Context
 
-- Proxy is the only WebFlux-first service; other backends may use Spring MVC + JPA under `services/`.
+- Proxy is the WebFlux-first AI relay; public AI HTTP entry is `services/api-gateway-service` (see `api-gateway.mdc`).
+- Other backends may use Spring MVC + JPA under `services/`.

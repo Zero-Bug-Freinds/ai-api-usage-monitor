@@ -1,0 +1,34 @@
+spring:
+  application:
+    name: proxy-gateway-service
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+proxy:
+  providers:
+    openai:
+      base-url: https://api.openai.com
+    anthropic:
+      base-url: https://api.anthropic.com
+    google:
+      base-url: https://generativelanguage.googleapis.com
+  # Dev/test: provider key from env only (never commit). Key Service ?∞Îèô ??mock-key ?úÍ±∞.
+  key-service:
+    base-url: http://localhost:8090
+    internal-token: ""
+    mock-key: ${PROXY_OPENAI_TEST_API_KEY:}
+    cache-ttl: PT5M
+  rabbit:
+    usage-exchange: usage.events
+    usage-routing-key: usage.recorded
+  security:
+    local-dev-headers: true

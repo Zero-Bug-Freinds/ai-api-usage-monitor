@@ -7,6 +7,7 @@
 
 - **MSA 이론 배경**(일반 개념·특징·API Gateway 패턴): [`docs/msa-architecture-theory.md`](msa-architecture-theory.md)
   - 본 문서(`architecture.md`)는 **이 팀 프로젝트의 구조·스택·서비스 분해**를 다룬다. 위 이론 문서는 구현과 무관한 **일반 설명**을 위한 참고 자료이다.
+- **이벤트 소비 흐름**(proxy 발행 `UsageRecordedEvent` → usage·analytics·billing·alarm 등): [`docs/event-consumer-flow.md`](event-consumer-flow.md)
 
 ---
 
@@ -102,6 +103,7 @@
   - 서비스 간 호출을 표준화하고 외부 경로를 정리한다.
 - 입력/출력
   - 사용자 요청을 내부 서비스로 라우팅하고 공통 처리만 수행
+- **Gateway와 Proxy의 경로·헤더·신뢰 경계**는 [`docs/contracts/gateway-proxy.md`](contracts/gateway-proxy.md)에 정본으로 둔다(구현: `services/api-gateway-service`, `services/proxy-service`).
 
 ### 4.2 Proxy Service
 - 구현 스택: **Spring WebFlux** 기반(§2.1 참고).

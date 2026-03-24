@@ -1,7 +1,8 @@
 # 시퀀스 다이어그램 (이벤트·조회 흐름)
 
 본 문서는 `docs/architecture.md`의 도메인을 전제로, **사용량이 쌓이는 경로(이벤트)** 와 **대시보드 조회 경로**를 시퀀스 다이어그램으로 정리한다.  
-다이어그램은 [Mermaid](https://mermaid.js.org/) 문법이며, GitHub·VS Code(Mermaid 확장) 등에서 렌더링할 수 있다.
+다이어그램은 [Mermaid](https://mermaid.js.org/) 문법이며, GitHub·VS Code(Mermaid 확장) 등에서 렌더링할 수 있다.  
+**여러 소비자가 같은 이벤트를 어떻게 나눠 소비하는지**(팬아웃·큐)는 [`docs/event-consumer-flow.md`](event-consumer-flow.md)를 참고한다.
 
 ---
 
@@ -13,7 +14,8 @@
 sequenceDiagram
     autonumber
     actor User as 사용자/클라이언트
-    participant Proxy as proxy-gateway-service
+    participant Gateway as api-gateway-service
+    participant Proxy as proxy-service
     participant Identity as identity-service<br/>(API Key 조회)
     participant Provider as AI Provider<br/>(OpenAI 등)
     participant MQ as RabbitMQ
@@ -22,7 +24,8 @@ sequenceDiagram
     participant Analytics as analytics-service<br/>(예시)
     participant Quota as quota-service<br/>(예시)
 
-    User->>Proxy: HTTP AI 요청 (프록시 경로, 인증 토큰)
+    User->>Gateway: HTTP AI 요청 (JWT, /api/v1/ai/... )
+    Gateway->>Proxy: 라우팅·신뢰 헤더 (내부 /proxy/... )
     Proxy->>Identity: 동기 HTTP — API Key 조회 (userId, provider)
     Identity-->>Proxy: API Key (응답에만 존재, 이벤트 미포함)
     Proxy->>Provider: 업스트림 호출 (스트리밍 가능)

@@ -1,0 +1,29 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway-service
+  cloud:
+    gateway:
+      routes:
+        - id: proxy-ai
+          uri: ${GATEWAY_PROXY_URI:http://localhost:8081}
+          predicates:
+            - Path=/api/v1/ai/**
+          filters:
+            - RemoveRequestHeader=Authorization
+            - RewritePath=/api/v1/ai/(?<segment>.*), /proxy/${segment}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+gateway:
+  # Set false in production with gateway.jwt.secret (HMAC256, same as platform tokens).
+  dev-mode: ${GATEWAY_DEV_MODE:true}
+  shared-secret: ${PROXY_GATEWAY_SHARED_SECRET:}
+  jwt:
+    secret: ${GATEWAY_JWT_SECRET:}

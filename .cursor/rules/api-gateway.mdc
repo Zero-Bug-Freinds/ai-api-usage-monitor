@@ -1,0 +1,21 @@
+---
+description: API Gateway — Spring Cloud Gateway, JWT at edge, routes to Proxy
+globs: "services/api-gateway-service/**/*.java"
+alwaysApply: false
+---
+
+# API Gateway Service (Spring Cloud Gateway)
+
+Applies under `services/api-gateway-service/`.
+
+## Role
+
+1. Sole (or primary) public HTTP entry for `/api/v1/ai/**` per `docs/contracts/gateway-proxy.md`.
+2. Validate platform JWT (when `gateway.dev-mode=false`); in dev mode, allow `X-User-Id` without JWT as documented.
+3. Strip `Authorization` from upstream Proxy requests; attach `X-Gateway-Auth`, `X-User-Id`, optional org/team headers.
+
+## Implementation
+
+1. Prefer declarative routes in `application.yml`; use `GATEWAY_PROXY_URI` for Proxy base URL when environments differ.
+2. Global filters that mutate requests should preserve streaming-related headers where needed.
+3. Do not log raw JWT or shared secrets.
