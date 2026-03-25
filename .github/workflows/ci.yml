@@ -27,6 +27,7 @@ jobs:
     outputs:
       identity: ${{ steps.filter.outputs.identity }}
       proxy: ${{ steps.filter.outputs.proxy }}
+      usage: ${{ steps.filter.outputs.usage }}
       workflows: ${{ steps.filter.outputs.workflows }}
     steps:
       - uses: actions/checkout@v4
@@ -37,7 +38,11 @@ jobs:
             identity:
               - 'services/identity-service/**'
             proxy:
-              - 'services/proxy-gateway-service/**'
+              - 'services/proxy-service/**'
+              - 'services/api-gateway-service/**'
+              - 'libs/usage-events/**'
+            usage:
+              - 'services/usage-service/**'
               - 'libs/usage-events/**'
             workflows:
               - '.github/workflows/**'
@@ -89,7 +94,7 @@ jobs:
     if: needs.changes.outputs.proxy == 'true' || needs.changes.outputs.workflows == 'true'
     defaults:
       run:
-        working-directory: services/proxy-gateway-service
+        working-directory: services/proxy-service
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -97,13 +102,40 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: gradle
-          cache-dependency-path: services/proxy-gateway-service/build.gradle
+          cache-dependency-path: services/proxy-service/build.gradle
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
       - name: Build and test
         run: ./gradlew build --no-daemon
 
-  # Single required check for branch protection (docs/branch-conventions.md §4).
+      # api-gateway-service는 proxy-service/아래에서 함께 빌드
+      - name: Grant execute permission for api-gateway-service gradlew
+        run: chmod +x ../api-gateway-service/gradlew
+      - name: Build and test (api-gateway-service)
+        run: cd ../api-gateway-service && ./gradlew build --no-daemon
+
+  usage-service:
+    name: Build usage-service
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.usage == 'true' || needs.changes.outputs.workflows == 'true'
+    defaults:
+      run:
+        working-directory: services/usage-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+          cache-dependency-path: services/usage-service/build.gradle
+      - name: Grant execute permission for gradlew
+        run: chmod +x ./gradlew
+      - name: Build and test
+        run: ./gradlew build --no-daemon
+
+  # Single required check for branch protection.
   # Skipped Java/Compose jobs (path filter) do not fail the workflow.
   ci-summary:
     name: CI summary
@@ -114,6 +146,7 @@ jobs:
       - compose-validate
       - identity-service
       - proxy-gateway-service
+      - usage-service
     if: always()
     steps:
       - name: Assert required jobs
@@ -130,10 +163,11 @@ jobs:
             echo "compose-validate did not succeed: ${{ needs.compose-validate.result }}"
             exit 1
           fi
-          for name in identity-service proxy-gateway-service; do
+          for name in identity-service proxy-gateway-service usage-service; do
             case "$name" in
               identity-service) v="${{ needs.identity-service.result }}" ;;
               proxy-gateway-service) v="${{ needs.proxy-gateway-service.result }}" ;;
+              usage-service) v="${{ needs.usage-service.result }}" ;;
             esac
             if [[ "$v" == "failure" || "$v" == "cancelled" ]]; then
               echo "$name ended with $v"
