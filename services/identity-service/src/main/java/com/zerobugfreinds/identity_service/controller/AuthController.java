@@ -1,6 +1,8 @@
 package com.zerobugfreinds.identity_service.controller;
 
 import com.zerobugfreinds.identity_service.common.ApiResponse;
+import com.zerobugfreinds.identity_service.dto.LoginRequest;
+import com.zerobugfreinds.identity_service.dto.LoginResponse;
 import com.zerobugfreinds.identity_service.dto.SignupRequest;
 import com.zerobugfreinds.identity_service.dto.SignupResponse;
 import com.zerobugfreinds.identity_service.service.UserService;
@@ -33,5 +35,14 @@ public class AuthController {
 	public ApiResponse<SignupResponse> signup(@Valid @RequestBody SignupRequest request) {
 		SignupResponse body = userService.signup(request);
 		return ApiResponse.ok("회원가입이 완료되었습니다", body);
+	}
+
+	/**
+	 * 로그인.
+	 */
+	@PostMapping("/login")
+	public ApiResponse<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
+		LoginResponse body = userService.login(request);
+		return ApiResponse.ok("로그인에 성공했습니다", body);
 	}
 }
