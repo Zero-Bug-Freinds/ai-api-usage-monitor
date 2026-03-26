@@ -13,12 +13,14 @@
 
 | 잡 | 설명 |
 |----|------|
-| **Detect changed paths** | `dorny/paths-filter`로 `services/identity-service/**`, `services/proxy-gateway-service/**`, `libs/usage-events/**`, `.github/workflows/**` 변경 감지 |
+| **Detect changed paths** | `dorny/paths-filter`로 `services/identity-service/**`, `services/proxy-service/**`, `services/api-gateway-service/**`, `services/usage-service/**`, `libs/usage-events/**`, `apps/web/**`, `.github/workflows/**` 변경 감지 |
 | **Secret scan (gitleaks)** | 매 실행마다 저장소 스캔(§8.2) |
 | **Validate docker-compose.yml** | `docker compose config`로 문법 검증(§10) |
 | **Build identity-service** | Java 21(Temurin), Gradle 캐시, `./gradlew build` — 위 경로 필터 또는 워크플로 변경 시에만 실행 |
-| **Build proxy-gateway-service** | 동일 — proxy·`libs/usage-events`·워크플로 변경 시 실행 |
-| **CI summary** | gitleaks 성공 필수, 실행된 빌드·Compose 잡이 `failure`/`cancelled`이면 실패. 스킵된 잡은 허용 |
+| **Build proxy-gateway-service** | 동일 — proxy·gateway·`libs/usage-events`·워크플로 변경 시 실행 |
+| **Build usage-service** | 동일 — usage·`libs/usage-events`·워크플로 변경 시 실행 |
+| **Build web (lint/test/build)** | Node 22, `npm ci` 후 `npm run lint`/`npm test`/`npm run build` — `apps/web/**` 또는 워크플로 변경 시 실행 |
+| **CI summary** | gitleaks 성공 필수, 실행된 빌드·Compose 잡이 `failure`/`cancelled`이면 실패. 스킵된 잡은 허용 (`web` 포함) |
 
 ## 브랜치 보호(Branch protection)
 

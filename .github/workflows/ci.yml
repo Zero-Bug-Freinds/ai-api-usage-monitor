@@ -28,6 +28,7 @@ jobs:
       identity: ${{ steps.filter.outputs.identity }}
       proxy: ${{ steps.filter.outputs.proxy }}
       usage: ${{ steps.filter.outputs.usage }}
+      web: ${{ steps.filter.outputs.web }}
       workflows: ${{ steps.filter.outputs.workflows }}
     steps:
       - uses: actions/checkout@v4
@@ -44,6 +45,8 @@ jobs:
             usage:
               - 'services/usage-service/**'
               - 'libs/usage-events/**'
+            web:
+              - 'apps/web/**'
             workflows:
               - '.github/workflows/**'
 
@@ -135,6 +138,30 @@ jobs:
       - name: Build and test
         run: ./gradlew build --no-daemon
 
+  web:
+    name: Build web (lint/test/build)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.web == 'true' || needs.changes.outputs.workflows == 'true'
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Test
+        run: npm test
+      - name: Build
+        run: npm run build
+
   # Single required check for branch protection.
   # Skipped Java/Compose jobs (path filter) do not fail the workflow.
   ci-summary:
@@ -147,6 +174,7 @@ jobs:
       - identity-service
       - proxy-gateway-service
       - usage-service
+      - web
     if: always()
     steps:
       - name: Assert required jobs
@@ -163,11 +191,12 @@ jobs:
             echo "compose-validate did not succeed: ${{ needs.compose-validate.result }}"
             exit 1
           fi
-          for name in identity-service proxy-gateway-service usage-service; do
+          for name in identity-service proxy-gateway-service usage-service web; do
             case "$name" in
               identity-service) v="${{ needs.identity-service.result }}" ;;
               proxy-gateway-service) v="${{ needs.proxy-gateway-service.result }}" ;;
               usage-service) v="${{ needs.usage-service.result }}" ;;
+              web) v="${{ needs.web.result }}" ;;
             esac
             if [[ "$v" == "failure" || "$v" == "cancelled" ]]; then
               echo "$name ended with $v"
