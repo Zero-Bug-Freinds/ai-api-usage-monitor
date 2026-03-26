@@ -7,6 +7,7 @@ import com.zerobugfreinds.identity_service.dto.LoginResponse;
 import com.zerobugfreinds.identity_service.entity.User;
 import com.zerobugfreinds.identity_service.exception.DuplicateEmailException;
 import com.zerobugfreinds.identity_service.exception.InvalidCredentialsException;
+import com.zerobugfreinds.identity_service.exception.InvalidSignupRequestException;
 import com.zerobugfreinds.identity_service.repository.UserRepository;
 import com.zerobugfreinds.identity_service.security.JwtTokenProvider;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -38,6 +39,8 @@ public class UserService {
 	 */
 	@Transactional
 	public SignupResponse signup(SignupRequest request) {
+		validateSignupRequest(request);
+
 		if (userRepository.existsByEmail(request.email())) {
 			throw new DuplicateEmailException("이미 사용 중인 이메일입니다");
 		}
@@ -50,6 +53,12 @@ public class UserService {
 		);
 		User saved = userRepository.save(user);
 		return new SignupResponse(saved.getId(), saved.getEmail(), saved.getName(), saved.getRole());
+	}
+
+	private void validateSignupRequest(SignupRequest request) {
+		if (!request.password().equals(request.passwordConfirm())) {
+			throw new InvalidSignupRequestException("비밀번호와 비밀번호 확인이 일치하지 않습니다");
+		}
 	}
 
 	/**
