@@ -1,8 +1,0 @@
-POST http://localhost:8080/api/auth/signup
-Content-Type: application/json
-
-{
-  "email": "minjin@test.com",
-  "password": "password1234",
-  "name": "민진"
-}

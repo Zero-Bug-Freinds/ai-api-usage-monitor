@@ -2,6 +2,8 @@ package com.zerobugfreinds.identity_service.controller;
 
 import com.zerobugfreinds.identity_service.common.ApiResponse;
 import com.zerobugfreinds.identity_service.exception.DuplicateEmailException;
+import com.zerobugfreinds.identity_service.exception.InvalidCredentialsException;
+import com.zerobugfreinds.identity_service.exception.InvalidSignupRequestException;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -17,6 +19,18 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(DuplicateEmailException.class)
 	@ResponseStatus(HttpStatus.CONFLICT)
 	public ApiResponse<Void> handleDuplicateEmail(DuplicateEmailException ex) {
+		return ApiResponse.fail(ex.getMessage());
+	}
+
+	@ExceptionHandler(InvalidCredentialsException.class)
+	@ResponseStatus(HttpStatus.UNAUTHORIZED)
+	public ApiResponse<Void> handleInvalidCredentials(InvalidCredentialsException ex) {
+		return ApiResponse.fail(ex.getMessage());
+	}
+
+	@ExceptionHandler(InvalidSignupRequestException.class)
+	@ResponseStatus(HttpStatus.BAD_REQUEST)
+	public ApiResponse<Void> handleInvalidSignupRequest(InvalidSignupRequestException ex) {
 		return ApiResponse.fail(ex.getMessage());
 	}
 

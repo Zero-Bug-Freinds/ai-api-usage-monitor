@@ -1,0 +1,5 @@
+security:
+  jwt:
+    # 운영 환경에서는 환경 변수로 32바이트 이상 비밀키를 주입해서 사용한다.
+    secret: ${JWT_SECRET:change-this-secret-key-to-at-least-32-bytes}
+    access-token-ttl-seconds: ${JWT_ACCESS_TOKEN_TTL_SECONDS:3600}
