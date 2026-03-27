@@ -21,3 +21,14 @@ export type SignupResponse = {
   role: Role
 }
 
+export type LoginRequest = {
+  email: string
+  password: string
+}
+
+export type LoginResponse = {
+  accessToken: string
+  tokenType: string
+  expiresInSeconds: number
+}
+

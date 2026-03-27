@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import * as React from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm, Controller } from "react-hook-form"
@@ -204,6 +205,12 @@ export function SignupForm() {
           {isSubmitting ? "가입 중..." : "회원가입"}
         </Button>
       </form>
+      <p className="mt-4 text-sm text-muted-foreground">
+        이미 계정이 있나요?{" "}
+        <Link href="/login" className="font-medium text-foreground underline underline-offset-4">
+          로그인
+        </Link>
+      </p>
     </div>
   )
 }
