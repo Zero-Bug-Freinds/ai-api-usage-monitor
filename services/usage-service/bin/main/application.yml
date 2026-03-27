@@ -1,0 +1,41 @@
+server:
+  port: ${USAGE_SERVICE_PORT:8092}
+
+spring:
+  application:
+    name: usage-service
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${USAGE_POSTGRES_DB:usage_db}
+    username: ${USAGE_POSTGRES_USER:usage_app}
+    password: ${USAGE_POSTGRES_PASSWORD:usage_app}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy
+    open-in-view: false
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: false
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:localhost}
+    port: ${SPRING_RABBITMQ_PORT:5672}
+    username: ${SPRING_RABBITMQ_USERNAME:${RABBITMQ_USER:guest}}
+    password: ${SPRING_RABBITMQ_PASSWORD:${RABBITMQ_PASSWORD:guest}}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+usage:
+  rabbit:
+    exchange: usage.events
+    routing-key: usage.recorded
+    queue: usage-service.queue
