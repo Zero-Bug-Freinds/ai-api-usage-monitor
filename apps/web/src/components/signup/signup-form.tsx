@@ -8,6 +8,7 @@ import { useForm, Controller } from "react-hook-form"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { apiFetch } from "@/lib/api/client-fetch"
 import {
   Select,
   SelectContent,
@@ -51,22 +52,22 @@ export function SignupForm() {
     setState({ status: "submitting" })
 
     let res: Response
+    let json: ApiResponse<SignupResponse> | ApiResponse<null> | null = null
     try {
-      res = await fetch("/api/auth/signup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(values),
-      })
+      const result = await apiFetch<SignupResponse>(
+        "/api/auth/signup",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(values),
+        },
+        { authRequired: false }
+      )
+      res = result.response
+      json = result.json
     } catch {
       setState({ status: "error", message: "네트워크 오류가 발생했습니다. 잠시 후 다시 시도해주세요." })
       return
-    }
-
-    let json: ApiResponse<SignupResponse> | ApiResponse<null> | null = null
-    try {
-      json = (await res.json()) as ApiResponse<SignupResponse>
-    } catch {
-      json = null
     }
 
     if (res.ok && json && json.success && json.data) {
