@@ -10,6 +10,7 @@ import com.zerobugfreinds.identity_service.exception.AuthContractViolationExcept
 import com.zerobugfreinds.identity_service.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -72,5 +73,16 @@ public class AuthController {
 		return ResponseEntity.ok()
 				.cacheControl(CacheControl.noStore().mustRevalidate())
 				.body(ApiResponse.ok("세션이 유효합니다", body));
+	}
+
+	/**
+	 * 로그아웃.
+	 * Stateless 구조이므로 서버 토큰 무효화 대신, BFF가 쿠키를 삭제하도록 신호를 보낸다.
+	 */
+	@PostMapping("/logout")
+	public ResponseEntity<ApiResponse<Void>> logout() {
+		return ResponseEntity.ok()
+				.header(HttpHeaders.CACHE_CONTROL, "no-store")
+				.body(ApiResponse.ok("로그아웃되었습니다. BFF에서 인증 쿠키를 삭제하세요", null));
 	}
 }
