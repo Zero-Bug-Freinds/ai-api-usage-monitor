@@ -32,3 +32,7 @@ export type LoginResponse = {
   expiresInSeconds: number
 }
 
+export type SessionResponse = {
+  authenticated: boolean
+}
+

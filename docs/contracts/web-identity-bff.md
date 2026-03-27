@@ -23,6 +23,9 @@
 - Web BFF는 `IDENTITY_SERVICE_URL` 환경 변수를 사용해 Identity로 프록시한다.
 - BFF 입력 검증은 Zod 스키마로 수행한다.
 - **`GET /api/auth/session`** 은 프론트가 “로그인됨/만료”를 판단할 때 사용하는 **단일 기준 엔드포인트**로 둔다. 응답에도 `Cache-Control: no-store`를 적용한다(§8).
+- `GET /api/auth/session` 응답 형식:
+  - 로그인 상태: `200` + `ApiResponse<{ authenticated: true }>`
+  - 비로그인/만료: `401` + `ApiResponse<null>` (`success=false`, `message`, `data=null`)
 
 ---
 
