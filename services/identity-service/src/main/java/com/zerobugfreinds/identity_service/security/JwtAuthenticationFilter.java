@@ -12,6 +12,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.List;
@@ -23,6 +25,7 @@ import java.util.List;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
 	private static final String BEARER_PREFIX = "Bearer ";
+	private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
 
 	private final JwtTokenProvider jwtTokenProvider;
 
@@ -41,18 +44,24 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 		if (authorization != null && authorization.startsWith(BEARER_PREFIX)) {
 			String token = authorization.substring(BEARER_PREFIX.length());
 
-			Claims claims = jwtTokenProvider.validateAndGetClaims(token);
-			String email = claims.getSubject();
-			String role = claims.get("role", String.class);
+			try {
+				Claims claims = jwtTokenProvider.validateAndGetClaims(token);
+				String email = claims.getSubject();
+				String role = claims.get("role", String.class);
 
-			UsernamePasswordAuthenticationToken authenticationToken =
-					new UsernamePasswordAuthenticationToken(
-							email,
-							null,
-							List.of(new SimpleGrantedAuthority("ROLE_" + role))
-					);
-			authenticationToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-			SecurityContextHolder.getContext().setAuthentication(authenticationToken);
+				UsernamePasswordAuthenticationToken authenticationToken =
+						new UsernamePasswordAuthenticationToken(
+								email,
+								null,
+								List.of(new SimpleGrantedAuthority("ROLE_" + role))
+						);
+				authenticationToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+				SecurityContextHolder.getContext().setAuthentication(authenticationToken);
+			} catch (IllegalArgumentException ex) {
+				// 잘못된 토큰은 인증을 세우지 않고 익명 요청으로 처리한다.
+				SecurityContextHolder.clearContext();
+				log.debug("유효하지 않은 JWT 토큰 요청: {}", ex.getMessage());
+			}
 		}
 
 		filterChain.doFilter(request, response);
