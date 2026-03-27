@@ -23,3 +23,6 @@ Thumbs.db
 # --- Logs ---
 *.log
 logs/
+
+# --- Personal local docs (never commit) ---
+private-docs/

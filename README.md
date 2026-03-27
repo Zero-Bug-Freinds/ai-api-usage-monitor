@@ -54,6 +54,8 @@
 - **로컬 실행·테스트(Gateway / Proxy / usage·이벤트·DB)**: `docs/local-run-and-usage-verification.md`
 - Gateway ↔ Proxy 계약: `docs/contracts/gateway-proxy.md`
 - Usage 이벤트 소비·팬아웃: `docs/event-consumer-flow.md` · usage/analytics 경계: `docs/usage-analytics-relationship.md`
+- C4 다이어그램(코드 기준): `docs/c4-architecture-diagrams.md`
+  - Mermaid Live Editor에서 렌더링/검증 가능: https://mermaid.live/
 - 아키텍처 문서: `docs/architecture.md`
 - 시퀀스 다이어그램(AI 호출·이벤트·대시보드 조회): `docs/sequence-diagrams.md`
 - 저장소·디렉터리 구조(모노레포): `docs/repository-structure.md`
