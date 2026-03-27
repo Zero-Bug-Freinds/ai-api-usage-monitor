@@ -1,7 +1,10 @@
 package com.zerobugfreinds.identity_service.security;
 
 import com.zerobugfreinds.identity_service.entity.User;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -43,6 +46,21 @@ public class JwtTokenProvider {
 				.expiration(Date.from(expiresAt))
 				.signWith(signingKey)
 				.compact();
+	}
+
+	/**
+	 * JWT 서명/만료를 검증하고 payload(claim) 를 반환한다.
+	 */
+	public Claims validateAndGetClaims(String token) {
+		try {
+			Jws<Claims> jws = Jwts.parser()
+					.verifyWith(signingKey)
+					.build()
+					.parseSignedClaims(token);
+			return jws.getPayload();
+		} catch (JwtException | IllegalArgumentException ex) {
+			throw new IllegalArgumentException("유효하지 않은 토큰입니다", ex);
+		}
 	}
 
 	public long getAccessTokenTtlSeconds() {
