@@ -1,6 +1,7 @@
 package com.zerobugfreinds.identity_service.controller;
 
 import com.zerobugfreinds.identity_service.common.ApiResponse;
+import com.zerobugfreinds.identity_service.exception.AuthContractViolationException;
 import com.zerobugfreinds.identity_service.exception.DuplicateEmailException;
 import com.zerobugfreinds.identity_service.exception.InvalidCredentialsException;
 import com.zerobugfreinds.identity_service.exception.InvalidSignupRequestException;
@@ -31,6 +32,12 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(InvalidSignupRequestException.class)
 	@ResponseStatus(HttpStatus.BAD_REQUEST)
 	public ApiResponse<Void> handleInvalidSignupRequest(InvalidSignupRequestException ex) {
+		return ApiResponse.fail(ex.getMessage());
+	}
+
+	@ExceptionHandler(AuthContractViolationException.class)
+	@ResponseStatus(HttpStatus.BAD_GATEWAY)
+	public ApiResponse<Void> handleAuthContractViolation(AuthContractViolationException ex) {
 		return ApiResponse.fail(ex.getMessage());
 	}
 
