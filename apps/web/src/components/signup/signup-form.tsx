@@ -14,7 +14,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { signupRequestSchema, type SignupRequestInput } from "@/lib/api/identity/signup.schema"
+import {
+  signupPasswordPolicyMessage,
+  signupRequestSchema,
+  type SignupRequestInput,
+} from "@/lib/api/identity/signup.schema"
 import type { ApiResponse, SignupResponse } from "@/lib/api/identity/types"
 
 type FormState =
@@ -35,6 +39,7 @@ export function SignupForm() {
     defaultValues: {
       email: "",
       password: "",
+      passwordConfirm: "",
       name: "",
       role: "USER",
     },
@@ -111,13 +116,32 @@ export function SignupForm() {
             id="password"
             type="password"
             autoComplete="new-password"
-            placeholder="8자 이상"
+            placeholder="예: abc123!@"
             aria-invalid={!!form.formState.errors.password}
             {...form.register("password")}
           />
           {form.formState.errors.password?.message ? (
             <p className="text-sm text-destructive">
               {form.formState.errors.password.message}
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">{signupPasswordPolicyMessage}</p>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="passwordConfirm">비밀번호 확인</Label>
+          <Input
+            id="passwordConfirm"
+            type="password"
+            autoComplete="new-password"
+            placeholder="비밀번호를 다시 입력하세요"
+            aria-invalid={!!form.formState.errors.passwordConfirm}
+            {...form.register("passwordConfirm")}
+          />
+          {form.formState.errors.passwordConfirm?.message ? (
+            <p className="text-sm text-destructive">
+              {form.formState.errors.passwordConfirm.message}
             </p>
           ) : null}
         </div>

@@ -9,6 +9,7 @@ export type Role = "USER" | "ADMIN"
 export type SignupRequest = {
   email: string
   password: string
+  passwordConfirm: string
   name: string
   role: Role
 }

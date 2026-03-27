@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { POST } from "./route"
 
+/** Identity SignupRequest 비밀번호 정책에 맞는 예시 */
+const validPassword = "abc123!@"
+
 function jsonRequest(body: unknown) {
   return new Request("http://localhost/api/auth/signup", {
     method: "POST",
@@ -42,6 +45,7 @@ describe("POST /api/auth/signup (route handler)", () => {
       jsonRequest({
         email: "bad",
         password: "123",
+        passwordConfirm: "123",
         name: "",
         role: "USER",
       })
@@ -52,33 +56,41 @@ describe("POST /api/auth/signup (route handler)", () => {
   it("passes through 201 success payload from identity", async () => {
     process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => {
-        return new Response(
-          JSON.stringify({
-            success: true,
-            message: "회원가입이 완료되었습니다",
-            data: { userId: 1, email: "happy@test.com", name: "testDemo", role: "USER" },
-          }),
-          { status: 201, headers: { "Content-Type": "application/json" } }
-        )
-      })
-    )
+    const fetchMock = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: "회원가입이 완료되었습니다",
+          data: { userId: 1, email: "happy@test.com", name: "testDemo", role: "USER" },
+        }),
+        { status: 201, headers: { "Content-Type": "application/json" } }
+      )
+    })
+    vi.stubGlobal("fetch", fetchMock)
 
-    const res = await POST(
-      jsonRequest({
-        email: "happy@test.com",
-        password: "password0000",
-        name: "testDemo",
-        role: "USER",
-      })
-    )
+    const body = {
+      email: "happy@test.com",
+      password: validPassword,
+      passwordConfirm: validPassword,
+      name: "testDemo",
+      role: "USER",
+    }
+
+    const res = await POST(jsonRequest(body))
 
     expect(res.status).toBe(201)
     const json = (await res.json()) as { success: boolean; data: { userId: number } }
     expect(json.success).toBe(true)
     expect(json.data.userId).toBe(1)
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8080/api/auth/signup",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+    )
   })
 
   it("returns safe failure body when identity returns 409", async () => {
@@ -97,7 +109,8 @@ describe("POST /api/auth/signup (route handler)", () => {
     const res = await POST(
       jsonRequest({
         email: "happy@test.com",
-        password: "password0000",
+        password: validPassword,
+        passwordConfirm: validPassword,
         name: "testDemo",
         role: "USER",
       })
@@ -110,4 +123,3 @@ describe("POST /api/auth/signup (route handler)", () => {
     expect(json.message).toContain("이메일")
   })
 })
-
