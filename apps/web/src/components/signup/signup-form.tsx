@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import * as React from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm, Controller } from "react-hook-form"
@@ -7,6 +8,7 @@ import { useForm, Controller } from "react-hook-form"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { apiFetch } from "@/lib/api/client-fetch"
 import {
   Select,
   SelectContent,
@@ -14,7 +16,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { signupRequestSchema, type SignupRequestInput } from "@/lib/api/identity/signup.schema"
+import {
+  signupPasswordPolicyMessage,
+  signupRequestSchema,
+  type SignupRequestInput,
+} from "@/lib/api/identity/signup.schema"
 import type { ApiResponse, SignupResponse } from "@/lib/api/identity/types"
 
 type FormState =
@@ -35,6 +41,7 @@ export function SignupForm() {
     defaultValues: {
       email: "",
       password: "",
+      passwordConfirm: "",
       name: "",
       role: "USER",
     },
@@ -45,22 +52,22 @@ export function SignupForm() {
     setState({ status: "submitting" })
 
     let res: Response
+    let json: ApiResponse<SignupResponse> | ApiResponse<null> | null = null
     try {
-      res = await fetch("/api/auth/signup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(values),
-      })
+      const result = await apiFetch<SignupResponse>(
+        "/api/auth/signup",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(values),
+        },
+        { authRequired: false }
+      )
+      res = result.response
+      json = result.json
     } catch {
       setState({ status: "error", message: "네트워크 오류가 발생했습니다. 잠시 후 다시 시도해주세요." })
       return
-    }
-
-    let json: ApiResponse<SignupResponse> | ApiResponse<null> | null = null
-    try {
-      json = (await res.json()) as ApiResponse<SignupResponse>
-    } catch {
-      json = null
     }
 
     if (res.ok && json && json.success && json.data) {
@@ -111,13 +118,32 @@ export function SignupForm() {
             id="password"
             type="password"
             autoComplete="new-password"
-            placeholder="8자 이상"
+            placeholder="예: abc123!@"
             aria-invalid={!!form.formState.errors.password}
             {...form.register("password")}
           />
           {form.formState.errors.password?.message ? (
             <p className="text-sm text-destructive">
               {form.formState.errors.password.message}
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">{signupPasswordPolicyMessage}</p>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="passwordConfirm">비밀번호 확인</Label>
+          <Input
+            id="passwordConfirm"
+            type="password"
+            autoComplete="new-password"
+            placeholder="비밀번호를 다시 입력하세요"
+            aria-invalid={!!form.formState.errors.passwordConfirm}
+            {...form.register("passwordConfirm")}
+          />
+          {form.formState.errors.passwordConfirm?.message ? (
+            <p className="text-sm text-destructive">
+              {form.formState.errors.passwordConfirm.message}
             </p>
           ) : null}
         </div>
@@ -180,6 +206,12 @@ export function SignupForm() {
           {isSubmitting ? "가입 중..." : "회원가입"}
         </Button>
       </form>
+      <p className="mt-4 text-sm text-muted-foreground">
+        이미 계정이 있나요?{" "}
+        <Link href="/login" className="font-medium text-foreground underline underline-offset-4">
+          로그인
+        </Link>
+      </p>
     </div>
   )
 }

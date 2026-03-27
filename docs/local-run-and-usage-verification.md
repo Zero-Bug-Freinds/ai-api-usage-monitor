@@ -3,13 +3,14 @@
 버전: 1.0  
 
 OpenAI 등 API 키를 두고 **게이트웨이 → 프록시 → Provider** 호출 시 **`UsageRecordedEvent`가 RabbitMQ로 발행**되고 **`usage-service`가 DB에 저장**하는 흐름을 로컬에서 재현·검증하는 절차입니다.  
-관련 설계 문서: [`contracts/gateway-proxy.md`](contracts/gateway-proxy.md), [`event-consumer-flow.md`](event-consumer-flow.md), [`usage-analytics-relationship.md`](usage-analytics-relationship.md) §3.1(패턴 A).
+관련 설계 문서: [`contracts/gateway-proxy.md`](contracts/gateway-proxy.md), [`contracts/web-identity-bff.md`](contracts/web-identity-bff.md), [`event-consumer-flow.md`](event-consumer-flow.md), [`usage-analytics-relationship.md`](usage-analytics-relationship.md) §3.1(패턴 A).
 
 ---
 
 ## 전제
 
 - **인증·로그인 서비스는 사용하지 않는다**고 가정(캡스톤/개발 모드). Gateway는 `GATEWAY_DEV_MODE=true`(기본에 가깝게)일 때 **`X-User-Id` 헤더**만으로 `/api/v1/ai/**` 진입 가능.
+- Identity 로그인/회원가입(BFF, 쿠키 정책) 기준은 [`contracts/web-identity-bff.md`](contracts/web-identity-bff.md)를 따른다.
 - **Google(Gemini)만** 테스트하려면 **`PROXY_GOOGLE_TEST_API_KEY`** 와 아래 §2.1의 **Google 경로**만 맞추면 된다. OpenAI를 쓰려면 **`PROXY_OPENAI_TEST_API_KEY`** 와 §2.2 경로가 필요하다. 두 키를 동시에 둘 수 있으며, **어느 쪽을 “기본”으로 강제하지는 않는다.** 선택적으로 **`PROXY_MOCK_KEY_FALLBACK`** 을 둘 수 있다. 키는 **커밋하지 말고** `.env` 등 로컬에만 둔다(`.env.example` 참고). 상세: [`multi-provider-usage-and-google-path.md`](multi-provider-usage-and-google-path.md).
 
 ---
