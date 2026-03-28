@@ -1,6 +1,6 @@
 # Web(Next.js) ↔ Identity 인증 BFF 계약
 
-버전: 1.3  
+버전: 1.4  
 관련: [docs/architecture.md](../architecture.md) §1.3, §3.3, [Identity 인증 API 계약](../identity-auth-api-contract.md), [저장소 구조](../repository-structure.md) §6
 
 ---
@@ -140,3 +140,20 @@
   예: `IDENTITY_SERVICE_URL=http://localhost:8080`
 - 로컬 기본 실행 순서: Postgres → Identity → Web
 - 포트 충돌 주의: Gateway와 Identity가 동시에 `8080`을 사용하지 않도록 환경별 포트를 조정한다.
+
+---
+
+## 10. 랜딩(공개 홈) · BFF 회귀 테스트
+
+### 10.1 랜딩
+
+- 앱 루트 **`/`** (`apps/web/src/app/page.tsx`)는 제품 소개용 **최소 내비게이션**을 둔다. **로그인**·**회원가입**은 각각 **`/login`**, **`/signup`** 으로 연결한다(계약 변경 없음, 진입점 안내용).
+
+### 10.2 Vitest(라우트 핸들러·미들웨어)
+
+- BFF 인증 라우트는 구현 파일 옆에 **Vitest** 스펙을 둔다. 예:
+  - `apps/web/src/app/api/auth/session/route.test.ts` — 쿠키 없음·`IDENTITY_SERVICE_URL` 미설정·업스트림 프록시·401·형식 오류·연결 실패 등
+  - `apps/web/src/app/api/auth/logout/route.test.ts` — 쿠키 삭제·선택적 업스트림 `POST /api/auth/logout`·업스트림 실패 시에도 쿠키 삭제
+  - `login`·`signup` Route Handler도 동일 패턴의 `route.test.ts`로 회귀 검증
+- 미들웨어·보호 경로 정합성은 **`apps/web/middleware.test.ts`**, **`apps/web/src/app/protected-routes.test.ts`** (§6.2 유지보수 문구와 동일).
+- 실행: 저장소 루트에서 `cd apps/web` 후 **`npx vitest run`** (또는 CI에서 동일). **E2E(실제 Identity 기동)** 는 §9 환경으로 별도 확인한다.

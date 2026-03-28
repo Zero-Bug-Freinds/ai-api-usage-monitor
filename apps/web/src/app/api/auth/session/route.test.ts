@@ -123,6 +123,82 @@ describe("GET /api/auth/session (route handler)", () => {
     expect(res.status).toBe(502)
   })
 
+  it("returns 502 when session role is not USER or ADMIN", async () => {
+    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: "세션이 유효합니다",
+            data: { email: "u@test.com", role: "GUEST", authenticated: true },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+      })
+    )
+
+    const req = new Request("http://localhost/api/auth/session", {
+      method: "GET",
+      headers: { cookie: "access_token=t" },
+    })
+
+    const res = await GET(req)
+    expect(res.status).toBe(502)
+  })
+
+  it("returns 502 when upstream returns 200 but success is false", async () => {
+    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            message: "unexpected",
+            data: { email: "u@test.com", role: "USER", authenticated: true },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+      })
+    )
+
+    const req = new Request("http://localhost/api/auth/session", {
+      method: "GET",
+      headers: { cookie: "access_token=t" },
+    })
+
+    const res = await GET(req)
+    expect(res.status).toBe(502)
+  })
+
+  it("strips trailing slashes from IDENTITY_SERVICE_URL when proxying", async () => {
+    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080/"
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(url).toBe("http://localhost:8080/api/auth/session")
+      expect(init?.headers).toMatchObject({ Authorization: "Bearer t" })
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: "ok",
+          data: { email: "u@test.com", role: "ADMIN", authenticated: true },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const req = new Request("http://localhost/api/auth/session", {
+      method: "GET",
+      headers: { cookie: "access_token=t" },
+    })
+
+    const res = await GET(req)
+    expect(res.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
   it("returns 502 when Identity is unreachable", async () => {
     process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
     vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new Error("ECONNREFUSED"))))
