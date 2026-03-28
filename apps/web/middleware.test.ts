@@ -12,7 +12,7 @@ function makeRequest(pathname: string, cookieHeader?: string) {
 
 describe("middleware (auth-required gate)", () => {
   it("continues when access_token cookie is present", () => {
-    const res = middleware(makeRequest("/dashboard", "access_token=eyJhbGciOiJIUzI1NiJ9.x.y"))
+    const res = middleware(makeRequest("/dashboard", "access_token=test-cookie-present"))
     expect(res.status).toBe(200)
   })
 
