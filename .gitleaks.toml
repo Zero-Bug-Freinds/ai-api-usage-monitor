@@ -1,0 +1,14 @@
+# Gitleaks: 기본 규칙 유지 + 알려진 오탐 제외
+# middleware.test.ts 의 access_token=… 쿠키 픽스처는 generic-api-key 규칙과 충돌할 수 있음.
+# PR에 해당 줄을 도입한 커밋이 범위에 남아 있어도 스캔이 통과하도록 경로만 예외 처리한다.
+
+title = "ai-api-usage-monitor gitleaks"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Vitest cookie header fixtures (not production secrets)"
+paths = [
+  '''apps/web/middleware\.test\.ts$''',
+]
