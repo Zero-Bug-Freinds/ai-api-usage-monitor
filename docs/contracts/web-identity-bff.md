@@ -1,7 +1,7 @@
 # Web(Next.js) ↔ Identity 인증 BFF 계약
 
-버전: 1.0  
-관련: [docs/architecture.md](../architecture.md) §1.3, §3.3
+버전: 1.1  
+관련: [docs/architecture.md](../architecture.md) §1.3, §3.3, [Identity 인증 API 계약](../identity-auth-api-contract.md)
 
 ---
 
@@ -18,14 +18,29 @@
 |------|-----------------------|-------------------|
 | 회원가입 | `POST /api/auth/signup` | `POST /api/auth/signup` |
 | 로그인 | `POST /api/auth/login` | `POST /api/auth/login` |
-| 세션(로그인 여부 단일 기준) | `GET /api/auth/session` | (BFF가 쿠키·토큰 검증으로 판단; 필요 시 Identity 보호 API 호출) |
+| 세션(로그인 여부 단일 기준) | `GET /api/auth/session` | `GET /api/auth/session` (BFF가 쿠키 JWT를 Bearer로 전달해 프록시) |
 
 - Web BFF는 `IDENTITY_SERVICE_URL` 환경 변수를 사용해 Identity로 프록시한다.
-- BFF 입력 검증은 Zod 스키마로 수행한다.
-- **`GET /api/auth/session`** 은 프론트가 “로그인됨/만료”를 판단할 때 사용하는 **단일 기준 엔드포인트**로 둔다. 응답에도 `Cache-Control: no-store`를 적용한다(§8).
-- `GET /api/auth/session` 응답 형식:
-  - 로그인 상태: `200` + `ApiResponse<{ authenticated: true }>`
-  - 비로그인/만료: `401` + `ApiResponse<null>` (`success=false`, `message`, `data=null`)
+- 요청 **본문**이 있는 경로(회원가입·로그인 등)의 입력 검증은 Zod 스키마로 수행한다. `GET /api/auth/session` 은 본문이 없으며 쿠키만 사용한다.
+- **`GET /api/auth/session`** 은 프론트가 “로그인됨/만료”를 판단할 때 사용하는 **단일 기준 엔드포인트**로 둔다. BFF 응답에도 `Cache-Control: no-store`를 적용한다(§8).
+
+### 2.1 `GET /api/auth/session` 동작
+
+1. 브라우저 → BFF: `Cookie`에 `access_token`(httpOnly, 로그인 시 설정)이 포함되면 자동 전송된다.
+2. BFF → Identity: `GET {IDENTITY_SERVICE_URL}/api/auth/session`, 헤더 `Authorization: Bearer {access_token}`, `Accept: application/json`.
+3. **`access_token` 쿠키가 없거나 값이 비어 있으면** BFF는 Identity를 호출하지 않고 `401` + `ApiResponse<null>` (`success=false`, `data=null`)로 응답한다. 메시지는 BFF에서 고정할 수 있다(예: 로그인 필요 안내).
+4. **성공 시**(`Identity`가 `200` + `success=true`) BFF가 프론트에 돌려주는 `data` 필드는 업스트림과 **동일한 형태**이어야 한다. 필드 정의의 정본은 [Identity 인증 API 계약 §5](../identity-auth-api-contract.md)를 따른다.
+
+```json
+{
+  "email": "user@example.com",
+  "role": "USER",
+  "authenticated": true
+}
+```
+
+5. **Identity가 `401` 등으로 거절**하면 상태 코드와 JSON 본문을 **그대로** 프론트에 전달한다(§6).
+6. `IDENTITY_SERVICE_URL` 미설정 등 BFF 설정 오류·업스트림 연결 실패·업스트림 성공 응답이 계약과 맞지 않는 경우 등은 BFF가 `500`/`502` 등으로 처리할 수 있다. 프론트는 `success=false`와 `message`로 사용자 메시지를 구성한다.
 
 ---
 

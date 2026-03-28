@@ -32,7 +32,10 @@ export type LoginResponse = {
   expiresInSeconds: number
 }
 
+/** Identity `GET /api/auth/session`의 `data` 본문과 동기화 */
 export type SessionResponse = {
+  email: string
+  role: Role
   authenticated: boolean
 }
 
