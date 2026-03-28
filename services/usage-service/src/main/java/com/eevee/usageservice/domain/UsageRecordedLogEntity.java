@@ -12,9 +12,6 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
-/**
- * Persists {@link com.eevee.usage.events.UsageRecordedEvent} for authoritative usage ledger (pattern A).
- */
 @Entity
 @Table(name = "usage_recorded_log")
 public class UsageRecordedLogEntity {
@@ -56,6 +53,12 @@ public class UsageRecordedLogEntity {
 
     private Boolean streaming;
 
+    @Column(name = "request_successful", nullable = false)
+    private boolean requestSuccessful = true;
+
+    @Column(name = "upstream_status_code")
+    private Integer upstreamStatusCode;
+
     @Column(nullable = false)
     private Instant persistedAt;
 
@@ -78,6 +81,8 @@ public class UsageRecordedLogEntity {
             String requestPath,
             String upstreamHost,
             Boolean streaming,
+            boolean requestSuccessful,
+            Integer upstreamStatusCode,
             Instant persistedAt
     ) {
         this.eventId = eventId;
@@ -95,10 +100,27 @@ public class UsageRecordedLogEntity {
         this.requestPath = requestPath;
         this.upstreamHost = upstreamHost;
         this.streaming = streaming;
+        this.requestSuccessful = requestSuccessful;
+        this.upstreamStatusCode = upstreamStatusCode;
         this.persistedAt = persistedAt;
     }
 
-    public UUID getEventId() {
-        return eventId;
-    }
+    public UUID getEventId() { return eventId; }
+    public Instant getOccurredAt() { return occurredAt; }
+    public String getCorrelationId() { return correlationId; }
+    public String getUserId() { return userId; }
+    public String getOrganizationId() { return organizationId; }
+    public String getTeamId() { return teamId; }
+    public AiProvider getProvider() { return provider; }
+    public String getModel() { return model; }
+    public Long getPromptTokens() { return promptTokens; }
+    public Long getCompletionTokens() { return completionTokens; }
+    public Long getTotalTokens() { return totalTokens; }
+    public BigDecimal getEstimatedCost() { return estimatedCost; }
+    public String getRequestPath() { return requestPath; }
+    public String getUpstreamHost() { return upstreamHost; }
+    public Boolean getStreaming() { return streaming; }
+    public boolean isRequestSuccessful() { return requestSuccessful; }
+    public Integer getUpstreamStatusCode() { return upstreamStatusCode; }
+    public Instant getPersistedAt() { return persistedAt; }
 }

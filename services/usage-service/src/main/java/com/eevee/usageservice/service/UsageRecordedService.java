@@ -22,9 +22,6 @@ public class UsageRecordedService {
         this.repository = repository;
     }
 
-    /**
-     * Idempotent: duplicate {@code eventId} is ignored (pattern A — safe replays).
-     */
     @Transactional
     public void persist(UsageRecordedEvent event) {
         if (repository.existsByEventId(event.eventId())) {
@@ -50,6 +47,7 @@ public class UsageRecordedService {
             completion = tu.completionTokens();
             total = tu.totalTokens();
         }
+        boolean successful = Boolean.TRUE.equals(event.requestSuccessful());
         return new UsageRecordedLogEntity(
                 event.eventId(),
                 event.occurredAt(),
@@ -66,6 +64,8 @@ public class UsageRecordedService {
                 event.requestPath(),
                 event.upstreamHost(),
                 event.streaming(),
+                successful,
+                event.upstreamStatusCode(),
                 Instant.now()
         );
     }
