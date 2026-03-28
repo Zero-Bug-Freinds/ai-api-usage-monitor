@@ -1,0 +1,92 @@
+package com.eevee.usageservice.api;
+
+import com.eevee.usage.events.AiProvider;
+import com.eevee.usageservice.api.dto.DailyUsagePoint;
+import com.eevee.usageservice.api.dto.ModelUsageAggregate;
+import com.eevee.usageservice.api.dto.MonthlyUsagePoint;
+import com.eevee.usageservice.api.dto.PagedLogsResponse;
+import com.eevee.usageservice.api.dto.UsageSummaryResponse;
+import com.eevee.usageservice.security.UsageGatewayTrustFilter;
+import com.eevee.usageservice.service.UsageDashboardService;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.time.LocalDate;
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/v1/usage")
+public class UsageAnalyticsController {
+
+    private final UsageDashboardService dashboardService;
+
+    public UsageAnalyticsController(UsageDashboardService dashboardService) {
+        this.dashboardService = dashboardService;
+    }
+
+    @GetMapping("/dashboard/summary")
+    public UsageSummaryResponse summary(
+            HttpServletRequest request,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
+    ) {
+        String userId = currentUser(request);
+        return dashboardService.summary(userId, from, to);
+    }
+
+    @GetMapping("/dashboard/series/daily")
+    public List<DailyUsagePoint> daily(
+            HttpServletRequest request,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
+    ) {
+        String userId = currentUser(request);
+        return dashboardService.dailySeries(userId, from, to);
+    }
+
+    @GetMapping("/dashboard/series/monthly")
+    public List<MonthlyUsagePoint> monthly(
+            HttpServletRequest request,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
+    ) {
+        String userId = currentUser(request);
+        return dashboardService.monthlySeries(userId, from, to);
+    }
+
+    @GetMapping("/dashboard/by-model")
+    public List<ModelUsageAggregate> byModel(
+            HttpServletRequest request,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
+    ) {
+        String userId = currentUser(request);
+        return dashboardService.byModel(userId, from, to);
+    }
+
+    @GetMapping("/logs")
+    public PagedLogsResponse logs(
+            HttpServletRequest request,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) AiProvider provider,
+            @RequestParam(required = false) String model,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
+        String userId = currentUser(request);
+        return dashboardService.logs(userId, from, to, provider, model, page, size);
+    }
+
+    private static String currentUser(HttpServletRequest request) {
+        Object v = request.getAttribute(UsageGatewayTrustFilter.ATTR_USER_ID);
+        if (v instanceof String s && !s.isBlank()) {
+            return s;
+        }
+        throw new IllegalStateException("Missing authenticated user");
+    }
+}

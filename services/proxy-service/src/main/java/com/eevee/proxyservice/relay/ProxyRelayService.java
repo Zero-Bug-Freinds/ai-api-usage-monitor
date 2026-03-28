@@ -1,6 +1,5 @@
 package com.eevee.proxyservice.relay;
 
-import com.eevee.proxyservice.config.ProxyProperties;
 import com.eevee.proxyservice.key.ApiKeyClient;
 import com.eevee.proxyservice.mq.UsageEventPublisher;
 import com.eevee.proxyservice.provider.ProviderHandler;
@@ -142,7 +141,7 @@ public class ProxyRelayService {
                     })
                     .doOnComplete(() -> {
                         TokenUsage u = handler.parseUsageFromSse(acc.toString());
-                        publishUsage(ctx, provider, requestPath, u, upstreamHost, true).subscribe();
+                        publishUsage(ctx, provider, requestPath, u, upstreamHost, true, status).subscribe();
                     });
             return Mono.just(ResponseEntity.status(status).headers(responseHeaders).body(body));
         }
@@ -154,7 +153,7 @@ public class ProxyRelayService {
                     TokenUsage u = handler.parseUsageFromResponseJson(bodyStr);
                     byte[] bytes = bodyStr.getBytes(StandardCharsets.UTF_8);
                     Flux<DataBuffer> flux = Flux.just(bufferFactory.wrap(bytes));
-                    return publishUsage(ctx, provider, requestPath, u, safeHost(requestUri), false)
+                    return publishUsage(ctx, provider, requestPath, u, safeHost(requestUri), false, status)
                             .thenReturn(ResponseEntity.status(status).headers(responseHeaders).body(flux));
                 });
     }
@@ -180,8 +179,11 @@ public class ProxyRelayService {
             String requestPath,
             TokenUsage usage,
             String upstreamHost,
-            boolean streaming
+            boolean streaming,
+            HttpStatusCode upstreamStatus
     ) {
+        boolean successful = upstreamStatus.is2xxSuccessful();
+        Integer statusCode = upstreamStatus.value();
         UsageRecordedEvent event = new UsageRecordedEvent(
                 null,
                 null,
@@ -195,7 +197,9 @@ public class ProxyRelayService {
                 BigDecimal.ZERO,
                 requestPath,
                 upstreamHost,
-                streaming
+                streaming,
+                successful,
+                statusCode
         );
         return usageEventPublisher.publish(event);
     }

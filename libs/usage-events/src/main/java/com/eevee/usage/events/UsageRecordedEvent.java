@@ -24,7 +24,9 @@ public record UsageRecordedEvent(
         BigDecimal estimatedCost,
         String requestPath,
         String upstreamHost,
-        Boolean streaming
+        Boolean streaming,
+        Boolean requestSuccessful,
+        Integer upstreamStatusCode
 ) {
     public UsageRecordedEvent {
         if (eventId == null) {
@@ -32,6 +34,9 @@ public record UsageRecordedEvent(
         }
         if (occurredAt == null) {
             occurredAt = Instant.now();
+        }
+        if (requestSuccessful == null) {
+            requestSuccessful = Boolean.TRUE;
         }
     }
 }

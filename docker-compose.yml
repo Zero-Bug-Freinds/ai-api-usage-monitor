@@ -1,4 +1,4 @@
-# Local infrastructure for the monorepo (see docs/architecture.md §10).
+﻿# Local infrastructure for the monorepo (see docs/architecture.md §10).
 # Copy `.env.example` to `.env` and set secrets locally; do not commit `.env`.
 #
 # 앱 이미지 빌드 전 각 서비스에서 ./gradlew bootJar 로 app.jar 생성:
@@ -60,6 +60,7 @@ services:
       - proxy-service
     environment:
       GATEWAY_PROXY_URI: http://proxy-service:8081
+      GATEWAY_USAGE_URI: ${GATEWAY_USAGE_URI:-http://host.docker.internal:8092}
       PROXY_GATEWAY_SHARED_SECRET: ${PROXY_GATEWAY_SHARED_SECRET:-}
       GATEWAY_JWT_SECRET: ${GATEWAY_JWT_SECRET:-}
       GATEWAY_DEV_MODE: ${GATEWAY_DEV_MODE:-true}

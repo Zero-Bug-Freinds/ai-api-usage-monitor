@@ -40,7 +40,9 @@ class UsageRecordedEventWireFormatTest {
                 new BigDecimal("0.0012"),
                 "/proxy/openai/v1/chat/completions",
                 "api.openai.com",
-                false
+                false,
+                true,
+                200
         );
 
         String json = mapper.writeValueAsString(original);

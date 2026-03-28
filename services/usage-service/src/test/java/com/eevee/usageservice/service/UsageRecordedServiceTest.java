@@ -47,7 +47,9 @@ class UsageRecordedServiceTest {
                 BigDecimal.ZERO,
                 "/proxy/openai/v1/chat/completions",
                 "api.openai.com",
-                false
+                false,
+                true,
+                200
         );
 
         when(repository.existsByEventId(eventId)).thenReturn(true);
@@ -73,7 +75,9 @@ class UsageRecordedServiceTest {
                 BigDecimal.ZERO,
                 "/proxy/openai/v1/chat/completions",
                 "api.openai.com",
-                false
+                false,
+                true,
+                200
         );
 
         when(repository.existsByEventId(eventId)).thenReturn(false);

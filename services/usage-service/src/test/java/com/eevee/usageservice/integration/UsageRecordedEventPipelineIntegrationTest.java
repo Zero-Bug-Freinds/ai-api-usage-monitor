@@ -81,7 +81,9 @@ class UsageRecordedEventPipelineIntegrationTest {
                 BigDecimal.ZERO,
                 "/proxy/openai/v1/chat/completions",
                 "api.openai.com",
-                false
+                false,
+                true,
+                200
         );
 
         String json = objectMapper.writeValueAsString(event);

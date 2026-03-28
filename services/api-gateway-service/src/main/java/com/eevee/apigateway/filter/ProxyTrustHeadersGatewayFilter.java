@@ -17,7 +17,7 @@ import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
 /**
- * After security, attaches {@code X-User-Id}, optional org/team, and {@code X-Gateway-Auth} for Proxy.
+ * After security, attaches {@code X-User-Id}, optional org/team, and {@code X-Gateway-Auth} for Proxy and Usage HTTP.
  * See {@code docs/contracts/gateway-proxy.md}.
  */
 @Component
@@ -38,7 +38,7 @@ public class ProxyTrustHeadersGatewayFilter implements GlobalFilter, Ordered {
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         String path = exchange.getRequest().getPath().value();
-        if (!path.startsWith("/api/v1/ai/")) {
+        if (!requiresGatewayTrustHeaders(path)) {
             return chain.filter(exchange);
         }
         return ReactiveSecurityContextHolder.getContext()
@@ -108,5 +108,9 @@ public class ProxyTrustHeadersGatewayFilter implements GlobalFilter, Ordered {
     @Override
     public int getOrder() {
         return Ordered.HIGHEST_PRECEDENCE + 1000;
+    }
+
+    static boolean requiresGatewayTrustHeaders(String path) {
+        return path.startsWith("/api/v1/ai/") || path.startsWith("/api/v1/usage/");
     }
 }

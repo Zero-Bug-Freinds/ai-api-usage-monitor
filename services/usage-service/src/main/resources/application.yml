@@ -39,3 +39,7 @@ usage:
     exchange: usage.events
     routing-key: usage.recorded
     queue: usage-service.queue
+  analytics:
+    max-range-days: ${USAGE_ANALYTICS_MAX_RANGE_DAYS:400}
+  gateway:
+    shared-secret: ${USAGE_GATEWAY_SHARED_SECRET:}

@@ -26,6 +26,7 @@ public class SecurityConfiguration {
             http.authorizeExchange(ex -> ex
                     .pathMatchers("/actuator/health", "/actuator/info").permitAll()
                     .pathMatchers("/api/v1/ai/**").permitAll()
+                    .pathMatchers("/api/v1/usage/**").permitAll()
                     .anyExchange().denyAll()
             );
         } else {
@@ -37,6 +38,7 @@ public class SecurityConfiguration {
             http.authorizeExchange(ex -> ex
                     .pathMatchers("/actuator/health", "/actuator/info").permitAll()
                     .pathMatchers("/api/v1/ai/**").authenticated()
+                    .pathMatchers("/api/v1/usage/**").authenticated()
                     .anyExchange().denyAll()
             );
         }
