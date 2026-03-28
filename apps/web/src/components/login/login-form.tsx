@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { useRouter, useSearchParams } from "next/navigation"
 import * as React from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
@@ -9,20 +10,19 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { apiFetch } from "@/lib/api/client-fetch"
+import { getSafeNextPath } from "@/lib/auth/safe-next-path"
 import { loginRequestSchema, type LoginRequestInput } from "@/lib/api/identity/login.schema"
 import type { ApiResponse } from "@/lib/api/identity/types"
 
-type FormState =
-  | { status: "idle" }
-  | { status: "submitting" }
-  | { status: "success"; message: string }
-  | { status: "error"; message: string }
+type FormState = { status: "idle" } | { status: "submitting" } | { status: "error"; message: string }
 
 function safeMessage(err: unknown, fallback: string) {
   return typeof err === "string" ? err : fallback
 }
 
 export function LoginForm() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const [state, setState] = React.useState<FormState>({ status: "idle" })
 
   const form = useForm<LoginRequestInput>({
@@ -57,7 +57,8 @@ export function LoginForm() {
     }
 
     if (res.ok && json && json.success) {
-      setState({ status: "success", message: json.message || "로그인되었습니다" })
+      const next = getSafeNextPath(searchParams.get("next"))
+      router.replace(next)
       return
     }
 
@@ -108,12 +109,6 @@ export function LoginForm() {
         {state.status === "error" ? (
           <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {state.message}
-          </div>
-        ) : null}
-
-        {state.status === "success" ? (
-          <div className="rounded-lg border bg-muted px-3 py-2 text-sm">
-            <p className="font-medium">{state.message}</p>
           </div>
         ) : null}
 
