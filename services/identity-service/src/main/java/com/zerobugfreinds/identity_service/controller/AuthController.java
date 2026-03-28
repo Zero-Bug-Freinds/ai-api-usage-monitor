@@ -3,12 +3,19 @@ package com.zerobugfreinds.identity_service.controller;
 import com.zerobugfreinds.identity_service.common.ApiResponse;
 import com.zerobugfreinds.identity_service.dto.LoginRequest;
 import com.zerobugfreinds.identity_service.dto.LoginResponse;
+import com.zerobugfreinds.identity_service.dto.SessionResponse;
 import com.zerobugfreinds.identity_service.dto.SignupRequest;
 import com.zerobugfreinds.identity_service.dto.SignupResponse;
+import com.zerobugfreinds.identity_service.exception.AuthContractViolationException;
 import com.zerobugfreinds.identity_service.service.UserService;
 import jakarta.validation.Valid;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -41,8 +48,41 @@ public class AuthController {
 	 * 로그인.
 	 */
 	@PostMapping("/login")
-	public ApiResponse<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
+	public ResponseEntity<ApiResponse<LoginResponse>> login(@Valid @RequestBody LoginRequest request) {
 		LoginResponse body = userService.login(request);
-		return ApiResponse.ok("로그인에 성공했습니다", body);
+		if (!"Bearer".equals(body.tokenType())) {
+			throw new AuthContractViolationException("토큰 타입 계약이 올바르지 않습니다");
+		}
+		return ResponseEntity.ok()
+				.cacheControl(CacheControl.noStore().mustRevalidate())
+				.body(ApiResponse.ok("로그인에 성공했습니다", body));
+	}
+
+	/**
+	 * 세션(인증 상태) 확인.
+	 */
+	@GetMapping("/session")
+	public ResponseEntity<ApiResponse<SessionResponse>> session(Authentication authentication) {
+		String authority = authentication.getAuthorities().stream()
+				.findFirst()
+				.map(granted -> granted.getAuthority())
+				.orElse("ROLE_USER");
+		String role = authority.startsWith("ROLE_") ? authority.substring(5) : authority;
+
+		SessionResponse body = new SessionResponse(authentication.getName(), role, true);
+		return ResponseEntity.ok()
+				.cacheControl(CacheControl.noStore().mustRevalidate())
+				.body(ApiResponse.ok("세션이 유효합니다", body));
+	}
+
+	/**
+	 * 로그아웃.
+	 * Stateless 구조이므로 서버 토큰 무효화 대신, BFF가 쿠키를 삭제하도록 신호를 보낸다.
+	 */
+	@PostMapping("/logout")
+	public ResponseEntity<ApiResponse<Void>> logout() {
+		return ResponseEntity.ok()
+				.header(HttpHeaders.CACHE_CONTROL, "no-store")
+				.body(ApiResponse.ok("로그아웃되었습니다. BFF에서 인증 쿠키를 삭제하세요", null));
 	}
 }
