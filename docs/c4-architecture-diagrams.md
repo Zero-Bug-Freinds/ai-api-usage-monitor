@@ -4,6 +4,7 @@
 시스템 아키텍처를 C4 모델(C1 → C4)로 정리한다.
 
 분석 대상:
+- `apps/web` (Next.js UI + BFF Route Handlers, 팀원 C)
 - `services/api-gateway-service`
 - `services/proxy-service`
 - `services/identity-service`
@@ -13,36 +14,51 @@
 
 ## C1 - System Context
 
+화살표 라벨은 짧게 두었고, 상세는 노드 설명·본문을 보면 된다.
+
 ```mermaid
+%%{init: {'flowchart': {'htmlLabels': true, 'nodeSpacing': 50, 'rankSpacing': 70, 'padding': 12}}}%%
 flowchart TB
+    browser["Browser"]
     client["Developer / Client App"]
 
     subgraph platform["AI Usage Platform (As-Is)"]
+      direction TB
+      web["Next.js Web (apps/web)"]
       gateway["API Gateway Service"]
       proxy["Proxy Service"]
       identity["Identity Service"]
       usage["Usage Service"]
     end
 
-    openai["OpenAI API"]
-    anthropic["Anthropic API"]
-    google["Google Gemini API"]
-    keysvc["API Key Service"]
-    rabbit["RabbitMQ"]
-    appDb["PostgreSQL (app)"]
-    usageDb["PostgreSQL (usage_db)"]
+    subgraph ext["External systems"]
+      direction LR
+      openai["OpenAI"]
+      anthropic["Anthropic"]
+      google["Gemini"]
+      keysvc["API Key Svc"]
+    end
 
-    client -->|Auth API| identity
-    client -->|/api/v1/ai/**| gateway
-    gateway -->|rewrite to /proxy/**| proxy
+    subgraph data["Data & messaging"]
+      direction LR
+      rabbit["RabbitMQ"]
+      appDb["PostgreSQL (app)"]
+      usageDb["PostgreSQL (usage_db)"]
+    end
 
-    proxy -->|LLM request relay| openai
-    proxy -->|LLM request relay| anthropic
-    proxy -->|LLM request relay| google
-    proxy -->|provider key lookup| keysvc
-    proxy -->|publish usage.recorded| rabbit
+    browser -->|HTTPS| web
+    web -->|BFF| identity
+    client -->|Auth| identity
+    client -->|AI API| gateway
+    gateway -->|/proxy| proxy
 
-    usage -->|consume usage.recorded| rabbit
+    proxy -->|relay| openai
+    proxy -->|relay| anthropic
+    proxy -->|relay| google
+    proxy -->|key| keysvc
+    proxy -->|publish| rabbit
+
+    usage -->|consume| rabbit
     identity -->|JPA| appDb
     usage -->|JPA| usageDb
 ```
@@ -54,12 +70,14 @@ C4Container
 title C2: Containers (Current Implementation)
 
 Person(client, "Developer/User", "Auth and AI API consumer")
+Person(browserUser, "Browser user", "Web UI and same-origin BFF")
 
 System_Boundary(platform, "AI Usage Platform") {
-    Container(gateway, "API Gateway Service", "Spring Cloud Gateway (WebFlux)", "JWT security and route rewrite /api/v1/ai/** -> /proxy/**")
-    Container(proxy, "Proxy Service", "Spring Boot WebFlux", "Provider relay, usage parsing, usage event publishing")
-    Container(identity, "Identity Service", "Spring Boot + Spring Security + JPA", "Signup/Login, JWT issuance, user persistence")
-    Container(usage, "Usage Service", "Spring Boot + RabbitMQ + JPA", "Consume usage events, idempotent persistence")
+    Container(webapp, "Web App (apps/web)", "Next.js", "UI + auth BFF, httpOnly cookie")
+    Container(gateway, "API Gateway", "Spring Cloud Gateway", "JWT, /api/v1/ai → /proxy")
+    Container(proxy, "Proxy Service", "Spring WebFlux", "Relay, usage parse, MQ publish")
+    Container(identity, "Identity Service", "Spring + JPA", "Signup/login, JWT")
+    Container(usage, "Usage Service", "Spring + MQ + JPA", "Consume usage events")
 
     ContainerQueue(rabbit, "RabbitMQ", "AMQP", "usage.events / usage.recorded")
     ContainerDb(appDb, "PostgreSQL (app)", "RDB", "Identity domain data")
@@ -71,48 +89,50 @@ System_Ext(anthropic, "Anthropic API", "LLM provider")
 System_Ext(google, "Google Gemini API", "LLM provider")
 System_Ext(keysvc, "API Key Service", "provider key source")
 
-Rel(client, identity, "POST /api/auth/signup, /login", "HTTPS")
+Rel(browserUser, webapp, "HTTPS UI + /api/auth/*", "HTTPS")
+Rel(webapp, identity, "signup/login proxy", "HTTPS")
+Rel(client, identity, "auth API direct", "HTTPS")
 Rel(client, gateway, "AI request", "HTTPS")
-Rel(gateway, proxy, "forward with trusted headers", "HTTP")
+Rel(gateway, proxy, "forward + trust headers", "HTTP")
 
-Rel(proxy, keysvc, "resolve provider API key", "HTTP")
+Rel(proxy, keysvc, "provider API key", "HTTP")
 Rel(proxy, openai, "relay", "HTTPS")
 Rel(proxy, anthropic, "relay", "HTTPS")
 Rel(proxy, google, "relay", "HTTPS")
-Rel(proxy, rabbit, "publish usage.recorded", "AMQP")
+Rel(proxy, rabbit, "publish events", "AMQP")
 
-Rel(usage, rabbit, "consume usage.recorded", "AMQP")
-Rel(identity, appDb, "read/write user data", "JPA")
-Rel(usage, usageDb, "read/write usage logs", "JPA")
+Rel(usage, rabbit, "consume events", "AMQP")
+Rel(identity, appDb, "read/write", "JPA")
+Rel(usage, usageDb, "read/write", "JPA")
 ```
 
 ## C3 - Component Diagram (Cross-Service Runtime Flow)
 
 ```mermaid
-flowchart LR
-  subgraph GW["API Gateway Service"]
-    gwSec["SecurityConfiguration / JwtDecoderConfiguration"]
+%%{init: {'flowchart': {'htmlLabels': true, 'nodeSpacing': 28, 'rankSpacing': 40, 'padding': 10}}}%%
+flowchart TB
+  subgraph GW["API Gateway"]
+    direction TB
+    gwSec["Security + JwtDecoder config"]
     gwFilter["ProxyTrustHeadersGatewayFilter"]
-    gwRoute["Gateway Route (application.yml)"]
+    gwRoute["Routes (application.yml)"]
     gwSec --> gwFilter --> gwRoute
   end
 
   subgraph PX["Proxy Service"]
-    pxCtl["ProxyController (/proxy/**)"]
+    direction TB
+    pxCtl["ProxyController"]
     pxRelay["ProxyRelayService"]
-    pxReg["ProviderRegistry + ProviderHandler*"]
-    pxKey["ApiKeyClient"]
-    pxCtx["UserContextResolver"]
-    pxPub["UsageEventPublisher"]
-    pxCtl --> pxRelay
-    pxRelay --> pxReg
-    pxRelay --> pxKey
-    pxRelay --> pxCtx
-    pxRelay --> pxPub
+    pxReg["ProviderRegistry / Handlers"]
+    pxRow["ApiKeyClient · UserContextResolver · UsageEventPublisher"]
+    pxCtl --> pxRelay --> pxReg --> pxRow
   end
 
+  RABBIT["RabbitMQ"]
+
   subgraph US["Usage Service"]
-    usListener["UsageRecordedEventListener (@RabbitListener)"]
+    direction TB
+    usListener["UsageRecordedEventListener"]
     usSvc["UsageRecordedService"]
     usRepo["UsageRecordedLogRepository"]
     usEntity["UsageRecordedLogEntity"]
@@ -120,24 +140,25 @@ flowchart LR
   end
 
   subgraph ID["Identity Service"]
+    direction TB
     idCtl["AuthController"]
     idSvc["UserService"]
-    idRepo["UserRepository / RoleRepository"]
-    idJwt["JwtTokenProvider + JwtAuthenticationFilter"]
+    idRepo["User / Role repository"]
+    idJwt["JwtTokenProvider · JwtAuthFilter"]
     idCtl --> idSvc --> idRepo
     idSvc --> idJwt
   end
 
-  GW -->|forward AI path| PX
-  PX -->|publish usage.recorded| RABBIT["RabbitMQ"]
-  RABBIT -->|deliver usage.recorded| US
+  GW -->|AI path| PX
+  PX -->|publish| RABBIT
+  RABBIT -->|deliver| US
 ```
 
 ## C4 - Code Diagram (Proxy Relay Core)
 
 ```mermaid
 classDiagram
-direction LR
+direction TB
 
 class ProxyController {
   +Mono~ResponseEntity~ proxy(ServerWebExchange)
@@ -176,22 +197,22 @@ class UsageRecordedEvent
 class TokenUsage
 class AiProvider
 
-ProxyController --> ProxyRelayService : relay()
-ProxyRelayService --> ProviderRegistry : select handler
-ProxyRelayService --> ProviderHandler : provider-specific behavior
-ProxyRelayService --> ApiKeyClient : resolve key
-ProxyRelayService --> UserContextResolver : resolve user/org/team
-ProxyRelayService --> UsageEventPublisher : publish usage event
-UsageEventPublisher --> UsageRecordedEvent : serialize payload
-UsageRecordedEvent --> TokenUsage : includes token stats
-ProviderHandler --> AiProvider : strategy by provider
+ProxyController --> ProxyRelayService : relay
+ProxyRelayService --> ProviderRegistry : select
+ProxyRelayService --> ProviderHandler : per provider
+ProxyRelayService --> ApiKeyClient : key
+ProxyRelayService --> UserContextResolver : user context
+ProxyRelayService --> UsageEventPublisher : publish
+UsageEventPublisher --> UsageRecordedEvent : payload
+UsageRecordedEvent --> TokenUsage : stats
+ProviderHandler --> AiProvider : strategy
 ```
 
 ## C4 - Code Diagram (Usage Persistence Core)
 
 ```mermaid
 classDiagram
-direction LR
+direction TB
 
 class UsageRecordedEventListener {
   +void onMessage(String)
@@ -210,16 +231,16 @@ class UsageRecordedLogRepository {
 class UsageRecordedLogEntity
 class UsageRecordedEvent
 
-UsageRecordedEventListener --> UsageRecordedService : deserialize + persist
-UsageRecordedService --> UsageRecordedLogRepository : existsByEventId / save
-UsageRecordedService --> UsageRecordedLogEntity : map domain -> entity
+UsageRecordedEventListener --> UsageRecordedService : on message
+UsageRecordedService --> UsageRecordedLogRepository : persist
+UsageRecordedService --> UsageRecordedLogEntity : map
 ```
 
 ## C4 - Code Diagram (Gateway Trust Header Flow)
 
 ```mermaid
 classDiagram
-direction LR
+direction TB
 
 class ProxyTrustHeadersGatewayFilter {
   +Mono~Void~ filter(ServerWebExchange, GatewayFilterChain)
@@ -233,18 +254,18 @@ class GatewayProperties
 class JwtAuthenticationToken
 class GatewayFilterChain
 
-SecurityConfiguration --> JwtDecoderConfiguration : jwt decoder
-SecurityConfiguration --> ProxyTrustHeadersGatewayFilter : security chain
-ProxyTrustHeadersGatewayFilter --> JwtAuthenticationToken : read sub/org_id/team_id
-ProxyTrustHeadersGatewayFilter --> GatewayProperties : devMode/sharedSecret
-ProxyTrustHeadersGatewayFilter --> GatewayFilterChain : mutate headers + forward
+SecurityConfiguration --> JwtDecoderConfiguration : decoder
+SecurityConfiguration --> ProxyTrustHeadersGatewayFilter : chain
+ProxyTrustHeadersGatewayFilter --> JwtAuthenticationToken : JWT claims
+ProxyTrustHeadersGatewayFilter --> GatewayProperties : dev / secret
+ProxyTrustHeadersGatewayFilter --> GatewayFilterChain : forward
 ```
 
 ## C4 - Code Diagram (Identity Auth Core)
 
 ```mermaid
 classDiagram
-direction LR
+direction TB
 
 class AuthController {
   +ApiResponse~SignupResponse~ signup(SignupRequest)
@@ -283,19 +304,169 @@ class PasswordEncoder
 class User
 class Role
 
-AuthController --> UserService : signup/login delegated
-UserService --> UserRepository : user lookup/save
-UserService --> RoleRepository : default role resolve
-UserService --> PasswordEncoder : password hash/verify
-UserService --> JwtTokenProvider : issue access token
-SecurityConfig --> JwtAuthenticationFilter : register filter chain
-JwtAuthenticationFilter --> JwtTokenProvider : parse/validate token
-UserRepository --> User : persistence
-RoleRepository --> Role : persistence
+AuthController --> UserService : signup / login
+UserService --> UserRepository : users
+UserService --> RoleRepository : roles
+UserService --> PasswordEncoder : hash
+UserService --> JwtTokenProvider : token
+SecurityConfig --> JwtAuthenticationFilter : filter chain
+JwtAuthenticationFilter --> JwtTokenProvider : validate
+UserRepository --> User
+RoleRepository --> Role
 ```
+
+## Web Application (`apps/web`) — 구조·흐름 (팀원 C)
+
+**목적:** 브라우저 대상 UI와 인증 BFF를 **현재 저장소 트리 기준(As-Is)** 으로 시각화한다. 팀원 C가 라우트·컴포넌트·API를 바꿀 때 **이 절의 다이어그램과 불릿 목록을 함께 갱신**한다.
+
+**동기화 체크리스트 (PR 또는 주기적으로):**
+
+1. `apps/web/src/app` 아래 **새 `page.tsx` / `route.ts` / 동적 세그먼트**가 생기면 디렉터리 맵·흐름도에 반영한다.
+2. `middleware.ts`의 **`config.matcher`** 가 바뀌면 미들웨어 다이어그램과 설명을 맞춘다.
+3. BFF가 Identity를 호출하는 방식이 바뀌면 시퀀스 다이어그램을 수정한다(계약은 `docs/contracts/web-identity-bff.md`).
+4. **구현과 계약 문서가 어긋나면 다이어그램은 코드 우선**으로 두고, 계약 문서 정리는 별도 작업으로 남긴다.
+
+### W1 — 디렉터리·파일 맵 (논리 트리)
+
+> 파일 단위 나열. `*.test.ts` 는 같은 폴더에 두는 패턴을 유지한다.
+
+```mermaid
+%%{init: {'flowchart': {'nodeSpacing': 22, 'rankSpacing': 36, 'padding': 14}}}%%
+flowchart TB
+  subgraph AW["apps/web"]
+    direction TB
+    MW["middleware.ts<br/>쿠키 검사 · matcher"]
+    NC["next.config.ts"]
+    VC["vitest.config.ts"]
+    subgraph APP["src/app"]
+      direction TB
+      ROOT["layout · page · globals · favicon"]
+      LOGIN["login/page.tsx"]
+      SIGNUP["signup/page.tsx"]
+      R1["api/auth/login · route + test"]
+      R2["api/auth/signup · route + test"]
+      R3["api/auth/session · route + test"]
+    end
+    subgraph COMP["src/components"]
+      direction TB
+      LF["login/login-form.tsx"]
+      SF["signup/signup-form.tsx"]
+      UI["ui/ shadcn"]
+    end
+    subgraph LIB["src/lib"]
+      direction TB
+      CF["api/client-fetch (+ test)"]
+      IDT["api/identity/types"]
+      IDS["login.schema (+ test)"]
+      IDSU["signup.schema (+ test)"]
+      UT["utils.ts"]
+    end
+    TS["src/test/setup.ts"]
+  end
+```
+
+### W2 — 런타임 흐름 (브라우저 ↔ BFF ↔ Identity)
+
+> **현행 구현 기준:** `POST` 로그인·회원가입은 Identity로 프록시 후 httpOnly `access_token` 쿠키 설정. `GET /api/auth/session` 은 **쿠키 유무로만** 200/401을 나눈다(업스트림 세션 API 호출 없음). 이후 Identity `GET /api/auth/session` 프록시를 넣으면 이 그림에 Identity 호출 단계를 추가한다.
+
+```mermaid
+%%{init: {'sequence': {'actorMargin': 36, 'messageMargin': 18}}}%%
+sequenceDiagram
+  participant B as Browser
+  participant P as Pages
+  participant H as Auth BFF
+  participant I as Identity
+
+  B->>P: GET / login signup
+  P->>H: POST login or signup
+  H->>I: POST login or signup
+  I-->>H: tokens
+  H-->>B: Set-Cookie access_token
+
+  B->>H: GET session
+  Note over H: 쿠키 유무만 (현행)
+  H-->>B: 200 or 401
+
+  B->>B: middleware on protected paths
+  Note over B: dashboard settings orgs teams
+```
+
+### W3 — 레이어 관계 (UI · 공용 클라이언트 · BFF · 도메인 라이브러리)
+
+```mermaid
+%%{init: {'flowchart': {'nodeSpacing': 30, 'rankSpacing': 40, 'padding': 12}}}%%
+flowchart TB
+  subgraph FE["Client UI"]
+    direction LR
+    LF["login-form"]
+    SF["signup-form"]
+  end
+  subgraph PG["Pages"]
+    direction LR
+    LP["login/page"]
+    SP["signup/page"]
+  end
+  subgraph RH["Route Handlers"]
+    direction TB
+    RL["POST login"]
+    RS["POST signup"]
+    RQ["GET session"]
+  end
+  subgraph LB["lib"]
+    CF["client-fetch"]
+    ZL["Zod + types"]
+  end
+  IDN["Identity<br/>IDENTITY_SERVICE_URL"]
+
+  LP --> LF
+  SP --> SF
+  LF --> CF
+  SF --> CF
+  CF --> RL
+  CF --> RS
+  RL --> ZL
+  RS --> ZL
+  RQ --> ZL
+  RL --> IDN
+  RS --> IDN
+```
+
+### W4 — 미들웨어와 보호 경로
+
+```mermaid
+%%{init: {'flowchart': {'nodeSpacing': 28, 'rankSpacing': 44, 'padding': 12}}}%%
+flowchart TD
+  REQ["Incoming request"]
+  MW["middleware.ts"]
+  COOK{"access_token<br/>있음?"}
+  NEXT["next()"]
+  REDIR["redirect /login?next=…"]
+
+  REQ --> MW
+  MW --> COOK
+  COOK -->|Y| NEXT
+  COOK -->|N| REDIR
+
+  subgraph MT["matcher (현행)"]
+    direction TB
+    M1["/dashboard/:path*"]
+    M2["/settings/:path*"]
+    M3["/organizations/:path*"]
+    M4["/teams/:path*"]
+  end
+
+  MW -.-> MT
+```
+
+`matcher` 가 가리키는 경로에 대응하는 **`app/dashboard/...` 등 페이지**를 추가·이동하면, W1 트리와 `docs/repository-structure.md` 도 함께 업데이트한다.
 
 ## 참고 코드/문서
 
+- `apps/web/middleware.ts`
+- `apps/web/src/app/api/auth/login/route.ts`
+- `apps/web/src/app/api/auth/signup/route.ts`
+- `apps/web/src/app/api/auth/session/route.ts`
+- `docs/contracts/web-identity-bff.md`
 - `services/api-gateway-service/src/main/resources/application.yml`
 - `services/api-gateway-service/src/main/java/com/eevee/apigateway/filter/ProxyTrustHeadersGatewayFilter.java`
 - `services/proxy-service/src/main/java/com/eevee/proxyservice/web/ProxyController.java`
