@@ -1,7 +1,7 @@
 # Web(Next.js) ↔ Identity 인증 BFF 계약
 
-버전: 1.2  
-관련: [docs/architecture.md](../architecture.md) §1.3, §3.3, [Identity 인증 API 계약](../identity-auth-api-contract.md)
+버전: 1.3  
+관련: [docs/architecture.md](../architecture.md) §1.3, §3.3, [Identity 인증 API 계약](../identity-auth-api-contract.md), [저장소 구조](../repository-structure.md) §6
 
 ---
 
@@ -101,6 +101,20 @@
 - **일반 API** 호출에서 401이 나오면 즉시 리다이렉트하지 않고, **화면에서 에러 상태(토스트/메시지 등)로 처리**한 뒤 필요 시 로그인을 유도한다.
 
 위 범위는 초기 논의에서 “401 시 항상 로그인 페이지”로 읽힐 수 있는 문구와 구분되므로, **정본은 본 절(6.1)을 따른다.**
+
+### 6.2 보호 페이지(App Router) 및 미들웨어 (`apps/web`)
+
+브라우저가 직접 보는 **페이지 라우트** 중 로그인이 필요한 영역은 Next.js **`middleware.ts`** 로 1차 게이트한다. 구현 위치: `apps/web/middleware.ts`.
+
+| 항목 | 내용 |
+|------|------|
+| **matcher (정본)** | `/dashboard/:path*`, `/settings/:path*`, `/organizations/:path*`, `/teams/:path*` |
+| **판단 기준** | 요청에 **`access_token` httpOnly 쿠키**가 있고 값이 비어 있지 않으면 통과. **JWT 서명·만료 검증은 여기서 하지 않는다** (쿠키만 없으면 로그인 유도). 토큰 유효성은 `GET /api/auth/session`(§2.1) 등 BFF·업스트림에서 판단한다. |
+| **미통과 시** | `307` 리다이렉트 → `/login?next=<원래 pathname>` (`next`는 로그인 후 되돌아갈 경로; 소비 시 오픈 리다이렉트 방지를 위해 `apps/web/src/lib/auth/safe-next-path.ts`의 `getSafeNextPath` 등으로 검증한다). |
+| **대응 라우트** | 위 접두사마다 App Router **`[[...path]]` optional catch-all** 페이지를 둔다. 예: `apps/web/src/app/dashboard/[[...path]]/page.tsx`. 하위 경로(예: `/dashboard/reports`)도 동일 세그먼트에서 처리해 matcher와 **404 불일치**를 피한다. |
+| **현재 UI 성격** | 대시보드·설정·조직·팀 경로는 **플레이스홀더**일 수 있다. 기능 구현 시에도 서버 측 권한·테넌트 검증은 반드시 유지한다(프론트 규칙: `.cursor/rules/project-common-nextjs.mdc`). |
+
+**유지보수:** matcher에 경로를 추가·변경하면 (1) 동일 접두사의 `app/<segment>/[[...path]]/page.tsx`(또는 합의된 라우트)를 추가하거나, (2) 의도적으로 페이지가 없다면 matcher에서 해당 패턴을 제거한다. 회귀 방지용 테스트: `apps/web/middleware.test.ts`, `apps/web/src/app/protected-routes.test.ts`.
 
 ---
 
