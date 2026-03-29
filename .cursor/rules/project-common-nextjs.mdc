@@ -9,7 +9,7 @@ alwaysApply: false
 
 # Project Common (Next.js)
 
-Applies when editing paths matched by **`globs`** above (adjust `globs` if the team chooses another folder). Canonical layout: **`docs/repository-structure.md`**. Backend-oriented rules: **`project-common-java.mdc`**, **`domain-mvc-jpa.mdc`**, **`proxy-webflux.mdc`**. Root role summary: **`.cursorrules`** (팀원 C).
+Applies when editing paths matched by **`globs`** above (adjust `globs` if the team chooses another folder). Canonical layout: **`docs/repository-structure.md`**. Backend-oriented rules: **`project-common-java.mdc`**, **`domain-mvc-jpa.mdc`**, **`proxy-webflux.mdc`**. Root role summary: **`.cursorrules`** (팀원 C — Frontend only; 집계·알림 백엔드는 `docs/architecture.md` §12).
 
 ## Architecture
 
