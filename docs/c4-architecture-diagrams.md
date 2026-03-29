@@ -323,7 +323,7 @@ RoleRepository --> Role
 
 1. `apps/web/src/app` 아래 **새 `page.tsx` / `route.ts` / 동적 세그먼트**가 생기면 디렉터리 맵·흐름도에 반영한다.
 2. `middleware.ts`의 **`config.matcher`** 가 바뀌면 미들웨어 다이어그램과 설명을 맞춘다.
-3. BFF가 Identity를 호출하는 방식이 바뀌면 시퀀스 다이어그램을 수정한다(계약은 `docs/contracts/web-identity-bff.md`).
+3. BFF가 Identity·게이트웨이를 호출하는 방식이 바뀌면 시퀀스 다이어그램을 수정한다(계약은 `docs/contracts/web-identity-bff.md`, Usage 프록시는 `docs/contracts/web-gateway-bff.md`).
 4. **구현과 계약 문서가 어긋나면 다이어그램은 코드 우선**으로 두고, 계약 문서 정리는 별도 작업으로 남긴다.
 
 ### W1 — 디렉터리·파일 맵 (논리 트리)
@@ -343,19 +343,30 @@ flowchart TB
       ROOT["layout · page · globals · favicon"]
       LOGIN["login/page.tsx"]
       SIGNUP["signup/page.tsx"]
-      R1["api/auth/login · route + test"]
-      R2["api/auth/signup · route + test"]
-      R3["api/auth/session · route + test"]
+      subgraph PROT["보호 catch-all 페이지"]
+        DASH["dashboard/[[...path]]"]
+        ORG["organizations/[[...path]]"]
+        TEAM["teams/[[...path]]"]
+        SET["settings/[[...path]]"]
+      end
+      subgraph API["api Route Handlers"]
+        R1["auth/login · signup · session + test"]
+        RU["usage/[[...path]] + test"]
+        RI["identity/[[...path]] + test"]
+      end
     end
     subgraph COMP["src/components"]
       direction TB
       LF["login/login-form.tsx"]
       SF["signup/signup-form.tsx"]
+      UD["usage/usage-dashboard"]
+      ACCT["account/ organizations-view 등"]
       UI["ui/ shadcn"]
     end
     subgraph LIB["src/lib"]
       direction TB
       CF["api/client-fetch (+ test)"]
+      FU["usage/fetch-usage"]
       IDT["api/identity/types"]
       IDS["login.schema (+ test)"]
       IDSU["signup.schema (+ test)"]
@@ -365,9 +376,9 @@ flowchart TB
   end
 ```
 
-### W2 — 런타임 흐름 (브라우저 ↔ BFF ↔ Identity)
+### W2 — 런타임 흐름 (브라우저 ↔ BFF ↔ Identity·게이트웨이)
 
-> **현행 구현 기준:** `POST` 로그인·회원가입은 Identity로 프록시 후 httpOnly `access_token` 쿠키 설정. `GET /api/auth/session` 은 **쿠키 유무로만** 200/401을 나눈다(업스트림 세션 API 호출 없음). 이후 Identity `GET /api/auth/session` 프록시를 넣으면 이 그림에 Identity 호출 단계를 추가한다.
+> **현행 구현 기준:** `POST` 로그인·회원가입은 Identity로 프록시 후 httpOnly `access_token` 쿠키 설정. **`GET /api/auth/session`** 은 BFF가 **Identity `GET /api/auth/session`** 을 Bearer로 호출해 본문을 검증·전달한다. 대시보드 사용량은 브라우저가 **`GET /api/usage/...`** 로 호출하면 Usage BFF가 **`{API_GATEWAY_URL}/api/v1/usage/...`** 로 프록시한다(`GATEWAY_DEV_MODE` 시 Identity 세션으로 `X-User-Id` 보강). 계약: `docs/contracts/web-identity-bff.md`, `docs/contracts/web-gateway-bff.md`, `docs/contracts/gateway-proxy.md`.
 
 ```mermaid
 %%{init: {'sequence': {'actorMargin': 36, 'messageMargin': 18}}}%%
@@ -375,20 +386,28 @@ sequenceDiagram
   participant B as Browser
   participant P as Pages
   participant H as Auth BFF
+  participant U as Usage BFF
+  participant GW as API Gateway
   participant I as Identity
 
-  B->>P: GET / login signup
+  B->>P: GET login signup dashboard
   P->>H: POST login or signup
   H->>I: POST login or signup
   I-->>H: tokens
   H-->>B: Set-Cookie access_token
 
-  B->>H: GET session
-  Note over H: 쿠키 유무만 (현행)
+  B->>H: GET /api/auth/session
+  H->>I: GET session + Bearer
+  I-->>H: ApiResponse
   H-->>B: 200 or 401
 
-  B->>B: middleware on protected paths
-  Note over B: dashboard settings orgs teams
+  B->>U: GET /api/usage/dashboard/...
+  Note over U: Bearer·dev 시 X-User-Id
+  U->>GW: /api/v1/usage/...
+  GW-->>U: upstream
+  U-->>B: usage JSON
+
+  Note over B: middleware dashboard settings orgs teams
 ```
 
 ### W3 — 레이어 관계 (UI · 공용 클라이언트 · BFF · 도메인 라이브러리)
@@ -466,7 +485,10 @@ flowchart TD
 - `apps/web/src/app/api/auth/login/route.ts`
 - `apps/web/src/app/api/auth/signup/route.ts`
 - `apps/web/src/app/api/auth/session/route.ts`
+- `apps/web/src/app/api/usage/[[...path]]/route.ts`
+- `apps/web/src/app/api/identity/[[...path]]/route.ts`
 - `docs/contracts/web-identity-bff.md`
+- `docs/contracts/web-gateway-bff.md`
 - `services/api-gateway-service/src/main/resources/application.yml`
 - `services/api-gateway-service/src/main/java/com/eevee/apigateway/filter/ProxyTrustHeadersGatewayFilter.java`
 - `services/proxy-service/src/main/java/com/eevee/proxyservice/web/ProxyController.java`

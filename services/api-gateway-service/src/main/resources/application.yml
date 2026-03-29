@@ -10,6 +10,7 @@ spring:
       server:
         webflux:
           routes:
+            # Client Authorization (platform JWT) is validated in SecurityConfiguration; strip before upstream — docs/contracts/gateway-proxy.md §3.1
             - id: proxy-ai
               uri: ${GATEWAY_PROXY_URI:http://localhost:8081}
               predicates:

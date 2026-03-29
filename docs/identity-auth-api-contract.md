@@ -1,6 +1,6 @@
 # Identity 인증 API 계약 (백엔드)
 
-버전: 1.0  
+버전: 1.1  
 관련: [docs/architecture.md](../docs/architecture.md) §1.3, [docs/contracts/web-identity-bff.md](./docs/contracts/web-identity-bff.md)
 
 ---
@@ -60,6 +60,13 @@
 ### 4.2 캐시 정책
 
 - `POST /api/auth/login` 응답에는 `Cache-Control: no-store`를 설정한다.
+
+### 4.3 액세스 JWT 클레임 (API Gateway·Usage 정합)
+
+- 구현 정본: `services/identity-service/.../JwtTokenProvider.generateAccessToken`.
+- **`sub`:** 로그인 사용자 **이메일**(문자열). API Gateway(운영 JWT 모드)가 이 값을 **`X-User-Id`** 로 downstream(Proxy·Usage)에 전달한다. Usage 원장·대시보드 집계의 `user_id`는 이 문자열과 일치해야 한다([gateway-proxy.md §4.2](./contracts/gateway-proxy.md)).
+- **`userId`:** 내부 DB 사용자 PK 등(선택 클레임). **게이트웨이는 `X-User-Id`에 `userId` 클레임을 쓰지 않는다**(`sub`만 사용).
+- **`role`:** 역할 문자열.
 
 ---
 

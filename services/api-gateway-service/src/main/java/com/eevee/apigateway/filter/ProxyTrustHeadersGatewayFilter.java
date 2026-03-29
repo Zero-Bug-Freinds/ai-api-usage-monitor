@@ -42,25 +42,29 @@ public class ProxyTrustHeadersGatewayFilter implements GlobalFilter, Ordered {
             return chain.filter(exchange);
         }
         return ReactiveSecurityContextHolder.getContext()
-                .flatMap(ctx -> {
-                    Authentication auth = ctx.getAuthentication();
-                    if (auth instanceof JwtAuthenticationToken jwtAuth) {
-                        return forwardWithJwt(exchange, chain, jwtAuth);
-                    }
-                    if (gatewayProperties.isDevMode()
-                            && (auth == null
-                            || !auth.isAuthenticated()
-                            || auth instanceof AnonymousAuthenticationToken)) {
-                        return forwardDevHeaders(exchange, chain);
-                    }
-                    return Mono.error(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthenticated"));
-                })
+                .flatMap(ctx -> applyTrustHeaders(exchange, chain, ctx.getAuthentication()))
                 .switchIfEmpty(Mono.defer(() -> {
                     if (gatewayProperties.isDevMode()) {
                         return forwardDevHeaders(exchange, chain);
                     }
                     return Mono.error(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthenticated"));
                 }));
+    }
+
+    /**
+     * 동일 패키지 단위 테스트용. 런타임은 {@link #filter} → SecurityContext 경로만 사용한다.
+     */
+    Mono<Void> applyTrustHeaders(ServerWebExchange exchange, GatewayFilterChain chain, Authentication auth) {
+        if (auth instanceof JwtAuthenticationToken jwtAuth) {
+            return forwardWithJwt(exchange, chain, jwtAuth);
+        }
+        if (gatewayProperties.isDevMode()
+                && (auth == null
+                || !auth.isAuthenticated()
+                || auth instanceof AnonymousAuthenticationToken)) {
+            return forwardDevHeaders(exchange, chain);
+        }
+        return Mono.error(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthenticated"));
     }
 
     private Mono<Void> forwardWithJwt(ServerWebExchange exchange, GatewayFilterChain chain, JwtAuthenticationToken jwtAuth) {
