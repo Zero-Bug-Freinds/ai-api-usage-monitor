@@ -30,18 +30,19 @@
 
 ---
 
-# Role: Analytics & Notification / Frontend (팀원 C)
+# Role: Frontend (팀원 C)
 
 ## 담당
-- 수집 데이터 기반 집계·시각화, 대시보드(관리자/개인), 알림(Slack/Email 등), 리포트(PDF/JSON 등)와 이를 위한 프론트엔드.
-- 팀원 A·B가 제공하는 HTTP/gRPC(또는 BFF) API와 계약을 맞춰 연동한다.
+- **웹 프론트엔드**(`apps/web` 등): 대시보드·랜딩·인증 UI 등. 백엔드·BFF가 내려주는 데이터를 **시각화·폼·라우팅**으로 연결한다.
+- **BFF(Route Handler)** 등으로 브라우저가 백엔드를 안전하게 호출하도록 하는 범위(예: Identity 프록시, httpOnly 쿠키) — 계약은 `docs/contracts/web-identity-bff.md` 등 팀 문서.
+- 팀원 A·B 및 **백엔드(집계·알림 API 등, `docs/architecture.md` §12)** 가 노출하는 HTTP API와 계약을 맞춰 연동한다.
+- **담당하지 않음:** Analytics·Notification·집계 **백엔드** 구현(Slack/Email 발송 워커, 집계 파이프라인 등) — §12 백엔드 영역.
 
 ## 기술 스택 (권장)
 - **Framework:** Next.js (App Router), React, TypeScript
 - **UI:** Tailwind CSS, Shadcn UI, Radix UI
-- **차트:** Recharts 또는 Chart.js
+- **차트:** Recharts 또는 Chart.js (백엔드 집계 API 응답 표시)
 - **검증:** Zod (폼·스키마)
-- **알림 연동:** Slack Webhook, Resend 등(서버/서버리스 라우트 또는 별도 워커와 연계)
 - **(선택)** 데이터 패칭: TanStack Query; 서버 액션 패턴 도입 시 `next-safe-action` 등 팀 합의 후 사용
 
 ## 코딩 규칙 (요약)

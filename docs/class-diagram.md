@@ -260,7 +260,7 @@ UsageRecordedEvent --> AiProvider
 
 ---
 
-## 8) Web (`apps/web`) — 다이어그램 (팀원 C)
+## 8) Web (`apps/web`) — 다이어그램 (팀원 C · Frontend)
 
 Java 백엔드 절(1–7)과 달리, **Next.js 앱 Mermaid 도식은 `docs/c4-architecture-diagrams.md` 한 곳에만 두고** 디렉터리·BFF·미들웨어가 바뀔 때 그 절(W1–W4)을 갱신한다.
 
@@ -269,4 +269,4 @@ Java 백엔드 절(1–7)과 달리, **Next.js 앱 Mermaid 도식은 `docs/c4-ar
 | 디렉터리 맵·시퀀스·레이어·미들웨어 | [c4-architecture-diagrams.md](./c4-architecture-diagrams.md) 의 **「Web Application (`apps/web`)」** 절 (W1–W4) |
 | C1/C2의 Browser / Web 컨테이너 | 동 파일 상단 C1·C2 |
 
-**동기화:** `app/` 라우트·`api/auth/*/route.ts`·`middleware.ts`·`components/`·`lib/api/` 변경 시 위 앵커 절의 다이어그램·설명을 코드와 맞춘다. 구현과 `docs/contracts/web-identity-bff.md` 가 다르면 **다이어그램은 코드 우선**으로 수정하고 계약 문서는 별도로 정리한다.
+**동기화:** `app/` 라우트·`api/auth/*/route.ts`·`middleware.ts`·`components/`·`lib/api/` 변경 시 위 앵커 절의 다이어그램·설명을 코드와 맞춘다. 구현과 `docs/contracts/web-identity-bff.md` 가 다르면 **다이어그램은 코드 우선**으로 수정하고 계약 문서는 별도로 정리한다. 팀 역할은 `docs/architecture.md` **§13(팀원 C·프론트)**·**§12(집계·알림 백엔드)** 를 본다.

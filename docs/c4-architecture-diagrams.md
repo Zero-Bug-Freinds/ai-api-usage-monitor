@@ -4,7 +4,7 @@
 시스템 아키텍처를 C4 모델(C1 → C4)로 정리한다.
 
 분석 대상:
-- `apps/web` (Next.js UI + BFF Route Handlers, 팀원 C)
+- `apps/web` (Next.js UI + BFF Route Handlers, 팀원 C · Frontend)
 - `services/api-gateway-service`
 - `services/proxy-service`
 - `services/identity-service`
@@ -315,9 +315,9 @@ UserRepository --> User
 RoleRepository --> Role
 ```
 
-## Web Application (`apps/web`) — 구조·흐름 (팀원 C)
+## Web Application (`apps/web`) — 구조·흐름 (팀원 C · Frontend)
 
-**목적:** 브라우저 대상 UI와 인증 BFF를 **현재 저장소 트리 기준(As-Is)** 으로 시각화한다. 팀원 C가 라우트·컴포넌트·API를 바꿀 때 **이 절의 다이어그램과 불릿 목록을 함께 갱신**한다.
+**목적:** 브라우저 대상 UI와 인증 BFF를 **현재 저장소 트리 기준(As-Is)** 으로 시각화한다. **팀원 C(프론트)** 가 라우트·컴포넌트·BFF를 바꿀 때 **이 절의 다이어그램과 불릿 목록을 함께 갱신**한다. (집계·알림 **백엔드**는 `docs/architecture.md` §12.)
 
 **동기화 체크리스트 (PR 또는 주기적으로):**
 
