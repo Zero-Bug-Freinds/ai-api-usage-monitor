@@ -14,6 +14,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
+import reactor.test.StepVerifierOptions;
 
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -53,9 +54,11 @@ class ProxyTrustHeadersGatewayFilterTest {
 
         ProxyTrustHeadersGatewayFilter filter = new ProxyTrustHeadersGatewayFilter(gatewayProperties);
 
+        // contextWrite만 쓰면 일부 환경에서 getContext()가 empty → 401. defer + StepVerifier 초기 Context로 정합.
         StepVerifier.create(
-                        filter.filter(exchange, chain)
-                                .contextWrite(ReactiveSecurityContextHolder.withAuthentication(auth))
+                        Mono.defer(() -> filter.filter(exchange, chain)),
+                        StepVerifierOptions.create()
+                                .withInitialContext(ReactiveSecurityContextHolder.withAuthentication(auth))
                 )
                 .verifyComplete();
 
@@ -83,8 +86,9 @@ class ProxyTrustHeadersGatewayFilterTest {
         ProxyTrustHeadersGatewayFilter filter = new ProxyTrustHeadersGatewayFilter(gatewayProperties);
 
         StepVerifier.create(
-                        filter.filter(exchange, chain)
-                                .contextWrite(ReactiveSecurityContextHolder.withAuthentication(anon))
+                        Mono.defer(() -> filter.filter(exchange, chain)),
+                        StepVerifierOptions.create()
+                                .withInitialContext(ReactiveSecurityContextHolder.withAuthentication(anon))
                 )
                 .verifyComplete();
 
@@ -104,8 +108,9 @@ class ProxyTrustHeadersGatewayFilterTest {
         ProxyTrustHeadersGatewayFilter filter = new ProxyTrustHeadersGatewayFilter(gatewayProperties);
 
         StepVerifier.create(
-                        filter.filter(exchange, chain)
-                                .contextWrite(ReactiveSecurityContextHolder.withAuthentication(
+                        Mono.defer(() -> filter.filter(exchange, chain)),
+                        StepVerifierOptions.create()
+                                .withInitialContext(ReactiveSecurityContextHolder.withAuthentication(
                                         new AnonymousAuthenticationToken(
                                                 "k", "a", AuthorityUtils.createAuthorityList("ROLE_ANONYMOUS"))))
                 )
