@@ -1,7 +1,7 @@
 # Web(Next.js) ↔ Identity 인증 BFF 계약
 
 버전: 1.4  
-관련: [docs/architecture.md](../architecture.md) §1.3, §3.3, [Identity 인증 API 계약](../identity-auth-api-contract.md), [저장소 구조](../repository-structure.md) §6
+관련: [docs/architecture.md](../architecture.md) §1.3, §3.3, [Identity 인증 API 계약](../identity-auth-api-contract.md), [저장소 구조](../repository-structure.md) §6, [Web ↔ API Gateway BFF 호출 맵](./web-gateway-bff.md)(집계·대시보드 upstream)
 
 ---
 
