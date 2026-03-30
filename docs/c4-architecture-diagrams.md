@@ -350,7 +350,10 @@ flowchart TB
         SET["settings/[[...path]]"]
       end
       subgraph API["api Route Handlers"]
-        R1["auth/login · signup · session · external-keys + test"]
+        RAL["auth/login/route.ts + route.test.ts"]
+        RAS["auth/signup/route.ts + route.test.ts"]
+        RASE["auth/session/route.ts + route.test.ts"]
+        RAEK["auth/external-keys/route.ts + route.test.ts"]
         RU["usage/[[...path]] + test"]
         RI["identity/[[...path]] + test"]
       end
@@ -492,9 +495,13 @@ flowchart TD
 
 - `apps/web/middleware.ts`
 - `apps/web/src/app/api/auth/login/route.ts`
+- `apps/web/src/app/api/auth/login/route.test.ts`
 - `apps/web/src/app/api/auth/signup/route.ts`
+- `apps/web/src/app/api/auth/signup/route.test.ts`
 - `apps/web/src/app/api/auth/session/route.ts`
+- `apps/web/src/app/api/auth/session/route.test.ts`
 - `apps/web/src/app/api/auth/external-keys/route.ts`
+- `apps/web/src/app/api/auth/external-keys/route.test.ts`
 - `apps/web/src/app/api/usage/[[...path]]/route.ts`
 - `apps/web/src/app/api/identity/[[...path]]/route.ts`
 - `docs/contracts/web-identity-bff.md`
