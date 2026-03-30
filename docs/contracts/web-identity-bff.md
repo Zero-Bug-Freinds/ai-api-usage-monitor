@@ -18,6 +18,7 @@
 |------|-----------------------|-------------------|
 | 회원가입 | `POST /api/auth/signup` | `POST /api/auth/signup` |
 | 로그인 | `POST /api/auth/login` | `POST /api/auth/login` |
+| 외부 API 키 등록(개인) | `POST /api/auth/external-keys` | `POST /api/auth/external-keys` |
 | 세션(로그인 여부 단일 기준) | `GET /api/auth/session` | `GET /api/auth/session` (BFF가 쿠키 JWT를 Bearer로 전달해 프록시) |
 | 로그아웃 | `POST /api/auth/logout` | `POST /api/auth/logout` (선택 프록시; stateless이며 실질 로그아웃은 BFF의 쿠키 삭제) |
 
@@ -42,6 +43,18 @@
 
 5. **Identity가 `401` 등으로 거절**하면 상태 코드와 JSON 본문을 **그대로** 프론트에 전달한다(§6).
 6. `IDENTITY_SERVICE_URL` 미설정 등 BFF 설정 오류·업스트림 연결 실패·업스트림 성공 응답이 계약과 맞지 않는 경우 등은 BFF가 `500`/`502` 등으로 처리할 수 있다. 프론트는 `success=false`와 `message`로 사용자 메시지를 구성한다.
+
+### 2.2 `POST /api/auth/external-keys` 동작
+
+1. 브라우저 → BFF: `POST /api/auth/external-keys` (JSON body: `provider`, `externalKey`, `alias`)
+2. BFF: 입력 본문을 Zod로 검증한다(요청 본문이므로 검증 대상).
+3. **`access_token` 쿠키가 없거나 값이 비어 있으면** BFF는 Identity를 호출하지 않고 `401` + `ApiResponse<null>` (`success=false`, `data=null`)로 응답한다.
+4. BFF → Identity: `POST {IDENTITY_SERVICE_URL}/api/auth/external-keys`
+   - `Authorization: Bearer {access_token}`
+   - `Content-Type: application/json`, `Accept: application/json`
+5. **성공 시** Identity의 상태 코드/본문(`ApiResponse`)을 가능한 그대로 전달한다. 응답에는 `Cache-Control: no-store`를 적용한다.
+6. **Identity가 `400`/`401`/`409` 등으로 거절**하면 상태 코드와 JSON 본문을 **그대로** 프론트에 전달한다(§6).
+7. `IDENTITY_SERVICE_URL` 미설정, 업스트림 연결 실패, 업스트림 응답이 계약과 맞지 않는 경우 등은 BFF가 `500`/`502` 등으로 처리할 수 있다. 단, **외부 API 키 평문(`externalKey`)은 로그/에러 메시지에 포함하지 않는다.**
 
 ---
 
@@ -168,6 +181,7 @@
 - BFF 인증 라우트는 구현 파일 옆에 **Vitest** 스펙을 둔다. 예:
   - `apps/web/src/app/api/auth/session/route.test.ts` — 쿠키 없음·`IDENTITY_SERVICE_URL` 미설정·업스트림 프록시·401·형식 오류·연결 실패 등
   - `apps/web/src/app/api/auth/logout/route.test.ts` — 쿠키 삭제·선택적 업스트림 `POST /api/auth/logout`·업스트림 실패 시에도 쿠키 삭제
+  - `apps/web/src/app/api/auth/external-keys/route.test.ts` — 쿠키 없음·`IDENTITY_SERVICE_URL` 미설정·업스트림 프록시(201)·업스트림 400/409 전달·연결 실패(502)·JSON 파싱 실패 등
   - `login`·`signup` Route Handler도 동일 패턴의 `route.test.ts`로 회귀 검증
   - `apps/web/src/app/api/identity/[[...path]]/route.test.ts` — §5.2 관리 API BFF(쿠키·`v1` 접두·업스트림 프록시)
 - 미들웨어·보호 경로 정합성은 **`apps/web/middleware.test.ts`**, **`apps/web/src/app/protected-routes.test.ts`** (§6.2 유지보수 문구와 동일).

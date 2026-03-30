@@ -1,7 +1,7 @@
 # Identity 인증 API 계약 (백엔드)
 
 버전: 1.1  
-관련: [docs/architecture.md](../docs/architecture.md) §1.3, [docs/contracts/web-identity-bff.md](./docs/contracts/web-identity-bff.md)
+관련: [architecture.md](./architecture.md) §1.3, [contracts/web-identity-bff.md](./contracts/web-identity-bff.md)
 
 ---
 
