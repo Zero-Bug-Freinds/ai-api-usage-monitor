@@ -73,6 +73,8 @@ class LoginResponse
 class SessionResponse
 class ExternalApiKeyRegisterRequest
 class ExternalApiKeyRegisterResponse
+class DuplicateExternalApiKeyException
+class ApiKeyLimitExceededException
 class SecurityConfig
 class JwtAuthenticationFilter
 class OncePerRequestFilter
@@ -101,8 +103,13 @@ ExternalApiKeyController ..> ExternalApiKeyRegisterRequest
 ExternalApiKeyController ..> ExternalApiKeyRegisterResponse
 ExternalApiKeyService --> ExternalApiKeyRepository
 ExternalApiKeyService ..> ExternalApiKeyEntity
+ExternalApiKeyService ..> DuplicateExternalApiKeyException
+ExternalApiKeyService ..> ApiKeyLimitExceededException
 ExternalApiKeyEntity --> ExternalApiKeyProvider
 ExternalApiKeyRepository --|> JpaRepository
+
+GlobalExceptionHandler ..> DuplicateExternalApiKeyException
+GlobalExceptionHandler ..> ApiKeyLimitExceededException
 JwtAuthenticationFilter --|> OncePerRequestFilter
 JwtAuthenticationFilter --> JwtTokenProvider
 RestAuthenticationEntryPoint --|> AuthenticationEntryPoint
