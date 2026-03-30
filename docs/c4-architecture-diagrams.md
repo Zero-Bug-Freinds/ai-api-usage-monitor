@@ -350,7 +350,7 @@ flowchart TB
         SET["settings/[[...path]]"]
       end
       subgraph API["api Route Handlers"]
-        R1["auth/login · signup · session + test"]
+        R1["auth/login · signup · session · external-keys + test"]
         RU["usage/[[...path]] + test"]
         RI["identity/[[...path]] + test"]
       end
@@ -401,6 +401,11 @@ sequenceDiagram
   I-->>H: ApiResponse
   H-->>B: 200 or 401
 
+  B->>H: POST /api/auth/external-keys
+  H->>I: POST external-keys + Bearer
+  I-->>H: 201/400/401/409 ApiResponse
+  H-->>B: ApiResponse (no-store)
+
   B->>U: GET /api/usage/dashboard/...
   Note over U: Bearer·dev 시 X-User-Id
   U->>GW: /api/v1/usage/...
@@ -430,6 +435,7 @@ flowchart TB
     RL["POST login"]
     RS["POST signup"]
     RQ["GET session"]
+    RE["POST external-keys"]
   end
   subgraph LB["lib"]
     CF["client-fetch"]
@@ -443,11 +449,14 @@ flowchart TB
   SF --> CF
   CF --> RL
   CF --> RS
+  CF --> RE
   RL --> ZL
   RS --> ZL
   RQ --> ZL
+  RE --> ZL
   RL --> IDN
   RS --> IDN
+  RE --> IDN
 ```
 
 ### W4 — 미들웨어와 보호 경로
@@ -485,6 +494,7 @@ flowchart TD
 - `apps/web/src/app/api/auth/login/route.ts`
 - `apps/web/src/app/api/auth/signup/route.ts`
 - `apps/web/src/app/api/auth/session/route.ts`
+- `apps/web/src/app/api/auth/external-keys/route.ts`
 - `apps/web/src/app/api/usage/[[...path]]/route.ts`
 - `apps/web/src/app/api/identity/[[...path]]/route.ts`
 - `docs/contracts/web-identity-bff.md`

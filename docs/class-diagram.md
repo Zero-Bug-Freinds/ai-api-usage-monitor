@@ -55,17 +55,24 @@ classDiagram
 direction TB
 
 class AuthController
+class ExternalApiKeyController
 class GlobalExceptionHandler
 class UserService
+class ExternalApiKeyService
 class UserRepository
+class ExternalApiKeyRepository
 class JpaRepository
 class User
 class Role
+class ExternalApiKeyEntity
+class ExternalApiKeyProvider
 class SignupRequest
 class SignupResponse
 class LoginRequest
 class LoginResponse
 class SessionResponse
+class ExternalApiKeyRegisterRequest
+class ExternalApiKeyRegisterResponse
 class SecurityConfig
 class JwtAuthenticationFilter
 class OncePerRequestFilter
@@ -88,6 +95,14 @@ UserService ..> LoginRequest
 UserService ..> LoginResponse
 UserRepository --|> JpaRepository
 User --> Role
+
+ExternalApiKeyController --> ExternalApiKeyService
+ExternalApiKeyController ..> ExternalApiKeyRegisterRequest
+ExternalApiKeyController ..> ExternalApiKeyRegisterResponse
+ExternalApiKeyService --> ExternalApiKeyRepository
+ExternalApiKeyService ..> ExternalApiKeyEntity
+ExternalApiKeyEntity --> ExternalApiKeyProvider
+ExternalApiKeyRepository --|> JpaRepository
 JwtAuthenticationFilter --|> OncePerRequestFilter
 JwtAuthenticationFilter --> JwtTokenProvider
 RestAuthenticationEntryPoint --|> AuthenticationEntryPoint
