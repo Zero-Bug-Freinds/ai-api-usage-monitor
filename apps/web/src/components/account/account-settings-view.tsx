@@ -5,6 +5,18 @@ import * as React from "react"
 import { apiFetch } from "@/lib/api/client-fetch"
 import type { SessionResponse } from "@/lib/api/identity/types"
 
+type ExternalKeyProvider = "GEMINI" | "OPENAI" | "ANTHROPIC"
+
+function providerLabel(provider: ExternalKeyProvider) {
+  if (provider === "OPENAI") return "OpenAI"
+  if (provider === "GEMINI") return "Gemini"
+  return "Anthropic"
+}
+
+function defaultAlias(provider: ExternalKeyProvider) {
+  return `${providerLabel(provider)} 키 1`
+}
+
 function roleLabel(role: string) {
   if (role === "ADMIN") return "관리자"
   if (role === "USER") return "사용자"
@@ -15,6 +27,15 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
   const [session, setSession] = React.useState<SessionResponse | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
+
+  const [provider, setProvider] = React.useState<ExternalKeyProvider>("OPENAI")
+  const [alias, setAlias] = React.useState(() => defaultAlias("OPENAI"))
+  const [externalKey, setExternalKey] = React.useState("")
+  const [aliasTouched, setAliasTouched] = React.useState(false)
+  const [submitLoading, setSubmitLoading] = React.useState(false)
+  const [submitMessage, setSubmitMessage] = React.useState<{ kind: "success" | "error"; text: string } | null>(
+    null
+  )
 
   React.useEffect(() => {
     let cancelled = false
@@ -44,7 +65,63 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
     }
   }, [])
 
+  React.useEffect(() => {
+    if (!aliasTouched || !alias.trim()) setAlias(defaultAlias(provider))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider])
+
   const subpath = pathSegments?.length ? pathSegments.join(" / ") : null
+
+  async function onSubmitExternalKey(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    if (submitLoading) return
+
+    const aliasTrimmed = alias.trim()
+    const externalKeyTrimmed = externalKey.trim()
+
+    if (!aliasTrimmed) {
+      setSubmitMessage({ kind: "error", text: "별칭(alias)은 필수입니다" })
+      return
+    }
+    if (!externalKeyTrimmed) {
+      setSubmitMessage({ kind: "error", text: "외부 API Key는 필수입니다" })
+      return
+    }
+
+    setSubmitLoading(true)
+    setSubmitMessage(null)
+
+    try {
+      const { response, json } = await apiFetch<unknown>(
+        "/api/auth/external-keys",
+        {
+          method: "POST",
+          credentials: "include",
+          cache: "no-store",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            provider,
+            alias: aliasTrimmed,
+            externalKey: externalKeyTrimmed,
+          }),
+        },
+        { authRequired: true }
+      )
+
+      if (response.ok && (json as any)?.success) {
+        setSubmitMessage({ kind: "success", text: (json as any)?.message ?? "등록되었습니다" })
+        setAliasTouched(false)
+        setAlias(defaultAlias(provider))
+      } else {
+        setSubmitMessage({ kind: "error", text: (json as any)?.message ?? "등록에 실패했습니다" })
+      }
+    } catch {
+      setSubmitMessage({ kind: "error", text: "등록에 실패했습니다" })
+    } finally {
+      setExternalKey("")
+      setSubmitLoading(false)
+    }
+  }
 
   return (
     <div className="flex min-h-[40vh] flex-col gap-8 py-4">
@@ -80,6 +157,89 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
             </div>
           </dl>
         ) : null}
+      </section>
+
+      <section className="max-w-lg space-y-3 rounded-lg border border-border bg-card p-5 shadow-sm">
+        <div className="space-y-1">
+          <h2 className="text-sm font-semibold tracking-tight">외부 API Key 등록</h2>
+          <p className="text-sm text-muted-foreground">
+            개인 용도의 외부 Provider 키를 등록합니다. 키 값은 저장되기 전에 서버에서 암호화됩니다.
+          </p>
+        </div>
+
+        <form className="space-y-3" onSubmit={onSubmitExternalKey}>
+          <div className="grid gap-1.5">
+            <label className="text-sm font-medium" htmlFor="external-key-provider">
+              Provider
+            </label>
+            <select
+              id="external-key-provider"
+              className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              value={provider}
+              onChange={(e) => setProvider(e.target.value as ExternalKeyProvider)}
+              disabled={submitLoading}
+            >
+              <option value="GEMINI">GEMINI</option>
+              <option value="OPENAI">OPENAI</option>
+              <option value="ANTHROPIC">ANTHROPIC</option>
+            </select>
+          </div>
+
+          <div className="grid gap-1.5">
+            <label className="text-sm font-medium" htmlFor="external-key-alias">
+              별칭(alias)
+            </label>
+            <input
+              id="external-key-alias"
+              className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              value={alias}
+              onChange={(e) => {
+                setAliasTouched(true)
+                setAlias(e.target.value)
+              }}
+              placeholder={defaultAlias(provider)}
+              autoComplete="off"
+              disabled={submitLoading}
+              required
+            />
+          </div>
+
+          <div className="grid gap-1.5">
+            <label className="text-sm font-medium" htmlFor="external-key-value">
+              외부 API Key
+            </label>
+            <input
+              id="external-key-value"
+              className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              type="password"
+              value={externalKey}
+              onChange={(e) => setExternalKey(e.target.value)}
+              placeholder="키를 입력하세요"
+              autoComplete="off"
+              disabled={submitLoading}
+              required
+            />
+          </div>
+
+          {submitMessage ? (
+            <p className={submitMessage.kind === "success" ? "text-sm text-emerald-600" : "text-sm text-destructive"}>
+              {submitMessage.text}
+            </p>
+          ) : null}
+
+          <div className="flex items-center gap-2">
+            <button
+              type="submit"
+              className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={submitLoading}
+            >
+              {submitLoading ? "등록 중…" : "등록"}
+            </button>
+            <p className="text-xs text-muted-foreground">
+              제출 후에는 보안을 위해 입력한 키 값이 즉시 초기화됩니다.
+            </p>
+          </div>
+        </form>
       </section>
     </div>
   )
