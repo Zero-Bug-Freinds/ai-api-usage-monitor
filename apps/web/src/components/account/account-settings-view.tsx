@@ -3,9 +3,19 @@
 import * as React from "react"
 
 import { apiFetch } from "@/lib/api/client-fetch"
+import type { ApiResponse } from "@/lib/api/identity/types"
 import type { SessionResponse } from "@/lib/api/identity/types"
 
 type ExternalKeyProvider = "GEMINI" | "OPENAI" | "ANTHROPIC"
+
+function asApiResponse(json: unknown): ApiResponse<unknown> | null {
+  if (!json || typeof json !== "object") return null
+  const record = json as Record<string, unknown>
+  if (typeof record.success !== "boolean") return null
+  if (typeof record.message !== "string") return null
+  if (!("data" in record)) return null
+  return record as ApiResponse<unknown>
+}
 
 function providerLabel(provider: ExternalKeyProvider) {
   if (provider === "OPENAI") return "OpenAI"
@@ -108,12 +118,14 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
         { authRequired: true }
       )
 
-      if (response.ok && (json as any)?.success) {
-        setSubmitMessage({ kind: "success", text: (json as any)?.message ?? "등록되었습니다" })
+      const apiResponse = asApiResponse(json)
+
+      if (response.ok && apiResponse?.success) {
+        setSubmitMessage({ kind: "success", text: apiResponse.message || "등록되었습니다" })
         setAliasTouched(false)
         setAlias(defaultAlias(provider))
       } else {
-        setSubmitMessage({ kind: "error", text: (json as any)?.message ?? "등록에 실패했습니다" })
+        setSubmitMessage({ kind: "error", text: apiResponse?.message || "등록에 실패했습니다" })
       }
     } catch {
       setSubmitMessage({ kind: "error", text: "등록에 실패했습니다" })
