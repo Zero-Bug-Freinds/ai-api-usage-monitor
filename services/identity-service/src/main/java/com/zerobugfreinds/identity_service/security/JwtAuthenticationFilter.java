@@ -46,12 +46,21 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
 			try {
 				Claims claims = jwtTokenProvider.validateAndGetClaims(token);
+				Long userId = claimToLong(claims.get("userId"));
 				String email = claims.getSubject();
 				String role = claims.get("role", String.class);
 
+				if (userId == null || email == null || role == null) {
+					SecurityContextHolder.clearContext();
+					log.debug("JWT 클레임이 불완전하여 인증을 설정하지 않습니다");
+					filterChain.doFilter(request, response);
+					return;
+				}
+
+				IdentityUserPrincipal principal = new IdentityUserPrincipal(userId, email, role);
 				UsernamePasswordAuthenticationToken authenticationToken =
 						new UsernamePasswordAuthenticationToken(
-								email,
+								principal,
 								null,
 								List.of(new SimpleGrantedAuthority("ROLE_" + role))
 						);
@@ -65,5 +74,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 		}
 
 		filterChain.doFilter(request, response);
+	}
+
+	private static Long claimToLong(Object value) {
+		if (value == null) {
+			return null;
+		}
+		if (value instanceof Number number) {
+			return number.longValue();
+		}
+		return Long.parseLong(value.toString());
 	}
 }

@@ -1,11 +1,14 @@
 package com.zerobugfreinds.identity_service.controller;
 
 import com.zerobugfreinds.identity_service.common.ApiResponse;
+import com.zerobugfreinds.identity_service.exception.ApiKeyLimitExceededException;
 import com.zerobugfreinds.identity_service.exception.AuthContractViolationException;
+import com.zerobugfreinds.identity_service.exception.DuplicateExternalApiKeyException;
 import com.zerobugfreinds.identity_service.exception.DuplicateEmailException;
 import com.zerobugfreinds.identity_service.exception.InvalidCredentialsException;
 import com.zerobugfreinds.identity_service.exception.InvalidSignupRequestException;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -41,6 +44,18 @@ public class GlobalExceptionHandler {
 		return ApiResponse.fail(ex.getMessage());
 	}
 
+	@ExceptionHandler(ApiKeyLimitExceededException.class)
+	@ResponseStatus(HttpStatus.BAD_REQUEST)
+	public ApiResponse<Void> handleApiKeyLimitExceeded(ApiKeyLimitExceededException ex) {
+		return ApiResponse.fail(ex.getMessage());
+	}
+
+	@ExceptionHandler(DuplicateExternalApiKeyException.class)
+	@ResponseStatus(HttpStatus.CONFLICT)
+	public ApiResponse<Void> handleDuplicateExternalApiKey(DuplicateExternalApiKeyException ex) {
+		return ApiResponse.fail(ex.getMessage());
+	}
+
 	@ExceptionHandler(MethodArgumentNotValidException.class)
 	@ResponseStatus(HttpStatus.BAD_REQUEST)
 	public ApiResponse<Void> handleValidation(MethodArgumentNotValidException ex) {
@@ -49,5 +64,15 @@ public class GlobalExceptionHandler {
 				.map(err -> err.getDefaultMessage())
 				.orElse("입력값이 올바르지 않습니다");
 		return ApiResponse.fail(message);
+	}
+
+	@ExceptionHandler(HttpMessageNotReadableException.class)
+	@ResponseStatus(HttpStatus.BAD_REQUEST)
+	public ApiResponse<Void> handleHttpMessageNotReadable(HttpMessageNotReadableException ex) {
+		String detail = ex.getMostSpecificCause().getMessage();
+		if (detail != null && detail.contains("ExternalApiKeyProvider")) {
+			return ApiResponse.fail("provider 값이 올바르지 않습니다. 허용: GEMINI, OPENAI, ANTHROPIC");
+		}
+		return ApiResponse.fail("요청 본문 형식이 올바르지 않습니다");
 	}
 }
