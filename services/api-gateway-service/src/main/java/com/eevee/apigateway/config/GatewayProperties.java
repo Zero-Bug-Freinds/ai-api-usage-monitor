@@ -14,7 +14,7 @@ public class GatewayProperties {
     private boolean devMode = true;
 
     /**
-     * Same value as Proxy {@code proxy.gateway.shared-secret} ({@code PROXY_GATEWAY_SHARED_SECRET}).
+     * Same value as Proxy {@code proxy.gateway.shared-secret} ({@code GATEWAY_SHARED_SECRET}).
      */
     private String sharedSecret = "";
 
