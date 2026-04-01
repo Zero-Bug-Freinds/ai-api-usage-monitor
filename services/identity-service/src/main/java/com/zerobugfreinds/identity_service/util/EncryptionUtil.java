@@ -65,6 +65,30 @@ public class EncryptionUtil {
 		}
 	}
 
+	/**
+	 * Base64(IV + ciphertext) 형식을 복호화해 평문을 반환한다.
+	 */
+	public String decryptAes256Gcm(String encrypted) {
+		try {
+			byte[] payload = java.util.Base64.getDecoder().decode(encrypted);
+			if (payload.length <= GCM_IV_LENGTH) {
+				throw new IllegalArgumentException("암호문 형식이 올바르지 않습니다");
+			}
+			ByteBuffer buffer = ByteBuffer.wrap(payload);
+			byte[] iv = new byte[GCM_IV_LENGTH];
+			buffer.get(iv);
+			byte[] cipherBytes = new byte[buffer.remaining()];
+			buffer.get(cipherBytes);
+
+			Cipher cipher = Cipher.getInstance(AES_GCM);
+			cipher.init(Cipher.DECRYPT_MODE, aesKey, new GCMParameterSpec(GCM_TAG_BITS, iv));
+			byte[] plain = cipher.doFinal(cipherBytes);
+			return new String(plain, StandardCharsets.UTF_8);
+		} catch (Exception e) {
+			throw new IllegalStateException("외부 API 키 복호화에 실패했습니다", e);
+		}
+	}
+
 	private static SecretKey deriveAes256Key(String secret) {
 		try {
 			MessageDigest digest = MessageDigest.getInstance("SHA-256");
