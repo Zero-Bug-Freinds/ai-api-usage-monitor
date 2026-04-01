@@ -42,4 +42,4 @@ usage:
   analytics:
     max-range-days: ${USAGE_ANALYTICS_MAX_RANGE_DAYS:400}
   gateway:
-    shared-secret: ${USAGE_GATEWAY_SHARED_SECRET:}
+    shared-secret: ${GATEWAY_SHARED_SECRET:}

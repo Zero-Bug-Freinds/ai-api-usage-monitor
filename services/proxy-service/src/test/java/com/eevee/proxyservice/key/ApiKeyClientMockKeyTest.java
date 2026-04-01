@@ -16,7 +16,11 @@ class ApiKeyClientMockKeyTest {
         props.getKeyService().setMockKey("legacy");
 
         ApiKeyClient client = new ApiKeyClient(props);
-        assertThat(client.resolveApiKey("user-1", AiProvider.OPENAI).block()).isEqualTo("sk-specific");
+        ApiKeyClient.ResolvedApiKey resolved = client.resolveApiKey("user-1", AiProvider.OPENAI).block();
+        assertThat(resolved).isNotNull();
+        assertThat(resolved.plainKey()).isEqualTo("sk-specific");
+        assertThat(resolved.keyId()).isNull();
+        assertThat(resolved.keySource()).isEqualTo("mock");
     }
 
     @Test
@@ -27,7 +31,10 @@ class ApiKeyClientMockKeyTest {
         props.getKeyService().setMockKey("legacy");
 
         ApiKeyClient client = new ApiKeyClient(props);
-        assertThat(client.resolveApiKey("user-1", AiProvider.GOOGLE).block()).isEqualTo("AIza-google");
+        ApiKeyClient.ResolvedApiKey resolved = client.resolveApiKey("user-1", AiProvider.GOOGLE).block();
+        assertThat(resolved).isNotNull();
+        assertThat(resolved.plainKey()).isEqualTo("AIza-google");
+        assertThat(resolved.keySource()).isEqualTo("mock");
     }
 
     @Test
@@ -38,8 +45,12 @@ class ApiKeyClientMockKeyTest {
         props.getKeyService().setMockKey("legacy-only");
 
         ApiKeyClient client = new ApiKeyClient(props);
-        assertThat(client.resolveApiKey("user-1", AiProvider.OPENAI).block()).isEqualTo("legacy-only");
-        assertThat(client.resolveApiKey("user-1", AiProvider.GOOGLE).block()).isEqualTo("legacy-only");
+        ApiKeyClient.ResolvedApiKey openai = client.resolveApiKey("user-1", AiProvider.OPENAI).block();
+        ApiKeyClient.ResolvedApiKey google = client.resolveApiKey("user-1", AiProvider.GOOGLE).block();
+        assertThat(openai).isNotNull();
+        assertThat(openai.plainKey()).isEqualTo("legacy-only");
+        assertThat(google).isNotNull();
+        assertThat(google.plainKey()).isEqualTo("legacy-only");
     }
 
     private static ProxyProperties baseProps() {

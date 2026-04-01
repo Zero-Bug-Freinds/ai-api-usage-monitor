@@ -34,6 +34,9 @@ class UsageRecordedEventWireFormatTest {
                 "user-wire",
                 "org-1",
                 "team-1",
+                "key-wire",
+                "f00dbabe11223344",
+                "managed",
                 AiProvider.OPENAI,
                 "gpt-4o-mini",
                 new TokenUsage("gpt-4o-mini", 5L, 7L, 12L),
@@ -50,6 +53,7 @@ class UsageRecordedEventWireFormatTest {
 
         assertThat(read.eventId()).isEqualTo(original.eventId());
         assertThat(read.userId()).isEqualTo("user-wire");
+        assertThat(read.apiKeyId()).isEqualTo("key-wire");
         assertThat(read.provider()).isEqualTo(AiProvider.OPENAI);
         assertThat(read.tokenUsage()).isNotNull();
         assertThat(read.tokenUsage().totalTokens()).isEqualTo(12L);

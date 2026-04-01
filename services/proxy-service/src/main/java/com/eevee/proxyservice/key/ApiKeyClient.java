@@ -10,7 +10,11 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.HexFormat;
 
 /**
  * Resolves provider API keys from API Key Service (or mock). Keys are never logged.
@@ -20,7 +24,7 @@ public class ApiKeyClient {
 
     private final ProxyProperties proxyProperties;
     private final WebClient keyServiceWebClient;
-    private final LoadingCache<String, String> cache;
+    private final LoadingCache<String, ResolvedApiKey> cache;
 
     public ApiKeyClient(ProxyProperties proxyProperties) {
         this.proxyProperties = proxyProperties;
@@ -34,13 +38,13 @@ public class ApiKeyClient {
                 .build(this::loadKeyBlocking);
     }
 
-    public Mono<String> resolveApiKey(String userId, AiProvider provider) {
+    public Mono<ResolvedApiKey> resolveApiKey(String userId, AiProvider provider) {
         String cacheKey = userId + ":" + provider.pathSegment();
         return Mono.fromCallable(() -> cache.get(cacheKey))
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
-    private String loadKeyBlocking(String cacheKey) {
+    private ResolvedApiKey loadKeyBlocking(String cacheKey) {
         int idx = cacheKey.indexOf(':');
         if (idx <= 0) {
             throw new IllegalStateException("invalid cache key");
@@ -51,7 +55,7 @@ public class ApiKeyClient {
 
         String mock = resolveMockKey(provider);
         if (mock != null && !mock.isBlank()) {
-            return mock;
+            return new ResolvedApiKey(mock, null, fingerprint(mock), "mock");
         }
 
         String token = proxyProperties.getKeyService().getInternalToken();
@@ -72,7 +76,12 @@ public class ApiKeyClient {
             if (body == null || body.plainKey() == null || body.plainKey().isBlank()) {
                 throw new IllegalStateException("key service returned empty key");
             }
-            return body.plainKey();
+            return new ResolvedApiKey(
+                    body.plainKey(),
+                    body.keyId(),
+                    fingerprint(body.plainKey()),
+                    "managed"
+            );
         } catch (WebClientResponseException e) {
             throw new IllegalStateException("key service error: " + e.getStatusCode(), e);
         }
@@ -95,6 +104,24 @@ public class ApiKeyClient {
         return (legacy != null && !legacy.isBlank()) ? legacy : null;
     }
 
-    private record KeyResponse(String plainKey) {
+    private static String fingerprint(String plainKey) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(plainKey.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash, 0, 8);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
+        }
+    }
+
+    public record ResolvedApiKey(
+            String plainKey,
+            String keyId,
+            String keyFingerprint,
+            String keySource
+    ) {
+    }
+
+    private record KeyResponse(String plainKey, String keyId) {
     }
 }

@@ -54,6 +54,7 @@ class UsageRecordedEventPipelineIntegrationTest {
         r.add("spring.datasource.username", postgres::getUsername);
         r.add("spring.datasource.password", postgres::getPassword);
         r.add("spring.jpa.hibernate.ddl-auto", () -> "create-drop");
+        r.add("usage.gateway.shared-secret", () -> "test-secret");
     }
 
     @Autowired
@@ -75,6 +76,9 @@ class UsageRecordedEventPipelineIntegrationTest {
                 "user-it",
                 null,
                 null,
+                "key-it",
+                "cafebabedeadbeef",
+                "managed",
                 AiProvider.OPENAI,
                 "gpt-4o-mini",
                 new TokenUsage("gpt-4o-mini", 1L, 2L, 3L),

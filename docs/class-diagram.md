@@ -19,7 +19,7 @@ class UserService
 class ProxyController
 class ProxyRelayService
 class UsageEventPublisher
-class ProxyTrustHeadersGatewayFilter
+class ProxyTrustHeadersWebFilter
 class GatewaySecurityConfiguration
 class JwtDecoderConfiguration
 class GatewayProperties
@@ -37,7 +37,7 @@ UsageEventPublisher ..> UsageRecordedEvent : publishes JSON
 UsageRecordedEventListener --> UsageRecordedService
 UsageRecordedEventListener ..> UsageRecordedEvent : deserializes
 
-ProxyTrustHeadersGatewayFilter --> GatewayProperties
+ProxyTrustHeadersWebFilter --> GatewayProperties
 GatewaySecurityConfiguration --> GatewayProperties
 GatewaySecurityConfiguration ..> ReactiveJwtDecoder
 JwtDecoderConfiguration --> GatewayProperties
@@ -179,17 +179,15 @@ UsageEventPublisher ..> UsageRecordedEvent
 classDiagram
 direction TB
 
-class ProxyTrustHeadersGatewayFilter
-class GlobalFilter
-class Ordered
+class ProxyTrustHeadersWebFilter
+class WebFilter
 class GatewaySecurityConfiguration
 class JwtDecoderConfiguration
 class GatewayProperties
 class ReactiveJwtDecoder
 
-ProxyTrustHeadersGatewayFilter --|> GlobalFilter
-ProxyTrustHeadersGatewayFilter --|> Ordered
-ProxyTrustHeadersGatewayFilter --> GatewayProperties
+ProxyTrustHeadersWebFilter --|> WebFilter
+ProxyTrustHeadersWebFilter --> GatewayProperties
 GatewaySecurityConfiguration --> GatewayProperties
 GatewaySecurityConfiguration ..> ReactiveJwtDecoder
 JwtDecoderConfiguration --> GatewayProperties
