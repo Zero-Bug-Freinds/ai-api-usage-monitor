@@ -3,10 +3,7 @@
 import * as React from "react"
 
 import { apiFetch } from "@/lib/api/client-fetch"
-import type { ApiResponse } from "@/lib/api/identity/types"
-import type { SessionResponse } from "@/lib/api/identity/types"
-
-type ExternalKeyProvider = "GEMINI" | "OPENAI" | "ANTHROPIC"
+import type { ApiResponse, ExternalKeyProvider, SessionResponse } from "@/lib/api/identity/types"
 
 function asApiResponse(json: unknown): ApiResponse<unknown> | null {
   if (!json || typeof json !== "object") return null

@@ -48,6 +48,17 @@ export type CreateExternalKeyResponseData = {
   createdAt: string
 }
 
+/** Identity `GET /api/auth/external-keys`의 `data` 아이템과 동기화 */
+export type ExternalKeySummary = {
+  id: number
+  provider: ExternalKeyProvider
+  alias: string
+  createdAt: string
+}
+
+/** Identity `GET /api/auth/external-keys`의 `data` 본문과 동기화 */
+export type ExternalKeyListResponseData = ExternalKeySummary[]
+
 /** Identity `GET /api/auth/session`의 `data` 본문과 동기화 */
 export type SessionResponse = {
   email: string
