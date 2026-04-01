@@ -52,6 +52,79 @@ function getUpstreamMessage(upstreamJson: unknown): string | null {
     : null
 }
 
+function isExternalKeySummary(data: unknown): boolean {
+  if (typeof data !== "object" || data === null) return false
+  const o = data as Record<string, unknown>
+  return (
+    typeof o.id === "number" &&
+    typeof o.provider === "string" &&
+    (o.provider === "GEMINI" || o.provider === "OPENAI" || o.provider === "ANTHROPIC") &&
+    typeof o.alias === "string" &&
+    typeof o.createdAt === "string"
+  )
+}
+
+function isExternalKeysListResponseData(data: unknown): boolean {
+  return Array.isArray(data) && data.every(isExternalKeySummary)
+}
+
+export async function GET(request: Request) {
+  const token = getCookieValue(request.headers.get("cookie"), ACCESS_TOKEN_COOKIE)
+  if (!token) {
+    return json(401, { success: false, message: "로그인이 필요합니다", data: null })
+  }
+
+  const identityBaseUrl = envIdentityBaseUrl()
+  if (!identityBaseUrl) {
+    return json(500, {
+      success: false,
+      message: "서버 설정이 필요합니다 (IDENTITY_SERVICE_URL)",
+      data: null,
+    })
+  }
+
+  let upstream: Response
+  try {
+    upstream = await fetch(`${identityBaseUrl}/api/auth/external-keys`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
+    })
+  } catch {
+    return json(502, { success: false, message: "인증 서비스에 연결할 수 없습니다", data: null })
+  }
+
+  let upstreamJson: unknown = null
+  try {
+    upstreamJson = await upstream.json()
+  } catch {
+    upstreamJson = null
+  }
+
+  // 업스트림 오류는 가능한 그대로 전달한다 (상태/본문 유지).
+  if (!upstream.ok) {
+    if (typeof upstreamJson === "object" && upstreamJson !== null) {
+      return NextResponse.json(upstreamJson, { status: upstream.status, headers: noStoreHeaders() })
+    }
+    return json(502, { success: false, message: "요청 처리에 실패했습니다", data: null })
+  }
+
+  // 성공 시에는 data 형식을 방어적으로 검증한다.
+  const body = upstreamJson as ApiResponse<unknown>
+  if (!body?.success || !isExternalKeysListResponseData(body.data)) {
+    return json(502, { success: false, message: "응답 형식이 올바르지 않습니다", data: null })
+  }
+
+  // Identity의 ApiResponse를 최대한 유지한다.
+  if (typeof upstreamJson === "object" && upstreamJson !== null) {
+    return NextResponse.json(upstreamJson, { status: upstream.status, headers: noStoreHeaders() })
+  }
+
+  return json(502, { success: false, message: "응답 형식이 올바르지 않습니다", data: null })
+}
+
 export async function POST(request: Request) {
   const token = getCookieValue(request.headers.get("cookie"), ACCESS_TOKEN_COOKIE)
   if (!token) {
