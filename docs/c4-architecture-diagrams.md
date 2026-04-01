@@ -350,7 +350,10 @@ flowchart TB
         SET["settings/[[...path]]"]
       end
       subgraph API["api Route Handlers"]
-        R1["auth/login · signup · session + test"]
+        RAL["auth/login/route.ts + route.test.ts"]
+        RAS["auth/signup/route.ts + route.test.ts"]
+        RASE["auth/session/route.ts + route.test.ts"]
+        RAEK["auth/external-keys/route.ts + route.test.ts"]
         RU["usage/[[...path]] + test"]
         RI["identity/[[...path]] + test"]
       end
@@ -360,7 +363,7 @@ flowchart TB
       LF["login/login-form.tsx"]
       SF["signup/signup-form.tsx"]
       UD["usage/usage-dashboard"]
-      ACCT["account/ organizations-view 등"]
+      ACCT["account/ organizations-view · account-settings-view.tsx 등"]
       UI["ui/ shadcn"]
     end
     subgraph LIB["src/lib"]
@@ -401,6 +404,12 @@ sequenceDiagram
   I-->>H: ApiResponse
   H-->>B: 200 or 401
 
+  B->>H: POST /api/auth/external-keys
+  Note over B,H: settings 화면에서 개인 키 등록(상태 변경)
+  H->>I: POST external-keys + Bearer
+  I-->>H: 201/400/401/409 ApiResponse
+  H-->>B: ApiResponse (no-store)
+
   B->>U: GET /api/usage/dashboard/...
   Note over U: Bearer·dev 시 X-User-Id
   U->>GW: /api/v1/usage/...
@@ -430,6 +439,7 @@ flowchart TB
     RL["POST login"]
     RS["POST signup"]
     RQ["GET session"]
+    RE["POST external-keys"]
   end
   subgraph LB["lib"]
     CF["client-fetch"]
@@ -443,11 +453,14 @@ flowchart TB
   SF --> CF
   CF --> RL
   CF --> RS
+  CF --> RE
   RL --> ZL
   RS --> ZL
   RQ --> ZL
+  RE --> ZL
   RL --> IDN
   RS --> IDN
+  RE --> IDN
 ```
 
 ### W4 — 미들웨어와 보호 경로
@@ -483,8 +496,13 @@ flowchart TD
 
 - `apps/web/middleware.ts`
 - `apps/web/src/app/api/auth/login/route.ts`
+- `apps/web/src/app/api/auth/login/route.test.ts`
 - `apps/web/src/app/api/auth/signup/route.ts`
+- `apps/web/src/app/api/auth/signup/route.test.ts`
 - `apps/web/src/app/api/auth/session/route.ts`
+- `apps/web/src/app/api/auth/session/route.test.ts`
+- `apps/web/src/app/api/auth/external-keys/route.ts`
+- `apps/web/src/app/api/auth/external-keys/route.test.ts`
 - `apps/web/src/app/api/usage/[[...path]]/route.ts`
 - `apps/web/src/app/api/identity/[[...path]]/route.ts`
 - `docs/contracts/web-identity-bff.md`
