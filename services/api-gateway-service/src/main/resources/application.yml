@@ -36,6 +36,6 @@ management:
 gateway:
   # Set false in production with gateway.jwt.secret (HMAC256, same as platform tokens).
   dev-mode: ${GATEWAY_DEV_MODE:true}
-  shared-secret: ${PROXY_GATEWAY_SHARED_SECRET:}
+  shared-secret: ${GATEWAY_SHARED_SECRET:}
   jwt:
-    secret: ${GATEWAY_JWT_SECRET:}
+    secret: ${GATEWAY_JWT_SECRET:change-this-secret-key-to-at-least-32-bytes}

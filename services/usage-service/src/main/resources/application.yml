@@ -5,7 +5,7 @@ spring:
   application:
     name: usage-service
   datasource:
-    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${USAGE_POSTGRES_DB:usage_db}
+    url: jdbc:postgresql://${USAGE_POSTGRES_HOST:localhost}:${USAGE_POSTGRES_PORT:5433}/${USAGE_POSTGRES_DB:usage_db}
     username: ${USAGE_POSTGRES_USER:usage_app}
     password: ${USAGE_POSTGRES_PASSWORD:usage_app}
     driver-class-name: org.postgresql.Driver
