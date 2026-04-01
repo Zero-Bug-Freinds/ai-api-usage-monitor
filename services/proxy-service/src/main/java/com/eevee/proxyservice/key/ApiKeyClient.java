@@ -38,8 +38,11 @@ public class ApiKeyClient {
                 .build(this::loadKeyBlocking);
     }
 
-    public Mono<ResolvedApiKey> resolveApiKey(String userId, AiProvider provider) {
-        String cacheKey = userId + ":" + provider.pathSegment();
+    public Mono<ResolvedApiKey> resolveApiKey(String keyLookupUserId, AiProvider provider) {
+        if (keyLookupUserId == null || keyLookupUserId.isBlank()) {
+            return Mono.error(new IllegalArgumentException("key lookup user id is required"));
+        }
+        String cacheKey = keyLookupUserId + ":" + provider.pathSegment();
         return Mono.fromCallable(() -> cache.get(cacheKey))
                 .subscribeOn(Schedulers.boundedElastic());
     }
@@ -49,7 +52,7 @@ public class ApiKeyClient {
         if (idx <= 0) {
             throw new IllegalStateException("invalid cache key");
         }
-        String userId = cacheKey.substring(0, idx);
+        String keyLookupUserId = cacheKey.substring(0, idx);
         String segment = cacheKey.substring(idx + 1);
         AiProvider provider = AiProvider.fromPathSegment(segment);
 
@@ -63,7 +66,7 @@ public class ApiKeyClient {
             KeyResponse body = keyServiceWebClient.get()
                     .uri(uriBuilder -> uriBuilder
                             .path("/internal/api-keys/{provider}")
-                            .queryParam("userId", userId)
+                            .queryParam("userId", keyLookupUserId)
                             .build(provider.pathSegment()))
                     .headers(h -> {
                         if (token != null && !token.isBlank()) {
@@ -83,8 +86,18 @@ public class ApiKeyClient {
                     "managed"
             );
         } catch (WebClientResponseException e) {
-            throw new IllegalStateException("key service error: " + e.getStatusCode(), e);
+            throw new IllegalStateException(keyServiceErrorMessage(e), e);
         }
+    }
+
+    private static String keyServiceErrorMessage(WebClientResponseException e) {
+        return switch (e.getStatusCode().value()) {
+            case 400 -> "key service rejected lookup request (400)";
+            case 401 -> "key service internal auth failed (401)";
+            case 403 -> "key service internal auth forbidden (403)";
+            case 404 -> "managed key not found for user/provider (404)";
+            default -> "key service error: " + e.getStatusCode();
+        };
     }
 
     /**
