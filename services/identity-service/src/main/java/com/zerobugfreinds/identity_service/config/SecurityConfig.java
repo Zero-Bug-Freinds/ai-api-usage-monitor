@@ -40,6 +40,7 @@ public class SecurityConfig {
 						.requestMatchers("/api/auth/signup").permitAll()
 						.requestMatchers("/api/auth/login").permitAll()
 						.requestMatchers("/api/auth/logout").permitAll()
+						.requestMatchers("/internal/api-keys/**").permitAll()
 						.requestMatchers("/error").permitAll()
 						.anyRequest().authenticated()
 				)

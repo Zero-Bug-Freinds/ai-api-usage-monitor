@@ -1,9 +1,11 @@
 package com.zerobugfreinds.identity_service.service;
 
 import com.zerobugfreinds.identity_service.domain.ExternalApiKeyProvider;
+import com.zerobugfreinds.identity_service.dto.InternalApiKeyResponse;
 import com.zerobugfreinds.identity_service.entity.ExternalApiKeyEntity;
 import com.zerobugfreinds.identity_service.exception.ApiKeyLimitExceededException;
 import com.zerobugfreinds.identity_service.exception.DuplicateExternalApiKeyException;
+import com.zerobugfreinds.identity_service.exception.ExternalApiKeyNotFoundException;
 import com.zerobugfreinds.identity_service.repository.ExternalApiKeyRepository;
 import com.zerobugfreinds.identity_service.util.EncryptionUtil;
 import org.slf4j.Logger;
@@ -86,5 +88,20 @@ public class ExternalApiKeyService {
 			throw new IllegalArgumentException("userId는 필수입니다");
 		}
 		return externalApiKeyRepository.findAllByUserIdOrderByCreatedAtDesc(userId);
+	}
+
+	@Transactional(readOnly = true)
+	public InternalApiKeyResponse resolveInternalKey(Long userId, ExternalApiKeyProvider provider) {
+		if (userId == null) {
+			throw new IllegalArgumentException("userId는 필수입니다");
+		}
+		if (provider == null) {
+			throw new IllegalArgumentException("provider는 필수입니다");
+		}
+		ExternalApiKeyEntity entity = externalApiKeyRepository
+				.findTopByUserIdAndProviderOrderByCreatedAtDesc(userId, provider)
+				.orElseThrow(() -> new ExternalApiKeyNotFoundException("등록된 API 키를 찾을 수 없습니다"));
+		String plainKey = encryptionUtil.decryptAes256Gcm(entity.getEncryptedKey());
+		return new InternalApiKeyResponse(plainKey, String.valueOf(entity.getId()));
 	}
 }

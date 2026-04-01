@@ -5,6 +5,7 @@ import com.zerobugfreinds.identity_service.exception.ApiKeyLimitExceededExceptio
 import com.zerobugfreinds.identity_service.exception.AuthContractViolationException;
 import com.zerobugfreinds.identity_service.exception.DuplicateExternalApiKeyException;
 import com.zerobugfreinds.identity_service.exception.DuplicateEmailException;
+import com.zerobugfreinds.identity_service.exception.ExternalApiKeyNotFoundException;
 import com.zerobugfreinds.identity_service.exception.InvalidCredentialsException;
 import com.zerobugfreinds.identity_service.exception.InvalidSignupRequestException;
 import org.springframework.http.HttpStatus;
@@ -53,6 +54,12 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(DuplicateExternalApiKeyException.class)
 	@ResponseStatus(HttpStatus.CONFLICT)
 	public ApiResponse<Void> handleDuplicateExternalApiKey(DuplicateExternalApiKeyException ex) {
+		return ApiResponse.fail(ex.getMessage());
+	}
+
+	@ExceptionHandler(ExternalApiKeyNotFoundException.class)
+	@ResponseStatus(HttpStatus.NOT_FOUND)
+	public ApiResponse<Void> handleExternalApiKeyNotFound(ExternalApiKeyNotFoundException ex) {
 		return ApiResponse.fail(ex.getMessage());
 	}
 
