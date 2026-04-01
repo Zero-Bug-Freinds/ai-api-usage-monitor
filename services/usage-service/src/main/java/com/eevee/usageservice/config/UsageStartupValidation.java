@@ -5,6 +5,9 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.time.DateTimeException;
+import java.time.ZoneId;
+
 @Component
 public class UsageStartupValidation implements ApplicationRunner {
 
@@ -20,6 +23,15 @@ public class UsageStartupValidation implements ApplicationRunner {
         if (!StringUtils.hasText(sharedSecret)) {
             throw new IllegalStateException(
                     "usage.gateway.shared-secret is required. Set GATEWAY_SHARED_SECRET.");
+        }
+        String tz = usageServiceProperties.getReporting().getTimeZone();
+        if (!StringUtils.hasText(tz)) {
+            throw new IllegalStateException("usage.reporting.time-zone is required.");
+        }
+        try {
+            ZoneId.of(tz);
+        } catch (DateTimeException ex) {
+            throw new IllegalStateException("usage.reporting.time-zone is not a valid IANA zone id: " + tz, ex);
         }
     }
 }

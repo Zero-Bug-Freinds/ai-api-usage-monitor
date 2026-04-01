@@ -41,5 +41,8 @@ usage:
     queue: usage-service.queue
   analytics:
     max-range-days: ${USAGE_ANALYTICS_MAX_RANGE_DAYS:400}
+  reporting:
+    # occurred_at 집계·조회 구간의 달력 경계(일/월)에 사용 (DB 저장은 timestamptz=UTC 순간 유지)
+    time-zone: ${USAGE_REPORTING_TIME_ZONE:Asia/Seoul}
   gateway:
     shared-secret: ${GATEWAY_SHARED_SECRET:}

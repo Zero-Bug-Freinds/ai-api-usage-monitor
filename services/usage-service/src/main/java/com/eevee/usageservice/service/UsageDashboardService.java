@@ -19,7 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
@@ -126,8 +126,9 @@ public class UsageDashboardService {
         if (days > max) {
             throw new IllegalArgumentException("Date range too large (max " + max + " days)");
         }
-        Instant start = from.atStartOfDay(ZoneOffset.UTC).toInstant();
-        Instant toExclusive = toInclusive.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+        ZoneId zone = ZoneId.of(properties.getReporting().getTimeZone());
+        Instant start = from.atStartOfDay(zone).toInstant();
+        Instant toExclusive = toInclusive.plusDays(1).atStartOfDay(zone).toInstant();
         return new Range(start, toExclusive);
     }
 
