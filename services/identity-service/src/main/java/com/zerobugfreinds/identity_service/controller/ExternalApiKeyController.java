@@ -10,10 +10,13 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 /**
  * 외부 AI API 키 등록 HTTP API.
@@ -46,5 +49,20 @@ public class ExternalApiKeyController {
 				saved.getCreatedAt()
 		);
 		return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok("외부 API 키가 등록되었습니다", data));
+	}
+
+	@GetMapping("/external-keys")
+	public ResponseEntity<ApiResponse<List<ExternalApiKeyRegisterResponse>>> getMyKeys(
+			@AuthenticationPrincipal IdentityUserPrincipal principal
+	) {
+		List<ExternalApiKeyRegisterResponse> data = externalApiKeyService.getMyKeys(principal.userId()).stream()
+				.map(key -> new ExternalApiKeyRegisterResponse(
+						key.getId(),
+						key.getProvider().name(),
+						key.getKeyAlias(),
+						key.getCreatedAt()
+				))
+				.toList();
+		return ResponseEntity.ok(ApiResponse.ok("외부 API 키 목록 조회에 성공했습니다", data));
 	}
 }

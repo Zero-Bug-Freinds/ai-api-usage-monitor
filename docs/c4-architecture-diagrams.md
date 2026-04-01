@@ -404,6 +404,12 @@ sequenceDiagram
   I-->>H: ApiResponse
   H-->>B: 200 or 401
 
+  B->>H: GET /api/auth/external-keys
+  Note over B,H: settings 화면에서 개인 키 목록 조회
+  H->>I: GET external-keys + Bearer
+  I-->>H: 200/401 ApiResponse
+  H-->>B: ApiResponse (no-store)
+
   B->>H: POST /api/auth/external-keys
   Note over B,H: settings 화면에서 개인 키 등록(상태 변경)
   H->>I: POST external-keys + Bearer
@@ -439,7 +445,7 @@ flowchart TB
     RL["POST login"]
     RS["POST signup"]
     RQ["GET session"]
-    RE["POST external-keys"]
+    RE["GET/POST external-keys"]
   end
   subgraph LB["lib"]
     CF["client-fetch"]

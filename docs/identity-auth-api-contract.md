@@ -37,6 +37,7 @@
 | `POST` | `/api/auth/signup`  | 불필요 | 회원가입                     |
 | `POST` | `/api/auth/login`   | 불필요 | 로그인 및 액세스 토큰 발급          |
 | `GET`  | `/api/auth/session` | 필요  | 세션(인증 상태) 확인             |
+| `GET`  | `/api/auth/external-keys` | 필요  | 내 외부 AI API 키 목록 조회 (`id`, `provider`, `alias`, `createdAt`) |
 | `POST` | `/api/auth/external-keys` | 필요  | 외부 AI API 키 등록 (`provider`, `externalKey`, `alias`) |
 | `POST` | `/api/auth/logout`  | 불필요 | 로그아웃 신호 응답(BFF 쿠키 삭제 유도) |
 
@@ -92,11 +93,59 @@
 
 ---
 
-## 6. 외부 API 키 등록 계약
+## 6. 외부 API 키 조회 계약
+
+로그인 사용자가 등록한 외부 API 키 메타데이터 목록을 조회한다. 응답에는 **키 평문/암호문이 포함되지 않는다**.
+
+### 6.1 요청
+
+| 항목 | 값 |
+| --- | --- |
+| 메서드 | `GET` |
+| 경로 | `/api/auth/external-keys` |
+| 인증 | 필요 (액세스 토큰, 일반적으로 `Authorization: Bearer <jwt>`) |
+
+### 6.2 성공 응답 (`200 OK`)
+
+| 항목 | 값 |
+| --- | --- |
+| 상태 코드 | `200` |
+| `Cache-Control` | `no-store` (본 서비스는 API 응답 전반에 적용) |
+
+응답 본문 예시:
+
+```json
+{
+  "success": true,
+  "message": "외부 API 키 목록 조회에 성공했습니다",
+  "data": [
+    {
+      "id": 1,
+      "provider": "GEMINI",
+      "alias": "데모용 제미나이 키",
+      "createdAt": "2026-03-29T08:05:19.296098200Z"
+    }
+  ]
+}
+```
+
+오류 응답 예시 (`success=false`, `data=null`):
+
+| 상황 | 상태 코드 | 예시 JSON |
+| --- | --- | --- |
+| 보호 API 미인증 | `401` | `{"success":false,"message":"인증이 필요합니다","data":null}` |
+
+### 6.3 캐시 정책
+
+- identity-service는 HTTP 응답에 `Cache-Control: no-store`를 적용한다.
+
+---
+
+## 7. 외부 API 키 등록 계약
 
 클라이언트가 Gemini 등 **제3자에서 발급받은 API 키 평문**과 **제공자(`provider`)**, **별칭(`alias`)**을 전달하면, 서버는 키 평문을 **AES-256-GCM으로 암호화해 DB에 저장**하고, 응답 본문에는 **평문·암호문을 포함하지 않는다**. 동일 사용자가 동일 `provider`에 대해 동일 키 평문을 중복 등록하면 `409`를 반환한다.
 
-### 6.1 요청
+### 7.1 요청
 
 | 항목 | 값 |
 | --- | --- |
@@ -119,7 +168,7 @@
 | --- | --- |
 | Body | `{"provider":"GEMINI","externalKey":"<비밀키>","alias":"데모용 Gemini"}` |
 
-### 6.2 성공 응답 (`201 Created`)
+### 7.2 성공 응답 (`201 Created`)
 
 공통 래퍼 `ApiResponse`와 `data` 객체 형태는 아래와 같다. **`data`에 키 평문은 포함되지 않는다.**
 
@@ -165,13 +214,13 @@
 | 사용자당 외부 키 상한 초과 | `400` | `{"success":false,"message":"외부 API 키는 사용자당 최대 5개까지 등록할 수 있습니다","data":null}` |
 | 동일 provider·동일 키 재등록 | `409` | `{"success":false,"message":"이미 등록된 API 키입니다","data":null}` |
 
-### 6.3 캐시 정책
+### 7.3 캐시 정책
 
 - identity-service는 HTTP 응답에 `Cache-Control: no-store`를 적용한다.
 
 ---
 
-## 7. 로그아웃 계약
+## 8. 로그아웃 계약
 
 - `POST /api/auth/logout`은 Stateless 정책에 따라 서버 토큰 무효화를 수행하지 않는다.
 - 대신 BFF가 `access_token` 쿠키를 삭제할 수 있도록 성공 신호를 반환한다.
@@ -179,7 +228,7 @@
 
 ---
 
-## 8. 회원가입 입력 정책
+## 9. 회원가입 입력 정책
 
 - `passwordConfirm`은 필수이며 `password`와 일치해야 한다.
 - 비밀번호 정책:
@@ -190,7 +239,7 @@
 
 ---
 
-## 9. 오류 코드 기준
+## 10. 오류 코드 기준
 
 
 | 상황        | 상태 코드 | 설명                           |
@@ -198,7 +247,7 @@
 | 입력 검증 실패  | `400` | 필드 유효성/정책 위반 (`provider`·`externalKey`·`alias` 등) |
 | 외부 API 키 개수 초과 | `400` | 사용자당 최대 5개까지 등록 가능        |
 | 로그인 인증 실패 | `401` | 이메일/비밀번호 불일치                 |
-| 보호 API 미인증 | `401` | 액세스 토큰 없음/무효 (`POST /api/auth/external-keys` 등) |
+| 보호 API 미인증 | `401` | 액세스 토큰 없음/무효 (`GET/POST /api/auth/external-keys` 등) |
 | 외부 API 키 중복 등록 | `409` | 동일 사용자·동일 키 평문 재등록           |
 | 이메일 중복    | `409` | 회원가입 중복                      |
 | 인증 계약 위반  | `502` | 업스트림/내부 계약 위반(`tokenType` 등) |
@@ -206,7 +255,7 @@
 
 ---
 
-## 10. 구현 시 주의
+## 11. 구현 시 주의
 
 - 인증 관련 응답은 캐시 금지(`Cache-Control: no-store`)를 유지한다(identity-service는 필터로 API 응답 전반에 적용).
 - 인증 실패 응답은 프론트/BFF에서 공통 처리할 수 있도록 코드/본문 일관성을 유지한다.
