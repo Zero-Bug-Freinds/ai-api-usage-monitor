@@ -9,5 +9,5 @@ spring:
 proxy:
   key-service:
     # identity-service 는 호스트에서 실행 — 컨테이너 proxy 가 호스트로 접근 (Docker Desktop / Linux host-gateway)
-    # 기본은 Spring 기본 포트 8080. application.yml 의 localhost:8090 과 맞추려면 PROXY_KEY_SERVICE_BASE_URL=http://host.docker.internal:8090
-    base-url: ${PROXY_KEY_SERVICE_BASE_URL:http://host.docker.internal:8080}
+    # 기본값을 identity-service 포트(8090)로 맞춰 gateway 경유(8080) 오탐을 피한다.
+    base-url: ${PROXY_KEY_SERVICE_BASE_URL:http://host.docker.internal:8090}

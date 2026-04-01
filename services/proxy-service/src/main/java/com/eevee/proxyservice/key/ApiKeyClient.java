@@ -6,6 +6,7 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.LoadingCache;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -56,38 +57,56 @@ public class ApiKeyClient {
         String segment = cacheKey.substring(idx + 1);
         AiProvider provider = AiProvider.fromPathSegment(segment);
 
+        if (isNumeric(keyLookupUserId)) {
+            return resolveManagedFirstWithMockFallback(keyLookupUserId, provider);
+        }
+
         String mock = resolveMockKey(provider);
         if (mock != null && !mock.isBlank()) {
             return new ResolvedApiKey(mock, null, fingerprint(mock), "mock");
         }
 
-        String token = proxyProperties.getKeyService().getInternalToken();
+        return resolveManaged(keyLookupUserId, provider);
+    }
+
+    private ResolvedApiKey resolveManagedFirstWithMockFallback(String keyLookupUserId, AiProvider provider) {
         try {
-            KeyResponse body = keyServiceWebClient.get()
-                    .uri(uriBuilder -> uriBuilder
-                            .path("/internal/api-keys/{provider}")
-                            .queryParam("userId", keyLookupUserId)
-                            .build(provider.pathSegment()))
-                    .headers(h -> {
-                        if (token != null && !token.isBlank()) {
-                            h.setBearerAuth(token);
-                        }
-                    })
-                    .retrieve()
-                    .bodyToMono(KeyResponse.class)
-                    .block(Duration.ofSeconds(10));
-            if (body == null || body.plainKey() == null || body.plainKey().isBlank()) {
-                throw new IllegalStateException("key service returned empty key");
-            }
-            return new ResolvedApiKey(
-                    body.plainKey(),
-                    body.keyId(),
-                    fingerprint(body.plainKey()),
-                    "managed"
-            );
+            return resolveManaged(keyLookupUserId, provider);
         } catch (WebClientResponseException e) {
+            String mock = resolveMockKey(provider);
+            if (e.getStatusCode().value() == 404 && mock != null && !mock.isBlank()) {
+                return new ResolvedApiKey(mock, null, fingerprint(mock), "mock");
+            }
             throw new IllegalStateException(keyServiceErrorMessage(e), e);
+        } catch (WebClientRequestException e) {
+            throw new IllegalStateException("key service request failed", e);
         }
+    }
+
+    private ResolvedApiKey resolveManaged(String keyLookupUserId, AiProvider provider) {
+        String token = proxyProperties.getKeyService().getInternalToken();
+        KeyResponse body = keyServiceWebClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/internal/api-keys/{provider}")
+                        .queryParam("userId", keyLookupUserId)
+                        .build(provider.pathSegment()))
+                .headers(h -> {
+                    if (token != null && !token.isBlank()) {
+                        h.setBearerAuth(token);
+                    }
+                })
+                .retrieve()
+                .bodyToMono(KeyResponse.class)
+                .block(Duration.ofSeconds(10));
+        if (body == null || body.plainKey() == null || body.plainKey().isBlank()) {
+            throw new IllegalStateException("key service returned empty key");
+        }
+        return new ResolvedApiKey(
+                body.plainKey(),
+                body.keyId(),
+                fingerprint(body.plainKey()),
+                "managed"
+        );
     }
 
     private static String keyServiceErrorMessage(WebClientResponseException e) {
@@ -98,6 +117,15 @@ public class ApiKeyClient {
             case 404 -> "managed key not found for user/provider (404)";
             default -> "key service error: " + e.getStatusCode();
         };
+    }
+
+    private static boolean isNumeric(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            if (!Character.isDigit(value.charAt(i))) {
+                return false;
+            }
+        }
+        return !value.isBlank();
     }
 
     /**
