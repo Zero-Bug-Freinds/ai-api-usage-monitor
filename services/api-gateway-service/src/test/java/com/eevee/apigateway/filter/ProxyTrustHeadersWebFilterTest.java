@@ -6,7 +6,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.authority.AuthorityUtils;
+import org.springframework.security.core.context.SecurityContextImpl;
+import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.server.ServerWebExchange;
@@ -14,6 +17,9 @@ import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -57,6 +63,90 @@ class ProxyTrustHeadersWebFilterTest {
 
         StepVerifier.create(ProxyTrustHeadersWebFilter.authenticationFromExchangeOnly(exchange))
                 .verifyComplete();
+    }
+
+    @Test
+    void resolveAuthentication_cachesResultPerRequest() {
+        AtomicInteger principalSubscriptions = new AtomicInteger();
+        Jwt jwt = Jwt.withTokenValue("dummy")
+                .header("alg", "HS256")
+                .subject("cached@example.com")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt);
+        Map<String, Object> attrs = new HashMap<>();
+
+        ServerWebExchange exchange = mock(ServerWebExchange.class);
+        when(exchange.getAttributes()).thenReturn(attrs);
+        when(exchange.getPrincipal()).thenReturn(Mono.defer(() -> {
+            principalSubscriptions.incrementAndGet();
+            return Mono.just(auth);
+        }));
+
+        StepVerifier.create(ProxyTrustHeadersWebFilter.resolveAuthentication(exchange))
+                .expectNext(auth)
+                .verifyComplete();
+        StepVerifier.create(ProxyTrustHeadersWebFilter.resolveAuthentication(exchange))
+                .expectNext(auth)
+                .verifyComplete();
+
+        assertThat(principalSubscriptions.get()).isEqualTo(1);
+    }
+
+    @Test
+    void resolveAuthentication_fallbacksToReactiveContextWhenPrincipalEmpty() {
+        Jwt jwt = Jwt.withTokenValue("dummy")
+                .header("alg", "HS256")
+                .subject("context@example.com")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt);
+
+        ServerWebExchange exchange = mock(ServerWebExchange.class);
+        when(exchange.getAttributes()).thenReturn(new HashMap<>());
+        when(exchange.getPrincipal()).thenReturn(Mono.empty());
+
+        StepVerifier.create(
+                        ProxyTrustHeadersWebFilter.resolveAuthentication(exchange)
+                                .contextWrite(ReactiveSecurityContextHolder.withAuthentication(auth)))
+                .expectNext(auth)
+                .verifyComplete();
+    }
+
+    @Test
+    void resolveAuthentication_fallbacksToExchangeAttributeContext() {
+        Jwt jwt = Jwt.withTokenValue("dummy")
+                .header("alg", "HS256")
+                .subject("attr@example.com")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt);
+        SecurityContextImpl context = new SecurityContextImpl(auth);
+        HashMap<String, Object> attrs = new HashMap<>();
+        attrs.put("org.springframework.security.SECURITY_CONTEXT", context);
+
+        ServerWebExchange exchange = mock(ServerWebExchange.class);
+        when(exchange.getAttributes()).thenReturn(attrs);
+        when(exchange.getPrincipal()).thenReturn(Mono.empty());
+
+        StepVerifier.create(ProxyTrustHeadersWebFilter.resolveAuthentication(exchange))
+                .expectNext(auth)
+                .verifyComplete();
+    }
+
+    @Test
+    void applyTrustHeaders_rejectsNonJwtAuthInNonDevMode() {
+        gatewayProperties.setDevMode(false);
+        TestingAuthenticationToken auth = new TestingAuthenticationToken("user", "pwd", "ROLE_USER");
+        auth.setAuthenticated(true);
+
+        MockServerHttpRequest request = MockServerHttpRequest.get("/api/v1/usage/dashboard/summary").build();
+        MockServerWebExchange exchange = MockServerWebExchange.from(request);
+        WebFilterChain chain = ex -> Mono.empty();
+
+        ProxyTrustHeadersWebFilter filter = new ProxyTrustHeadersWebFilter(gatewayProperties);
+
+        StepVerifier.create(filter.applyTrustHeaders(exchange, chain, auth))
+                .expectErrorMatches(t -> t instanceof org.springframework.web.server.ResponseStatusException
+                        && ((org.springframework.web.server.ResponseStatusException) t).getStatusCode().value() == 401)
+                .verify();
     }
 
     @Test

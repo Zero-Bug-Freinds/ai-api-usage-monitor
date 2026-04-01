@@ -32,6 +32,12 @@ public class UsageRecordedLogEntity {
 
     private String teamId;
 
+    private String apiKeyId;
+
+    private String apiKeyFingerprint;
+
+    private String apiKeySource;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private AiProvider provider;
@@ -72,6 +78,9 @@ public class UsageRecordedLogEntity {
             String userId,
             String organizationId,
             String teamId,
+            String apiKeyId,
+            String apiKeyFingerprint,
+            String apiKeySource,
             AiProvider provider,
             String model,
             Long promptTokens,
@@ -91,6 +100,9 @@ public class UsageRecordedLogEntity {
         this.userId = userId;
         this.organizationId = organizationId;
         this.teamId = teamId;
+        this.apiKeyId = apiKeyId;
+        this.apiKeyFingerprint = apiKeyFingerprint;
+        this.apiKeySource = apiKeySource;
         this.provider = provider;
         this.model = model;
         this.promptTokens = promptTokens;
@@ -111,6 +123,9 @@ public class UsageRecordedLogEntity {
     public String getUserId() { return userId; }
     public String getOrganizationId() { return organizationId; }
     public String getTeamId() { return teamId; }
+    public String getApiKeyId() { return apiKeyId; }
+    public String getApiKeyFingerprint() { return apiKeyFingerprint; }
+    public String getApiKeySource() { return apiKeySource; }
     public AiProvider getProvider() { return provider; }
     public String getModel() { return model; }
     public Long getPromptTokens() { return promptTokens; }

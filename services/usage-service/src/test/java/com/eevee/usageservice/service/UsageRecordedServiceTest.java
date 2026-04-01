@@ -41,6 +41,9 @@ class UsageRecordedServiceTest {
                 "user-1",
                 null,
                 null,
+                "key-1",
+                "deadbeef00112233",
+                "managed",
                 AiProvider.OPENAI,
                 "gpt-4o-mini",
                 new TokenUsage("gpt-4o-mini", 10L, 20L, 30L),
@@ -69,6 +72,9 @@ class UsageRecordedServiceTest {
                 "user-1",
                 null,
                 null,
+                "key-1",
+                "deadbeef00112233",
+                "managed",
                 AiProvider.OPENAI,
                 "gpt-4o-mini",
                 new TokenUsage("gpt-4o-mini", 10L, 20L, 30L),
@@ -87,5 +93,6 @@ class UsageRecordedServiceTest {
         ArgumentCaptor<UsageRecordedLogEntity> captor = ArgumentCaptor.forClass(UsageRecordedLogEntity.class);
         verify(repository).save(captor.capture());
         assertThat(captor.getValue().getEventId()).isEqualTo(eventId);
+        assertThat(captor.getValue().getApiKeyId()).isEqualTo("key-1");
     }
 }

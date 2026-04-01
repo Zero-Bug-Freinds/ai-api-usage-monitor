@@ -78,7 +78,7 @@ public class ProxyRelayService {
 
         return userContextResolver.fromExchange(exchange)
                 .flatMap(ctx -> apiKeyClient.resolveApiKey(ctx.userId(), provider)
-                        .flatMap(apiKey -> forward(exchange, ctx, handler, provider, remainder, apiKey)));
+                        .flatMap(resolvedApiKey -> forward(exchange, ctx, handler, provider, remainder, resolvedApiKey)));
     }
 
     private Mono<ResponseEntity<Flux<DataBuffer>>> forward(
@@ -87,7 +87,7 @@ public class ProxyRelayService {
             ProviderHandler handler,
             AiProvider provider,
             String remainderPath,
-            String apiKey
+            ApiKeyClient.ResolvedApiKey resolvedApiKey
     ) {
         HttpMethod method = exchange.getRequest().getMethod();
         if (method == null) {
@@ -95,10 +95,10 @@ public class ProxyRelayService {
         }
 
         String rawQuery = exchange.getRequest().getURI().getRawQuery();
-        URI upstreamUri = handler.buildUpstreamUri(handler.baseUrl(), remainderPath, rawQuery, apiKey);
+        URI upstreamUri = handler.buildUpstreamUri(handler.baseUrl(), remainderPath, rawQuery, resolvedApiKey.plainKey());
 
         HttpHeaders outgoing = copyAndSanitizeHeaders(exchange.getRequest().getHeaders(), handler);
-        handler.applyUpstreamAuth(outgoing, apiKey);
+        handler.applyUpstreamAuth(outgoing, resolvedApiKey.plainKey());
 
         boolean streaming = isStreamingRequest(exchange);
 
@@ -113,7 +113,15 @@ public class ProxyRelayService {
             withBody = spec;
         }
 
-        return withBody.exchangeToMono(response -> mapResponse(response, handler, ctx, provider, exchange.getRequest().getPath().value(), streaming));
+        return withBody.exchangeToMono(response -> mapResponse(
+                response,
+                handler,
+                ctx,
+                provider,
+                resolvedApiKey,
+                exchange.getRequest().getPath().value(),
+                streaming
+        ));
     }
 
     private Mono<ResponseEntity<Flux<DataBuffer>>> mapResponse(
@@ -121,6 +129,7 @@ public class ProxyRelayService {
             ProviderHandler handler,
             UserContext ctx,
             AiProvider provider,
+            ApiKeyClient.ResolvedApiKey resolvedApiKey,
             String requestPath,
             boolean streaming
     ) {
@@ -141,7 +150,7 @@ public class ProxyRelayService {
                     })
                     .doOnComplete(() -> {
                         TokenUsage u = handler.parseUsageFromSse(acc.toString());
-                        publishUsage(ctx, provider, requestPath, u, upstreamHost, true, status).subscribe();
+                        publishUsage(ctx, provider, resolvedApiKey, requestPath, u, upstreamHost, true, status).subscribe();
                     });
             return Mono.just(ResponseEntity.status(status).headers(responseHeaders).body(body));
         }
@@ -153,7 +162,7 @@ public class ProxyRelayService {
                     TokenUsage u = handler.parseUsageFromResponseJson(bodyStr);
                     byte[] bytes = bodyStr.getBytes(StandardCharsets.UTF_8);
                     Flux<DataBuffer> flux = Flux.just(bufferFactory.wrap(bytes));
-                    return publishUsage(ctx, provider, requestPath, u, safeHost(requestUri), false, status)
+                    return publishUsage(ctx, provider, resolvedApiKey, requestPath, u, safeHost(requestUri), false, status)
                             .thenReturn(ResponseEntity.status(status).headers(responseHeaders).body(flux));
                 });
     }
@@ -176,6 +185,7 @@ public class ProxyRelayService {
     private Mono<Void> publishUsage(
             UserContext ctx,
             AiProvider provider,
+            ApiKeyClient.ResolvedApiKey resolvedApiKey,
             String requestPath,
             TokenUsage usage,
             String upstreamHost,
@@ -191,6 +201,9 @@ public class ProxyRelayService {
                 ctx.userId(),
                 ctx.organizationId(),
                 ctx.teamId(),
+                resolvedApiKey.keyId(),
+                resolvedApiKey.keyFingerprint(),
+                resolvedApiKey.keySource(),
                 provider,
                 usage != null ? usage.model() : null,
                 usage,
