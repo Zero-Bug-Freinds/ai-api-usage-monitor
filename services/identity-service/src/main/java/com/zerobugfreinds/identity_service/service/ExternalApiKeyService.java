@@ -79,4 +79,12 @@ public class ExternalApiKeyService {
 
 		return saved;
 	}
+
+	@Transactional(readOnly = true)
+	public java.util.List<ExternalApiKeyEntity> getMyKeys(Long userId) {
+		if (userId == null) {
+			throw new IllegalArgumentException("userId는 필수입니다");
+		}
+		return externalApiKeyRepository.findAllByUserIdOrderByCreatedAtDesc(userId);
+	}
 }

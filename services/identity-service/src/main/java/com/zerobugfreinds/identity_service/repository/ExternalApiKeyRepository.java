@@ -12,4 +12,6 @@ public interface ExternalApiKeyRepository extends JpaRepository<ExternalApiKeyEn
 	boolean existsByUserIdAndProviderAndKeyHash(Long userId, ExternalApiKeyProvider provider, String keyHash);
 
 	long countByUserId(Long userId);
+
+	java.util.List<ExternalApiKeyEntity> findAllByUserIdOrderByCreatedAtDesc(Long userId);
 }

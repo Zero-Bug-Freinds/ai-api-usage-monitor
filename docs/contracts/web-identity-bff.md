@@ -18,6 +18,7 @@
 |------|-----------------------|-------------------|
 | 회원가입 | `POST /api/auth/signup` | `POST /api/auth/signup` |
 | 로그인 | `POST /api/auth/login` | `POST /api/auth/login` |
+| 외부 API 키 조회(개인) | `GET /api/auth/external-keys` | `GET /api/auth/external-keys` |
 | 외부 API 키 등록(개인) | `POST /api/auth/external-keys` | `POST /api/auth/external-keys` |
 | 세션(로그인 여부 단일 기준) | `GET /api/auth/session` | `GET /api/auth/session` (BFF가 쿠키 JWT를 Bearer로 전달해 프록시) |
 | 로그아웃 | `POST /api/auth/logout` | `POST /api/auth/logout` (선택 프록시; stateless이며 실질 로그아웃은 BFF의 쿠키 삭제) |
@@ -44,7 +45,18 @@
 5. **Identity가 `401` 등으로 거절**하면 상태 코드와 JSON 본문을 **그대로** 프론트에 전달한다(§6).
 6. `IDENTITY_SERVICE_URL` 미설정 등 BFF 설정 오류·업스트림 연결 실패·업스트림 성공 응답이 계약과 맞지 않는 경우 등은 BFF가 `500`/`502` 등으로 처리할 수 있다. 프론트는 `success=false`와 `message`로 사용자 메시지를 구성한다.
 
-### 2.2 `POST /api/auth/external-keys` 동작
+### 2.2 `GET /api/auth/external-keys` 동작
+
+1. 브라우저 → BFF: `GET /api/auth/external-keys`
+2. **`access_token` 쿠키가 없거나 값이 비어 있으면** BFF는 Identity를 호출하지 않고 `401` + `ApiResponse<null>` (`success=false`, `data=null`)로 응답한다.
+3. BFF → Identity: `GET {IDENTITY_SERVICE_URL}/api/auth/external-keys`
+   - `Authorization: Bearer {access_token}`
+   - `Accept: application/json`
+4. **성공 시** Identity의 상태 코드/본문(`ApiResponse`)을 가능한 그대로 전달한다. 응답에는 `Cache-Control: no-store`를 적용한다.
+5. **Identity가 `401` 등으로 거절**하면 상태 코드와 JSON 본문을 **그대로** 프론트에 전달한다(§6).
+6. `IDENTITY_SERVICE_URL` 미설정, 업스트림 연결 실패, 업스트림 응답이 계약과 맞지 않는 경우 등은 BFF가 `500`/`502` 등으로 처리할 수 있다.
+
+### 2.3 `POST /api/auth/external-keys` 동작
 
 1. 브라우저 → BFF: `POST /api/auth/external-keys` (JSON body: `provider`, `externalKey`, `alias`)
 2. BFF: 입력 본문을 Zod로 검증한다(요청 본문이므로 검증 대상).
@@ -156,6 +168,7 @@
 ## 8. 캐시/보안 정책
 
 - 로그인/로그아웃/**`GET /api/auth/session`(세션 체크)** 응답에는 `Cache-Control: no-store`를 적용한다.
+- **`GET /api/auth/external-keys` / `POST /api/auth/external-keys`** 응답에도 `Cache-Control: no-store`를 적용한다.
 - MVP는 **Access Token only**(Refresh Token 미포함)로 운영하고, 만료 시 재로그인한다.
 - CSRF는 MVP에서 `SameSite=Lax + BFF 경유`를 기본으로 하고, **차기 스프린트에서 상태 변경 API는 BFF 경유에 더해 `Origin/Referer` 검증(또는 CSRF 토큰) 적용을 표준으로 한다.**
 
@@ -181,7 +194,7 @@
 - BFF 인증 라우트는 구현 파일 옆에 **Vitest** 스펙을 둔다. 예:
   - `apps/web/src/app/api/auth/session/route.test.ts` — 쿠키 없음·`IDENTITY_SERVICE_URL` 미설정·업스트림 프록시·401·형식 오류·연결 실패 등
   - `apps/web/src/app/api/auth/logout/route.test.ts` — 쿠키 삭제·선택적 업스트림 `POST /api/auth/logout`·업스트림 실패 시에도 쿠키 삭제
-  - `apps/web/src/app/api/auth/external-keys/route.test.ts` — 쿠키 없음·`IDENTITY_SERVICE_URL` 미설정·업스트림 프록시(201)·업스트림 400/409 전달·연결 실패(502)·JSON 파싱 실패 등
+  - `apps/web/src/app/api/auth/external-keys/route.test.ts` — 쿠키 없음·`IDENTITY_SERVICE_URL` 미설정·업스트림 프록시(`GET` 200 / `POST` 201)·업스트림 400/401/409 전달·연결 실패(502)·JSON 파싱 실패 등
   - `login`·`signup` Route Handler도 동일 패턴의 `route.test.ts`로 회귀 검증
   - `apps/web/src/app/api/identity/[[...path]]/route.test.ts` — §5.2 관리 API BFF(쿠키·`v1` 접두·업스트림 프록시)
 - 미들웨어·보호 경로 정합성은 **`apps/web/middleware.test.ts`**, **`apps/web/src/app/protected-routes.test.ts`** (§6.2 유지보수 문구와 동일).
