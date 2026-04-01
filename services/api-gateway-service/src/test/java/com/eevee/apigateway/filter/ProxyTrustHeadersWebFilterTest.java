@@ -155,14 +155,17 @@ class ProxyTrustHeadersWebFilterTest {
         Jwt jwt = Jwt.withTokenValue("dummy")
                 .header("alg", "HS256")
                 .subject("user@example.com")
+                .claim("userId", 101L)
                 .build();
         JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt);
 
         MockServerHttpRequest request = MockServerHttpRequest.get("/api/v1/usage/dashboard/summary").build();
         MockServerWebExchange exchange = MockServerWebExchange.from(request);
         AtomicReference<String> userIdSeen = new AtomicReference<>();
+        AtomicReference<String> platformUserIdSeen = new AtomicReference<>();
         WebFilterChain chain = ex -> {
             userIdSeen.set(ex.getRequest().getHeaders().getFirst("X-User-Id"));
+            platformUserIdSeen.set(ex.getRequest().getHeaders().getFirst("X-Platform-User-Id"));
             return Mono.empty();
         };
 
@@ -172,6 +175,7 @@ class ProxyTrustHeadersWebFilterTest {
                 .verifyComplete();
 
         assertThat(userIdSeen.get()).isEqualTo("user@example.com");
+        assertThat(platformUserIdSeen.get()).isEqualTo("101");
     }
 
     @Test
@@ -184,11 +188,14 @@ class ProxyTrustHeadersWebFilterTest {
 
         MockServerHttpRequest request = MockServerHttpRequest.get("/api/v1/usage/dashboard/summary")
                 .header("X-User-Id", "bff-session@local.dev")
+                .header("X-Platform-User-Id", "77")
                 .build();
         MockServerWebExchange exchange = MockServerWebExchange.from(request);
         AtomicReference<String> userIdSeen = new AtomicReference<>();
+        AtomicReference<String> platformUserIdSeen = new AtomicReference<>();
         WebFilterChain chain = ex -> {
             userIdSeen.set(ex.getRequest().getHeaders().getFirst("X-User-Id"));
+            platformUserIdSeen.set(ex.getRequest().getHeaders().getFirst("X-Platform-User-Id"));
             return Mono.empty();
         };
 
@@ -198,6 +205,7 @@ class ProxyTrustHeadersWebFilterTest {
                 .verifyComplete();
 
         assertThat(userIdSeen.get()).isEqualTo("bff-session@local.dev");
+        assertThat(platformUserIdSeen.get()).isEqualTo("77");
     }
 
     @Test
