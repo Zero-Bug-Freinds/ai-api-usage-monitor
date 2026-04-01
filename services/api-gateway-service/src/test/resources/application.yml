@@ -1,0 +1,4 @@
+# Spring Boot 테스트 전용: GatewayStartupValidation(gateway.shared-secret 필수) 통과
+gateway:
+  dev-mode: true
+  shared-secret: junit-test-gateway-shared-secret-not-for-production

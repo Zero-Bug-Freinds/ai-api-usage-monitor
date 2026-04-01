@@ -77,4 +77,4 @@
 ## 6. 회귀 테스트
 
 - BFF 동작: `apps/web/src/app/api/usage/[[...path]]/route.test.ts` (Vitest).
-- 게이트웨이 신뢰 헤더·JWT: `ProxyTrustHeadersGatewayFilterTest`(api-gateway-service) — [gateway-proxy.md §4.2](./gateway-proxy.md).
+- 게이트웨이 신뢰 헤더·JWT: `ProxyTrustHeadersWebFilterTest`(api-gateway-service) — [gateway-proxy.md §4.2](./gateway-proxy.md).

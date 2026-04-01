@@ -114,7 +114,7 @@ flowchart TB
   subgraph GW["API Gateway"]
     direction TB
     gwSec["Security + JwtDecoder config"]
-    gwFilter["ProxyTrustHeadersGatewayFilter"]
+    gwFilter["ProxyTrustHeadersWebFilter"]
     gwRoute["Routes (application.yml)"]
     gwSec --> gwFilter --> gwRoute
   end
@@ -242,8 +242,8 @@ UsageRecordedService --> UsageRecordedLogEntity : map
 classDiagram
 direction TB
 
-class ProxyTrustHeadersGatewayFilter {
-  +Mono~Void~ filter(ServerWebExchange, GatewayFilterChain)
+class ProxyTrustHeadersWebFilter {
+  +Mono~Void~ filter(ServerWebExchange, WebFilterChain)
   -Mono~Void~ forwardWithJwt(...)
   -Mono~Void~ forwardDevHeaders(...)
 }
@@ -252,13 +252,13 @@ class SecurityConfiguration
 class JwtDecoderConfiguration
 class GatewayProperties
 class JwtAuthenticationToken
-class GatewayFilterChain
+class WebFilterChain
 
 SecurityConfiguration --> JwtDecoderConfiguration : decoder
-SecurityConfiguration --> ProxyTrustHeadersGatewayFilter : chain
-ProxyTrustHeadersGatewayFilter --> JwtAuthenticationToken : JWT claims
-ProxyTrustHeadersGatewayFilter --> GatewayProperties : dev / secret
-ProxyTrustHeadersGatewayFilter --> GatewayFilterChain : forward
+SecurityConfiguration --> ProxyTrustHeadersWebFilter : addFilterAfter AUTHORIZATION
+ProxyTrustHeadersWebFilter --> JwtAuthenticationToken : JWT claims
+ProxyTrustHeadersWebFilter --> GatewayProperties : dev / secret
+ProxyTrustHeadersWebFilter --> WebFilterChain : forward
 ```
 
 ## C4 - Code Diagram (Identity Auth Core)
@@ -490,7 +490,7 @@ flowchart TD
 - `docs/contracts/web-identity-bff.md`
 - `docs/contracts/web-gateway-bff.md`
 - `services/api-gateway-service/src/main/resources/application.yml`
-- `services/api-gateway-service/src/main/java/com/eevee/apigateway/filter/ProxyTrustHeadersGatewayFilter.java`
+- `services/api-gateway-service/src/main/java/com/eevee/apigateway/filter/ProxyTrustHeadersWebFilter.java`
 - `services/proxy-service/src/main/java/com/eevee/proxyservice/web/ProxyController.java`
 - `services/proxy-service/src/main/java/com/eevee/proxyservice/relay/ProxyRelayService.java`
 - `services/proxy-service/src/main/java/com/eevee/proxyservice/mq/UsageEventPublisher.java`
