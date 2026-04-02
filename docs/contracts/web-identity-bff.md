@@ -1,6 +1,6 @@
 # Web(Next.js) ↔ Identity 인증 BFF 계약
 
-버전: 1.6  
+버전: 1.7  
 관련: [docs/architecture.md](../architecture.md) §1.3, §3.3, [Identity 인증 API 계약](../identity-auth-api-contract.md), [Web·Gateway Usage BFF](./web-gateway-bff.md)(`/api/usage/**` 호출 맵), [저장소 구조](../repository-structure.md) §6
 
 ---
@@ -20,6 +20,7 @@
 | 로그인 | `POST /api/auth/login` | `POST /api/auth/login` |
 | 외부 API 키 조회(개인) | `GET /api/auth/external-keys` | `GET /api/auth/external-keys` |
 | 외부 API 키 등록(개인) | `POST /api/auth/external-keys` | `POST /api/auth/external-keys` |
+| 외부 API 키 수정(개인) | 미지원 (현재 BFF 미구현) | `PUT /api/auth/external-keys/{id}` |
 | 세션(로그인 여부 단일 기준) | `GET /api/auth/session` | `GET /api/auth/session` (BFF가 쿠키 JWT를 Bearer로 전달해 프록시) |
 | 로그아웃 | `POST /api/auth/logout` | `POST /api/auth/logout` (선택 프록시; stateless이며 실질 로그아웃은 BFF의 쿠키 삭제) |
 
@@ -67,6 +68,13 @@
 5. **성공 시** Identity의 상태 코드/본문(`ApiResponse`)을 가능한 그대로 전달한다. 응답에는 `Cache-Control: no-store`를 적용한다.
 6. **Identity가 `400`/`401`/`409` 등으로 거절**하면 상태 코드와 JSON 본문을 **그대로** 프론트에 전달한다(§6).
 7. `IDENTITY_SERVICE_URL` 미설정, 업스트림 연결 실패, 업스트림 응답이 계약과 맞지 않는 경우 등은 BFF가 `500`/`502` 등으로 처리할 수 있다. 단, **외부 API 키 평문(`externalKey`)은 로그/에러 메시지에 포함하지 않는다.**
+
+### 2.4 `PUT /api/auth/external-keys/{id}` 지원 상태
+
+- Identity 백엔드는 `PUT /api/auth/external-keys/{id}`를 지원한다([Identity 인증 API 계약](../identity-auth-api-contract.md) §9).
+- 그러나 현재 `apps/web` BFF(`apps/web/src/app/api/auth/external-keys/route.ts`)는 `GET`/`POST`만 구현되어 있다.
+- 따라서 브라우저에서 BFF 경유로 외부 API 키 수정이 필요하면, BFF에 `PUT` 핸들러를 추가해 업스트림 `PUT` 프록시를 구현해야 한다.
+- 본 문서 버전에서는 Web BFF의 `PUT /api/auth/external-keys/{id}`를 **미지원**으로 정의한다.
 
 ---
 
@@ -169,6 +177,7 @@
 
 - 로그인/로그아웃/**`GET /api/auth/session`(세션 체크)** 응답에는 `Cache-Control: no-store`를 적용한다.
 - **`GET /api/auth/external-keys` / `POST /api/auth/external-keys`** 응답에도 `Cache-Control: no-store`를 적용한다.
+- 추후 BFF가 `PUT /api/auth/external-keys/{id}`를 지원하면 해당 응답에도 동일하게 `Cache-Control: no-store`를 적용한다.
 - MVP는 **Access Token only**(Refresh Token 미포함)로 운영하고, 만료 시 재로그인한다.
 - CSRF는 MVP에서 `SameSite=Lax + BFF 경유`를 기본으로 하고, **차기 스프린트에서 상태 변경 API는 BFF 경유에 더해 `Origin/Referer` 검증(또는 CSRF 토큰) 적용을 표준으로 한다.**
 

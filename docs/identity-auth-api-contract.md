@@ -1,6 +1,6 @@
 # Identity 인증 API 계약 (백엔드)
 
-버전: 1.1  
+버전: 1.2  
 관련: [architecture.md](./architecture.md) §1.3, [contracts/web-identity-bff.md](./contracts/web-identity-bff.md)
 
 ---
@@ -39,6 +39,7 @@
 | `GET`  | `/api/auth/session` | 필요  | 세션(인증 상태) 확인             |
 | `GET`  | `/api/auth/external-keys` | 필요  | 내 외부 AI API 키 목록 조회 (`id`, `provider`, `alias`, `createdAt`) |
 | `POST` | `/api/auth/external-keys` | 필요  | 외부 AI API 키 등록 (`provider`, `externalKey`, `alias`) |
+| `PUT`  | `/api/auth/external-keys/{id}` | 필요  | 외부 AI API 키 수정 (`provider`, `externalKey`, `alias`) |
 | `POST` | `/api/auth/logout`  | 불필요 | 로그아웃 신호 응답(BFF 쿠키 삭제 유도) |
 
 
@@ -211,7 +212,6 @@
 | `externalKey` 누락 | `400` | `{"success":false,"message":"externalKey는 필수입니다","data":null}` |
 | `alias` 누락 | `400` | `{"success":false,"message":"alias는 필수입니다","data":null}` |
 | `provider` 값 불가 | `400` | `{"success":false,"message":"provider 값이 올바르지 않습니다. 허용: GEMINI, OPENAI, ANTHROPIC","data":null}` (또는 본문 형식 오류 메시지) |
-| 사용자당 외부 키 상한 초과 | `400` | `{"success":false,"message":"외부 API 키는 사용자당 최대 5개까지 등록할 수 있습니다","data":null}` |
 | 동일 provider·동일 키 재등록 | `409` | `{"success":false,"message":"이미 등록된 API 키입니다","data":null}` |
 
 ### 7.3 캐시 정책
@@ -228,7 +228,70 @@
 
 ---
 
-## 9. 회원가입 입력 정책
+## 9. 외부 API 키 수정 계약
+
+외부 API 키 ID를 기준으로 `provider`/`externalKey`/`alias`를 수정한다. 응답 본문에는 **키 평문·암호문을 포함하지 않는다**.
+
+### 9.1 요청
+
+| 항목 | 값 |
+| --- | --- |
+| 메서드 | `PUT` |
+| 경로 | `/api/auth/external-keys/{id}` |
+| 인증 | 필요 (액세스 토큰, 일반적으로 `Authorization: Bearer <jwt>`) |
+| `Content-Type` | `application/json` |
+
+경로 파라미터:
+
+| 파라미터 | 타입 | 설명 |
+| --- | --- | --- |
+| `id` | number | 수정 대상 외부 API 키 ID |
+
+요청 본문 필드:
+
+| 필드 | 타입 | 필수 | 제약 | 예시 값 |
+| --- | --- | --- | --- | --- |
+| `provider` | string (enum) | 예 | `GEMINI`, `OPENAI`, `ANTHROPIC` 중 하나 | `"GEMINI"` |
+| `externalKey` | string | 예 | 공백만 불가, 최대 4096자 | 제3자가 발급한 비밀 키 |
+| `alias` | string | 예 | 공백만 불가, 최대 100자 | `"데모용 Gemini (수정)"` |
+
+### 9.2 성공 응답 (`200 OK`)
+
+| 항목 | 값 |
+| --- | --- |
+| 상태 코드 | `200` |
+| `Cache-Control` | `no-store` (본 서비스는 API 응답 전반에 적용) |
+
+응답 본문 예시:
+
+```json
+{
+  "success": true,
+  "message": "외부 API 키가 수정되었습니다",
+  "data": {
+    "id": 1,
+    "provider": "GEMINI",
+    "alias": "데모용 Gemini (수정)",
+    "createdAt": "2026-03-29T08:05:19.296098200Z"
+  }
+}
+```
+
+오류 응답 예시 (`success=false`, `data=null`):
+
+| 상황 | 상태 코드 | 예시 JSON |
+| --- | --- | --- |
+| 수정 대상 키 없음 | `404` | `{"success":false,"message":"등록된 API 키를 찾을 수 없습니다","data":null}` |
+| 별칭 중복 | `409` | `{"success":false,"message":"이미 사용 중인 별칭입니다","data":null}` |
+| 동일 provider·동일 키 중복 | `409` | `{"success":false,"message":"이미 등록된 API 키입니다","data":null}` |
+
+### 9.3 캐시 정책
+
+- identity-service는 HTTP 응답에 `Cache-Control: no-store`를 적용한다.
+
+---
+
+## 10. 회원가입 입력 정책
 
 - `passwordConfirm`은 필수이며 `password`와 일치해야 한다.
 - 비밀번호 정책:
@@ -239,23 +302,24 @@
 
 ---
 
-## 10. 오류 코드 기준
+## 11. 오류 코드 기준
 
 
 | 상황        | 상태 코드 | 설명                           |
 | --------- | ----- | ---------------------------- |
 | 입력 검증 실패  | `400` | 필드 유효성/정책 위반 (`provider`·`externalKey`·`alias` 등) |
-| 외부 API 키 개수 초과 | `400` | 사용자당 최대 5개까지 등록 가능        |
 | 로그인 인증 실패 | `401` | 이메일/비밀번호 불일치                 |
-| 보호 API 미인증 | `401` | 액세스 토큰 없음/무효 (`GET/POST /api/auth/external-keys` 등) |
-| 외부 API 키 중복 등록 | `409` | 동일 사용자·동일 키 평문 재등록           |
+| 보호 API 미인증 | `401` | 액세스 토큰 없음/무효 (`GET/POST/PUT /api/auth/external-keys` 등) |
+| 외부 API 키 별칭 중복 | `409` | 동일 사용자 기준 별칭 재사용              |
+| 외부 API 키 중복 등록 | `409` | 동일 사용자·동일 provider·동일 키 평문 재등록 |
+| 외부 API 키 미존재 | `404` | 수정/조회 대상 외부 API 키를 찾을 수 없음    |
 | 이메일 중복    | `409` | 회원가입 중복                      |
 | 인증 계약 위반  | `502` | 업스트림/내부 계약 위반(`tokenType` 등) |
 
 
 ---
 
-## 11. 구현 시 주의
+## 12. 구현 시 주의
 
 - 인증 관련 응답은 캐시 금지(`Cache-Control: no-store`)를 유지한다(identity-service는 필터로 API 응답 전반에 적용).
 - 인증 실패 응답은 프론트/BFF에서 공통 처리할 수 있도록 코드/본문 일관성을 유지한다.
