@@ -212,7 +212,6 @@
 | `externalKey` 누락 | `400` | `{"success":false,"message":"externalKey는 필수입니다","data":null}` |
 | `alias` 누락 | `400` | `{"success":false,"message":"alias는 필수입니다","data":null}` |
 | `provider` 값 불가 | `400` | `{"success":false,"message":"provider 값이 올바르지 않습니다. 허용: GEMINI, OPENAI, ANTHROPIC","data":null}` (또는 본문 형식 오류 메시지) |
-| 사용자당 외부 키 상한 초과 | `400` | `{"success":false,"message":"외부 API 키는 사용자당 최대 5개까지 등록할 수 있습니다","data":null}` |
 | 동일 provider·동일 키 재등록 | `409` | `{"success":false,"message":"이미 등록된 API 키입니다","data":null}` |
 
 ### 7.3 캐시 정책
@@ -309,7 +308,6 @@
 | 상황        | 상태 코드 | 설명                           |
 | --------- | ----- | ---------------------------- |
 | 입력 검증 실패  | `400` | 필드 유효성/정책 위반 (`provider`·`externalKey`·`alias` 등) |
-| 외부 API 키 개수 초과 | `400` | 사용자당 최대 5개까지 등록 가능        |
 | 로그인 인증 실패 | `401` | 이메일/비밀번호 불일치                 |
 | 보호 API 미인증 | `401` | 액세스 토큰 없음/무효 (`GET/POST/PUT /api/auth/external-keys` 등) |
 | 외부 API 키 별칭 중복 | `409` | 동일 사용자 기준 별칭 재사용              |
