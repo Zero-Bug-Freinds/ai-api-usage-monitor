@@ -57,7 +57,7 @@ public class GoogleProviderHandler implements ProviderHandler {
             if (meta == null || meta.isNull()) {
                 return null;
             }
-            String model = text(root.get("model"));
+            String model = firstNonBlank(text(root.get("modelVersion")), text(root.get("model")));
             Long prompt = longVal(meta.get("promptTokenCount"));
             Long completion = longVal(meta.get("candidatesTokenCount"));
             Long total = longVal(meta.get("totalTokenCount"));
@@ -65,6 +65,16 @@ public class GoogleProviderHandler implements ProviderHandler {
         } catch (IOException e) {
             return null;
         }
+    }
+
+    private static String firstNonBlank(String primary, String fallback) {
+        if (primary != null && !primary.isBlank()) {
+            return primary;
+        }
+        if (fallback != null && !fallback.isBlank()) {
+            return fallback;
+        }
+        return null;
     }
 
     private static String text(JsonNode n) {

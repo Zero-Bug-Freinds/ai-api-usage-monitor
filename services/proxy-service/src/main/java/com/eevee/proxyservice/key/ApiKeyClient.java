@@ -38,8 +38,11 @@ public class ApiKeyClient {
                 .build(this::loadKeyBlocking);
     }
 
-    public Mono<ResolvedApiKey> resolveApiKey(String userId, AiProvider provider) {
-        String cacheKey = userId + ":" + provider.pathSegment();
+    /**
+     * @param keyLookupUserId numeric platform user id when available, else gateway subject (e.g. email)
+     */
+    public Mono<ResolvedApiKey> resolveApiKey(String keyLookupUserId, AiProvider provider) {
+        String cacheKey = keyLookupUserId + ":" + provider.pathSegment();
         return Mono.fromCallable(() -> cache.get(cacheKey))
                 .subscribeOn(Schedulers.boundedElastic());
     }
@@ -49,7 +52,7 @@ public class ApiKeyClient {
         if (idx <= 0) {
             throw new IllegalStateException("invalid cache key");
         }
-        String userId = cacheKey.substring(0, idx);
+        String keyLookupUserId = cacheKey.substring(0, idx);
         String segment = cacheKey.substring(idx + 1);
         AiProvider provider = AiProvider.fromPathSegment(segment);
 
@@ -63,7 +66,7 @@ public class ApiKeyClient {
             KeyResponse body = keyServiceWebClient.get()
                     .uri(uriBuilder -> uriBuilder
                             .path("/internal/api-keys/{provider}")
-                            .queryParam("userId", userId)
+                            .queryParam("userId", keyLookupUserId)
                             .build(provider.pathSegment()))
                     .headers(h -> {
                         if (token != null && !token.isBlank()) {
