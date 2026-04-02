@@ -3,7 +3,6 @@ package com.zerobugfreinds.identity_service.service;
 import com.zerobugfreinds.identity_service.domain.ExternalApiKeyProvider;
 import com.zerobugfreinds.identity_service.dto.InternalApiKeyResponse;
 import com.zerobugfreinds.identity_service.entity.ExternalApiKeyEntity;
-import com.zerobugfreinds.identity_service.exception.ApiKeyLimitExceededException;
 import com.zerobugfreinds.identity_service.exception.DuplicateExternalApiKeyAliasException;
 import com.zerobugfreinds.identity_service.exception.DuplicateExternalApiKeyException;
 import com.zerobugfreinds.identity_service.exception.ExternalApiKeyNotFoundException;
@@ -22,8 +21,6 @@ import org.springframework.util.StringUtils;
 public class ExternalApiKeyService {
 
 	private static final Logger log = LoggerFactory.getLogger(ExternalApiKeyService.class);
-
-	private static final int MAX_KEYS_PER_USER = 5;
 
 	private final ExternalApiKeyRepository externalApiKeyRepository;
 	private final EncryptionUtil encryptionUtil;
@@ -48,13 +45,6 @@ public class ExternalApiKeyService {
 		String normalizedKey = StringUtils.hasText(plainKey) ? plainKey.trim() : "";
 		if (!StringUtils.hasText(normalizedKey)) {
 			throw new IllegalArgumentException("externalKey는 필수입니다");
-		}
-
-		long count = externalApiKeyRepository.countByUserId(userId);
-		if (count >= MAX_KEYS_PER_USER) {
-			throw new ApiKeyLimitExceededException(
-					"외부 API 키는 사용자당 최대 " + MAX_KEYS_PER_USER + "개까지 등록할 수 있습니다"
-			);
 		}
 
 		if (externalApiKeyRepository.existsByUserIdAndKeyAlias(userId, trimmedAlias)) {
