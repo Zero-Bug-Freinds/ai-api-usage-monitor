@@ -72,6 +72,18 @@ public class ExternalApiKeyEntity {
 		return entity;
 	}
 
+	public void updateCredential(
+			ExternalApiKeyProvider provider,
+			String keyAlias,
+			String keyHash,
+			String encryptedKey
+	) {
+		this.provider = provider;
+		this.keyAlias = keyAlias;
+		this.keyHash = keyHash;
+		this.encryptedKey = encryptedKey;
+	}
+
 	public Long getId() {
 		return id;
 	}

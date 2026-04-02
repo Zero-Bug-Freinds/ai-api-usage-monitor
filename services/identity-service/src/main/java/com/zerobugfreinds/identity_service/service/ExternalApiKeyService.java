@@ -4,6 +4,7 @@ import com.zerobugfreinds.identity_service.domain.ExternalApiKeyProvider;
 import com.zerobugfreinds.identity_service.dto.InternalApiKeyResponse;
 import com.zerobugfreinds.identity_service.entity.ExternalApiKeyEntity;
 import com.zerobugfreinds.identity_service.exception.ApiKeyLimitExceededException;
+import com.zerobugfreinds.identity_service.exception.DuplicateExternalApiKeyAliasException;
 import com.zerobugfreinds.identity_service.exception.DuplicateExternalApiKeyException;
 import com.zerobugfreinds.identity_service.exception.ExternalApiKeyNotFoundException;
 import com.zerobugfreinds.identity_service.repository.ExternalApiKeyRepository;
@@ -56,8 +57,21 @@ public class ExternalApiKeyService {
 			);
 		}
 
+		if (externalApiKeyRepository.existsByUserIdAndKeyAlias(userId, trimmedAlias)) {
+			throw new DuplicateExternalApiKeyAliasException("이미 사용 중인 별칭입니다");
+		}
+
 		String keyHash = encryptionUtil.sha256HexForUniqueness(provider.name(), normalizedKey);
-		if (externalApiKeyRepository.existsByUserIdAndProviderAndKeyHash(userId, provider, keyHash)) {
+		long duplicateCount = externalApiKeyRepository.countByUserIdAndProviderAndKeyHash(userId, provider, keyHash);
+		if (duplicateCount > 0) {
+			log.warn(
+					"[AUDIT] external_api_key_duplicate_detected userId={} provider={} alias={} hashPrefix={} duplicateCount={}",
+					userId,
+					provider.name(),
+					trimmedAlias,
+					keyHash.substring(0, 8),
+					duplicateCount
+			);
 			throw new DuplicateExternalApiKeyException("이미 등록된 API 키입니다");
 		}
 
@@ -88,6 +102,54 @@ public class ExternalApiKeyService {
 			throw new IllegalArgumentException("userId는 필수입니다");
 		}
 		return externalApiKeyRepository.findAllByUserIdOrderByCreatedAtDesc(userId);
+	}
+
+	@Transactional
+	public ExternalApiKeyEntity update(
+			Long userId,
+			Long externalKeyId,
+			ExternalApiKeyProvider provider,
+			String alias,
+			String plainKey
+	) {
+		if (userId == null) {
+			throw new IllegalArgumentException("userId는 필수입니다");
+		}
+		if (externalKeyId == null) {
+			throw new IllegalArgumentException("externalKeyId는 필수입니다");
+		}
+		if (provider == null) {
+			throw new IllegalArgumentException("provider는 필수입니다");
+		}
+		String trimmedAlias = StringUtils.hasText(alias) ? alias.trim() : "";
+		if (!StringUtils.hasText(trimmedAlias)) {
+			throw new IllegalArgumentException("alias는 필수입니다");
+		}
+		String normalizedKey = StringUtils.hasText(plainKey) ? plainKey.trim() : "";
+		if (!StringUtils.hasText(normalizedKey)) {
+			throw new IllegalArgumentException("externalKey는 필수입니다");
+		}
+
+		ExternalApiKeyEntity entity = externalApiKeyRepository.findByIdAndUserId(externalKeyId, userId)
+				.orElseThrow(() -> new ExternalApiKeyNotFoundException("등록된 API 키를 찾을 수 없습니다"));
+
+		String keyHash = encryptionUtil.sha256HexForUniqueness(provider.name(), normalizedKey);
+		if (externalApiKeyRepository.existsByUserIdAndProviderAndKeyHashAndIdNot(userId, provider, keyHash, externalKeyId)) {
+			throw new DuplicateExternalApiKeyException("이미 등록된 API 키입니다");
+		}
+
+		String encrypted = encryptionUtil.encryptAes256Gcm(normalizedKey);
+		entity.updateCredential(provider, trimmedAlias, keyHash, encrypted);
+
+		log.info(
+				"[AUDIT] external_api_key_updated userId={} provider={} alias={} keyId={}",
+				userId,
+				provider.name(),
+				trimmedAlias,
+				entity.getId()
+		);
+
+		return entity;
 	}
 
 	@Transactional(readOnly = true)

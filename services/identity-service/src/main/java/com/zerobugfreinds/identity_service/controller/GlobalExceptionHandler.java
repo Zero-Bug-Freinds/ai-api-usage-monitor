@@ -3,6 +3,7 @@ package com.zerobugfreinds.identity_service.controller;
 import com.zerobugfreinds.identity_service.common.ApiResponse;
 import com.zerobugfreinds.identity_service.exception.ApiKeyLimitExceededException;
 import com.zerobugfreinds.identity_service.exception.AuthContractViolationException;
+import com.zerobugfreinds.identity_service.exception.DuplicateExternalApiKeyAliasException;
 import com.zerobugfreinds.identity_service.exception.DuplicateExternalApiKeyException;
 import com.zerobugfreinds.identity_service.exception.DuplicateEmailException;
 import com.zerobugfreinds.identity_service.exception.ExternalApiKeyNotFoundException;
@@ -54,6 +55,12 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(DuplicateExternalApiKeyException.class)
 	@ResponseStatus(HttpStatus.CONFLICT)
 	public ApiResponse<Void> handleDuplicateExternalApiKey(DuplicateExternalApiKeyException ex) {
+		return ApiResponse.fail(ex.getMessage());
+	}
+
+	@ExceptionHandler(DuplicateExternalApiKeyAliasException.class)
+	@ResponseStatus(HttpStatus.CONFLICT)
+	public ApiResponse<Void> handleDuplicateExternalApiKeyAlias(DuplicateExternalApiKeyAliasException ex) {
 		return ApiResponse.fail(ex.getMessage());
 	}
 
