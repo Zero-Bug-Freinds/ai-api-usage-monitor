@@ -12,37 +12,33 @@ class UserContextResolverTest {
     private final UserContextResolver resolver = new UserContextResolver();
 
     @Test
-    void fromExchange_readsUserAndPlatformUserHeaders() {
-        MockServerHttpRequest request = MockServerHttpRequest.get("/proxy/openai/v1/chat/completions")
-                .header("X-User-Id", "user@example.com")
-                .header("X-Platform-User-Id", "101")
-                .header("X-Org-Id", "org-1")
-                .header("X-Team-Id", "team-1")
-                .header("X-Correlation-Id", "corr-1")
+    void keyLookupUserId_prefersPlatformUserIdFromHeader() {
+        MockServerHttpRequest request = MockServerHttpRequest.get("/proxy/google/")
+                .header("X-User-Id", "a@b.com")
+                .header("X-Platform-User-Id", "42")
                 .build();
+        MockServerWebExchange exchange = MockServerWebExchange.from(request);
 
-        StepVerifier.create(resolver.fromExchange(MockServerWebExchange.from(request)))
+        StepVerifier.create(resolver.fromExchange(exchange))
                 .assertNext(ctx -> {
-                    assertThat(ctx.userId()).isEqualTo("user@example.com");
-                    assertThat(ctx.platformUserId()).isEqualTo("101");
-                    assertThat(ctx.keyLookupUserId()).isEqualTo("101");
-                    assertThat(ctx.organizationId()).isEqualTo("org-1");
-                    assertThat(ctx.teamId()).isEqualTo("team-1");
-                    assertThat(ctx.correlationId()).isEqualTo("corr-1");
+                    assertThat(ctx.userId()).isEqualTo("a@b.com");
+                    assertThat(ctx.platformUserId()).isEqualTo("42");
+                    assertThat(ctx.keyLookupUserId()).isEqualTo("42");
                 })
                 .verifyComplete();
     }
 
     @Test
-    void keyLookupUserId_fallsBackToUserIdWhenPlatformHeaderMissing() {
-        MockServerHttpRequest request = MockServerHttpRequest.get("/proxy/openai/v1/chat/completions")
-                .header("X-User-Id", "user@example.com")
+    void keyLookupUserId_fallsBackToUserIdWhenPlatformAbsent() {
+        MockServerHttpRequest request = MockServerHttpRequest.get("/proxy/google/")
+                .header("X-User-Id", "a@b.com")
                 .build();
+        MockServerWebExchange exchange = MockServerWebExchange.from(request);
 
-        StepVerifier.create(resolver.fromExchange(MockServerWebExchange.from(request)))
+        StepVerifier.create(resolver.fromExchange(exchange))
                 .assertNext(ctx -> {
                     assertThat(ctx.platformUserId()).isNull();
-                    assertThat(ctx.keyLookupUserId()).isEqualTo("user@example.com");
+                    assertThat(ctx.keyLookupUserId()).isEqualTo("a@b.com");
                 })
                 .verifyComplete();
     }

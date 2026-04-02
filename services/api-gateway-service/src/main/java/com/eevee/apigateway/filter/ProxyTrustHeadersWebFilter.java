@@ -144,7 +144,7 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
         Jwt jwt = jwtAuth.getToken();
         ServerHttpRequest.Builder req = exchange.getRequest().mutate();
         req.header(HDR_USER, jwt.getSubject());
-        String platformUserId = claimToString(jwt.getClaim("userId"));
+        String platformUserId = jwt.getClaimAsString("userId");
         if (platformUserId != null && !platformUserId.isBlank()) {
             req.header(HDR_PLATFORM_USER, platformUserId);
         }
@@ -167,20 +167,13 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
             return Mono.error(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing X-User-Id"));
         }
         ServerHttpRequest.Builder req = exchange.getRequest().mutate();
+        copyCorrelation(exchange, req);
         String platformUserId = exchange.getRequest().getHeaders().getFirst(HDR_PLATFORM_USER);
         if (platformUserId != null && !platformUserId.isBlank()) {
             req.header(HDR_PLATFORM_USER, platformUserId);
         }
-        copyCorrelation(exchange, req);
         attachGatewayAuth(req);
         return chain.filter(exchange.mutate().request(req.build()).build());
-    }
-
-    private static String claimToString(Object claimValue) {
-        if (claimValue == null) {
-            return null;
-        }
-        return String.valueOf(claimValue);
     }
 
     private void copyCorrelation(ServerWebExchange exchange, ServerHttpRequest.Builder req) {

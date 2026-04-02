@@ -7,7 +7,6 @@ public class UsageServiceProperties {
 
     private final Analytics analytics = new Analytics();
     private final Gateway gateway = new Gateway();
-    private final Reporting reporting = new Reporting();
 
     public Analytics getAnalytics() {
         return analytics;
@@ -15,10 +14,6 @@ public class UsageServiceProperties {
 
     public Gateway getGateway() {
         return gateway;
-    }
-
-    public Reporting getReporting() {
-        return reporting;
     }
 
     public static class Analytics {
@@ -42,21 +37,6 @@ public class UsageServiceProperties {
 
         public void setSharedSecret(String sharedSecret) {
             this.sharedSecret = sharedSecret;
-        }
-    }
-
-    /**
-     * Dashboard/analytics: calendar days and month buckets for {@code occurred_at} use this IANA zone.
-     */
-    public static class Reporting {
-        private String timeZone = "Asia/Seoul";
-
-        public String getTimeZone() {
-            return timeZone;
-        }
-
-        public void setTimeZone(String timeZone) {
-            this.timeZone = timeZone;
         }
     }
 }

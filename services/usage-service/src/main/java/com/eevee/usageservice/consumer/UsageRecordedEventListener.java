@@ -30,7 +30,8 @@ public class UsageRecordedEventListener {
             UsageRecordedEvent event = objectMapper.readValue(json, UsageRecordedEvent.class);
             usageRecordedService.persist(event);
         } catch (Exception e) {
-            log.error("Failed to deserialize or persist UsageRecordedEvent. Drop malformed payload.", e);
+            log.error("Failed to deserialize or persist UsageRecordedEvent", e);
+            throw new IllegalStateException("usage event handling failed", e);
         }
     }
 }
