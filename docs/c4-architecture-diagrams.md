@@ -3,6 +3,8 @@
 이 문서는 목표 설계가 아니라, 현재 저장소에 존재하는 구현 코드 기준으로
 시스템 아키텍처를 C4 모델(C1 → C4)로 정리한다.
 
+**문서 버전:** 0.2 (저장소 트리·게이트웨이 트러스트 헤더·프록시 키 조회·Gemini usage 파싱 반영)
+
 분석 대상:
 - `apps/web` (Next.js UI + BFF Route Handlers, 팀원 C · Frontend)
 - `services/api-gateway-service`
@@ -11,6 +13,8 @@
 - `services/usage-service`
 - `libs/usage-events`
 - 서비스별 `application.yml`/`application.properties`
+- `test-report/` (팀·실험 보고·원인 분석 메모, 런타임 코드 아님)
+- `experiment-logic/` (로컬·네트워크·호출 경로 등 실험 정리, 런타임 코드 아님)
 
 ## C1 - System Context
 
@@ -36,7 +40,6 @@ flowchart TB
       openai["OpenAI"]
       anthropic["Anthropic"]
       google["Gemini"]
-      keysvc["API Key Svc"]
     end
 
     subgraph data["Data & messaging"]
@@ -55,7 +58,7 @@ flowchart TB
     proxy -->|relay| openai
     proxy -->|relay| anthropic
     proxy -->|relay| google
-    proxy -->|key| keysvc
+    proxy -->|internal /internal/api-keys| identity
     proxy -->|publish| rabbit
 
     usage -->|consume| rabbit
@@ -74,8 +77,8 @@ Person(browserUser, "Browser user", "Web UI and same-origin BFF")
 
 System_Boundary(platform, "AI Usage Platform") {
     Container(webapp, "Web App (apps/web)", "Next.js", "UI + auth BFF, httpOnly cookie")
-    Container(gateway, "API Gateway", "Spring Cloud Gateway", "JWT, /api/v1/ai → /proxy")
-    Container(proxy, "Proxy Service", "Spring WebFlux", "Relay, usage parse, MQ publish")
+    Container(gateway, "API Gateway", "Spring Cloud Gateway", "JWT; /api/v1/ai→/proxy; trust headers")
+    Container(proxy, "Proxy Service", "Spring WebFlux", "Relay; usage parse; MQ publish; key→Identity")
     Container(identity, "Identity Service", "Spring + JPA", "Signup/login, JWT")
     Container(usage, "Usage Service", "Spring + MQ + JPA", "Consume usage events")
 
@@ -87,7 +90,6 @@ System_Boundary(platform, "AI Usage Platform") {
 System_Ext(openai, "OpenAI API", "LLM provider")
 System_Ext(anthropic, "Anthropic API", "LLM provider")
 System_Ext(google, "Google Gemini API", "LLM provider")
-System_Ext(keysvc, "API Key Service", "provider key source")
 
 Rel(browserUser, webapp, "HTTPS UI + /api/auth/*", "HTTPS")
 Rel(webapp, identity, "signup/login proxy", "HTTPS")
@@ -95,7 +97,7 @@ Rel(client, identity, "auth API direct", "HTTPS")
 Rel(client, gateway, "AI request", "HTTPS")
 Rel(gateway, proxy, "forward + trust headers", "HTTP")
 
-Rel(proxy, keysvc, "provider API key", "HTTP")
+Rel(proxy, identity, "internal API keys per user", "HTTP")
 Rel(proxy, openai, "relay", "HTTPS")
 Rel(proxy, anthropic, "relay", "HTTPS")
 Rel(proxy, google, "relay", "HTTPS")
@@ -114,7 +116,7 @@ flowchart TB
   subgraph GW["API Gateway"]
     direction TB
     gwSec["Security + JwtDecoder config"]
-    gwFilter["ProxyTrustHeadersWebFilter"]
+    gwFilter["ProxyTrustHeadersWebFilter<br/>sub→X-User-Id, userId→X-Platform-User-Id"]
     gwRoute["Routes (application.yml)"]
     gwSec --> gwFilter --> gwRoute
   end
@@ -124,7 +126,7 @@ flowchart TB
     pxCtl["ProxyController"]
     pxRelay["ProxyRelayService"]
     pxReg["ProviderRegistry / Handlers"]
-    pxRow["ApiKeyClient · UserContextResolver · UsageEventPublisher"]
+    pxRow["ApiKeyClient(keyLookupUserId) · UserContextResolver · UsageEventPublisher"]
     pxCtl --> pxRelay --> pxReg --> pxRow
   end
 
@@ -181,8 +183,16 @@ class ProviderHandler {
   +TokenUsage parseUsageFromResponseJson(...)
 }
 
+class GoogleProviderHandler {
+  +TokenUsage parseUsageFromResponseJson(String)
+}
+
 class ApiKeyClient {
-  +Mono~String~ resolveApiKey(String, AiProvider)
+  +Mono~ResolvedApiKey~ resolveApiKey(String keyLookupUserId, AiProvider)
+}
+
+class UserContext {
+  +String keyLookupUserId()
 }
 
 class UserContextResolver {
@@ -203,9 +213,12 @@ ProxyRelayService --> ProviderHandler : per provider
 ProxyRelayService --> ApiKeyClient : key
 ProxyRelayService --> UserContextResolver : user context
 ProxyRelayService --> UsageEventPublisher : publish
+UserContextResolver --> UserContext : build
+ProxyRelayService ..> UserContext : uses in relay
 UsageEventPublisher --> UsageRecordedEvent : payload
 UsageRecordedEvent --> TokenUsage : stats
 ProviderHandler --> AiProvider : strategy
+ProviderHandler <|.. GoogleProviderHandler
 ```
 
 ## C4 - Code Diagram (Usage Persistence Core)
@@ -260,6 +273,8 @@ ProxyTrustHeadersWebFilter --> JwtAuthenticationToken : JWT claims
 ProxyTrustHeadersWebFilter --> GatewayProperties : dev / secret
 ProxyTrustHeadersWebFilter --> WebFilterChain : forward
 ```
+
+**현행 동작 요약:** JWT 경로에서 `sub` → `X-User-Id`, 클레임 `userId` → `X-Platform-User-Id`(값이 있을 때만). 개발 모드 `forwardDevHeaders`는 클라이언트가 넘긴 `X-Platform-User-Id`를 유지한다. 프록시는 `UserContextResolver`가 위 헤더를 읽어 `keyLookupUserId()`에 반영한다.
 
 ## C4 - Code Diagram (Identity Auth Core)
 
@@ -498,6 +513,15 @@ flowchart TD
 
 `matcher` 가 가리키는 경로에 대응하는 **`app/dashboard/...` 등 페이지**를 추가·이동하면, W1 트리와 `docs/repository-structure.md` 도 함께 업데이트한다.
 
+## 저장소 문서·실험 디렉터리 (비애플리케이션 코드)
+
+런타임 서비스는 아니나, 팀이 구조·원인·실험을 남기기 위해 루트에 다음을 둔다. C1–C4 다이어그램의 **컨테이너/컴포넌트 경계에는 포함하지 않는다.**
+
+| 경로 | 용도 |
+|------|------|
+| `test-report/` | 장애·정합 이슈 분석, 변경 보고, 테스트·운영 메모 |
+| `experiment-logic/` | 로컬 기동·팀원 `curl`·네트워크 전제 등 실험 정리 |
+
 ## 참고 코드/문서
 
 - `apps/web/middleware.ts`
@@ -517,7 +541,11 @@ flowchart TD
 - `services/api-gateway-service/src/main/java/com/eevee/apigateway/filter/ProxyTrustHeadersWebFilter.java`
 - `services/proxy-service/src/main/java/com/eevee/proxyservice/web/ProxyController.java`
 - `services/proxy-service/src/main/java/com/eevee/proxyservice/relay/ProxyRelayService.java`
+- `services/proxy-service/src/main/java/com/eevee/proxyservice/provider/GoogleProviderHandler.java`
+- `services/proxy-service/src/main/java/com/eevee/proxyservice/security/UserContext.java`
 - `services/proxy-service/src/main/java/com/eevee/proxyservice/mq/UsageEventPublisher.java`
+- `docker-compose.yml` (프록시·게이트웨이·RabbitMQ 등 로컬 인프라; `identity`/`usage-service` 호스트 실행 전제는 `architecture.md`·본 문서 C1 참고)
+- `test-report/`, `experiment-logic/` (문서 전용, 위 § 저장소 문서·실험 디렉터리)
 - `services/usage-service/src/main/java/com/eevee/usageservice/consumer/UsageRecordedEventListener.java`
 - `services/usage-service/src/main/java/com/eevee/usageservice/service/UsageRecordedService.java`
 - `services/identity-service/src/main/java/com/zerobugfreinds/identity_service/controller/AuthController.java`
