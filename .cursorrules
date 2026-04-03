@@ -6,7 +6,7 @@
 - **상세 아키텍처:** `docs/architecture.md`, 저장소 구조: `docs/repository-structure.md`.
 
 ## Identity & Management Service 상세
-- **소스 위치:** Gradle 프로젝트 루트 `services/identity-service/` (모노레포 `services/` 하위)
+- **소스 위치:** Gradle 프로젝트 루트 `services/identity-service/` 및 **`services/identity-service/web/`**(Next UI·인증 BFF — `docs/contracts/web-identity-bff.md`)
 - **주요 목적:** 유저 인증, 조직/팀 계층 구조 관리, 외부 API Key(OpenAI 등) 보안 저장.
 - **기술 스택:** Java 17, Spring Boot 4.0.3, PostgreSQL, gRPC, Jasypt.
 
@@ -15,7 +15,7 @@
 # Role: Identity & Management Service Developer (팀원 B)
 
 ## 담당
-- Identity & Management Service — 유저 인증, 조직/팀 계층, 외부 API Key(OpenAI 등) 보안 저장.
+- Identity & Management Service — 유저 인증, 조직/팀 계층, 외부 API Key(OpenAI 등) 보안 저장. 같은 경계의 **`web/`** UI·BFF는 `docs/contracts/web-split-boundary.md`에 맞게 유지한다.
 
 ## 기술 스택
 - Java 21, Spring Boot 4.0.3, PostgreSQL, gRPC, Jasypt.
@@ -34,9 +34,9 @@
 
 ## 담당
 - **도메인 서비스를 맡은 사람**이 **같은 `services/<svc>/` 경계 안**에서 Spring(또는 해당 백엔드)과 **필요한 경우 `web/`(Next.js)** 을 함께 개발한다. “프론트 전담” 역할 분리는 **사용하지 않는다**.
-- **Identity 계열:** `services/identity-service` + (목표) `services/identity-service/web/` — 랜딩·인증 UI, `/api/auth/**`·`/api/identity/**` BFF 등. 계약: `docs/contracts/web-identity-bff.md`.
-- **Usage·대시보드 계열:** `services/usage-service` + (목표) `services/usage-service/web/` — Usage BFF `/api/usage/**`, 게이트웨이 연동. 계약: `docs/contracts/web-gateway-bff.md`, `docs/contracts/gateway-proxy.md`.
-- **웹 소스:** `services/identity-service/web`, `services/usage-service/web`(과도기 `apps/web`은 안내용만). 경계는 `docs/contracts/web-split-boundary.md`.
+- **Identity 계열:** `services/identity-service` + `services/identity-service/web/` — 랜딩·인증 UI, `/api/auth/**`·`/api/identity/**` BFF 등. 계약: `docs/contracts/web-identity-bff.md`.
+- **Usage·대시보드 계열:** `services/usage-service` + `services/usage-service/web/` — Usage BFF `/api/usage/**`, 게이트웨이 연동. 계약: `docs/contracts/web-gateway-bff.md`, `docs/contracts/gateway-proxy.md`.
+- **통합 `apps/web`:** 이전이 끝나면 **안내용 `README.md`만** 둘 수 있다. 라우트·matcher 정본: `docs/contracts/web-split-boundary.md`.
 - **집계·알림 파이프라인(§12):** UI를 만드는 일과 **혼동하지 않는다** — 해당 백엔드는 `docs/architecture.md` §12 범위.
 
 ## 기술 스택 (웹·BFF, 권장)

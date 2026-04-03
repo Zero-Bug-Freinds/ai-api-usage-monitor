@@ -33,7 +33,7 @@
 - **백엔드(Proxy 등)**: **Spring Boot + Spring WebFlux** — 비동기 I/O·스트리밍·Provider 중계에 사용. **FastAPI(Python)는 사용하지 않습니다.**
 - **메시지 브로커**: **RabbitMQ** — `usage-recorded` 등 이벤트 발행·구독(Spring AMQP).
 - **기타 서비스**: 동일 Spring 생태계에서 Spring MVC + JPA 등으로 구현 가능(팀 합의).
-- 상세: `docs/architecture.md` §2.1, §6.2
+- 상세: `docs/architecture.md` §2.1, §6.2, §10.2, §13 · 웹 경계: `docs/contracts/web-split-boundary.md`
 
 ## 로컬 개발 관련(중요)
 - **Kubernetes는 사용하지 않음**: 배포하지 않는 캡스톤 환경을 전제로 합니다.
@@ -51,7 +51,7 @@
 ### 빌드 순서(요약)
 
 1. **Java:** 각 서비스 디렉터리에서 `./gradlew bootJar`(이미지 빌드 전에 `app.jar`가 필요한 Compose 서비스는 파일 주석 참고).
-2. **Next.js:** `services/identity-service/web`, `services/usage-service/web`에서 의존성 설치 후 **`npm run build`** — `output: 'standalone'` 산출물을 Docker가 복사하는 패턴(`docs/architecture.md` §10.1).
+2. **Next.js:** `services/identity-service/web`, `services/usage-service/web`에서 의존성 설치 후 **`pnpm build`** 또는 **`npm run build`** — `output: 'standalone'` 산출물을 Docker가 복사하는 패턴(`docs/architecture.md` §10.1).
 3. **공유 UI 패키지:** 루트 `pnpm` workspace·`packages/*` 도입 시, 앱 빌드 전에 **`pnpm install`**(및 필요 시 `packages` 선행 빌드).
 
 로컬 포트·`.env` 힌트는 루트 **`.env.example`**, 각 **`services/*/web/.env.example`**, **`docs/contracts/web-identity-bff.md` §9**, **`docs/contracts/web-split-boundary.md`** 를 본다.
@@ -74,6 +74,7 @@
 - 아키텍처 문서: `docs/architecture.md`
 - 시퀀스 다이어그램(AI 호출·이벤트·대시보드 조회): `docs/sequence-diagrams.md`
 - 저장소·디렉터리 구조(모노레포): `docs/repository-structure.md`
+- Identity vs Usage 웹 라우트·BFF 경계: `docs/contracts/web-split-boundary.md`
 - MSA 이론 배경: `docs/msa-architecture-theory.md`
 - 코드 컨벤션(네이밍·스타일): `docs/code-conventions.md`
 - 브랜치·Git Flow·보호 규칙: `docs/branch-conventions.md`
