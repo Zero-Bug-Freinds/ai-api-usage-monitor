@@ -41,7 +41,7 @@
 - **의존성(DB·큐·캐시)**: **Docker Compose**로 실행합니다. 예: `PostgreSQL`, `RabbitMQ`, `Redis`.
 - **API Gateway + Proxy**: `docker-compose.yml`에서 **컨테이너로 함께 기동**할 수 있습니다(호스트 포트 기본 `8080` / `8081`). 계약·경로는 `docs/contracts/gateway-proxy.md`를 참고합니다.
 - **identity-service** 등 그 외 앱도 **로컬 JVM** 실행을 기본으로 하며, 필요 시 Compose에 추가할 수 있습니다.
-- **컨테이너 배포 모델**: 백엔드·프론트 **이미지 분리 + Docker Compose 스택**(패턴 B, `docs/architecture.md` §10.1). **과도기**에는 `apps/web` 을 standalone `Dockerfile`로 빌드하고, **`profile: web`** 으로 Compose에 붙일 수 있습니다. **목표 구조**에서는 도메인별로 `services/<svc>/web/Dockerfile`(Next standalone)을 두고 같은 방식으로 스택을 올립니다.
+- **컨테이너 배포 모델**: 백엔드·프론트 **이미지 분리 + Docker Compose 스택**(패턴 B, `docs/architecture.md` §10.1). Next는 **`services/identity-service/web`**, **`services/usage-service/web`** 각각 `Dockerfile`(standalone)로 빌드하고, **`profile: web`** 으로 Compose(`identity-web`, `usage-web`)에 붙일 수 있습니다.
 - **단일 도메인**: 브라우저 URL 하나로 쓸 때는 엣지(Nginx 등)에서 경로별로 각 `web` 인스턴스로 나눕니다(`docs/architecture.md` §10.2).
 
 ## 개발 방식(풀스택·서비스 소유)
@@ -51,10 +51,10 @@
 ### 빌드 순서(요약)
 
 1. **Java:** 각 서비스 디렉터리에서 `./gradlew bootJar`(이미지 빌드 전에 `app.jar`가 필요한 Compose 서비스는 파일 주석 참고).
-2. **Next.js:** 각 `web/`(현재는 주로 `apps/web`)에서 의존성 설치 후 **`pnpm build`** 또는 **`npm run build`** — `output: 'standalone'` 산출물을 Docker가 복사하는 패턴(`docs/architecture.md` §10.1).
+2. **Next.js:** `services/identity-service/web`, `services/usage-service/web`에서 의존성 설치 후 **`npm run build`** — `output: 'standalone'` 산출물을 Docker가 복사하는 패턴(`docs/architecture.md` §10.1).
 3. **공유 UI 패키지:** 루트 `pnpm` workspace·`packages/*` 도입 시, 앱 빌드 전에 **`pnpm install`**(및 필요 시 `packages` 선행 빌드).
 
-로컬 포트·`.env` 힌트는 루트 **`.env.example`**, **`apps/web/.env.example`**, **`docs/contracts/web-identity-bff.md` §9** 를 본다.
+로컬 포트·`.env` 힌트는 루트 **`.env.example`**, 각 **`services/*/web/.env.example`**, **`docs/contracts/web-identity-bff.md` §9**, **`docs/contracts/web-split-boundary.md`** 를 본다.
 
 ## 모노레포 레이아웃(요약)
 실행 가능한 앱은 `services/` 하위에 둡니다. (`docs/repository-structure.md` 참고)
@@ -63,7 +63,7 @@
 - `services/usage-service` — `UsageRecordedEvent` 소비·PostgreSQL 원장 저장(Spring AMQP + JPA)
 - `services/identity-service` — 계정·조직·API Key 등(Identity; 목표 Next는 `services/identity-service/web/`)
 - `libs/usage-events` — 공유 이벤트(`UsageRecordedEvent` 등)
-- `apps/web` — **과도기** 통합 Next(UI+BFF). 분리 후 `identity-service/web`, `usage-service/web` 이 이 역할을 나눕니다.
+- `apps/web` — **이행 완료** 안내(`README.md`만). UI+BFF 소스는 `services/identity-service/web`, `services/usage-service/web`.
 
 ## 문서
 - **로컬 실행·테스트(Gateway / Proxy / usage·이벤트·DB)**: `docs/local-run-and-usage-verification.md`

@@ -1,9 +1,9 @@
 # Web(Next.js) ↔ API Gateway — Usage BFF 계약
 
-버전: 1.2  
-관련: [docs/architecture.md](../architecture.md) §1.3, §10.2, §13, [게이트웨이·Proxy 계약](./gateway-proxy.md)(AI 공개 경로·Bearer·`X-User-Id`·라우트 정본), [Web·Identity BFF 계약](./web-identity-bff.md) §5.1·§6, [저장소 구조](../repository-structure.md) §6
+버전: 1.3  
+관련: [docs/architecture.md](../architecture.md) §1.3, §10.2, §13, [게이트웨이·Proxy 계약](./gateway-proxy.md)(AI 공개 경로·Bearer·`X-User-Id`·라우트 정본), [Web·Identity BFF 계약](./web-identity-bff.md) §5.1·§6, [저장소 구조](../repository-structure.md) §6, [웹 경계](./web-split-boundary.md)
 
-**소스 트리:** Usage BFF·대시보드 UI의 **목표 위치**는 `services/usage-service/web/` 이다. **현재(As-Is)** 는 `apps/web/` 에 포함되어 있다.
+**소스 트리:** Usage BFF·대시보드 UI의 **정본**은 `services/usage-service/web/` 이다.
 
 ---
 
@@ -19,7 +19,7 @@
 
 ---
 
-## 2. 환경 변수 (Usage `web/`, 과도기 `apps/web`)
+## 2. 환경 변수 (Usage `web/`)
 
 | 변수 | 용도 |
 |------|------|
@@ -33,8 +33,7 @@
 
 ## 3. BFF 엔드포인트·경로 매핑
 
-**구현(As-Is):** [`apps/web/src/app/api/usage/[[...path]]/route.ts`](../../apps/web/src/app/api/usage/[[...path]]/route.ts)  
-**목표:** `services/usage-service/web/src/app/api/usage/[[...path]]/route.ts`
+**구현:** [`services/usage-service/web/src/app/api/usage/[[...path]]/route.ts`](../../services/usage-service/web/src/app/api/usage/[[...path]]/route.ts)
 
 - 브라우저: **`/api/usage/{세그먼트…}{?쿼리}`** — `path`가 비어 있으면 BFF는 `404`.
 - 업스트림(게이트웨이): **`{API_GATEWAY_URL}/api/v1/usage/{동일 세그먼트}{동일 쿼리}`**
@@ -56,7 +55,7 @@
 
 ### 3.2 프론트 호출·401
 
-- 보호 대시보드 등에서는 [`apps/web/src/lib/usage/fetch-usage.ts`](../../apps/web/src/lib/usage/fetch-usage.ts)(목표: `services/usage-service/web/...`) 패턴으로 `credentials: "include"`·`401` 시 `/login?next=` 리다이렉트를 적용할 수 있다([web-identity-bff.md §6.1](./web-identity-bff.md)).
+- 보호 대시보드 등에서는 [`services/usage-service/web/src/lib/usage/fetch-usage.ts`](../../services/usage-service/web/src/lib/usage/fetch-usage.ts) 패턴으로 `credentials: "include"`·`401` 시 Identity 로그인으로 리다이렉트를 적용할 수 있다([web-identity-bff.md §6.1](./web-identity-bff.md), [web-split-boundary.md §4](./web-split-boundary.md)).
 
 ### 3.3 샘플 curl (로컬)
 
@@ -93,5 +92,5 @@ curl -sS -i "http://localhost:3000/api/usage/dashboard/summary" \
 
 ## 6. 회귀 테스트
 
-- BFF 동작(As-Is): `apps/web/src/app/api/usage/[[...path]]/route.test.ts` (Vitest) — 분리 후 `services/usage-service/web/...`.
+- BFF 동작: `services/usage-service/web/src/app/api/usage/[[...path]]/route.test.ts` (Vitest).
 - 게이트웨이 신뢰 헤더·JWT: `ProxyTrustHeadersWebFilterTest`(api-gateway-service) — [gateway-proxy.md §4.2](./gateway-proxy.md).

@@ -1,15 +1,15 @@
 # Web(Next.js) ↔ Identity 인증 BFF 계약
 
-버전: 1.8  
-관련: [docs/architecture.md](../architecture.md) §1.3, §3.3, §10.2, §13, [Identity 인증 API 계약](../identity-auth-api-contract.md), [Web·Gateway Usage BFF](./web-gateway-bff.md)(`/api/usage/**` 호출 맵), [저장소 구조](../repository-structure.md) §6
+버전: 1.9  
+관련: [docs/architecture.md](../architecture.md) §1.3, §3.3, §10.2, §13, [Identity 인증 API 계약](../identity-auth-api-contract.md), [Web·Gateway Usage BFF](./web-gateway-bff.md)(`/api/usage/**` 호출 맵), [저장소 구조](../repository-structure.md) §6, [웹 경계](./web-split-boundary.md)
 
-**소스 트리:** BFF·화면의 **목표 위치**는 `services/identity-service/web/` 이다. **현재 저장소**에는 과도기로 `apps/web/` 에 Identity BFF가 함께 있다. 아래 경로·샘플은 **As-Is=`apps/web`** 기준이며, 분리 후 동일 상대 경로를 `services/identity-service/web/` 밑으로 옮겨 문서와 맞춘다.
+**소스 트리:** BFF·화면의 **정본**은 `services/identity-service/web/` 이다. Identity vs Usage 라우트·미들웨어 매처는 [web-split-boundary.md](./web-split-boundary.md) §2·§3.
 
 ---
 
 ## 1. 목적
 
-- **Identity Next 앱**(과도기: `apps/web`)은 브라우저가 Identity 서비스를 직접 호출하지 않고, **Next Route Handler(BFF)** 를 통해 회원가입/로그인을 처리한다.
+- **Identity Next 앱**(`services/identity-service/web/`)은 브라우저가 Identity 서비스를 직접 호출하지 않고, **Next Route Handler(BFF)** 를 통해 회원가입/로그인을 처리한다.
 - 인증 토큰은 프론트 JavaScript에 노출하지 않고, **httpOnly 쿠키**로만 관리한다.
 
 ---
@@ -74,7 +74,7 @@
 ### 2.4 `PUT /api/auth/external-keys/{id}` 지원 상태
 
 - Identity 백엔드는 `PUT /api/auth/external-keys/{id}`를 지원한다([Identity 인증 API 계약](../identity-auth-api-contract.md) §9).
-- 그러나 현재 BFF(`apps/web/src/app/api/auth/external-keys/route.ts` → 목표 `services/identity-service/web/src/app/api/auth/external-keys/route.ts`)는 `GET`/`POST`만 구현되어 있다.
+- 그러나 현재 BFF(`services/identity-service/web/src/app/api/auth/external-keys/route.ts`)는 `GET`/`POST`만 구현되어 있다.
 - 따라서 브라우저에서 BFF 경유로 외부 API 키 수정이 필요하면, BFF에 `PUT` 핸들러를 추가해 업스트림 `PUT` 프록시를 구현해야 한다.
 - 본 문서 버전에서는 Web BFF의 `PUT /api/auth/external-keys/{id}`를 **미지원**으로 정의한다.
 
@@ -124,13 +124,13 @@
 
 ### 5.1 Usage 경로(`GET /api/usage/**`)와 `GATEWAY_DEV_MODE`
 
-- Usage BFF는 **Usage `web/`** 트리에 둔다(과도기: `apps/web/src/app/api/usage/[[...path]]/route.ts`). **`API_GATEWAY_URL`로 `/api/v1/usage/...`** 프록시. **엔드포인트 표·환경 변수 정본은 [web-gateway-bff.md](./web-gateway-bff.md)**.
+- Usage BFF는 **`services/usage-service/web/`** 트리에 둔다(`src/app/api/usage/[[...path]]/route.ts`). **`API_GATEWAY_URL`로 `/api/v1/usage/...`** 프록시. **엔드포인트 표·환경 변수 정본은 [web-gateway-bff.md](./web-gateway-bff.md)**.
 - 게이트웨이 **개발 모드**(`GATEWAY_DEV_MODE=true`, `gateway.dev-mode=true`)에서는 Usage 라우트에 **`X-User-Id`가 필수**이므로, BFF가 Identity **`GET /api/auth/session` 응답의 `email`** 을 읽어 `X-User-Id` 헤더로 붙인다.
 - 그 **이메일**은 Identity JWT의 **`sub`** 와 동일하다([identity-auth-api-contract §4.3](../identity-auth-api-contract.md)). 운영에서 게이트웨이가 JWT만으로 `X-User-Id`를 세팅할 때와 **같은 문자열**이 Usage 원장·집계 키가 된다([gateway-proxy.md §4.2](./gateway-proxy.md)).
 
 ### 5.2 Identity 관리 API BFF (`/api/identity/v1/**`)
 
-- 조직·팀 등 **Identity 보호 REST**(게이트웨이가 아닌 Identity 직접)는 브라우저가 **`/api/identity/v1/...`** 로만 호출하고, BFF가 **`{IDENTITY_SERVICE_URL}/api/v1/...`** 로 동일 메서드·쿼리·본문을 프록시한다. 구현(As-Is): `apps/web/src/app/api/identity/[[...path]]/route.ts`(목표: `services/identity-service/web/.../api/identity/[[...path]]/route.ts`).
+- 조직·팀 등 **Identity 보호 REST**(게이트웨이가 아닌 Identity 직접)는 브라우저가 **`/api/identity/v1/...`** 로만 호출하고, BFF가 **`{IDENTITY_SERVICE_URL}/api/v1/...`** 로 동일 메서드·쿼리·본문을 프록시한다. 구현: `services/identity-service/web/src/app/api/identity/[[...path]]/route.ts`.
 - `access_token` **httpOnly 쿠키**가 없으면 BFF는 Identity를 호출하지 않고 `401`을 반환한다.
 - 경로는 **`v1`으로 시작하는 세그먼트만** 허용한다(예: 브라우저 `GET /api/identity/v1/me/organizations` → 업스트림 `GET /api/v1/me/organizations`). **`/api/auth/*`** 는 §2의 전용 BFF 라우트를 쓴다.
 - 응답 본문·상태 코드는 업스트림을 그대로 전달한다(캐시는 `Cache-Control: no-store`).
@@ -153,17 +153,17 @@
 
 ### 6.2 보호 페이지(App Router) 및 미들웨어 (Identity `web/`)
 
-브라우저가 직접 보는 **페이지 라우트** 중 로그인이 필요한 영역은 Next.js **`middleware.ts`** 로 1차 게이트한다. 구현 위치(As-Is): `apps/web/middleware.ts`(목표: `services/identity-service/web/middleware.ts` — Usage 전용 라우트는 Usage `web/`로 옮기면서 matcher를 나눈다).
+브라우저가 직접 보는 **페이지 라우트** 중 로그인이 필요한 영역은 Next.js **`middleware.ts`** 로 1차 게이트한다. 구현: `services/identity-service/web/middleware.ts`. **대시보드(`/dashboard`)** 는 Usage `web/` 소유이므로 Identity matcher에 포함하지 않는다([web-split-boundary.md](./web-split-boundary.md) §3).
 
 | 항목 | 내용 |
 |------|------|
-| **matcher (정본)** | `/dashboard/:path*`, `/settings/:path*`, `/organizations/:path*`, `/teams/:path*` |
+| **matcher (정본)** | `/settings/:path*`, `/organizations/:path*`, `/teams/:path*` |
 | **판단 기준** | 요청에 **`access_token` httpOnly 쿠키**가 있고 값이 비어 있지 않으면 통과. **JWT 서명·만료 검증은 여기서 하지 않는다** (쿠키만 없으면 로그인 유도). 토큰 유효성은 `GET /api/auth/session`(§2.1) 등 BFF·업스트림에서 판단한다. |
-| **미통과 시** | `307` 리다이렉트 → `/login?next=<원래 pathname>` (`next`는 로그인 후 되돌아갈 경로; 소비 시 오픈 리다이렉트 방지를 위해 `apps/web/src/lib/auth/safe-next-path.ts` 등으로 검증한다 — 목표 경로는 `services/identity-service/web/...`). |
-| **대응 라우트** | 위 접두사마다 App Router **`[[...path]]` optional catch-all** 페이지를 둔다. 예(As-Is): `apps/web/src/app/dashboard/[[...path]]/page.tsx`. Usage 대시보드만 분리할 때는 **Usage `web/`** 로 페이지를 옮기고, Identity 쪽 matcher에서는 제외한다. |
-| **현재 UI 성격** | 대시보드는 사용량 UI를 둔다. **설정**은 세션(§2)·**조직·팀**은 §5.2 BFF·Identity 관리 API와 연동한다(업스트림 미구현 시 빈 목록·안내). 서버 측 권한·테넌트 검증은 Identity·게이트웨이에 유지한다(프론트 규칙: `.cursor/rules/project-common-nextjs.mdc`). |
+| **미통과 시** | `307` 리다이렉트 → `/login?next=<원래 pathname>` (`next`는 로그인 후 되돌아갈 경로; 소비 시 오픈 리다이렉트 방지를 위해 `services/identity-service/web/src/lib/auth/safe-next-path.ts` 등으로 검증한다). |
+| **대응 라우트** | 위 접두사마다 App Router **`[[...path]]` optional catch-all** 페이지를 둔다. **사용량 대시보드**는 `services/usage-service/web/src/app/dashboard/[[...path]]/page.tsx` 및 Usage `middleware.ts`를 본다. |
+| **현재 UI 성격** | **설정**은 세션(§2)·**조직·팀**은 §5.2 BFF·Identity 관리 API와 연동한다(업스트림 미구현 시 빈 목록·안내). 서버 측 권한·테넌트 검증은 Identity·게이트웨이에 유지한다(프론트 규칙: `.cursor/rules/project-common-nextjs.mdc`). |
 
-**유지보수:** matcher에 경로를 추가·변경하면 (1) 동일 접두사의 `app/<segment>/[[...path]]/page.tsx`(또는 합의된 라우트)를 추가하거나, (2) 의도적으로 페이지가 없다면 matcher에서 해당 패턴을 제거한다. 회귀 방지용 테스트(As-Is): `apps/web/middleware.test.ts`, `apps/web/src/app/protected-routes.test.ts`.
+**유지보수:** matcher에 경로를 추가·변경하면 (1) 동일 접두사의 `app/<segment>/[[...path]]/page.tsx`(또는 합의된 라우트)를 추가하거나, (2) 의도적으로 페이지가 없다면 matcher에서 해당 패턴을 제거한다. 회귀 방지용 테스트: `services/identity-service/web/middleware.test.ts`, `services/identity-service/web/src/app/protected-routes.test.ts`.
 
 #### 6.2.1 샘플 curl (로컬, Identity BFF 호스트만)
 
@@ -201,7 +201,7 @@ curl -sS -i -X POST "http://localhost:3000/api/auth/signup" \
 
 ## 9. 로컬 실행 참고
 
-- **환경 파일(As-Is):** `apps/web/.env` — **목표:** `services/identity-service/web/.env`  
+- **환경 파일:** `services/identity-service/web/.env`(샘플: `.env.example`)  
   `IDENTITY_SERVICE_URL` 예: `http://localhost:8090`(Identity 기본 포트에 맞출 것; 게이트웨이 `8080`과 혼동 방지)
 - 로컬 기본 실행 순서: Postgres(RabbitMQ 등) → **identity-service(Spring)** → **Identity `web`(`pnpm dev`, 기본 3000)**
 - 포트 충돌: Gateway·Identity·여러 `web` 인스턴스가 같은 포트를 쓰지 않도록 `README.md`·루트 `.env.example`를 본다.
@@ -212,11 +212,11 @@ curl -sS -i -X POST "http://localhost:3000/api/auth/signup" \
 
 ### 10.1 랜딩
 
-- 앱 루트 **`/`** (`apps/web/src/app/page.tsx` → 목표 `services/identity-service/web/...`)는 제품 소개용 **최소 내비게이션**을 둔다. **로그인**·**회원가입**은 각각 **`/login`**, **`/signup`** 으로 연결한다(계약 변경 없음, 진입점 안내용).
+- 앱 루트 **`/`** (`services/identity-service/web/src/app/page.tsx`)는 제품 소개용 **최소 내비게이션**을 둔다. **로그인**·**회원가입**은 각각 **`/login`**, **`/signup`** 으로 연결한다(계약 변경 없음, 진입점 안내용).
 
 ### 10.2 Vitest(라우트 핸들러·미들웨어)
 
-- BFF 인증 라우트는 구현 파일 옆에 **Vitest** 스펙을 둔다(경로 접두는 As-Is `apps/web/`, 분리 후 `services/identity-service/web/`). 예:
+- BFF 인증 라우트는 구현 파일 옆에 **Vitest** 스펙을 둔다(`services/identity-service/web/`). 예:
   - `.../src/app/api/auth/session/route.test.ts`
   - `.../src/app/api/auth/logout/route.test.ts`
   - `.../src/app/api/auth/external-keys/route.test.ts`

@@ -36,7 +36,7 @@
 - **도메인 서비스를 맡은 사람**이 **같은 `services/<svc>/` 경계 안**에서 Spring(또는 해당 백엔드)과 **필요한 경우 `web/`(Next.js)** 을 함께 개발한다. “프론트 전담” 역할 분리는 **사용하지 않는다**.
 - **Identity 계열:** `services/identity-service` + (목표) `services/identity-service/web/` — 랜딩·인증 UI, `/api/auth/**`·`/api/identity/**` BFF 등. 계약: `docs/contracts/web-identity-bff.md`.
 - **Usage·대시보드 계열:** `services/usage-service` + (목표) `services/usage-service/web/` — Usage BFF `/api/usage/**`, 게이트웨이 연동. 계약: `docs/contracts/web-gateway-bff.md`, `docs/contracts/gateway-proxy.md`.
-- **과도기:** 위 Next 코드가 **`apps/web`** 한 트리에 있을 수 있다. 이행 시 경로·문서를 함께 갱신한다(`docs/repository-structure.md` §6).
+- **웹 소스:** `services/identity-service/web`, `services/usage-service/web`(과도기 `apps/web`은 안내용만). 경계는 `docs/contracts/web-split-boundary.md`.
 - **집계·알림 파이프라인(§12):** UI를 만드는 일과 **혼동하지 않는다** — 해당 백엔드는 `docs/architecture.md` §12 범위.
 
 ## 기술 스택 (웹·BFF, 권장)

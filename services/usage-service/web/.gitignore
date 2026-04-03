@@ -1,8 +1,7 @@
-# Usage 서비스 Next 앱 — 의존성·빌드 산출물은 커밋하지 않는다 (루트 .gitignore와 중복되어도 명시).
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
 /node_modules
-.pnpm-store/
 /.pnp
 .pnp.*
 .yarn/*
@@ -31,7 +30,7 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (키 이름만 .env.example 등으로 커밋)
+# env files (can opt-in for committing if needed)
 .env*
 !.env.example
 

@@ -6,10 +6,9 @@
 #
 # identity-service, usage-service 는 호스트에서 실행(IDE / ./gradlew bootRun). Compose 에는 포함하지 않는다.
 #
-# [Next] 빌드: web 앱 디렉터리에서 pnpm|npm install 후 pnpm build|npm run build (standalone).
-#   과도기: context = apps/web / 이행 후: services/identity-service/web, services/usage-service/web 등(README, docs/repository-structure.md §6).
+# [Next] 빌드: 각 services/<svc>/web 에서 npm install 후 npm run build (standalone).
 #
-# Next.js(apps/web) 컨테이너 — 선택: docker compose --profile web up
+# Next.js — 선택: docker compose --profile web up (identity-web + usage-web)
 #   게이트웨이는 컨테이너 네트워크(api-gateway-service:8080)로 연결(API_GATEWAY_URL).
 #   Identity BFF는 기본적으로 호스트의 identity-service 를 host.docker.internal 로 향함(WEB_IDENTITY_SERVICE_URL).
 
@@ -87,11 +86,29 @@ services:
     ports:
       - "${API_GATEWAY_PORT:-8080}:8080"
 
-  web:
+  identity-web:
     profiles:
       - web
     build:
-      context: ./apps/web
+      context: ./services/identity-service/web
+      args:
+        NEXT_PUBLIC_USAGE_WEB_ORIGIN: http://localhost:${USAGE_WEB_PORT:-3001}
+    depends_on:
+      - api-gateway-service
+    environment:
+      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://host.docker.internal:8090}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${IDENTITY_WEB_PORT:-3000}:3000"
+
+  usage-web:
+    profiles:
+      - web
+    build:
+      context: ./services/usage-service/web
+      args:
+        NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: http://localhost:${IDENTITY_WEB_PORT:-3000}
     depends_on:
       - api-gateway-service
     environment:
@@ -101,7 +118,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "${WEB_PORT:-3000}:3000"
+      - "${USAGE_WEB_PORT:-3001}:3000"
 
 volumes:
   postgres_data:

@@ -60,7 +60,7 @@
   - **FastAPI(Python)는 사용하지 않는다.**
 - **메시지 브로커**: **RabbitMQ** (이벤트 기반 연계의 단일 브로커)
 - **기타 마이크로서비스**: 동일 Spring 생태계 내에서 **Spring MVC(Web) + JPA** 등으로 구현할 수 있다(Identity/Billing 등, 팀 합의).
-- **프론트엔드(서비스 단위 풀스택)**: 사용자 대면 UI·BFF가 필요한 도메인은 **`services/<svc>/web/`** 의 **Next.js(App Router)**, **React**, **TypeScript**, **Tailwind CSS**, **Shadcn UI**(및 Radix), 차트는 **Recharts** 또는 **Chart.js** 등(팀 합의)으로 구현한다. 과도기에는 **`apps/web`** 단일 앱에 모아 둘 수 있다(`docs/repository-structure.md` §6). 런타임이 Spring과 달라도 MSA 원칙상 **HTTP API·BFF 계약**으로 연동한다.
+- **프론트엔드(서비스 단위 풀스택)**: 사용자 대면 UI·BFF가 필요한 도메인은 **`services/<svc>/web/`** 의 **Next.js(App Router)**, **React**, **TypeScript**, **Tailwind CSS**, **Shadcn UI**(및 Radix), 차트는 **Recharts** 또는 **Chart.js** 등(팀 합의)으로 구현한다. 라우트·BFF 경계는 `docs/contracts/web-split-boundary.md`. 런타임이 Spring과 달라도 MSA 원칙상 **HTTP API·BFF 계약**으로 연동한다.
 - **Analytics·알림·집계 백엔드(백엔드 담당, 팀 합의)**: 집계·알림 워커는 **Spring MVC + JPA**, **Spring Boot + 메시지 소비**, 또는 팀 합의 하에 **Node(NestJS 등)** 로 둘 수 있다. 브로커·캐시는 §6, §10과 동일하게 **RabbitMQ**, **Redis**를 전제로 한다. 상세 책임은 **§12** 참고.
 
 ---
@@ -295,11 +295,11 @@
 
 | 구분 | 패턴 A (비채택) | 패턴 B (팀 확정) |
 |------|----------------|------------------|
-| 이미지 | 하나의 이미지에 여러 프로세스(예: API + 웹) | **백엔드 마이크로서비스별·도메인별 `web/`(또는 과도기 `apps/web`)** 로 **이미지 분리** |
+| 이미지 | 하나의 이미지에 여러 프로세스(예: API + 웹) | **백엔드 마이크로서비스별·도메인별 `web/`** 로 **이미지 분리** |
 | 런타임 | 컨테이너 내부 프로세스 관리(supervisord 등) | **Docker Compose**로 서비스별 컨테이너를 조합 |
 
-- **원칙**: Spring Boot 서비스는 **해당 서비스 디렉터리**의 `Dockerfile`로 빌드하고, Next.js는 **`services/<svc>/web/Dockerfile`**(또는 이행 중 **`apps/web/Dockerfile`**, standalone)로 빌드한다. 운영·스테이징에서도 **Compose(또는 동등한 오케스트레이션)로 각 이미지를 나란히 띄우는 모델**을 따른다.
-- **로컬**: 루트 `docker-compose.yml`은 인프라·일부 앱(예: proxy·gateway)을 포함할 수 있으며, **웹 컨테이너는 `profile: web`(현재 `apps/web`) 등으로 선택 기동**해 호스트에서 `pnpm run dev`/`npm run dev` 하는 흐름과 병행할 수 있다(`docker-compose.yml` 상단 주석).
+- **원칙**: Spring Boot 서비스는 **해당 서비스 디렉터리**의 `Dockerfile`로 빌드하고, Next.js는 **`services/<svc>/web/Dockerfile`**(standalone)로 빌드한다. 운영·스테이징에서도 **Compose(또는 동등한 오케스트레이션)로 각 이미지를 나란히 띄우는 모델**을 따른다.
+- **로컬**: 루트 `docker-compose.yml`은 인프라·일부 앱(예: proxy·gateway)을 포함할 수 있으며, **웹 컨테이너는 `profile: web`(`identity-web`, `usage-web`) 등으로 선택 기동**해 호스트에서 `npm run dev` 하는 흐름과 병행할 수 있다(`docker-compose.yml` 상단 주석).
 
 ### 10.2 단일 도메인·엣지 라우팅(브라우저 URL 하나)
 
@@ -314,7 +314,7 @@
   - **애플리케이션(Proxy WebFlux 등)**: 로컬 JVM에서 실행(IDE/터미널)하거나, 패턴 B에 맞게 **서비스별 이미지**로 Compose에 포함
 - **선택**
   - API Gateway·Proxy: 저장소 `docker-compose.yml`에 포함 가능(계약: `docs/contracts/gateway-proxy.md`)
-  - Next.js: **도메인별 `services/<svc>/web`** 또는 과도기 **`apps/web`** — 별도 이미지·선택적 Compose 서비스(§10.1)
+  - Next.js: **도메인별 `services/<svc>/web`** — 별도 이미지·선택적 Compose 서비스(§10.1)
   - GitHub Actions(CI): 저장소 정책에 따라 도입(`docs/CI.md`)
   - Prometheus + Grafana, Loki, Jaeger: 시간 여유 시(관측 강화)
 - **Kubernetes / Ingress / ConfigMap·Secret(K8s)**
@@ -378,7 +378,7 @@
 
 - **Identity 계열**: `services/identity-service` + (목표) `services/identity-service/web/` — 랜딩·인증·조직/팀 설정 UI, `/api/auth/**`·`/api/identity/**` BFF 등. 계약: `docs/contracts/web-identity-bff.md`.
 - **Usage·대시보드 계열**: `services/usage-service` + (목표) `services/usage-service/web/` — 사용량 대시보드, `/api/usage/**` BFF → 게이트웨이. 계약: `docs/contracts/web-gateway-bff.md`, `docs/contracts/gateway-proxy.md`.
-- **과도기**: 위 Next 코드가 아직 **`apps/web`** 한 트리에 있을 수 있다. 경로 이전 시 **본 문서·계약 문서의 파일 경로**를 코드와 같이 갱신한다.
+- **웹 경계**: `docs/contracts/web-split-boundary.md` — 경로·BFF·미들웨어 변경 시 **본 문서·계약 문서**를 코드와 같이 갱신한다.
 - **Proxy·API Gateway**: 공개 AI·Usage HTTP 진입·신뢰 헤더 — 게이트웨이·프록시 구현 팀과 **HTTP 계약**만 맞춘다.
 
 ### 13.2 대시보드·시각화·보안(UI)

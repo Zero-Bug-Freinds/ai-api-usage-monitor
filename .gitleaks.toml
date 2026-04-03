@@ -10,5 +10,5 @@ useDefault = true
 [allowlist]
 description = "Vitest cookie header fixtures (not production secrets)"
 paths = [
-  '''apps/web/middleware\.test\.ts$''',
+  '''services/[^/]+/web/middleware\.test\.ts$''',
 ]

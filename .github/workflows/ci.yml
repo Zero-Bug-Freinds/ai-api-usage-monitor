@@ -46,7 +46,8 @@ jobs:
               - 'services/usage-service/**'
               - 'libs/usage-events/**'
             web:
-              - 'apps/web/**'
+              - 'services/identity-service/web/**'
+              - 'services/usage-service/web/**'
             workflows:
               - '.github/workflows/**'
 
@@ -139,30 +140,29 @@ jobs:
         run: ./gradlew build --no-daemon
 
   web:
-    name: Build web (lint/test/build)
+    name: Build web (identity + usage)
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.web == 'true' || needs.changes.outputs.workflows == 'true'
-    defaults:
-      run:
-        working-directory: apps/web
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: apps/web/package-lock.json
-      - name: Install
-        run: npm ci
-      - name: Lint
-        run: npm run lint
-      - name: Test
-        run: npm test
-      - name: Build
-        run: npm run build
-      - name: Docker image (apps/web, standalone)
-        run: docker build -t web:ci .
+          cache-dependency-path: services/identity-service/web/package-lock.json
+      - name: Identity web (install/lint/test/build)
+        working-directory: services/identity-service/web
+        run: npm ci && npm run lint && npm test && npm run build
+      - name: Usage web (install/lint/test/build)
+        working-directory: services/usage-service/web
+        run: npm ci && npm run lint && npm test && npm run build
+      - name: Docker image (identity-web, standalone)
+        working-directory: services/identity-service/web
+        run: docker build -t identity-web:ci .
+      - name: Docker image (usage-web, standalone)
+        working-directory: services/usage-service/web
+        run: docker build -t usage-web:ci .
 
   # Single required check for branch protection.
   # Skipped Java/Compose jobs (path filter) do not fail the workflow.
