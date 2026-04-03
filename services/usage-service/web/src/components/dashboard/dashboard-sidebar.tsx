@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation"
 import {
   Building2,
   ChevronLeft,
-  Home,
   LayoutDashboard,
   Settings,
   UsersRound,
@@ -83,14 +82,7 @@ export function DashboardSidebar() {
         })}
       </nav>
 
-      <div className="mt-auto space-y-1 border-t border-border px-2 py-3">
-        <Link
-          href={identityHref("/")}
-          className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          <Home className="size-4 shrink-0" aria-hidden />
-          랜딩
-        </Link>
+      <div className="mt-auto border-t border-border px-2 py-3">
         <LogoutButton variant="outline" className="h-9 w-full justify-center text-sm" />
       </div>
     </aside>
