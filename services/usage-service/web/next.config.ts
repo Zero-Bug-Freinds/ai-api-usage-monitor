@@ -9,6 +9,7 @@ const basePath = "/dashboard";
 const nextConfig: NextConfig = {
   basePath,
   output: "standalone",
+  transpilePackages: ["@ai-usage/ui"],
   env: {
     NEXT_PUBLIC_BASE_PATH: basePath,
   },

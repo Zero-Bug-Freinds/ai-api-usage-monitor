@@ -1,9 +1,9 @@
 # Web(Next.js) ↔ API Gateway — Usage BFF 계약
 
-버전: 1.5  
+버전: 1.6  
 관련: [docs/architecture.md](../architecture.md) §1.3, §10.1, §10.2, §13, [게이트웨이·Proxy 계약](./gateway-proxy.md)(AI 공개 경로·Bearer·`X-User-Id`·라우트·§5.1 Compose·`GATEWAY_SHARED_SECRET`), [Web·Identity BFF 계약](./web-identity-bff.md) §5.1·§6·§9, [저장소 구조](../repository-structure.md) §6, [웹 경계](./web-split-boundary.md)
 
-**소스 트리:** Usage BFF·대시보드 UI의 **정본**은 `services/usage-service/web/` 이다.
+**소스 트리:** Usage BFF·대시보드 UI의 **정본**은 `services/usage-service/web/` 이다. **공용 UI(Shadcn 래퍼·`cn`)** 는 루트 pnpm workspace 패키지 **`@ai-usage/ui`**(`packages/ui`)를 참조한다([`web-split-boundary.md` §1.1](./web-split-boundary.md), [`repository-structure.md`](../repository-structure.md) §6).
 
 ---
 
@@ -30,7 +30,7 @@
 
 상세·내부 아웃바운드 URI(`GATEWAY_USAGE_URI` 등)와의 구분은 [gateway-proxy.md §9](./gateway-proxy.md).
 
-**Docker Compose(`usage-web` 컨테이너):** 루트 `.env`가 로드되며 `API_GATEWAY_URL`·`GATEWAY_DEV_MODE`·`IDENTITY_SERVICE_URL` 등이 compose `environment`로 주입된다. **`profile: web`** 에 **`web-edge`** 가 있으면 브라우저는 동일 오리진에서 **`/api/v1/*`** 로 API Gateway에 직접 붙을 수 있다(Usage BFF 경유가 아닌 공개 게이트웨이 경로 — [gateway-proxy.md §2](./gateway-proxy.md); 엣지는 **`/api/v1`** → **`/api/v1/`** 리다이렉트 등 — [web-split-boundary.md §2.3](./web-split-boundary.md)). **게이트웨이 컨테이너가 기동하려면** 루트 `.env`의 **`GATEWAY_SHARED_SECRET`** 이 비어 있지 않아야 한다(빈 값 주의: [gateway-proxy.md §5.1](./gateway-proxy.md)). 호스트에서 `pnpm dev` / `npm run dev` 만 할 때는 각 `services/usage-service/web/.env`를 본다.
+**Docker Compose(`usage-web` 컨테이너):** 루트 `.env`가 로드되며 `API_GATEWAY_URL`·`GATEWAY_DEV_MODE`·`IDENTITY_SERVICE_URL` 등이 compose `environment`로 주입된다. **`profile: web`** 에 **`web-edge`** 가 있으면 브라우저는 동일 오리진에서 **`/api/v1/*`** 로 API Gateway에 직접 붙을 수 있다(Usage BFF 경유가 아닌 공개 게이트웨이 경로 — [gateway-proxy.md §2](./gateway-proxy.md); 엣지는 **`/api/v1`** → **`/api/v1/`** 리다이렉트 등 — [web-split-boundary.md §2.3](./web-split-boundary.md)). **게이트웨이 컨테이너가 기동하려면** 루트 `.env`의 **`GATEWAY_SHARED_SECRET`** 이 비어 있지 않아야 한다(빈 값 주의: [gateway-proxy.md §5.1](./gateway-proxy.md)). 호스트에서 Next만 띄울 때는 저장소 루트 **`pnpm install`** 후 **`pnpm --filter usage-web dev`**(또는 해당 `web/`에서 `pnpm dev`)를 쓰고, 환경은 **`services/usage-service/web/.env`** 를 본다.
 
 ---
 

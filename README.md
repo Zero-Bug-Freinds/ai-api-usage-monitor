@@ -42,7 +42,7 @@
 - **API Gateway + Proxy**: `docker-compose.yml`에서 **컨테이너로 함께 기동**할 수 있습니다(호스트 포트 기본 `8080` / `8081`). 계약·경로는 `docs/contracts/gateway-proxy.md`를 참고합니다.
 - **루트 `.env` + Compose:** `docker compose`는 프로젝트 루트의 **`.env`**만 자동 로드합니다. **`GATEWAY_SHARED_SECRET`** 은 Compose가 `${GATEWAY_SHARED_SECRET:-}` 로 넘길 때 **빈 값만 두면** 컨테이너 안 Spring이 yml 기본값을 쓰지 못해 게이트웨이 기동이 실패할 수 있으므로, **`.env.example`과 같이 비어 있지 않은 값**으로 맞추거나 해당 줄을 제거하세요(상세: `docs/contracts/gateway-proxy.md` §5, `docs/architecture.md` §10.1). **호스트에서 `bootRun`만** 할 때는 Gradle/IDE가 루트 `.env`를 읽지 않으므로, 필요하면 동일 변수를 실행 구성에 넣습니다.
 - **identity-service** 등 그 외 앱도 **로컬 JVM** 실행을 기본으로 하며, 필요 시 Compose에 추가할 수 있습니다.
-- **컨테이너 배포 모델**: 백엔드·프론트 **이미지 분리 + Docker Compose 스택**(패턴 B, `docs/architecture.md` §10.1). Next는 **`services/identity-service/web`**, **`services/usage-service/web`** 각각 `Dockerfile`(standalone)로 빌드하고, **`profile: web`** 으로 Compose에 **`identity-web`**, **`usage-web`**, **`web-edge`**(Nginx, `docker/web-edge/nginx.conf`)를 함께 올릴 수 있습니다.
+- **컨테이너 배포 모델**: 백엔드·프론트 **이미지 분리 + Docker Compose 스택**(패턴 B, `docs/architecture.md` §10.1). Next는 루트 **`pnpm` workspace**(`packages/ui` + 각 `web`)를 포함해 **저장소 루트를 build context**로 `docker build -f services/identity-service/web/Dockerfile …`, `docker build -f services/usage-service/web/Dockerfile …` 하거나, **`profile: web`** 으로 Compose에 **`identity-web`**, **`usage-web`**, **`web-edge`**(Nginx, `docker/web-edge/nginx.conf`)를 함께 올립니다.
 - **단일 도메인**: **`web-edge`** 기본 호스트 포트 **`8888`**(`WEB_EDGE_PORT`)에서 진입 — `/dashboard`는 `/dashboard/`로 리다이렉트(308) 후 **`/dashboard/`** 접두만 Usage `web`; `/api/v1/` 접두는 API Gateway; 그 외(예: `/dashboard2`)는 Identity `web`(`docker/web-edge/nginx.conf`, `docs/architecture.md` §10.2, `docs/contracts/web-split-boundary.md`).
 
 ## 개발 방식(풀스택·서비스 소유)
@@ -52,8 +52,8 @@
 ### 빌드 순서(요약)
 
 1. **Java:** `proxy-service`·`api-gateway-service` 는 이미지 빌드 전 해당 디렉터리에서 `./gradlew bootJar` 로 `app.jar` 를 둔다. **identity-service**·**usage-service** 백엔드 Dockerfile 은 이미지 안에서 Gradle 을 돌려 JAR 을 만든다(usage 는 저장소 루트에서 `docker build -f services/usage-service/Dockerfile …`).
-2. **Next.js:** `services/identity-service/web`, `services/usage-service/web`에서 의존성 설치 후 **`pnpm build`** 또는 **`npm run build`** — `output: 'standalone'` 산출물을 Docker가 복사하는 패턴(`docs/architecture.md` §10.1).
-3. **공유 UI 패키지:** 루트 `pnpm` workspace·`packages/*` 도입 시, 앱 빌드 전에 **`pnpm install`**(및 필요 시 `packages` 선행 빌드).
+2. **Next.js:** 저장소 루트에서 **`pnpm install`**(전역 pnpm 없으면 `npx pnpm@9 install`) 후 **`pnpm build:web`**(또는 각 `web`에서 `pnpm build`). `output: 'standalone'` 산출물을 Docker가 복사(`docs/architecture.md` §10.1).
+3. **공유 UI:** **`packages/ui`**(`@ai-usage/ui`) — Shadcn 래퍼·`cn`; 두 Next 앱이 workspace 로 참조한다.
 
 로컬 포트·`.env` 힌트는 루트 **`.env.example`**, 각 **`services/*/web/.env.example`**, **`docs/contracts/web-identity-bff.md` §9**, **`docs/contracts/web-split-boundary.md`** 를 본다.
 

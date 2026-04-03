@@ -48,6 +48,10 @@ jobs:
             web:
               - 'services/identity-service/web/**'
               - 'services/usage-service/web/**'
+              - 'packages/ui/**'
+              - 'pnpm-workspace.yaml'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
             workflows:
               - '.github/workflows/**'
 
@@ -146,23 +150,27 @@ jobs:
     if: needs.changes.outputs.web == 'true' || needs.changes.outputs.workflows == 'true'
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: services/identity-service/web/package-lock.json
-      - name: Identity web (install/lint/test/build)
-        working-directory: services/identity-service/web
-        run: npm ci && npm run lint && npm test && npm run build
-      - name: Usage web (install/lint/test/build)
-        working-directory: services/usage-service/web
-        run: npm ci && npm run lint && npm test && npm run build
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install workspace
+        run: pnpm install --frozen-lockfile
+      - name: Lint / test / build (both Next apps)
+        run: |
+          pnpm --filter identity-web run lint
+          pnpm --filter usage-web run lint
+          pnpm --filter identity-web test
+          pnpm --filter usage-web test
+          pnpm run build:web
       - name: Docker image (identity-web, standalone)
-        working-directory: services/identity-service/web
-        run: docker build -t identity-web:ci .
+        run: docker build -f services/identity-service/web/Dockerfile -t identity-web:ci .
       - name: Docker image (usage-web, standalone)
-        working-directory: services/usage-service/web
-        run: docker build -t usage-web:ci .
+        run: docker build -f services/usage-service/web/Dockerfile -t usage-web:ci .
 
   # Single required check for branch protection.
   # Skipped Java/Compose jobs (path filter) do not fail the workflow.

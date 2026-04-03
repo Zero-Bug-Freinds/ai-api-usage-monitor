@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 
-import { Button } from "@/components/ui/button"
+import { Button } from "@ai-usage/ui"
 import { apiFetch } from "@/lib/api/client-fetch"
 
 type LogoutButtonProps = {

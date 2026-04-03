@@ -1,9 +1,9 @@
 # Web(Next.js) ↔ Identity 인증 BFF 계약
 
-버전: 1.11  
+버전: 1.12  
 관련: [docs/architecture.md](../architecture.md) §1.3, §3.3, §10.2, §13, [Identity 인증 API 계약](../identity-auth-api-contract.md), [Web·Gateway Usage BFF](./web-gateway-bff.md)(Usage BFF·`basePath` 호출 맵), [저장소 구조](../repository-structure.md) §6, [웹 경계](./web-split-boundary.md)(§2.3 로컬 `web-edge` Nginx)
 
-**소스 트리:** BFF·화면의 **정본**은 `services/identity-service/web/` 이다. Identity vs Usage 라우트·미들웨어 매처는 [web-split-boundary.md](./web-split-boundary.md) §2·§3.
+**소스 트리:** BFF·화면의 **정본**은 `services/identity-service/web/` 이다. **공용 UI(Shadcn 래퍼·`cn`)** 는 루트 pnpm workspace **`@ai-usage/ui`**(`packages/ui`)를 참조한다([web-split-boundary.md §1.1](./web-split-boundary.md)). Identity vs Usage 라우트·미들웨어 매처는 [web-split-boundary.md](./web-split-boundary.md) §2·§3.
 
 ---
 
@@ -206,7 +206,8 @@ curl -sS -i -X POST "http://localhost:3000/api/auth/signup" \
 - **루트 `.env` vs 호스트 `bootRun`:** `docker compose`는 저장소 루트의 **`.env`**만 자동 로드한다. **Identity Spring**을 IDE/`./gradlew bootRun`으로만 띄울 때는 루트 `.env`가 **자동으로 읽히지 않는다** — `POSTGRES_*` 등은 실행 구성·쉘 환경변수로 맞춘다. 반면 **Compose로 뜨는** `identity-web`·`usage-web`·`api-gateway-service` 등은 루트 `.env`의 변수를 받는다.
 - **게이트웨이 스택:** Proxy·게이트웨이를 Compose로 올릴 때 **`GATEWAY_SHARED_SECRET`** 은 비어 있지 않게 유지한다([gateway-proxy.md §5.1](./gateway-proxy.md)).
 - **단일 도메인(`profile: web` + `web-edge`):** 브라우저는 기본 **`http://localhost:8888`**(`WEB_EDGE_PORT`) 한 오리진으로 붙고, 경로 분기는 [`docker/web-edge/nginx.conf`](../../docker/web-edge/nginx.conf)·[web-split-boundary.md §2.3](./web-split-boundary.md) 정본을 따른다.
-- 로컬 기본 실행 순서: Postgres(RabbitMQ 등) → **identity-service(Spring)** → **Identity `web`(`pnpm dev`, 기본 3000)**
+- **pnpm workspace:** 호스트에서 Next를 띄우기 전에 저장소 루트에서 **`pnpm install`**(전역 pnpm 없으면 `npx pnpm@9 install`)로 `packages/ui`·각 `web` 의존성을 맞춘다.
+- 로컬 기본 실행 순서: Postgres(RabbitMQ 등) → **identity-service(Spring)** → **Identity `web`**(루트에서 **`pnpm --filter identity-web dev`** 또는 해당 `web/`에서 **`pnpm dev`**, 기본 포트 3000)
 - 포트 충돌: Gateway·Identity·여러 `web` 인스턴스가 같은 포트를 쓰지 않도록 `README.md`·루트 `.env.example`를 본다.
 
 ---
@@ -226,4 +227,4 @@ curl -sS -i -X POST "http://localhost:3000/api/auth/signup" \
   - `login`·`signup` Route Handler도 동일 패턴의 `route.test.ts`로 회귀 검증
   - `.../src/app/api/identity/[[...path]]/route.test.ts` — §5.2 관리 API BFF
 - 미들웨어·보호 경로: `middleware.test.ts`, `protected-routes.test.ts` (§6.2).
-- 실행: 해당 `web/` 디렉터리에서 **`pnpm exec vitest run`** 또는 **`npx vitest run`**. **E2E(실제 Identity 기동)** 는 §9 환경으로 별도 확인한다.
+- 실행: 저장소 루트에서 **`pnpm --filter identity-web test`**, 또는 (루트에서 `pnpm install` 후) 해당 `web/` 디렉터리에서 **`pnpm exec vitest run`** / **`npx vitest run`**. **E2E(실제 Identity 기동)** 는 §9 환경으로 별도 확인한다.

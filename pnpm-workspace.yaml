@@ -1,0 +1,4 @@
+packages:
+  - "packages/*"
+  - "services/identity-service/web"
+  - "services/usage-service/web"

@@ -1,22 +1,26 @@
 # Next.js standalone — docs/architecture.md §10.1 (패턴 B: 프론트 전용 이미지)
-# 빌드: docker build -t usage-web:local .
-# 실행 시 API_GATEWAY_URL, IDENTITY_SERVICE_URL 등은 compose 또는 -e 로 주입
-
-FROM node:22-alpine AS deps
-WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci
+# `packages/ui` workspace 포함. 빌드(저장소 루트에서):
+#   docker build -f services/usage-service/web/Dockerfile -t usage-web:local .
 
 FROM node:22-alpine AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+WORKDIR /repo
+RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
+
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY packages/ui/package.json ./packages/ui/
+COPY services/usage-service/web/package.json ./services/usage-service/web/
+RUN pnpm install --frozen-lockfile
+
+COPY packages/ui ./packages/ui
+COPY services/usage-service/web ./services/usage-service/web
+
+WORKDIR /repo/services/usage-service/web
 ENV NEXT_TELEMETRY_DISABLED=1
 ARG NEXT_PUBLIC_IDENTITY_WEB_ORIGIN=
 ENV NEXT_PUBLIC_IDENTITY_WEB_ORIGIN=$NEXT_PUBLIC_IDENTITY_WEB_ORIGIN
 ARG NEXT_PUBLIC_BASE_PATH=/dashboard
 ENV NEXT_PUBLIC_BASE_PATH=$NEXT_PUBLIC_BASE_PATH
-RUN npm run build
+RUN pnpm run build
 
 FROM node:22-alpine AS runner
 WORKDIR /app
@@ -24,9 +28,9 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 
-COPY --from=builder /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder /repo/services/usage-service/web/public ./public
+COPY --from=builder --chown=nextjs:nodejs /repo/services/usage-service/web/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /repo/services/usage-service/web/.next/static ./.next/static
 
 USER nextjs
 EXPOSE 3000

@@ -1,6 +1,6 @@
 # Identity vs Usage 웹 경계 (라우트·BFF·소스)
 
-버전: 1.1  
+버전: 1.2  
 관련: [저장소 구조](../repository-structure.md) §6, [architecture.md](../architecture.md) §10.2, [`docker/web-edge/nginx.conf`](../../docker/web-edge/nginx.conf), [web-identity-bff.md](./web-identity-bff.md), [web-gateway-bff.md](./web-gateway-bff.md)
 
 단일 도메인·경로 기반 엣지 프록시 뒤에서는 브라우저 오리진이 하나이므로 아래 **브라우저 경로**가 그대로 유지된다. **소스 트리**는 서비스 소유권에 맞게 `services/<svc>/web/`에 나뉜다.
@@ -15,6 +15,12 @@
 | Usage | `services/usage-service/` | `services/usage-service/web/` |
 
 과도기 통합 앱 `apps/web/`은 **이행 완료 후 제거**되며, 남아 있으면 안내용 `README`만 둔다.
+
+### 1.1 공유 UI 패키지 (`@ai-usage/ui`)
+
+- **위치:** `packages/ui`(루트 **`pnpm` workspace**에 포함 — `pnpm-workspace.yaml`·`pnpm-lock.yaml` 정본).
+- **범위:** `cn`, Button·Input·Label·Select 등 **Shadcn/Radix 래퍼**만. 화면·도메인·BFF는 각 `services/<svc>/web/`에 둔다([`repository-structure.md`](../repository-structure.md) §3·§6와 동일한 “도메인 로직 공유 금지” 취지).
+- **로컬:** 저장소 루트에서 **`pnpm install`** 후 각 앱은 **`pnpm --filter identity-web dev`** / **`pnpm --filter usage-web dev`** 등으로 기동할 수 있다(`README.md`).
 
 ---
 

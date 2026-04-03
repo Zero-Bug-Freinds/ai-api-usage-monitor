@@ -9,6 +9,4 @@
 **/.vscode
 **/build
 **/.gradle
-services/identity-service/web
-services/usage-service/web
 apps
