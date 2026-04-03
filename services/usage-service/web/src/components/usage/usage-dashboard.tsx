@@ -28,6 +28,7 @@ import {
   SelectValue,
 } from "@ai-usage/ui"
 import { buildUsageQuery, fetchUsageJson } from "@/lib/usage/fetch-usage"
+import { formatOccurredAtKst } from "@/lib/usage/format-occurred-at-kst"
 import { formatRequestCount, formatTokenCount, formatUsd, toNumber } from "@/lib/usage/format"
 import type {
   DailyUsagePoint,
@@ -237,7 +238,8 @@ export function UsageDashboard() {
             </span>
           </div>
           <p className="text-sm text-muted-foreground">
-            집계 구간은 UTC 기준 YYYY-MM-DD입니다. (최근 {RANGE_DAYS}일 / 월별 최대 {MONTHLY_LOOKBACK_DAYS}일)
+            요약·차트·집계 구간은 UTC 기준 날짜(YYYY-MM-DD)입니다. 사용 로그의 시각은 한국 표준시(KST)로
+            표시합니다. (최근 {RANGE_DAYS}일 / 월별 최대 {MONTHLY_LOOKBACK_DAYS}일)
           </p>
         </div>
         <Button
@@ -264,10 +266,10 @@ export function UsageDashboard() {
         <>
           <section className="mb-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
-              <p className="text-xs font-medium text-muted-foreground">오늘(UTC) 총 비용</p>
+              <p className="text-xs font-medium text-muted-foreground">오늘 집계(UTC) 총 비용</p>
               <p className="mt-1 text-2xl font-semibold tabular-nums">{formatUsd(todayCost)}</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                오늘(UTC) API 요청 {(summaryToday?.totalRequests ?? 0).toLocaleString("en-US")}건
+                오늘 집계(UTC) API 요청 {(summaryToday?.totalRequests ?? 0).toLocaleString("en-US")}건
               </p>
             </div>
             <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
@@ -434,7 +436,10 @@ export function UsageDashboard() {
       )}
 
       <section className="rounded-lg border border-border p-4 shadow-sm">
-        <h2 className="mb-4 text-lg font-medium">사용 로그</h2>
+        <div className="mb-4 space-y-1">
+          <h2 className="text-lg font-medium">사용 로그</h2>
+          <p className="text-sm text-muted-foreground">발생 시각은 한국 표준시(KST)입니다.</p>
+        </div>
 
         <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
           <div className="space-y-2 sm:w-48">
@@ -492,7 +497,7 @@ export function UsageDashboard() {
               <table className="w-full min-w-[720px] text-left text-sm">
                 <thead className="border-b border-border bg-muted/40">
                   <tr>
-                    <th className="px-3 py-2 font-medium">시각 (UTC)</th>
+                    <th className="px-3 py-2 font-medium">시각 (KST)</th>
                     <th className="px-3 py-2 font-medium">공급자</th>
                     <th className="px-3 py-2 font-medium">모델</th>
                     <th className="px-3 py-2 font-medium">토큰</th>
@@ -503,7 +508,9 @@ export function UsageDashboard() {
                 <tbody>
                   {logs.content.map((row: UsageLogEntryResponse) => (
                     <tr key={row.eventId} className="border-b border-border last:border-0">
-                      <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">{row.occurredAt}</td>
+                      <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">
+                        {formatOccurredAtKst(row.occurredAt)}
+                      </td>
                       <td className="px-3 py-2">{row.provider}</td>
                       <td className="px-3 py-2 font-mono text-xs">{row.model}</td>
                       <td className="px-3 py-2 tabular-nums">{row.totalTokens ?? "—"}</td>
