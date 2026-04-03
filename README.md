@@ -43,7 +43,7 @@
 - **루트 `.env` + Compose:** `docker compose`는 프로젝트 루트의 **`.env`**만 자동 로드합니다. **`GATEWAY_SHARED_SECRET`** 은 Compose가 `${GATEWAY_SHARED_SECRET:-}` 로 넘길 때 **빈 값만 두면** 컨테이너 안 Spring이 yml 기본값을 쓰지 못해 게이트웨이 기동이 실패할 수 있으므로, **`.env.example`과 같이 비어 있지 않은 값**으로 맞추거나 해당 줄을 제거하세요(상세: `docs/contracts/gateway-proxy.md` §5, `docs/architecture.md` §10.1). **호스트에서 `bootRun`만** 할 때는 Gradle/IDE가 루트 `.env`를 읽지 않으므로, 필요하면 동일 변수를 실행 구성에 넣습니다.
 - **identity-service** 등 그 외 앱도 **로컬 JVM** 실행을 기본으로 하며, 필요 시 Compose에 추가할 수 있습니다.
 - **컨테이너 배포 모델**: 백엔드·프론트 **이미지 분리 + Docker Compose 스택**(패턴 B, `docs/architecture.md` §10.1). Next는 **`services/identity-service/web`**, **`services/usage-service/web`** 각각 `Dockerfile`(standalone)로 빌드하고, **`profile: web`** 으로 Compose에 **`identity-web`**, **`usage-web`**, **`web-edge`**(Nginx, `docker/web-edge/nginx.conf`)를 함께 올릴 수 있습니다.
-- **단일 도메인**: **`web-edge`** 기본 호스트 포트 **`8888`**(`WEB_EDGE_PORT`)에서 진입 — `/dashboard*` → Usage `web`, `/api/v1/*` → API Gateway, 나머지 → Identity `web`(`docs/architecture.md` §10.2, 루트 `docker-compose.yml` 주석).
+- **단일 도메인**: **`web-edge`** 기본 호스트 포트 **`8888`**(`WEB_EDGE_PORT`)에서 진입 — `/dashboard`는 `/dashboard/`로 리다이렉트(308) 후 **`/dashboard/`** 접두만 Usage `web`; `/api/v1/` 접두는 API Gateway; 그 외(예: `/dashboard2`)는 Identity `web`(`docker/web-edge/nginx.conf`, `docs/architecture.md` §10.2, `docs/contracts/web-split-boundary.md`).
 
 ## 개발 방식(풀스택·서비스 소유)
 

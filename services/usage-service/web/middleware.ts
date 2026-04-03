@@ -25,8 +25,14 @@ export function middleware(request: NextRequest) {
   return NextResponse.redirect(loginUrl)
 }
 
+/**
+ * basePath=/dashboard 이므로 정적 청크는 /dashboard/_next/* 이다.
+ * (?!_next/) 만 쓰면 첫 세그먼트가 dashboard 라서 미들웨어가 정적 요청까지 가로챈다.
+ */
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)",
+    "/dashboard",
+    "/dashboard/",
+    "/dashboard/((?!_next/|api/).+)",
   ],
 }

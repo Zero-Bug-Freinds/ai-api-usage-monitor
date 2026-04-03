@@ -11,13 +11,13 @@
 #
 # identity-service, usage-service 는 호스트에서 실행(IDE / ./gradlew bootRun). Compose 에는 포함하지 않는다.
 #
-# [Next] 빌드: 각 services/<svc>/web 에서 npm install 후 npm run build (standalone).
+# [Next] 빌드: 각 services/<svc>/web 에서 npm|pnpm install 후 npm run build | pnpm build (standalone).
 #
 # Next.js — 선택: docker compose --profile web up (identity-web + usage-web + web-edge)
 #   게이트웨이는 컨테이너 네트워크(api-gateway-service:8080)로 연결(API_GATEWAY_URL).
 #   Identity BFF는 기본적으로 호스트의 identity-service 를 host.docker.internal 로 향함(WEB_IDENTITY_SERVICE_URL).
 #   단일 도메인: web-edge(Nginx, docker/web-edge/nginx.conf) → 기본 ${WEB_EDGE_PORT:-8888}
-#     /dashboard* → usage-web, /api/v1/* → api-gateway-service, 나머지 → identity-web.
+#     /dashboard, /dashboard/* → usage-web(Nginx는 /dashboard → /dashboard/ 리다이렉트; /dashboard2 는 identity 로), /api/v1/* → api-gateway-service, 나머지 → identity-web.
 
 services:
   postgres:

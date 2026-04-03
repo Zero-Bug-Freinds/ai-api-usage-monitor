@@ -38,7 +38,11 @@ describe("middleware (Usage dashboard gate)", () => {
 })
 
 describe("middleware config.matcher", () => {
-  it("matches dashboard HTML paths (excluding _next static)", () => {
-    expect(config.matcher).toEqual(["/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)"])
+  it("matches only basePath UI routes (excludes /dashboard/_next/* and /dashboard/api/*)", () => {
+    expect(config.matcher).toEqual([
+      "/dashboard",
+      "/dashboard/",
+      "/dashboard/((?!_next/|api/).+)",
+    ])
   })
 })

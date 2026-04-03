@@ -308,7 +308,7 @@
 운영·로컬 통합 진입점에서 **호스트명은 하나**로 두고, **경로 prefix**로 트래픽을 나누는 것을 권장한다.
 
 - **엣지:** Nginx·Traefik 등 **리버스 프록시** 한 계층에서 `location`(또는 동등 규칙)으로 upstream을 고정한다.
-- **로컬 Compose(`profile: web`):** **`web-edge`** 서비스(이미지 `nginx`, 설정 **`docker/web-edge/nginx.conf`**)가 기본 **`${WEB_EDGE_PORT:-8888}:80`** 으로 호스트에 노출된다. 현재 저장소 규칙: **`/dashboard*`** → **usage `web`**, **`/api/v1/*`** → **API Gateway**(AI·Usage 공개 HTTP), **그 외** → **identity `web`**. (운영 엣지는 팀이 동일한 의미로 맞춘다.)
+- **로컬 Compose(`profile: web`):** **`web-edge`** 서비스(이미지 `nginx`, 설정 **`docker/web-edge/nginx.conf`**)가 기본 **`${WEB_EDGE_PORT:-8888}:80`** 으로 호스트에 노출된다. 현재 저장소 규칙(정본은 설정 파일): **`/dashboard`** 는 **`308`** 으로 **`/dashboard/`** 로 보내고, **`/dashboard/`** 로 시작하는 경로만 **usage `web`** 으로 프록시한다(`/dashboard2` 등은 매칭되지 않아 **identity `web`**). **`/api/v1`** 은 **`/api/v1/`** 로 **`308`** 리다이렉트 후, **`/api/v1/*`** 는 **API Gateway**로 프록시한다(스트리밍 대비 **`proxy_buffering off`**·긴 read timeout). **그 외**는 **identity `web`**. (운영 엣지는 팀이 동일한 의미로 맞춘다.)
 - **Usage Next `basePath`:** 단일 도메인에서 `/_next` 등 충돌을 피하기 위해 Usage 쪽 기본값은 **`/dashboard`**(`NEXT_PUBLIC_BASE_PATH`, Compose 빌드 args). 브라우저의 Usage BFF는 **`/dashboard/api/usage/...`** 형태가 된다(`docs/contracts/web-split-boundary.md`, `web-gateway-bff.md`).
 - **쿠키·세션:** 동일 **`Site`/도메인**에서 경로만 나뉘면 `httpOnly` 세션 쿠키는 대부분 유지 가능하지만, **`Path`·`SameSite`** 는 분리 후 반드시 재검증한다(BFF 계약: `docs/contracts/web-identity-bff.md`).
 

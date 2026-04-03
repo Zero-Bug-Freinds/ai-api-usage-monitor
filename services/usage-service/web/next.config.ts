@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
-/** 단일 도메인 엣지에서 `/dashboard`로 프록시될 때 정적 자원이 `/_next` 충돌 없이 분리되도록 한다. */
+/**
+ * 단일 도메인 엣지(`docker/web-edge/nginx.conf` → usage-web)에서 `/dashboard/` 접두만 Usage 앱으로 보낸다.
+ * Identity 앱은 루트 `/`·`/_next` 를 쓰므로 basePath 로 정적 경로를 나눈다.
+ */
 const basePath = "/dashboard";
 
 const nextConfig: NextConfig = {
