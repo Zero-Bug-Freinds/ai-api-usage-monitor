@@ -30,18 +30,19 @@
 
 ---
 
-# Role: Frontend (팀원 C)
+# Role: 서비스 단위 풀스택(웹·BFF 포함)
 
 ## 담당
-- **웹 프론트엔드**(`apps/web` 등): 대시보드·랜딩·인증 UI 등. 백엔드·BFF가 내려주는 데이터를 **시각화·폼·라우팅**으로 연결한다.
-- **BFF(Route Handler)** 등으로 브라우저가 백엔드를 안전하게 호출하도록 하는 범위(예: Identity 프록시, httpOnly 쿠키) — 계약은 `docs/contracts/web-identity-bff.md` 등 팀 문서.
-- 팀원 A·B 및 **백엔드(집계·알림 API 등, `docs/architecture.md` §12)** 가 노출하는 HTTP API와 계약을 맞춰 연동한다.
-- **담당하지 않음:** Analytics·Notification·집계 **백엔드** 구현(Slack/Email 발송 워커, 집계 파이프라인 등) — §12 백엔드 영역.
+- **도메인 서비스를 맡은 사람**이 **같은 `services/<svc>/` 경계 안**에서 Spring(또는 해당 백엔드)과 **필요한 경우 `web/`(Next.js)** 을 함께 개발한다. “프론트 전담” 역할 분리는 **사용하지 않는다**.
+- **Identity 계열:** `services/identity-service` + (목표) `services/identity-service/web/` — 랜딩·인증 UI, `/api/auth/**`·`/api/identity/**` BFF 등. 계약: `docs/contracts/web-identity-bff.md`.
+- **Usage·대시보드 계열:** `services/usage-service` + (목표) `services/usage-service/web/` — Usage BFF `/api/usage/**`, 게이트웨이 연동. 계약: `docs/contracts/web-gateway-bff.md`, `docs/contracts/gateway-proxy.md`.
+- **과도기:** 위 Next 코드가 **`apps/web`** 한 트리에 있을 수 있다. 이행 시 경로·문서를 함께 갱신한다(`docs/repository-structure.md` §6).
+- **집계·알림 파이프라인(§12):** UI를 만드는 일과 **혼동하지 않는다** — 해당 백엔드는 `docs/architecture.md` §12 범위.
 
-## 기술 스택 (권장)
+## 기술 스택 (웹·BFF, 권장)
 - **Framework:** Next.js (App Router), React, TypeScript
 - **UI:** Tailwind CSS, Shadcn UI, Radix UI
-- **차트:** Recharts 또는 Chart.js (백엔드 집계 API 응답 표시)
+- **차트:** Recharts 또는 Chart.js
 - **검증:** Zod (폼·스키마)
 - **(선택)** 데이터 패칭: TanStack Query; 서버 액션 패턴 도입 시 `next-safe-action` 등 팀 합의 후 사용
 
@@ -52,5 +53,5 @@
 4. `'use client'`는 최소화하고, RSC·서버 데이터 페칭을 우선한다.
 5. 반응형·접근성: Tailwind 기반 mobile-first, Shadcn/Radix 패턴 활용.
 6. 예상 가능한 오류는 Server Action 반환값 등으로 모델링하고, 예기치 않은 오류는 `error.tsx` / `global-error.tsx` 등으로 처리한다.
-7. 팀원 B·백엔드와 맞출 공통 응답 타입·에러 형식이 있으면 프론트 타입과 동기화한다.
+7. 다른 서비스와 맞출 공통 응답 타입·에러 형식이 있으면 타입과 동기화한다.
 8. 상세 규칙은 `.cursor/rules/project-common-nextjs.mdc`를 따른다.

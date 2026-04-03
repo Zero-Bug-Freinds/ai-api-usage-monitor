@@ -12,7 +12,7 @@ alwaysApply: false
 
 Applies to Java domain modules under `services/`, `identity-service/`, and similarly named `*-service/` trees (adjust `globs` if paths change).
 
-**Frontend (Next.js, charts, dashboard):** not covered here — use **`project-common-nextjs.mdc`** and root `.cursorrules` (팀원 C).
+**동일 서비스의 Next `web/`(차트·대시보드 등):** 이 파일(JPA) 범위 밖 — **`project-common-nextjs.mdc`** 와 루트 **`.cursorrules`(서비스 단위 풀스택)** 를 본다.
 
 ## Persistence and repositories
 

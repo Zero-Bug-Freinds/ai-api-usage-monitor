@@ -1,14 +1,17 @@
-# Local infrastructure for the monorepo (see docs/architecture.md §10, §10.1 패턴 B).
+# Local infrastructure for the monorepo (see docs/architecture.md §10, §10.1 패턴 B, §10.2 단일 도메인).
 # Copy `.env.example` to `.env` and set secrets locally; do not commit `.env`.
 #
-# 앱 이미지 빌드 전 각 서비스에서 ./gradlew bootJar 로 app.jar 생성:
+# [Java] 앱 이미지 빌드 전 각 서비스에서 ./gradlew bootJar 로 app.jar 생성:
 #   services/proxy-service, services/api-gateway-service
 #
 # identity-service, usage-service 는 호스트에서 실행(IDE / ./gradlew bootRun). Compose 에는 포함하지 않는다.
 #
+# [Next] 빌드: web 앱 디렉터리에서 pnpm|npm install 후 pnpm build|npm run build (standalone).
+#   과도기: context = apps/web / 이행 후: services/identity-service/web, services/usage-service/web 등(README, docs/repository-structure.md §6).
+#
 # Next.js(apps/web) 컨테이너 — 선택: docker compose --profile web up
-#   게이트웨이는 컨테이너 네트워크(api-gateway-service:8080)로 연결.
-#   Identity BFF는 기본적으로 호스트의 identity-service 를 host.docker.internal 로 향함(.env 에서 조정).
+#   게이트웨이는 컨테이너 네트워크(api-gateway-service:8080)로 연결(API_GATEWAY_URL).
+#   Identity BFF는 기본적으로 호스트의 identity-service 를 host.docker.internal 로 향함(WEB_IDENTITY_SERVICE_URL).
 
 services:
   postgres:

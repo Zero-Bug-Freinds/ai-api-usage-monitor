@@ -60,7 +60,7 @@
   - **FastAPI(Python)는 사용하지 않는다.**
 - **메시지 브로커**: **RabbitMQ** (이벤트 기반 연계의 단일 브로커)
 - **기타 마이크로서비스**: 동일 Spring 생태계 내에서 **Spring MVC(Web) + JPA** 등으로 구현할 수 있다(Identity/Billing 등, 팀 합의).
-- **프론트엔드(팀원 C 담당, 모노레포 또는 별도 앱)**: **Next.js(App Router)**, **React**, **TypeScript**, **Tailwind CSS**, **Shadcn UI**(및 Radix), 차트는 **Recharts** 또는 **Chart.js** 등(팀 합의). 백엔드와 런타임이 달라도 MSA 원칙상 **HTTP API 계약**으로 연동한다.
+- **프론트엔드(서비스 단위 풀스택)**: 사용자 대면 UI·BFF가 필요한 도메인은 **`services/<svc>/web/`** 의 **Next.js(App Router)**, **React**, **TypeScript**, **Tailwind CSS**, **Shadcn UI**(및 Radix), 차트는 **Recharts** 또는 **Chart.js** 등(팀 합의)으로 구현한다. 과도기에는 **`apps/web`** 단일 앱에 모아 둘 수 있다(`docs/repository-structure.md` §6). 런타임이 Spring과 달라도 MSA 원칙상 **HTTP API·BFF 계약**으로 연동한다.
 - **Analytics·알림·집계 백엔드(백엔드 담당, 팀 합의)**: 집계·알림 워커는 **Spring MVC + JPA**, **Spring Boot + 메시지 소비**, 또는 팀 합의 하에 **Node(NestJS 등)** 로 둘 수 있다. 브로커·캐시는 §6, §10과 동일하게 **RabbitMQ**, **Redis**를 전제로 한다. 상세 책임은 **§12** 참고.
 
 ---
@@ -295,18 +295,26 @@
 
 | 구분 | 패턴 A (비채택) | 패턴 B (팀 확정) |
 |------|----------------|------------------|
-| 이미지 | 하나의 이미지에 여러 프로세스(예: API + 웹) | **백엔드 마이크로서비스별·`apps/web` 프론트별**로 **이미지 분리** |
+| 이미지 | 하나의 이미지에 여러 프로세스(예: API + 웹) | **백엔드 마이크로서비스별·도메인별 `web/`(또는 과도기 `apps/web`)** 로 **이미지 분리** |
 | 런타임 | 컨테이너 내부 프로세스 관리(supervisord 등) | **Docker Compose**로 서비스별 컨테이너를 조합 |
 
-- **원칙**: Spring Boot 서비스는 서비스 디렉터리의 `Dockerfile`로 빌드하고, Next.js는 `apps/web/Dockerfile`(standalone)로 빌드한다. 운영·스테이징에서도 **Compose(또는 동등한 컨테이너 오케스트레이션)로 각 이미지를 나란히 띄우는 모델**을 따른다.
-- **로컬**: 루트 `docker-compose.yml`은 인프라·일부 앱(예: proxy·gateway)을 포함할 수 있으며, **`apps/web` 컨테이너는 `profile: web` 등으로 선택 기동**해 호스트에서 `npm run dev` 하는 흐름과 병행할 수 있다(파일 상단 주석 참고).
+- **원칙**: Spring Boot 서비스는 **해당 서비스 디렉터리**의 `Dockerfile`로 빌드하고, Next.js는 **`services/<svc>/web/Dockerfile`**(또는 이행 중 **`apps/web/Dockerfile`**, standalone)로 빌드한다. 운영·스테이징에서도 **Compose(또는 동등한 오케스트레이션)로 각 이미지를 나란히 띄우는 모델**을 따른다.
+- **로컬**: 루트 `docker-compose.yml`은 인프라·일부 앱(예: proxy·gateway)을 포함할 수 있으며, **웹 컨테이너는 `profile: web`(현재 `apps/web`) 등으로 선택 기동**해 호스트에서 `pnpm run dev`/`npm run dev` 하는 흐름과 병행할 수 있다(`docker-compose.yml` 상단 주석).
+
+### 10.2 단일 도메인·엣지 라우팅(브라우저 URL 하나)
+
+운영·로컬 통합 진입점에서 **호스트명은 하나**로 두고, **경로 prefix**로 트래픽을 나누는 것을 권장한다.
+
+- **엣지:** Nginx·Traefik 등 **리버스 프록시** 한 계층에서 `location`(또는 동등 규칙)으로 upstream을 고정한다. 예: 랜딩·`/login`·`/settings`·`/api/auth`·`/api/identity`(Identity BFF) → **identity `web`**, `/dashboard`·`/api/usage`(Usage BFF) → **usage `web`**. (실제 prefix는 팀이 배치한 라우트에 맞춘다.)
+- **Next `basePath`:** 엣지에서 경로 prefix만 바꿔 붙일 때는 각 `web`의 `next.config`에서 **`basePath`** 를 맞춘다.
+- **쿠키·세션:** 동일 **`Site`/도메인**에서 경로만 나뉘면 `httpOnly` 세션 쿠키는 대부분 유지 가능하지만, **`Path`·`SameSite`** 는 분리 후 반드시 재검증한다(BFF 계약: `docs/contracts/web-identity-bff.md`).
 
 - **로컬 개발(필수에 가까운 구성)**
   - **Docker Compose**: `PostgreSQL`, `RabbitMQ`, `Redis` 등 의존성 컨테이너 기동
   - **애플리케이션(Proxy WebFlux 등)**: 로컬 JVM에서 실행(IDE/터미널)하거나, 패턴 B에 맞게 **서비스별 이미지**로 Compose에 포함
 - **선택**
   - API Gateway·Proxy: 저장소 `docker-compose.yml`에 포함 가능(계약: `docs/contracts/gateway-proxy.md`)
-  - Next.js(`apps/web`): 별도 이미지·선택적 Compose 서비스(§10.1)
+  - Next.js: **도메인별 `services/<svc>/web`** 또는 과도기 **`apps/web`** — 별도 이미지·선택적 Compose 서비스(§10.1)
   - GitHub Actions(CI): 저장소 정책에 따라 도입(`docs/CI.md`)
   - Prometheus + Grafana, Loki, Jaeger: 시간 여유 시(관측 강화)
 - **Kubernetes / Ingress / ConfigMap·Secret(K8s)**
@@ -324,14 +332,14 @@
 - Notification Service: “Slack/Email 등 알림 발송”
 - Identity & Organization Service: “사용자/조직/팀/멤버십/RBAC”
 - API Key Service: “공급사 API Key의 암호화 저장/조회”
-- **백엔드(Analytics·Notification·집계 등)**: 아래 **§12** 참고.
-- **팀원 C(Frontend)**: 아래 **§13** 참고.
+- **집계·알림 전담 백엔드(Analytics·Notification 등)**: 아래 **§12** 참고 — **도메인 UI(`web/`) 담당과 동일 사람이 아닐 수 있음**(서비스 경계 유지).
+- **서비스 단위 웹·BFF**: 아래 **§13** 참고.
 
 ---
 
 ## 12. 백엔드 — Analytics·Reporting·Notification (집계·알림)
 
-**§4.7 Analytics & Reporting**, **§4.9 Notification** 에 해당하는 **집계·알림·리포트 파이프라인**은 백엔드 마이크로서비스(또는 동일 책임 모듈) 범위다. 구현 주체·팀 분장은 팀 합의에 따르며, **팀원 C는 이 절의 백엔드 구현을 담당하지 않는다.**
+**§4.7 Analytics & Reporting**, **§4.9 Notification** 에 해당하는 **집계·알림·리포트 파이프라인**은 백엔드 마이크로서비스(또는 동일 책임 모듈) 범위다. 구현 주체는 팀 합의에 따르며, **Identity·Usage 등 각 도메인의 `web/` 풀스택 작업**과 **혼동하지 않는다**(UI는 집계 API를 소비할 뿐, §12 파이프라인 구현 책임은 별도).
 
 ### 12.1 담당 서비스·산출물
 
@@ -362,21 +370,22 @@
 
 ---
 
-## 13. 팀 역할 분담 — 팀원 C (Frontend)
+## 13. 서비스 단위 웹·BFF(풀스택 소유)
 
-팀원 C는 **웹 프론트엔드**(모노레포의 `apps/web` 등)와, 필요 시 **BFF(Route Handler)** 로 브라우저가 백엔드를 안전하게 호출하도록 하는 범위만 담당한다. **Analytics·Notification·집계 백엔드**는 §12에 따르며 팀원 C 역할에 포함하지 않는다.
+**별도 “프론트 전담” 역할을 두지 않는다.** 각 도메인 서비스를 맡은 팀·개발자가 **같은 저장소 경계 안에서 Spring 앱과(필요 시) `web/` Next 앱**을 함께 유지한다(`docs/repository-structure.md` §6).
 
 ### 13.1 담당·연동
 
-- **UI**: 개인/관리자 **통합 대시보드**, 랜딩, 인증 관련 화면 등.
-- **계약**: 팀원 A(Proxy·게이트웨이)·팀원 B(Identity 등)·백엔드(§12 집계·알림 API)가 노출하는 **HTTP API와 계약을 맞춰** 연동한다.
-- **BFF**: 예) `apps/web`의 Route Handler로 Identity 프록시, httpOnly 쿠키 등 — 상세는 `docs/contracts/web-identity-bff.md` 등 팀 문서를 따른다.
+- **Identity 계열**: `services/identity-service` + (목표) `services/identity-service/web/` — 랜딩·인증·조직/팀 설정 UI, `/api/auth/**`·`/api/identity/**` BFF 등. 계약: `docs/contracts/web-identity-bff.md`.
+- **Usage·대시보드 계열**: `services/usage-service` + (목표) `services/usage-service/web/` — 사용량 대시보드, `/api/usage/**` BFF → 게이트웨이. 계약: `docs/contracts/web-gateway-bff.md`, `docs/contracts/gateway-proxy.md`.
+- **과도기**: 위 Next 코드가 아직 **`apps/web`** 한 트리에 있을 수 있다. 경로 이전 시 **본 문서·계약 문서의 파일 경로**를 코드와 같이 갱신한다.
+- **Proxy·API Gateway**: 공개 AI·Usage HTTP 진입·신뢰 헤더 — 게이트웨이·프록시 구현 팀과 **HTTP 계약**만 맞춘다.
 
-### 13.2 대시보드·시각화(UI)
+### 13.2 대시보드·시각화·보안(UI)
 
-- **권한별 UI**: 로그인 사용자의 **역할(RBAC)** 에 따라 **개인 뷰**와 **관리자 뷰**를 구분한다(§8.4 테넌트·권한과 일치).
-- **시각화**: 차트·테이블 등으로 **§12.2에서 제공하는 집계·조회 API** 응답을 표현한다.
-- **보안**: 공급사 API Key·관리자 토큰을 **브라우저 번들에 포함하지 않는다**(§8).
+- **권한별 UI**: 로그인 사용자의 **역할(RBAC)** 에 따라 뷰를 구분한다(§8.4).
+- **시각화**: §12 등이 노출하는 **집계·조회 API** 응답을 차트·테이블로 표현한다.
+- **보안**: 공급사 API Key·내부 토큰을 **브라우저 번들에 넣지 않는다**(§8). 플랫폼 JWT는 BFF·`httpOnly` 쿠키 패턴을 유지한다.
 
 ---
 
@@ -385,4 +394,4 @@
 - 서비스 추가/삭제는 “책임(도메인) 기준”으로 판단한다.
 - 이벤트 스키마/키 이름은 문서에 명시한다.
 - 요청·이벤트 흐름 시각화: `docs/sequence-diagrams.md` (Mermaid)를 함께 갱신한다.
-- **§12(백엔드 집계·알림)** 또는 **§13(팀원 C·프론트)**·**§2.1** 범위가 바뀌면 해당 절을 함께 갱신한다.
+- **§12(백엔드 집계·알림)** 또는 **§13(서비스 단위 웹·BFF)**·**§2.1**·**§10.2(단일 도메인)** 범위가 바뀌면 해당 절을 함께 갱신한다.
