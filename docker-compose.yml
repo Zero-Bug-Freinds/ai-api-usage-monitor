@@ -6,10 +6,12 @@
 #   비어 있지 않은 값으로 맞추거나(루트 .env.example 로컬 전용 문자열) 줄 자체를 두지 않는다.
 #   게이트웨이·proxy·usage-service 의 shared-secret 은 동일해야 한다 — docs/contracts/gateway-proxy.md §5.
 #
-# [Java] 앱 이미지 빌드 전 각 서비스에서 ./gradlew bootJar 로 app.jar 생성:
-#   services/proxy-service, services/api-gateway-service
+# [Java] 앱 이미지: proxy·api-gateway 는 각 디렉터리에서 ./gradlew bootJar 후 Dockerfile COPY.
+# identity·usage 백엔드는 패턴 B Dockerfile 이 Gradle 을 이미지 안에서 실행(사전 JAR 불필요).
+#   usage 백엔드: 저장소 루트에서 docker build -f services/usage-service/Dockerfile -t usage-service:local .
 #
-# identity-service, usage-service 는 호스트에서 실행(IDE / ./gradlew bootRun). Compose 에는 포함하지 않는다.
+# identity-service, usage-service Spring 앱은 기본 Compose 에는 없고 호스트 실행 또는
+# services/<svc>/docker-compose.yml 로 백+Next 스택 기동(루트 compose 와 DB·게이트웨이 맞출 것).
 #
 # [Next] 빌드: 각 services/<svc>/web 에서 npm|pnpm install 후 npm run build | pnpm build (standalone).
 #
@@ -17,7 +19,7 @@
 #   게이트웨이는 컨테이너 네트워크(api-gateway-service:8080)로 연결(API_GATEWAY_URL).
 #   Identity BFF는 기본적으로 호스트의 identity-service 를 host.docker.internal 로 향함(WEB_IDENTITY_SERVICE_URL).
 #   단일 도메인: web-edge(Nginx, docker/web-edge/nginx.conf) → 기본 ${WEB_EDGE_PORT:-8888}
-#     /dashboard, /dashboard/* → usage-web(Nginx는 /dashboard → /dashboard/ 리다이렉트; /dashboard2 는 identity 로), /api/v1/* → api-gateway-service, 나머지 → identity-web.
+#     /dashboard → 308 /dashboard/; 접두 /dashboard/ 만 usage-web(/dashboard2 는 제외); /api/v1 → 308 /api/v1/; 접두 /api/v1/ 만 api-gateway(버퍼링 끔·긴 timeout); 그 외 → identity-web.
 
 services:
   postgres:

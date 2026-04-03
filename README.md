@@ -51,7 +51,7 @@
 
 ### 빌드 순서(요약)
 
-1. **Java:** 각 서비스 디렉터리에서 `./gradlew bootJar`(이미지 빌드 전에 `app.jar`가 필요한 Compose 서비스는 파일 주석 참고).
+1. **Java:** `proxy-service`·`api-gateway-service` 는 이미지 빌드 전 해당 디렉터리에서 `./gradlew bootJar` 로 `app.jar` 를 둔다. **identity-service**·**usage-service** 백엔드 Dockerfile 은 이미지 안에서 Gradle 을 돌려 JAR 을 만든다(usage 는 저장소 루트에서 `docker build -f services/usage-service/Dockerfile …`).
 2. **Next.js:** `services/identity-service/web`, `services/usage-service/web`에서 의존성 설치 후 **`pnpm build`** 또는 **`npm run build`** — `output: 'standalone'` 산출물을 Docker가 복사하는 패턴(`docs/architecture.md` §10.1).
 3. **공유 UI 패키지:** 루트 `pnpm` workspace·`packages/*` 도입 시, 앱 빌드 전에 **`pnpm install`**(및 필요 시 `packages` 선행 빌드).
 

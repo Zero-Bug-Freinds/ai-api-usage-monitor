@@ -1,15 +1,44 @@
-# 패턴 B — 이 서비스 폴더에서 백엔드(JAR)와 프론트(./web) 이미지만 빌드할 때 사용.
-# 실행·네트워크·DB는 루트 저장소의 docker-compose.yml 과 맞춘다.
-# 예: docker compose -f docker-compose.yml build backend frontend
+# 패턴 B — 백엔드 이미지 + ./web Next 이미지를 한 파일에서 빌드·기동 (docs/architecture.md §10.1).
+# 빌드만: docker compose build
+# 기동: docker compose up -d  (Postgres 등은 루트 docker-compose 또는 호스트에서 별도)
+#   백엔드 BFF 타깃: frontend → http://backend:8080
 name: identity-service-stack
+
+networks:
+  internal:
+    driver: bridge
+
 services:
   backend:
     build:
       context: .
       dockerfile: Dockerfile
     image: identity-service:local
+    ports:
+      - "${IDENTITY_STACK_BACKEND_PORT:-8090}:8080"
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST:-host.docker.internal}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - internal
+
   frontend:
     build:
       context: ./web
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_USAGE_WEB_ORIGIN: ${NEXT_PUBLIC_USAGE_WEB_ORIGIN:-http://localhost:3001}
     image: identity-service-web:local
+    ports:
+      - "${IDENTITY_STACK_WEB_PORT:-3000}:3000"
+    depends_on:
+      - backend
+    environment:
+      IDENTITY_SERVICE_URL: http://backend:8080
+    networks:
+      - internal

@@ -2,3 +2,6 @@
 .git
 .gitignore
 *.md
+web
+build
+bin

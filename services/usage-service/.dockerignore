@@ -1,0 +1,9 @@
+# 백엔드 이미지는 저장소 루트 context + services/usage-service/Dockerfile 을 쓴다.
+# 서비스 폴더만 context 로 쓰는 예전 흐름이 있다면 web·빌드 산출물 제외
+web
+build
+bin
+.gradle
+.git
+.gitignore
+*.md
