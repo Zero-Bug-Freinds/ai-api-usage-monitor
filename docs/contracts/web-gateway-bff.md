@@ -1,6 +1,6 @@
 # Web(Next.js) ↔ API Gateway — Usage BFF 계약
 
-버전: 1.6  
+버전: 1.7  
 관련: [docs/architecture.md](../architecture.md) §1.3, §10.1, §10.2, §13, [게이트웨이·Proxy 계약](./gateway-proxy.md)(AI 공개 경로·Bearer·`X-User-Id`·라우트·§5.1 Compose·`GATEWAY_SHARED_SECRET`), [Web·Identity BFF 계약](./web-identity-bff.md) §5.1·§6·§9, [저장소 구조](../repository-structure.md) §6, [웹 경계](./web-split-boundary.md)
 
 **소스 트리:** Usage BFF·대시보드 UI의 **정본**은 `services/usage-service/web/` 이다. **공용 UI(Shadcn 래퍼·`cn`)** 는 루트 pnpm workspace 패키지 **`@ai-usage/ui`**(`packages/ui`)를 참조한다([`web-split-boundary.md` §1.1](./web-split-boundary.md), [`repository-structure.md`](../repository-structure.md) §6).
@@ -55,6 +55,12 @@
 | `GET /dashboard/api/usage/logs?…` | `/api/v1/usage/logs?…` |
 
 쿼리 파라미터(기간·페이지 등)는 Usage 서비스 API와 동일하게 전달한다. 응답은 **Usage DTO JSON**(공통 `ApiResponse` 래핑 없음)이 기본이다.
+
+#### 3.1.1 대시보드 UI 표시(시각·차트)
+
+- **사용 로그 테이블:** API가 주는 `occurredAt`(ISO-8601, 보통 UTC 기준 오프셋/Z)은 브라우저에서 **`Asia/Seoul`(KST)** 로 포맷해 표시한다(`services/usage-service/web/src/lib/usage/format-occurred-at-kst.ts` 등). 헤더 문구는 이에 맞춘다.
+- **집계·요약 카드:** 일자·“오늘” 등 백엔드가 **UTC 일자**로 집계하는 값은 그 의미를 유지하고, 로그 행 시각만 KST로 바꾼다(카드 문구를 KST로 바꾸면 의미가 어긋날 수 있음).
+- **차트 색상:** 대시보드 차트 팔레트는 **무채색 계열**로 통일해 UI 톤과 맞춘다(`usage-dashboard.tsx`의 `CHART_COLORS`, 그리드 스트로크 등).
 
 ### 3.2 프론트 호출·401
 
