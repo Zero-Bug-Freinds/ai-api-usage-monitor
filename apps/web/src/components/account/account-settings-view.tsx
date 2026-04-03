@@ -3,7 +3,13 @@
 import * as React from "react"
 
 import { apiFetch } from "@/lib/api/client-fetch"
-import type { ApiResponse, ExternalKeyProvider, SessionResponse } from "@/lib/api/identity/types"
+import type {
+  ApiResponse,
+  ExternalKeyListResponseData,
+  ExternalKeyProvider,
+  ExternalKeySummary,
+  SessionResponse,
+} from "@/lib/api/identity/types"
 
 function asApiResponse(json: unknown): ApiResponse<unknown> | null {
   if (!json || typeof json !== "object") return null
@@ -30,6 +36,12 @@ function roleLabel(role: string) {
   return role
 }
 
+function formatCreatedAt(iso: string) {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleString("ko-KR")
+}
+
 export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] }) {
   const [session, setSession] = React.useState<SessionResponse | null>(null)
   const [loading, setLoading] = React.useState(true)
@@ -43,6 +55,36 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
   const [submitMessage, setSubmitMessage] = React.useState<{ kind: "success" | "error"; text: string } | null>(
     null
   )
+
+  /** `null`은 아직 목록을 받기 전(세션 직후 첫 프레임 포함). */
+  const [externalKeys, setExternalKeys] = React.useState<ExternalKeySummary[] | null>(null)
+  const [keysLoading, setKeysLoading] = React.useState(false)
+  const [keysError, setKeysError] = React.useState<string | null>(null)
+
+  const loadExternalKeys = React.useCallback(async (signal?: AbortSignal) => {
+    setKeysLoading(true)
+    setKeysError(null)
+    try {
+      const { response, json } = await apiFetch<ExternalKeyListResponseData>(
+        "/api/auth/external-keys",
+        { credentials: "include", cache: "no-store", ...(signal ? { signal } : {}) },
+        { authRequired: true }
+      )
+      if (signal?.aborted) return
+      if (response.ok && json?.success && Array.isArray(json.data)) {
+        setExternalKeys(json.data)
+      } else {
+        setKeysError(json?.message ?? "외부 키 목록을 불러오지 못했습니다")
+        setExternalKeys([])
+      }
+    } catch {
+      if (signal?.aborted) return
+      setKeysError("외부 키 목록을 불러오지 못했습니다")
+      setExternalKeys([])
+    } finally {
+      if (!signal?.aborted) setKeysLoading(false)
+    }
+  }, [])
 
   React.useEffect(() => {
     let cancelled = false
@@ -71,6 +113,13 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
       cancelled = true
     }
   }, [])
+
+  React.useEffect(() => {
+    if (!session) return
+    const ac = new AbortController()
+    void loadExternalKeys(ac.signal)
+    return () => ac.abort()
+  }, [session, loadExternalKeys])
 
   React.useEffect(() => {
     if (!aliasTouched || !alias.trim()) setAlias(defaultAlias(provider))
@@ -121,6 +170,7 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
         setSubmitMessage({ kind: "success", text: apiResponse.message || "등록되었습니다" })
         setAliasTouched(false)
         setAlias(defaultAlias(provider))
+        void loadExternalKeys()
       } else {
         setSubmitMessage({ kind: "error", text: apiResponse?.message || "등록에 실패했습니다" })
       }
@@ -167,6 +217,41 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
           </dl>
         ) : null}
       </section>
+
+      {session ? (
+        <section className="max-w-lg space-y-3 rounded-lg border border-border bg-card p-5 shadow-sm">
+          <div className="space-y-1">
+            <h2 className="text-sm font-semibold tracking-tight">등록된 외부 API Key</h2>
+            <p className="text-sm text-muted-foreground">Provider·별칭·등록일만 표시됩니다. 키 값은 저장되지 않거나 암호화되어 있습니다.</p>
+          </div>
+
+          {keysLoading || externalKeys === null ? (
+            <p className="text-sm text-muted-foreground">목록을 불러오는 중…</p>
+          ) : null}
+          {keysError && !keysLoading && externalKeys !== null ? <p className="text-sm text-destructive">{keysError}</p> : null}
+
+          {!keysLoading && !keysError && externalKeys !== null && externalKeys.length === 0 ? (
+            <p className="rounded-md border border-dashed border-border bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground">
+              등록된 외부 키가 없습니다. 아래에서 추가할 수 있습니다.
+            </p>
+          ) : null}
+
+          {!keysLoading && !keysError && externalKeys !== null && externalKeys.length > 0 ? (
+            <ul className="divide-y divide-border rounded-md border border-border">
+              {externalKeys.map((row) => (
+                <li key={row.id} className="flex flex-col gap-1 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                  <div className="font-medium">
+                    <span className="text-foreground">{providerLabel(row.provider)}</span>
+                    <span className="mx-2 text-muted-foreground">·</span>
+                    <span className="text-foreground">{row.alias}</span>
+                  </div>
+                  <div className="text-muted-foreground tabular-nums">{formatCreatedAt(row.createdAt)}</div>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
+      ) : null}
 
       <section className="max-w-lg space-y-3 rounded-lg border border-border bg-card p-5 shadow-sm">
         <div className="space-y-1">
