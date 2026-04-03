@@ -289,12 +289,25 @@
 
 본 프로젝트는 **배포·Kubernetes 클러스터를 사용하지 않는다**는 전제에서 아래를 따른다.
 
+### 10.1 컨테이너·배포 패턴 (팀 확정)
+
+배포 시 **단일 Docker 이미지 안에 백엔드·프론트를 한꺼번에 넣고 supervisord 등으로 멀티프로세스 기동하는 방식(패턴 A)** 과, **서비스·계층마다 이미지를 나누고 Docker Compose로 스택을 올리는 방식(패턴 B)** 을 검토했으며, **패턴 B로 확정**한다.
+
+| 구분 | 패턴 A (비채택) | 패턴 B (팀 확정) |
+|------|----------------|------------------|
+| 이미지 | 하나의 이미지에 여러 프로세스(예: API + 웹) | **백엔드 마이크로서비스별·`apps/web` 프론트별**로 **이미지 분리** |
+| 런타임 | 컨테이너 내부 프로세스 관리(supervisord 등) | **Docker Compose**로 서비스별 컨테이너를 조합 |
+
+- **원칙**: Spring Boot 서비스는 서비스 디렉터리의 `Dockerfile`로 빌드하고, Next.js는 `apps/web/Dockerfile`(standalone)로 빌드한다. 운영·스테이징에서도 **Compose(또는 동등한 컨테이너 오케스트레이션)로 각 이미지를 나란히 띄우는 모델**을 따른다.
+- **로컬**: 루트 `docker-compose.yml`은 인프라·일부 앱(예: proxy·gateway)을 포함할 수 있으며, **`apps/web` 컨테이너는 `profile: web` 등으로 선택 기동**해 호스트에서 `npm run dev` 하는 흐름과 병행할 수 있다(파일 상단 주석 참고).
+
 - **로컬 개발(필수에 가까운 구성)**
   - **Docker Compose**: `PostgreSQL`, `RabbitMQ`, `Redis` 등 의존성 컨테이너 기동
-  - **애플리케이션(Proxy WebFlux 등)**: 로컬 JVM에서 실행(IDE/터미널), Compose에 올린 브로커·DB 주소로 연결
+  - **애플리케이션(Proxy WebFlux 등)**: 로컬 JVM에서 실행(IDE/터미널)하거나, 패턴 B에 맞게 **서비스별 이미지**로 Compose에 포함
 - **선택**
-  - API Gateway: 로컬 실행 또는 추후 게이트웨이만 Compose에 포함(팀 합의)
-  - GitHub Actions(CI): 저장소 정책에 따라 도입
+  - API Gateway·Proxy: 저장소 `docker-compose.yml`에 포함 가능(계약: `docs/contracts/gateway-proxy.md`)
+  - Next.js(`apps/web`): 별도 이미지·선택적 Compose 서비스(§10.1)
+  - GitHub Actions(CI): 저장소 정책에 따라 도입(`docs/CI.md`)
   - Prometheus + Grafana, Loki, Jaeger: 시간 여유 시(관측 강화)
 - **Kubernetes / Ingress / ConfigMap·Secret(K8s)**
   - 현재 범위에서는 **사용하지 않음**. 설정·비밀값은 **환경변수·`.env`(비커밋)·GitHub Secrets** 등으로 관리한다.

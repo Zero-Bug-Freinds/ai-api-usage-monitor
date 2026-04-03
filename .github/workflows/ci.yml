@@ -161,6 +161,8 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
+      - name: Docker image (apps/web, standalone)
+        run: docker build -t web:ci .
 
   # Single required check for branch protection.
   # Skipped Java/Compose jobs (path filter) do not fail the workflow.

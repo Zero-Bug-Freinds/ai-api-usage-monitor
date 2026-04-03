@@ -41,6 +41,7 @@
 - **의존성(DB·큐·캐시)**: **Docker Compose**로 실행합니다. 예: `PostgreSQL`, `RabbitMQ`, `Redis`.
 - **API Gateway + Proxy**: `docker-compose.yml`에서 **컨테이너로 함께 기동**할 수 있습니다(호스트 포트 기본 `8080` / `8081`). 계약·경로는 `docs/contracts/gateway-proxy.md`를 참고합니다.
 - **identity-service** 등 그 외 앱도 **로컬 JVM** 실행을 기본으로 하며, 필요 시 Compose에 추가할 수 있습니다.
+- **컨테이너 배포 모델**: 백엔드·프론트 **이미지 분리 + Docker Compose 스택**(패턴 B, `docs/architecture.md` §10.1). `apps/web` 은 standalone `Dockerfile`로 빌드하며, 로컬에서 웹만 컨테이너로 올릴 때는 `docker compose --profile web up` 등(루트 `docker-compose.yml` 주석)을 참고합니다.
 
 ## 모노레포 레이아웃(요약)
 실행 가능한 앱은 `services/` 하위에 둡니다. (`docs/repository-structure.md` 참고)

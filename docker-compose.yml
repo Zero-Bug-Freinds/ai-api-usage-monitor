@@ -1,10 +1,14 @@
-# Local infrastructure for the monorepo (see docs/architecture.md §10).
+# Local infrastructure for the monorepo (see docs/architecture.md §10, §10.1 패턴 B).
 # Copy `.env.example` to `.env` and set secrets locally; do not commit `.env`.
 #
 # 앱 이미지 빌드 전 각 서비스에서 ./gradlew bootJar 로 app.jar 생성:
 #   services/proxy-service, services/api-gateway-service
 #
 # identity-service, usage-service 는 호스트에서 실행(IDE / ./gradlew bootRun). Compose 에는 포함하지 않는다.
+#
+# Next.js(apps/web) 컨테이너 — 선택: docker compose --profile web up
+#   게이트웨이는 컨테이너 네트워크(api-gateway-service:8080)로 연결.
+#   Identity BFF는 기본적으로 호스트의 identity-service 를 host.docker.internal 로 향함(.env 에서 조정).
 
 services:
   postgres:
@@ -79,6 +83,22 @@ services:
       GATEWAY_DEV_MODE: ${GATEWAY_DEV_MODE:-true}
     ports:
       - "${API_GATEWAY_PORT:-8080}:8080"
+
+  web:
+    profiles:
+      - web
+    build:
+      context: ./apps/web
+    depends_on:
+      - api-gateway-service
+    environment:
+      API_GATEWAY_URL: http://api-gateway-service:8080
+      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://host.docker.internal:8090}
+      GATEWAY_DEV_MODE: ${GATEWAY_DEV_MODE:-true}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${WEB_PORT:-3000}:3000"
 
 volumes:
   postgres_data:

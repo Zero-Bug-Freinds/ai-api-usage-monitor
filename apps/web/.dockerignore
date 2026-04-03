@@ -1,0 +1,22 @@
+# dependencies
+node_modules
+npm-debug.log*
+
+# build / cache
+.next
+out
+.turbo
+
+# test & tooling
+coverage
+.vitest
+
+# env & local
+.env
+.env.*
+!.env.example
+
+# git & editor
+.git
+.gitignore
+*.md
