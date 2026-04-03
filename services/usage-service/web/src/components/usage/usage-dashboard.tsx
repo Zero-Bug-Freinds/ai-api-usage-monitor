@@ -41,15 +41,13 @@ import type {
 } from "@/lib/usage/types"
 import { addUtcDays, formatUtcIsoDate } from "@/lib/usage/utc-dates"
 
+/** 무채색 팔레트: 파이·막대·라인 공통 (밝은 배경에서 대비 유지) */
 const CHART_COLORS = [
-  "#6366f1",
-  "#22c55e",
-  "#f97316",
-  "#ec4899",
-  "#06b6d4",
-  "#eab308",
-  "#a855f7",
-  "#14b8a6",
+  "#0a0a0a",
+  "#404040",
+  "#737373",
+  "#a3a3a3",
+  "#d4d4d4",
 ]
 
 const RANGE_DAYS = 30
@@ -330,11 +328,11 @@ export function UsageDashboard() {
                 <div className="h-[320px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart layout="vertical" data={modelBarRows} margin={{ left: 8, right: 16 }}>
-                      <CartesianGrid strokeDasharray="3 3" />
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                       <XAxis type="number" />
                       <YAxis type="category" dataKey="label" width={120} tick={{ fontSize: 11 }} />
                       <Tooltip />
-                      <Bar dataKey="requests" name="요청 수" fill={CHART_COLORS[0]} radius={[0, 4, 4, 0]} />
+                      <Bar dataKey="requests" name="요청 수" fill={CHART_COLORS[1]} radius={[0, 4, 4, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -350,11 +348,11 @@ export function UsageDashboard() {
               <div className="h-[320px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart layout="vertical" data={modelBarRows} margin={{ left: 8, right: 16 }}>
-                    <CartesianGrid strokeDasharray="3 3" />
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                     <XAxis type="number" />
                     <YAxis type="category" dataKey="label" width={120} tick={{ fontSize: 11 }} />
                     <Tooltip formatter={(v) => formatTokenCount(tooltipNumericValue(v))} />
-                    <Bar dataKey="tokens" name="입력 토큰" fill={CHART_COLORS[1]} radius={[0, 4, 4, 0]} />
+                    <Bar dataKey="tokens" name="입력 토큰" fill={CHART_COLORS[2]} radius={[0, 4, 4, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -369,7 +367,7 @@ export function UsageDashboard() {
               <div className="h-[360px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={dailyChart}>
-                    <CartesianGrid strokeDasharray="3 3" />
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                     <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                     <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
                     <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
@@ -381,13 +379,13 @@ export function UsageDashboard() {
                       }
                     />
                     <Legend />
-                    <Bar yAxisId="left" dataKey="requestCount" name="요청 수" fill={CHART_COLORS[2]} radius={[4, 4, 0, 0]} />
+                    <Bar yAxisId="left" dataKey="requestCount" name="요청 수" fill={CHART_COLORS[3]} radius={[4, 4, 0, 0]} />
                     <Line
                       yAxisId="right"
                       type="monotone"
                       dataKey="cost"
                       name="비용 (USD)"
-                      stroke={CHART_COLORS[3]}
+                      stroke={CHART_COLORS[0]}
                       strokeWidth={2}
                       dot={false}
                     />
@@ -405,7 +403,7 @@ export function UsageDashboard() {
               <div className="h-[360px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={monthlyChart}>
-                    <CartesianGrid strokeDasharray="3 3" />
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                     <XAxis dataKey="yearMonth" tick={{ fontSize: 11 }} />
                     <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
                     <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
@@ -417,13 +415,13 @@ export function UsageDashboard() {
                       }
                     />
                     <Legend />
-                    <Bar yAxisId="left" dataKey="requestCount" name="요청 수" fill={CHART_COLORS[4]} radius={[4, 4, 0, 0]} />
+                    <Bar yAxisId="left" dataKey="requestCount" name="요청 수" fill={CHART_COLORS[2]} radius={[4, 4, 0, 0]} />
                     <Line
                       yAxisId="right"
                       type="monotone"
                       dataKey="cost"
                       name="비용 (USD)"
-                      stroke={CHART_COLORS[5]}
+                      stroke={CHART_COLORS[0]}
                       strokeWidth={2}
                       dot={false}
                     />
