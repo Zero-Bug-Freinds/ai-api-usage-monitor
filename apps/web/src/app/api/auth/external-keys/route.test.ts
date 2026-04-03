@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { POST } from "./route"
+import { GET, POST } from "./route"
 
 function jsonRequest(body: unknown, cookie?: string) {
   return new Request("http://localhost/api/auth/external-keys", {
@@ -13,9 +13,179 @@ function jsonRequest(body: unknown, cookie?: string) {
   })
 }
 
+function getRequest(cookie?: string) {
+  return new Request("http://localhost/api/auth/external-keys", {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      ...(cookie ? { cookie } : {}),
+    },
+  })
+}
+
 afterEach(() => {
   vi.restoreAllMocks()
   delete process.env.IDENTITY_SERVICE_URL
+})
+
+describe("GET /api/auth/external-keys (route handler)", () => {
+  it("returns 401 when access_token cookie is missing", async () => {
+    const res = await GET(getRequest())
+    expect(res.status).toBe(401)
+    const json = (await res.json()) as { success: boolean; data: null }
+    expect(json.success).toBe(false)
+    expect(json.data).toBeNull()
+    expect(res.headers.get("cache-control")).toBe("no-store")
+  })
+
+  it("returns 500 when IDENTITY_SERVICE_URL is missing", async () => {
+    const res = await GET(getRequest("access_token=test-token-value"))
+    expect(res.status).toBe(500)
+    const json = (await res.json()) as { success: boolean; message: string }
+    expect(json.success).toBe(false)
+    expect(json.message).toContain("IDENTITY_SERVICE_URL")
+    expect(res.headers.get("cache-control")).toBe("no-store")
+  })
+
+  it("returns 200 and passes through valid list data from identity", async () => {
+    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
+
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(url).toBe("http://localhost:8080/api/auth/external-keys")
+      expect(init?.method).toBe("GET")
+      expect(init?.headers).toMatchObject({
+        Authorization: "Bearer test-token-value",
+        Accept: "application/json",
+      })
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: "조회되었습니다",
+          data: [
+            {
+              id: 1,
+              provider: "OPENAI",
+              alias: "키 1",
+              createdAt: "2026-03-30T00:00:00Z",
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const res = await GET(getRequest("access_token=test-token-value"))
+
+    expect(res.status).toBe(200)
+    const json = (await res.json()) as {
+      success: boolean
+      data: Array<{ id: number; provider: string }>
+    }
+    expect(json.success).toBe(true)
+    expect(json.data).toHaveLength(1)
+    expect(json.data[0].id).toBe(1)
+    expect(res.headers.get("cache-control")).toBe("no-store")
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("passes through upstream 401 JSON body", async () => {
+    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        return new Response(
+          JSON.stringify({ success: false, message: "세션이 만료되었습니다", data: null }),
+          { status: 401, headers: { "Content-Type": "application/json" } }
+        )
+      })
+    )
+
+    const res = await GET(getRequest("access_token=test-token-value"))
+    expect(res.status).toBe(401)
+    const json = (await res.json()) as { success: boolean; message: string; data: null }
+    expect(json.success).toBe(false)
+    expect(json.message).toContain("만료")
+    expect(json.data).toBeNull()
+    expect(res.headers.get("cache-control")).toBe("no-store")
+  })
+
+  it("passes through upstream non-401 error JSON body", async () => {
+    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        return new Response(
+          JSON.stringify({ error: "forbidden", detail: "권한 없음" }),
+          { status: 403, headers: { "Content-Type": "application/json" } }
+        )
+      })
+    )
+
+    const res = await GET(getRequest("access_token=test-token-value"))
+    expect(res.status).toBe(403)
+    const json = (await res.json()) as { error: string }
+    expect(json.error).toBe("forbidden")
+    expect(res.headers.get("cache-control")).toBe("no-store")
+  })
+
+  it("returns 502 when upstream error has no parseable JSON body", async () => {
+    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        return new Response("Internal Server Error", {
+          status: 500,
+          headers: { "Content-Type": "text/plain" },
+        })
+      })
+    )
+
+    const res = await GET(getRequest("access_token=test-token-value"))
+    expect(res.status).toBe(502)
+    const json = (await res.json()) as { success: boolean; message: string; data: null }
+    expect(json.success).toBe(false)
+    expect(json.data).toBeNull()
+    expect(res.headers.get("cache-control")).toBe("no-store")
+  })
+
+  it("returns 502 when Identity is unreachable", async () => {
+    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
+    vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new Error("ECONNREFUSED"))))
+
+    const res = await GET(getRequest("access_token=test-token-value"))
+    expect(res.status).toBe(502)
+    const json = (await res.json()) as { success: boolean; data: null }
+    expect(json.success).toBe(false)
+    expect(json.data).toBeNull()
+    expect(res.headers.get("cache-control")).toBe("no-store")
+  })
+
+  it("returns 502 when success response data shape is invalid", async () => {
+    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: "ok",
+            data: [{ id: "not-a-number", provider: "OPENAI", alias: "a", createdAt: "2026-01-01T00:00:00Z" }],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+      })
+    )
+
+    const res = await GET(getRequest("access_token=test-token-value"))
+    expect(res.status).toBe(502)
+    const json = (await res.json()) as { success: boolean; message: string; data: null }
+    expect(json.success).toBe(false)
+    expect(json.message).toContain("형식")
+    expect(json.data).toBeNull()
+    expect(res.headers.get("cache-control")).toBe("no-store")
+  })
 })
 
 describe("POST /api/auth/external-keys (route handler)", () => {
