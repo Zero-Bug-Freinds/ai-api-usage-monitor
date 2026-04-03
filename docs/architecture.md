@@ -254,6 +254,7 @@
 - 키/비밀번호/인증서 원문은 절대 커밋하지 않는다.
 - `.env` 및 시크릿 파일을 `.gitignore`로 차단한다.
 - pre-commit/CI에서 비밀 스캐닝(gitleaks/trufflehog 등) 도입을 권장한다.
+- **`.env.example`:** 키 **이름**과 로컬 전용 **문서화된 플레이스홀더**만 둔다. 실 운영 비밀은 커밋하지 않는다. CI·gitleaks와의 관계는 `docs/CI.md`를 본다.
 
 ### 8.3 저장/전송 시 암호화
 - API Key는 DB에 평문 저장 금지
@@ -300,6 +301,7 @@
 
 - **원칙**: Spring Boot 서비스는 **해당 서비스 디렉터리**의 `Dockerfile`로 빌드하고, Next.js는 **`services/<svc>/web/Dockerfile`**(standalone)로 빌드한다. 운영·스테이징에서도 **Compose(또는 동등한 오케스트레이션)로 각 이미지를 나란히 띄우는 모델**을 따른다.
 - **로컬**: 루트 `docker-compose.yml`은 인프라·일부 앱(예: proxy·gateway)을 포함할 수 있으며, **웹 컨테이너는 `profile: web`(`identity-web`, `usage-web`) 등으로 선택 기동**해 호스트에서 `npm run dev` 하는 흐름과 병행할 수 있다(`docker-compose.yml` 상단 주석).
+- **Compose 환경변수:** `docker compose`는 루트 **`.env`**만 자동 로드한다. `GATEWAY_SHARED_SECRET`처럼 compose 파일에서 `${VAR:-}` 형태로 넘기는 값은, `.env`에 **빈 할당(`VAR=`)만** 있으면 컨테이너에 빈 문자열이 들어가 **Spring `application.yml`의 기본값이 적용되지 않을 수 있다**(게이트웨이 기동 실패 등). **비어 있지 않은 값**으로 맞추거나 변수 줄을 제거하고, 게이트웨이·Proxy·usage-service의 공유 비밀은 [`docs/contracts/gateway-proxy.md`](contracts/gateway-proxy.md) §5와 동일하게 유지한다.
 
 ### 10.2 단일 도메인·엣지 라우팅(브라우저 URL 하나)
 

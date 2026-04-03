@@ -19,3 +19,4 @@ Applies under `services/api-gateway-service/`.
 1. Prefer declarative routes in `application.yml`; use `GATEWAY_PROXY_URI` for Proxy base URL when environments differ.
 2. Global filters that mutate requests should preserve streaming-related headers where needed.
 3. Do not log raw JWT or shared secrets.
+4. **`GATEWAY_SHARED_SECRET`:** non-empty at runtime (`GatewayStartupValidation`). In Docker Compose, if the env var is set to an **empty string**, Spring may not fall back to `application.yml` defaults — align with Proxy and usage-service; see `docs/contracts/gateway-proxy.md` §5.1.

@@ -14,7 +14,7 @@
 | 잡 | 설명 |
 |----|------|
 | **Detect changed paths** | `dorny/paths-filter`로 `services/identity-service/**`, `services/proxy-service/**`, `services/api-gateway-service/**`, `services/usage-service/**`, `libs/usage-events/**`, `services/identity-service/web/**`, `services/usage-service/web/**`, `.github/workflows/**` 변경 감지 |
-| **Secret scan (gitleaks)** | 매 실행마다 저장소 스캔(§8.2) |
+| **Secret scan (gitleaks)** | 매 실행마다 저장소 스캔(§8.2). 루트 **`.env.example`** 에는 팀 합의 **로컬 전용 플레이스홀더**(`GATEWAY_SHARED_SECRET` 등)가 문서화되어 있으며, 오탐 방지를 위해 [`.gitleaks.toml`](../.gitleaks.toml) allowlist에 포함한다. |
 | **Validate docker-compose.yml** | `docker compose config`로 문법 검증(§10) |
 | **Build identity-service** | Java 21(Temurin), Gradle 캐시, `./gradlew build` — 위 경로 필터 또는 워크플로 변경 시에만 실행 |
 | **Build proxy-gateway-service** | 동일 — proxy·gateway·`libs/usage-events`·워크플로 변경 시 실행 |

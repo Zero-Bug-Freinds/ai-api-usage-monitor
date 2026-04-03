@@ -10,7 +10,7 @@ This rule’s `globs` target **`services/proxy-service/`** only (Provider relay,
 
 The separated **API Gateway** app lives under **`services/api-gateway-service/`** and is covered by **`.cursor/rules/api-gateway.mdc`** (Spring Cloud Gateway, JWT at edge, routes to Proxy). Do not merge both paths into this file: Gateway and Proxy follow different patterns.
 
-Service contract: `docs/contracts/gateway-proxy.md`.
+Service contract: `docs/contracts/gateway-proxy.md` (shared `GATEWAY_SHARED_SECRET` / `X-Gateway-Auth`; Compose empty-env pitfall §5.1).
 
 ## Reactive runtime
 

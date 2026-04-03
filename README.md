@@ -40,6 +40,7 @@
 - **실행 순서·(Google / OpenAI) 키·경로·로그/Rabbit/DB로 사용량 파이프라인 검증**은 **[`docs/local-run-and-usage-verification.md`](docs/local-run-and-usage-verification.md)** 를 본다.
 - **의존성(DB·큐·캐시)**: **Docker Compose**로 실행합니다. 예: `PostgreSQL`, `RabbitMQ`, `Redis`.
 - **API Gateway + Proxy**: `docker-compose.yml`에서 **컨테이너로 함께 기동**할 수 있습니다(호스트 포트 기본 `8080` / `8081`). 계약·경로는 `docs/contracts/gateway-proxy.md`를 참고합니다.
+- **루트 `.env` + Compose:** `docker compose`는 프로젝트 루트의 **`.env`**만 자동 로드합니다. **`GATEWAY_SHARED_SECRET`** 은 Compose가 `${GATEWAY_SHARED_SECRET:-}` 로 넘길 때 **빈 값만 두면** 컨테이너 안 Spring이 yml 기본값을 쓰지 못해 게이트웨이 기동이 실패할 수 있으므로, **`.env.example`과 같이 비어 있지 않은 값**으로 맞추거나 해당 줄을 제거하세요(상세: `docs/contracts/gateway-proxy.md` §5, `docs/architecture.md` §10.1). **호스트에서 `bootRun`만** 할 때는 Gradle/IDE가 루트 `.env`를 읽지 않으므로, 필요하면 동일 변수를 실행 구성에 넣습니다.
 - **identity-service** 등 그 외 앱도 **로컬 JVM** 실행을 기본으로 하며, 필요 시 Compose에 추가할 수 있습니다.
 - **컨테이너 배포 모델**: 백엔드·프론트 **이미지 분리 + Docker Compose 스택**(패턴 B, `docs/architecture.md` §10.1). Next는 **`services/identity-service/web`**, **`services/usage-service/web`** 각각 `Dockerfile`(standalone)로 빌드하고, **`profile: web`** 으로 Compose(`identity-web`, `usage-web`)에 붙일 수 있습니다.
 - **단일 도메인**: 브라우저 URL 하나로 쓸 때는 엣지(Nginx 등)에서 경로별로 각 `web` 인스턴스로 나눕니다(`docs/architecture.md` §10.2).

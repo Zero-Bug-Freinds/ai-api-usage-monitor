@@ -1,6 +1,11 @@
 # Local infrastructure for the monorepo (see docs/architecture.md §10, §10.1 패턴 B, §10.2 단일 도메인).
 # Copy `.env.example` to `.env` and set secrets locally; do not commit `.env`.
 #
+# GATEWAY_SHARED_SECRET — api-gateway-service·proxy-service 환경에 `${GATEWAY_SHARED_SECRET:-}` 가 넘어간다.
+#   .env 에서 변수를 빼면 Compose 가 빈 문자열을 주입해 Spring 이 application.yml 기본값을 못 쓸 수 있다.
+#   비어 있지 않은 값으로 맞추거나(루트 .env.example 로컬 전용 문자열) 줄 자체를 두지 않는다.
+#   게이트웨이·proxy·usage-service 의 shared-secret 은 동일해야 한다 — docs/contracts/gateway-proxy.md §5.
+#
 # [Java] 앱 이미지 빌드 전 각 서비스에서 ./gradlew bootJar 로 app.jar 생성:
 #   services/proxy-service, services/api-gateway-service
 #

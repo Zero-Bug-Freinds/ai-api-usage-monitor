@@ -4,6 +4,7 @@
 - **MSA 기반:** Proxy, Identity, Usage, Billing, Analytics, Quota, Notification 등 서비스 경계로 분리.
 - **비동기 연계:** RabbitMQ 이벤트(`usage-recorded` 등). 로컬 인프라는 루트 `docker-compose.yml` 전제.
 - **상세 아키텍처:** `docs/architecture.md`, 저장소 구조: `docs/repository-structure.md`.
+- **로컬 비밀·Compose:** 게이트웨이·Proxy·usage는 동일한 **`GATEWAY_SHARED_SECRET`** 을 쓴다(`docs/contracts/gateway-proxy.md` §5). 루트 `docker compose`는 **`.env`만** 자동 로드하며, `${GATEWAY_SHARED_SECRET:-}` 로 넘길 때 **빈 값만 두면** Spring yml 기본값이 무력화될 수 있다 — `.env.example` 주석 참고. 호스트 **`bootRun`** 은 루트 `.env`를 자동으로 읽지 않는다.
 
 ## Identity & Management Service 상세
 - **소스 위치:** Gradle 프로젝트 루트 `services/identity-service/` 및 **`services/identity-service/web/`**(Next UI·인증 BFF — `docs/contracts/web-identity-bff.md`)

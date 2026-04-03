@@ -1,6 +1,6 @@
 # Next.js standalone — docs/architecture.md §10.1 (패턴 B: 프론트 전용 이미지)
 # 빌드: docker build -t identity-web:local .
-# 실행 시 API_GATEWAY_URL, IDENTITY_SERVICE_URL 등은 compose 또는 -e 로 주입
+# 실행 시 IDENTITY_SERVICE_URL 등은 compose 또는 -e 로 주입(Identity BFF는 게이트웨이 URL을 쓰지 않음)
 
 FROM node:22-alpine AS deps
 WORKDIR /app
