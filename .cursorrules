@@ -36,7 +36,7 @@
 ## 담당
 - **도메인 서비스를 맡은 사람**이 **같은 `services/<svc>/` 경계 안**에서 Spring(또는 해당 백엔드)과 **필요한 경우 `web/`(Next.js)** 을 함께 개발한다. “프론트 전담” 역할 분리는 **사용하지 않는다**.
 - **Identity 계열:** `services/identity-service` + `services/identity-service/web/` — 랜딩·인증 UI, `/api/auth/**`·`/api/identity/**` BFF 등. 계약: `docs/contracts/web-identity-bff.md`.
-- **Usage·대시보드 계열:** `services/usage-service` + `services/usage-service/web/` — Usage BFF `/api/usage/**`, 게이트웨이 연동. 계약: `docs/contracts/web-gateway-bff.md`, `docs/contracts/gateway-proxy.md`.
+- **Usage·대시보드 계열:** `services/usage-service` + `services/usage-service/web/` — Usage BFF(브라우저 경로는 **`basePath` 반영**, 기본 `/dashboard/api/usage/**`), 게이트웨이 연동. 계약: `docs/contracts/web-gateway-bff.md`, `docs/contracts/web-split-boundary.md`, `docs/contracts/gateway-proxy.md`.
 - **통합 `apps/web`:** 이전이 끝나면 **안내용 `README.md`만** 둘 수 있다. 라우트·matcher 정본: `docs/contracts/web-split-boundary.md`.
 - **집계·알림 파이프라인(§12):** UI를 만드는 일과 **혼동하지 않는다** — 해당 백엔드는 `docs/architecture.md` §12 범위.
 

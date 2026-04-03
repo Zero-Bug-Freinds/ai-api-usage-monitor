@@ -1,7 +1,7 @@
 # Web(Next.js) ↔ Identity 인증 BFF 계약
 
 버전: 1.10  
-관련: [docs/architecture.md](../architecture.md) §1.3, §3.3, §10.2, §13, [Identity 인증 API 계약](../identity-auth-api-contract.md), [Web·Gateway Usage BFF](./web-gateway-bff.md)(`/api/usage/**` 호출 맵), [저장소 구조](../repository-structure.md) §6, [웹 경계](./web-split-boundary.md)
+관련: [docs/architecture.md](../architecture.md) §1.3, §3.3, §10.2, §13, [Identity 인증 API 계약](../identity-auth-api-contract.md), [Web·Gateway Usage BFF](./web-gateway-bff.md)(Usage BFF·`basePath` 호출 맵), [저장소 구조](../repository-structure.md) §6, [웹 경계](./web-split-boundary.md)
 
 **소스 트리:** BFF·화면의 **정본**은 `services/identity-service/web/` 이다. Identity vs Usage 라우트·미들웨어 매처는 [web-split-boundary.md](./web-split-boundary.md) §2·§3.
 
@@ -122,9 +122,9 @@
 1. 브라우저 → BFF: 쿠키 자동 전송
 2. BFF → 백엔드 보호 API: `Authorization: Bearer {accessToken}` 헤더로 전달
 
-### 5.1 Usage 경로(`GET /api/usage/**`)와 `GATEWAY_DEV_MODE`
+### 5.1 Usage BFF 경로와 `GATEWAY_DEV_MODE`
 
-- Usage BFF는 **`services/usage-service/web/`** 트리에 둔다(`src/app/api/usage/[[...path]]/route.ts`). **`API_GATEWAY_URL`로 `/api/v1/usage/...`** 프록시. **엔드포인트 표·환경 변수 정본은 [web-gateway-bff.md](./web-gateway-bff.md)**.
+- Usage BFF는 **`services/usage-service/web/`** 트리에 둔다(`src/app/api/usage/[[...path]]/route.ts`). 브라우저에서 보이는 경로는 **`NEXT_PUBLIC_BASE_PATH`(기본 `/dashboard`)** 아래 **`.../api/usage/...`** 형태가 된다([web-split-boundary.md §2.2](./web-split-boundary.md)). BFF는 **`API_GATEWAY_URL`로 `/api/v1/usage/...`** 를 프록시한다. **엔드포인트 표·환경 변수 정본은 [web-gateway-bff.md](./web-gateway-bff.md)**.
 - 게이트웨이 **개발 모드**(`GATEWAY_DEV_MODE=true`, `gateway.dev-mode=true`)에서는 Usage 라우트에 **`X-User-Id`가 필수**이므로, BFF가 Identity **`GET /api/auth/session` 응답의 `email`** 을 읽어 `X-User-Id` 헤더로 붙인다.
 - 그 **이메일**은 Identity JWT의 **`sub`** 와 동일하다([identity-auth-api-contract §4.3](../identity-auth-api-contract.md)). 운영에서 게이트웨이가 JWT만으로 `X-User-Id`를 세팅할 때와 **같은 문자열**이 Usage 원장·집계 키가 된다([gateway-proxy.md §4.2](./gateway-proxy.md)).
 

@@ -300,15 +300,16 @@
 | 런타임 | 컨테이너 내부 프로세스 관리(supervisord 등) | **Docker Compose**로 서비스별 컨테이너를 조합 |
 
 - **원칙**: Spring Boot 서비스는 **해당 서비스 디렉터리**의 `Dockerfile`로 빌드하고, Next.js는 **`services/<svc>/web/Dockerfile`**(standalone)로 빌드한다. 운영·스테이징에서도 **Compose(또는 동등한 오케스트레이션)로 각 이미지를 나란히 띄우는 모델**을 따른다.
-- **로컬**: 루트 `docker-compose.yml`은 인프라·일부 앱(예: proxy·gateway)을 포함할 수 있으며, **웹 컨테이너는 `profile: web`(`identity-web`, `usage-web`) 등으로 선택 기동**해 호스트에서 `npm run dev` 하는 흐름과 병행할 수 있다(`docker-compose.yml` 상단 주석).
+- **로컬**: 루트 `docker-compose.yml`은 인프라·일부 앱(예: proxy·gateway)을 포함할 수 있으며, **웹 컨테이너는 `profile: web`(`identity-web`, `usage-web`, `web-edge`) 등으로 선택 기동**해 호스트에서 `pnpm dev` / `npm run dev` 하는 흐름과 병행할 수 있다(`docker-compose.yml` 상단 주석).
 - **Compose 환경변수:** `docker compose`는 루트 **`.env`**만 자동 로드한다. `GATEWAY_SHARED_SECRET`처럼 compose 파일에서 `${VAR:-}` 형태로 넘기는 값은, `.env`에 **빈 할당(`VAR=`)만** 있으면 컨테이너에 빈 문자열이 들어가 **Spring `application.yml`의 기본값이 적용되지 않을 수 있다**(게이트웨이 기동 실패 등). **비어 있지 않은 값**으로 맞추거나 변수 줄을 제거하고, 게이트웨이·Proxy·usage-service의 공유 비밀은 [`docs/contracts/gateway-proxy.md`](contracts/gateway-proxy.md) §5와 동일하게 유지한다.
 
 ### 10.2 단일 도메인·엣지 라우팅(브라우저 URL 하나)
 
 운영·로컬 통합 진입점에서 **호스트명은 하나**로 두고, **경로 prefix**로 트래픽을 나누는 것을 권장한다.
 
-- **엣지:** Nginx·Traefik 등 **리버스 프록시** 한 계층에서 `location`(또는 동등 규칙)으로 upstream을 고정한다. 예: 랜딩·`/login`·`/settings`·`/api/auth`·`/api/identity`(Identity BFF) → **identity `web`**, `/dashboard`·`/api/usage`(Usage BFF) → **usage `web`**. (실제 prefix는 팀이 배치한 라우트에 맞춘다.)
-- **Next `basePath`:** 엣지에서 경로 prefix만 바꿔 붙일 때는 각 `web`의 `next.config`에서 **`basePath`** 를 맞춘다.
+- **엣지:** Nginx·Traefik 등 **리버스 프록시** 한 계층에서 `location`(또는 동등 규칙)으로 upstream을 고정한다.
+- **로컬 Compose(`profile: web`):** **`web-edge`** 서비스(이미지 `nginx`, 설정 **`docker/web-edge/nginx.conf`**)가 기본 **`${WEB_EDGE_PORT:-8888}:80`** 으로 호스트에 노출된다. 현재 저장소 규칙: **`/dashboard*`** → **usage `web`**, **`/api/v1/*`** → **API Gateway**(AI·Usage 공개 HTTP), **그 외** → **identity `web`**. (운영 엣지는 팀이 동일한 의미로 맞춘다.)
+- **Usage Next `basePath`:** 단일 도메인에서 `/_next` 등 충돌을 피하기 위해 Usage 쪽 기본값은 **`/dashboard`**(`NEXT_PUBLIC_BASE_PATH`, Compose 빌드 args). 브라우저의 Usage BFF는 **`/dashboard/api/usage/...`** 형태가 된다(`docs/contracts/web-split-boundary.md`, `web-gateway-bff.md`).
 - **쿠키·세션:** 동일 **`Site`/도메인**에서 경로만 나뉘면 `httpOnly` 세션 쿠키는 대부분 유지 가능하지만, **`Path`·`SameSite`** 는 분리 후 반드시 재검증한다(BFF 계약: `docs/contracts/web-identity-bff.md`).
 
 - **로컬 개발(필수에 가까운 구성)**
@@ -316,7 +317,7 @@
   - **애플리케이션(Proxy WebFlux 등)**: 로컬 JVM에서 실행(IDE/터미널)하거나, 패턴 B에 맞게 **서비스별 이미지**로 Compose에 포함
 - **선택**
   - API Gateway·Proxy: 저장소 `docker-compose.yml`에 포함 가능(계약: `docs/contracts/gateway-proxy.md`)
-  - Next.js: **도메인별 `services/<svc>/web`** — `docker compose --profile web up` 시 **`identity-web`**, **`usage-web`**(루트 `docker-compose.yml`). 구 통합 앱 경로 `apps/web`에는 안내용 `README.md`만 둔다(`docs/repository-structure.md` §6.2).
+  - Next.js: **도메인별 `services/<svc>/web`** — `docker compose --profile web up` 시 **`identity-web`**, **`usage-web`**, **`web-edge`**(루트 `docker-compose.yml`). 구 통합 앱 경로 `apps/web`에는 안내용 `README.md`만 둔다(`docs/repository-structure.md` §6.2).
   - GitHub Actions(CI): 저장소 정책에 따라 도입(`docs/CI.md`)
   - Prometheus + Grafana, Loki, Jaeger: 시간 여유 시(관측 강화)
 - **Kubernetes / Ingress / ConfigMap·Secret(K8s)**

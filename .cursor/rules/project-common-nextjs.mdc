@@ -26,7 +26,7 @@ Canonical rules: **`docs/repository-structure.md`**.
 - Use a **single repo**; place domain-owned Next apps under **`services/<svc>/web/`**. 레거시 **`apps/web/`** 에는 통합 앱 이행 안내(`README.md`)만 둘 수 있으며, 신규 BFF·페이지는 각 도메인 `web/`에 둔다(`docs/contracts/web-split-boundary.md`).
 - Put **`libs/`** only for thin shared code (**API contracts, types, small utilities**) — not other services’ domain logic copied into the FE tree.
 - After the real frontend path exists, update **`globs`** in this file if Cursor should match a different directory.
-- **Usage BFF env:** `API_GATEWAY_URL`, `GATEWAY_DEV_MODE`, `IDENTITY_SERVICE_URL` — 호스트 `npm run dev` 는 각 `services/*/web/.env` 기준. **`docker compose --profile web`** 의 `usage-web` 등은 루트 **`.env`** 를 받는다. 게이트웨이 기동과의 정합은 `docs/contracts/web-gateway-bff.md`, `docs/contracts/gateway-proxy.md` §5.1.
+- **Usage `web`:** `NEXT_PUBLIC_BASE_PATH`(기본 `/dashboard`)·BFF 경로는 `docs/contracts/web-split-boundary.md`·`web-gateway-bff.md`. **Env:** `API_GATEWAY_URL`, `GATEWAY_DEV_MODE`, `IDENTITY_SERVICE_URL` — 호스트 `pnpm dev` / `npm run dev` 는 각 `services/*/web/.env` 기준. **`docker compose --profile web`** 의 `usage-web`·`web-edge` 등은 루트 **`.env`** 를 받는다. 게이트웨이 기동과의 정합은 `docs/contracts/web-gateway-bff.md`, `docs/contracts/gateway-proxy.md` §5.1.
 
 ## Principles
 

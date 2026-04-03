@@ -16,7 +16,8 @@
 # Next.js — 선택: docker compose --profile web up (identity-web + usage-web + web-edge)
 #   게이트웨이는 컨테이너 네트워크(api-gateway-service:8080)로 연결(API_GATEWAY_URL).
 #   Identity BFF는 기본적으로 호스트의 identity-service 를 host.docker.internal 로 향함(WEB_IDENTITY_SERVICE_URL).
-#   단일 도메인: web-edge(Nginx) → 기본 ${WEB_EDGE_PORT:-8888} — /dashboard* 는 usage-web, 나머지는 identity-web.
+#   단일 도메인: web-edge(Nginx, docker/web-edge/nginx.conf) → 기본 ${WEB_EDGE_PORT:-8888}
+#     /dashboard* → usage-web, /api/v1/* → api-gateway-service, 나머지 → identity-web.
 
 services:
   postgres:
