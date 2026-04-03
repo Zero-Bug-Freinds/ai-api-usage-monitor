@@ -32,11 +32,13 @@
 
 ### 2.2 Usage `web/` (대시보드·Usage BFF)
 
+Next `basePath`는 **`/dashboard`**(단일 도메인에서 `/_next` 충돌 방지). 브라우저에 보이는 접두가 아래와 같다.
+
 | 경로 접두 | 설명 |
 |-----------|------|
-| `/` | 루트는 `/dashboard`로 리다이렉트 |
-| `/dashboard`, `/dashboard/*` | 사용량 대시보드 UI (미들웨어 보호) |
-| `/api/usage/*` | Usage BFF → API Gateway `/api/v1/usage/...` |
+| `/dashboard` | 대시보드 홈(UI) |
+| `/dashboard/*` | 사용량 대시보드 하위 경로(UI, 미들웨어 보호) |
+| `/dashboard/api/usage/*` | Usage BFF → API Gateway `/api/v1/usage/...` |
 
 엣지에서 `/dashboard` → Usage Next, 그 외 많은 공개·계정 경로 → Identity Next로 보내면 [web-identity-bff.md §5.1](./web-identity-bff.md)·[web-gateway-bff.md](./web-gateway-bff.md) 계약과 맞는다.
 
@@ -47,9 +49,9 @@
 | 앱 | `config.matcher` |
 |----|------------------|
 | Identity `web/` | `/settings/:path*`, `/organizations/:path*`, `/teams/:path*` |
-| Usage `web/` | `/dashboard/:path*` |
+| Usage `web/` | 정적·API 제외 전역 매처(BFF `/dashboard/api/**`는 코드에서 통과) |
 
-`/dashboard`는 Usage로 옮겼으므로 Identity 미들웨어에서 제외한다.
+`/dashboard` UI는 Usage 소유이므로 Identity 미들웨어에서 제외한다.
 
 ---
 
@@ -65,4 +67,4 @@
 ## 5. BFF·문서 교차 참조
 
 - Identity 세션·쿠키·`/api/auth/*`·`/api/identity/*`: [web-identity-bff.md](./web-identity-bff.md)
-- Usage `/api/usage/*`·게이트웨이 매핑: [web-gateway-bff.md](./web-gateway-bff.md)
+- Usage `/dashboard/api/usage/*`·게이트웨이 매핑: [web-gateway-bff.md](./web-gateway-bff.md)

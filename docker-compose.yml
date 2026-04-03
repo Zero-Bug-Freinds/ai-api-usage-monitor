@@ -8,9 +8,10 @@
 #
 # [Next] 빌드: 각 services/<svc>/web 에서 npm install 후 npm run build (standalone).
 #
-# Next.js — 선택: docker compose --profile web up (identity-web + usage-web)
+# Next.js — 선택: docker compose --profile web up (identity-web + usage-web + web-edge)
 #   게이트웨이는 컨테이너 네트워크(api-gateway-service:8080)로 연결(API_GATEWAY_URL).
 #   Identity BFF는 기본적으로 호스트의 identity-service 를 host.docker.internal 로 향함(WEB_IDENTITY_SERVICE_URL).
+#   단일 도메인: web-edge(Nginx) → 기본 ${WEB_EDGE_PORT:-8888} — /dashboard* 는 usage-web, 나머지는 identity-web.
 
 services:
   postgres:
@@ -92,7 +93,7 @@ services:
     build:
       context: ./services/identity-service/web
       args:
-        NEXT_PUBLIC_USAGE_WEB_ORIGIN: http://localhost:${USAGE_WEB_PORT:-3001}
+        NEXT_PUBLIC_USAGE_WEB_ORIGIN: ${NEXT_PUBLIC_USAGE_WEB_ORIGIN:-http://localhost:${USAGE_WEB_PORT:-3001}}
     depends_on:
       - api-gateway-service
     environment:
@@ -108,7 +109,8 @@ services:
     build:
       context: ./services/usage-service/web
       args:
-        NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: http://localhost:${IDENTITY_WEB_PORT:-3000}
+        NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${IDENTITY_WEB_PORT:-3000}}
+        NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_BASE_PATH:-/dashboard}
     depends_on:
       - api-gateway-service
     environment:
@@ -119,6 +121,19 @@ services:
       - "host.docker.internal:host-gateway"
     ports:
       - "${USAGE_WEB_PORT:-3001}:3000"
+
+  web-edge:
+    profiles:
+      - web
+    image: nginx:1.27-alpine
+    depends_on:
+      - identity-web
+      - usage-web
+      - api-gateway-service
+    ports:
+      - "${WEB_EDGE_PORT:-8888}:80"
+    volumes:
+      - ./docker/web-edge/nginx.conf:/etc/nginx/nginx.conf:ro
 
 volumes:
   postgres_data:

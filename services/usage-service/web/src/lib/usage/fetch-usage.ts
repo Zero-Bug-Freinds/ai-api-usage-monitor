@@ -3,8 +3,13 @@ import { getSafeNextPath } from "@/lib/auth/safe-next-path"
 /**
  * 보호 페이지(대시보드) 전용: 401이면 `/login?next=` 로 이동 ([web-identity-bff §6.1]).
  */
+function usageBffPrefix(): string {
+  return (process.env.NEXT_PUBLIC_BASE_PATH ?? "").replace(/\/+$/, "")
+}
+
 export async function fetchUsageJson<T>(pathAndQuery: string): Promise<T> {
-  const res = await fetch(`/api/usage/${pathAndQuery}`, {
+  const prefix = usageBffPrefix()
+  const res = await fetch(`${prefix}/api/usage/${pathAndQuery}`, {
     credentials: "include",
     headers: { Accept: "application/json" },
     cache: "no-store",

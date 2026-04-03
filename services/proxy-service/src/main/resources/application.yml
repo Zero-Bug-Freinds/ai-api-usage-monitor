@@ -37,4 +37,4 @@ proxy:
   gateway:
     # When true, require header X-Gateway-Auth (see docs/contracts/gateway-proxy.md). Same value as Gateway service.
     require-auth: false
-    shared-secret: ${GATEWAY_SHARED_SECRET:}
+    shared-secret: ${GATEWAY_SHARED_SECRET:local-dev-gateway-shared-secret-do-not-use-in-prod}

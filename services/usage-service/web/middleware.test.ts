@@ -30,10 +30,15 @@ describe("middleware (Usage dashboard gate)", () => {
     expect(res.status).toBe(307)
     expect(res.headers.get("location")).toMatch(/\/login/)
   })
+
+  it("does not gate BFF /api/usage paths", () => {
+    const res = middleware(makeRequest("/dashboard/api/usage/logs"))
+    expect(res.status).toBe(200)
+  })
 })
 
 describe("middleware config.matcher", () => {
-  it("lists Usage dashboard prefix only", () => {
-    expect(config.matcher).toEqual(["/dashboard/:path*"])
+  it("matches dashboard HTML paths (excluding _next static)", () => {
+    expect(config.matcher).toEqual(["/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)"])
   })
 })

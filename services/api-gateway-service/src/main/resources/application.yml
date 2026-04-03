@@ -36,6 +36,7 @@ management:
 gateway:
   # Set false in production with gateway.jwt.secret (HMAC256, same as platform tokens).
   dev-mode: ${GATEWAY_DEV_MODE:true}
-  shared-secret: ${GATEWAY_SHARED_SECRET:}
+  # 운영에서는 GATEWAY_SHARED_SECRET 필수. 미설정 시 로컬 기본값(usage-service·proxy와 동일).
+  shared-secret: ${GATEWAY_SHARED_SECRET:local-dev-gateway-shared-secret-do-not-use-in-prod}
   jwt:
     secret: ${GATEWAY_JWT_SECRET:change-this-secret-key-to-at-least-32-bytes}

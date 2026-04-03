@@ -1,0 +1,15 @@
+# 패턴 B — 이 서비스 폴더에서 백엔드(JAR)와 프론트(./web) 이미지만 빌드할 때 사용.
+# 실행·네트워크·DB는 루트 저장소의 docker-compose.yml 과 맞춘다.
+# 예: docker compose -f docker-compose.yml build backend frontend
+name: identity-service-stack
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: identity-service:local
+  frontend:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    image: identity-service-web:local

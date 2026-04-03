@@ -42,4 +42,5 @@ usage:
   analytics:
     max-range-days: ${USAGE_ANALYTICS_MAX_RANGE_DAYS:400}
   gateway:
-    shared-secret: ${GATEWAY_SHARED_SECRET:}
+    # 운영에서는 반드시 환경 변수로 덮어쓴다. 비어 있으면 로컬 기본값(게이트웨이·프록시와 동일).
+    shared-secret: ${GATEWAY_SHARED_SECRET:local-dev-gateway-shared-secret-do-not-use-in-prod}

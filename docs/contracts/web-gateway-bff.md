@@ -1,6 +1,6 @@
 # Web(Next.js) ↔ API Gateway — Usage BFF 계약
 
-버전: 1.3  
+버전: 1.4  
 관련: [docs/architecture.md](../architecture.md) §1.3, §10.2, §13, [게이트웨이·Proxy 계약](./gateway-proxy.md)(AI 공개 경로·Bearer·`X-User-Id`·라우트 정본), [Web·Identity BFF 계약](./web-identity-bff.md) §5.1·§6, [저장소 구조](../repository-structure.md) §6, [웹 경계](./web-split-boundary.md)
 
 **소스 트리:** Usage BFF·대시보드 UI의 **정본**은 `services/usage-service/web/` 이다.
@@ -26,6 +26,7 @@
 | `API_GATEWAY_URL` | 게이트웨이 **공개** 베이스 URL(트레일링 슬래시 없음). BFF가 `{base}/api/v1/usage/...` 로 프록시한다. |
 | `GATEWAY_DEV_MODE` | `true`/`1`이면 게이트웨이 `gateway.dev-mode=true`와 맞춘 **개발 모드**로 간주하고, Usage 요청에 **`X-User-Id` 보강**을 위해 Identity 세션을 조회한다. |
 | `IDENTITY_SERVICE_URL` | `GATEWAY_DEV_MODE` 사용 시 필수. BFF가 `GET /api/auth/session`으로 **이메일**을 읽어 `X-User-Id`에 넣는다. |
+| `NEXT_PUBLIC_BASE_PATH` | (선택) Usage Next `basePath`와 동기화. 단일 도메인 엣지에서 정적 자산 경로 충돌을 피하기 위해 기본 **`/dashboard`**. 브라우저 BFF 호출은 `{basePath}/api/usage/...` 형태가 된다(`fetch-usage.ts`). |
 
 상세·내부 아웃바운드 URI(`GATEWAY_USAGE_URI` 등)와의 구분은 [gateway-proxy.md §9](./gateway-proxy.md).
 
@@ -35,7 +36,7 @@
 
 **구현:** [`services/usage-service/web/src/app/api/usage/[[...path]]/route.ts`](../../services/usage-service/web/src/app/api/usage/[[...path]]/route.ts)
 
-- 브라우저: **`/api/usage/{세그먼트…}{?쿼리}`** — `path`가 비어 있으면 BFF는 `404`.
+- 브라우저: **`{NEXT_PUBLIC_BASE_PATH 또는 /dashboard}/api/usage/{세그먼트…}{?쿼리}`** — `path`가 비어 있으면 BFF는 `404`. (`basePath` 비활성화 시에만 동일 오리진에서 `/api/usage/...`가 될 수 있으나, 저장소 기본은 `/dashboard` 접두.)
 - 업스트림(게이트웨이): **`{API_GATEWAY_URL}/api/v1/usage/{동일 세그먼트}{동일 쿼리}`**
 - 지원 메서드: `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`(본문 있을 때 스트리밍 전달).
 
@@ -43,13 +44,13 @@
 
 정본 컨트롤러: [`UsageAnalyticsController`](../../services/usage-service/src/main/java/com/eevee/usageservice/api/UsageAnalyticsController.java) (`@RequestMapping("/api/v1/usage")`).
 
-| 브라우저(BFF) 예시 | 게이트웨이로 전달되는 path |
+| 브라우저(BFF) 예시 (`basePath=/dashboard`) | 게이트웨이로 전달되는 path |
 |--------------------|----------------------------|
-| `GET /api/usage/dashboard/summary?…` | `/api/v1/usage/dashboard/summary?…` |
-| `GET /api/usage/dashboard/series/daily?…` | `/api/v1/usage/dashboard/series/daily?…` |
-| `GET /api/usage/dashboard/series/monthly?…` | `/api/v1/usage/dashboard/series/monthly?…` |
-| `GET /api/usage/dashboard/by-model?…` | `/api/v1/usage/dashboard/by-model?…` |
-| `GET /api/usage/logs?…` | `/api/v1/usage/logs?…` |
+| `GET /dashboard/api/usage/dashboard/summary?…` | `/api/v1/usage/dashboard/summary?…` |
+| `GET /dashboard/api/usage/dashboard/series/daily?…` | `/api/v1/usage/dashboard/series/daily?…` |
+| `GET /dashboard/api/usage/dashboard/series/monthly?…` | `/api/v1/usage/dashboard/series/monthly?…` |
+| `GET /dashboard/api/usage/dashboard/by-model?…` | `/api/v1/usage/dashboard/by-model?…` |
+| `GET /dashboard/api/usage/logs?…` | `/api/v1/usage/logs?…` |
 
 쿼리 파라미터(기간·페이지 등)는 Usage 서비스 API와 동일하게 전달한다. 응답은 **Usage DTO JSON**(공통 `ApiResponse` 래핑 없음)이 기본이다.
 
@@ -66,8 +67,8 @@ Compose·루트 `.env.example` 기본값과 같이 **Identity `web`은 호스트
 curl -sS -i "http://localhost:8080/api/v1/usage/dashboard/summary" \
   -H "X-User-Id: user@example.com"
 
-# Usage BFF 경유(세션 쿠키 필요)
-curl -sS -i "http://localhost:3001/api/usage/dashboard/summary" \
+# Usage BFF 경유(세션 쿠키 필요, Usage web basePath=/dashboard)
+curl -sS -i "http://localhost:3001/dashboard/api/usage/dashboard/summary" \
   --cookie "access_token=<JWT>"
 ```
 
