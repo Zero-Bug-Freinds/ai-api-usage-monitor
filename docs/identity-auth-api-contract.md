@@ -8,7 +8,7 @@
 ## 1. 목적
 
 - `services/identity-service`의 인증 API 계약을 명확히 정의한다.
-- Web BFF(`apps/web`)와의 인증 연동 시 필요한 응답 형식, 보안 헤더, 오류 코드를 고정한다.
+- Web BFF(`services/identity-service/web`)와의 인증 연동 시 필요한 응답 형식, 보안 헤더, 오류 코드를 고정한다.
 
 ---
 

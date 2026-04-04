@@ -12,7 +12,7 @@ alwaysApply: false
 
 Applies to Java domain modules under `services/`, `identity-service/`, and similarly named `*-service/` trees (adjust `globs` if paths change).
 
-**Frontend (Next.js, charts, dashboard):** not covered here — use **`project-common-nextjs.mdc`** and root `.cursorrules` (팀원 C).
+**동일 서비스의 Next `web/`(차트·대시보드 등):** 이 파일(JPA) 범위 밖 — **`project-common-nextjs.mdc`** 와 루트 **`.cursorrules`(서비스 단위 풀스택)** 를 본다.
 
 ## Persistence and repositories
 
@@ -49,3 +49,7 @@ Applies to Java domain modules under `services/`, `identity-service/`, and simil
 1. Prefer immutable DTOs (`record` or immutable classes).
 2. Validate inbound DTOs at API boundaries (`@Valid`, Jakarta validation).
 3. Keep DTOs decoupled from entity internals.
+
+## API Gateway 내부 호출 (usage-service 등)
+
+`usage-service` 의 `usage.gateway.shared-secret` 은 게이트웨이·Proxy와 동일한 **`GATEWAY_SHARED_SECRET`** 정합이 필요하다. 로컬·Compose 시 빈 env 주입 주의는 `docs/contracts/gateway-proxy.md` §5.1.

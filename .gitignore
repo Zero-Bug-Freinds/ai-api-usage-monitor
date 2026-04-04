@@ -10,6 +10,19 @@ build/
 out/
 *.class
 
+# --- Node.js / pnpm workspace / Next.js (모노레포 공통; lockfile은 커밋) ---
+node_modules/
+.pnpm-store/
+.pnpm-debug.log*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.next/
+.vercel/
+coverage/
+.nyc_output/
+*.tsbuildinfo
+
 # --- Gradle ---
 .gradle/
 

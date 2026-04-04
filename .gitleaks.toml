@@ -8,7 +8,8 @@ title = "ai-api-usage-monitor gitleaks"
 useDefault = true
 
 [allowlist]
-description = "Vitest cookie header fixtures (not production secrets)"
+description = "Vitest cookie fixtures; documented local placeholders in .env.example (not production secrets)"
 paths = [
-  '''apps/web/middleware\.test\.ts$''',
+  '''services/[^/]+/web/middleware\.test\.ts$''',
+  '''^\.env\.example$''',
 ]

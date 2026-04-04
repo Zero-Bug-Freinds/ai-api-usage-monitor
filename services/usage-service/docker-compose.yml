@@ -1,0 +1,54 @@
+# 패턴 B — 백엔드 이미지(저장소 루트 context) + ./web Next (docs/architecture.md §10.1).
+# 백엔드 빌드: services/usage-service 에서 실행 시 context 가 ../.. 로 libs/usage-events 를 포함한다.
+# 빌드만: docker compose build
+# 기동: docker compose up -d  (usage DB·RabbitMQ·API 게이트웨이는 호스트/루트 compose 에 맞출 것)
+name: usage-service-stack
+
+networks:
+  internal:
+    driver: bridge
+
+services:
+  backend:
+    build:
+      context: ../..
+      dockerfile: services/usage-service/Dockerfile
+    image: usage-service:local
+    ports:
+      - "${USAGE_STACK_BACKEND_PORT:-8092}:8092"
+    environment:
+      USAGE_POSTGRES_HOST: ${USAGE_POSTGRES_HOST:-host.docker.internal}
+      USAGE_POSTGRES_PORT: ${USAGE_POSTGRES_PORT:-5433}
+      USAGE_POSTGRES_DB: ${USAGE_POSTGRES_DB:-usage_db}
+      USAGE_POSTGRES_USER: ${USAGE_POSTGRES_USER:-usage_app}
+      USAGE_POSTGRES_PASSWORD: ${USAGE_POSTGRES_PASSWORD:-usage_app}
+      SPRING_RABBITMQ_HOST: ${SPRING_RABBITMQ_HOST:-host.docker.internal}
+      SPRING_RABBITMQ_PORT: ${SPRING_RABBITMQ_PORT:-5672}
+      SPRING_RABBITMQ_USERNAME: ${SPRING_RABBITMQ_USERNAME:-guest}
+      SPRING_RABBITMQ_PASSWORD: ${SPRING_RABBITMQ_PASSWORD:-guest}
+      GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET:-local-dev-gateway-shared-secret-do-not-use-in-prod}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - internal
+
+  frontend:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:3000}
+        NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_BASE_PATH:-/dashboard}
+    image: usage-service-web:local
+    ports:
+      - "${USAGE_STACK_WEB_PORT:-3001}:3000"
+    depends_on:
+      - backend
+    environment:
+      API_GATEWAY_URL: ${API_GATEWAY_URL:-http://host.docker.internal:8080}
+      IDENTITY_SERVICE_URL: ${IDENTITY_SERVICE_URL:-http://host.docker.internal:8090}
+      GATEWAY_DEV_MODE: ${GATEWAY_DEV_MODE:-true}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - internal

@@ -1,0 +1,12 @@
+# 루트를 build context 로 쓸 때(예: services/usage-service/Dockerfile) 전송 크기 축소
+.git
+**/.git
+**/node_modules
+**/.next
+**/coverage
+**/.turbo
+**/.idea
+**/.vscode
+**/build
+**/.gradle
+apps

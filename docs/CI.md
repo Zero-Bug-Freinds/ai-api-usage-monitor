@@ -13,13 +13,13 @@
 
 | 잡 | 설명 |
 |----|------|
-| **Detect changed paths** | `dorny/paths-filter`로 `services/identity-service/**`, `services/proxy-service/**`, `services/api-gateway-service/**`, `services/usage-service/**`, `libs/usage-events/**`, `apps/web/**`, `.github/workflows/**` 변경 감지 |
-| **Secret scan (gitleaks)** | 매 실행마다 저장소 스캔(§8.2) |
+| **Detect changed paths** | `dorny/paths-filter`로 `services/identity-service/**`, `services/proxy-service/**`, `services/api-gateway-service/**`, `services/usage-service/**`, `libs/usage-events/**`, `services/identity-service/web/**`, `services/usage-service/web/**`, `packages/ui/**`, 루트 `pnpm-workspace.yaml`·`package.json`·`pnpm-lock.yaml`, `.github/workflows/**` 변경 감지 |
+| **Secret scan (gitleaks)** | 매 실행마다 저장소 스캔(§8.2). 루트 **`.env.example`** 에는 팀 합의 **로컬 전용 플레이스홀더**(`GATEWAY_SHARED_SECRET` 등)가 문서화되어 있으며, 오탐 방지를 위해 [`.gitleaks.toml`](../.gitleaks.toml) allowlist에 포함한다. |
 | **Validate docker-compose.yml** | `docker compose config`로 문법 검증(§10) |
 | **Build identity-service** | Java 21(Temurin), Gradle 캐시, `./gradlew build` — 위 경로 필터 또는 워크플로 변경 시에만 실행 |
 | **Build proxy-gateway-service** | 동일 — proxy·gateway·`libs/usage-events`·워크플로 변경 시 실행 |
 | **Build usage-service** | 동일 — usage·`libs/usage-events`·워크플로 변경 시 실행 |
-| **Build web (lint/test/build)** | Node 22, `npm ci` 후 `npm run lint`/`npm test`/`npm run build` — `apps/web/**` 또는 워크플로 변경 시 실행 |
+| **Build web (lint/test/build)** | Node 22, **pnpm** 9, 저장소 루트 `pnpm install --frozen-lockfile` 후 각 `web`에 `pnpm --filter …` 로 lint·test·`pnpm run build:web`, **`docker build -f services/…/web/Dockerfile`**(context `.`) 두 이미지 — `services/**/web/**`, `packages/ui/**`, 루트 pnpm·워크플로 변경 시 실행 |
 | **CI summary** | gitleaks 성공 필수, 실행된 빌드·Compose 잡이 `failure`/`cancelled`이면 실패. 스킵된 잡은 허용 (`web` 포함) |
 
 ## 브랜치 보호(Branch protection)
@@ -31,6 +31,14 @@
 ```bash
 # Compose
 docker compose -f docker-compose.yml config
+
+# Next (루트 pnpm workspace)
+pnpm install --frozen-lockfile
+pnpm --filter identity-web run lint
+pnpm --filter usage-web run lint
+pnpm --filter identity-web test
+pnpm --filter usage-web test
+pnpm run build:web
 
 # Java (각 모듈 디렉터리에서)
 ./gradlew build
@@ -47,7 +55,7 @@ WebFlux 프록시에서 블로킹 AMQP 호출은 §6.2 주의사항과 동일하
 
 ## CD(배포) — 비목표 전제
 
-`docs/architecture.md` §3.3·§10: **Kubernetes 클러스터 배포는 범위 밖**이다. CD를 도입할 때는 Docker 이미지 빌드·레지스트리 push, 대상 환경에서의 **Docker Compose** 기동, 비밀값은 **GitHub Secrets·환경변수** 등으로 관리하는 방향을 따른다.
+`docs/architecture.md` §3.3·§10: **Kubernetes 클러스터 배포는 범위 밖**이다. CD를 도입할 때는 **`docs/architecture.md` §10.1 패턴 B**에 맞춰 **백엔드·프론트(각 `services/*/web`) 이미지를 각각 빌드**·레지스트리 push하고, 대상 환경에서 **Docker Compose**로 스택 기동, 비밀값은 **GitHub Secrets·환경변수** 등으로 관리하는 방향을 따른다.
 
 ## PR에서 Actions 확인
 

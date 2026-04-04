@@ -3,10 +3,11 @@
 ## 프로젝트 개요 (공통)
 - **MSA 기반:** Proxy, Identity, Usage, Billing, Analytics, Quota, Notification 등 서비스 경계로 분리.
 - **비동기 연계:** RabbitMQ 이벤트(`usage-recorded` 등). 로컬 인프라는 루트 `docker-compose.yml` 전제.
-- **상세 아키텍처:** `docs/architecture.md`, 저장소 구조: `docs/repository-structure.md`.
+- **상세 아키텍처:** `docs/architecture.md`, 저장소 구조: `docs/repository-structure.md`. **Next 공유 UI:** 루트 pnpm workspace **`packages/ui`**(`@ai-usage/ui`). 로컬 단일 도메인 Nginx 라우팅 정본: `docker/web-edge/nginx.conf`, `docs/contracts/web-split-boundary.md` §2.3.
+- **로컬 비밀·Compose:** 게이트웨이·Proxy·usage는 동일한 **`GATEWAY_SHARED_SECRET`** 을 쓴다(`docs/contracts/gateway-proxy.md` §5). 루트 `docker compose`는 **`.env`만** 자동 로드하며, `${GATEWAY_SHARED_SECRET:-}` 로 넘길 때 **빈 값만 두면** Spring yml 기본값이 무력화될 수 있다 — `.env.example` 주석 참고. 호스트 **`bootRun`** 은 루트 `.env`를 자동으로 읽지 않는다.
 
 ## Identity & Management Service 상세
-- **소스 위치:** Gradle 프로젝트 루트 `services/identity-service/` (모노레포 `services/` 하위)
+- **소스 위치:** Gradle 프로젝트 루트 `services/identity-service/` 및 **`services/identity-service/web/`**(Next UI·인증 BFF — `docs/contracts/web-identity-bff.md`)
 - **주요 목적:** 유저 인증, 조직/팀 계층 구조 관리, 외부 API Key(OpenAI 등) 보안 저장.
 - **기술 스택:** Java 17, Spring Boot 4.0.3, PostgreSQL, gRPC, Jasypt.
 
@@ -15,7 +16,7 @@
 # Role: Identity & Management Service Developer (팀원 B)
 
 ## 담당
-- Identity & Management Service — 유저 인증, 조직/팀 계층, 외부 API Key(OpenAI 등) 보안 저장.
+- Identity & Management Service — 유저 인증, 조직/팀 계층, 외부 API Key(OpenAI 등) 보안 저장. 같은 경계의 **`web/`** UI·BFF는 `docs/contracts/web-split-boundary.md`에 맞게 유지한다.
 
 ## 기술 스택
 - Java 21, Spring Boot 4.0.3, PostgreSQL, gRPC, Jasypt.
@@ -30,18 +31,19 @@
 
 ---
 
-# Role: Frontend (팀원 C)
+# Role: 서비스 단위 풀스택(웹·BFF 포함)
 
 ## 담당
-- **웹 프론트엔드**(`apps/web` 등): 대시보드·랜딩·인증 UI 등. 백엔드·BFF가 내려주는 데이터를 **시각화·폼·라우팅**으로 연결한다.
-- **BFF(Route Handler)** 등으로 브라우저가 백엔드를 안전하게 호출하도록 하는 범위(예: Identity 프록시, httpOnly 쿠키) — 계약은 `docs/contracts/web-identity-bff.md` 등 팀 문서.
-- 팀원 A·B 및 **백엔드(집계·알림 API 등, `docs/architecture.md` §12)** 가 노출하는 HTTP API와 계약을 맞춰 연동한다.
-- **담당하지 않음:** Analytics·Notification·집계 **백엔드** 구현(Slack/Email 발송 워커, 집계 파이프라인 등) — §12 백엔드 영역.
+- **도메인 서비스를 맡은 사람**이 **같은 `services/<svc>/` 경계 안**에서 Spring(또는 해당 백엔드)과 **필요한 경우 `web/`(Next.js)** 을 함께 개발한다. “프론트 전담” 역할 분리는 **사용하지 않는다**.
+- **Identity 계열:** `services/identity-service` + `services/identity-service/web/` — 랜딩·인증 UI, `/api/auth/**`·`/api/identity/**` BFF 등. 계약: `docs/contracts/web-identity-bff.md`.
+- **Usage·대시보드 계열:** `services/usage-service` + `services/usage-service/web/` — Usage BFF(브라우저 경로는 **`basePath` 반영**, 기본 `/dashboard/api/usage/**`), 게이트웨이 연동. 계약: `docs/contracts/web-gateway-bff.md`, `docs/contracts/web-split-boundary.md`, `docs/contracts/gateway-proxy.md`.
+- **통합 `apps/web`:** 이전이 끝나면 **안내용 `README.md`만** 둘 수 있다. 라우트·matcher 정본: `docs/contracts/web-split-boundary.md`.
+- **집계·알림 파이프라인(§12):** UI를 만드는 일과 **혼동하지 않는다** — 해당 백엔드는 `docs/architecture.md` §12 범위.
 
-## 기술 스택 (권장)
+## 기술 스택 (웹·BFF, 권장)
 - **Framework:** Next.js (App Router), React, TypeScript
-- **UI:** Tailwind CSS, Shadcn UI, Radix UI
-- **차트:** Recharts 또는 Chart.js (백엔드 집계 API 응답 표시)
+- **UI:** Tailwind CSS, Shadcn UI, Radix UI — 공용 프리미티브는 **`packages/ui`** (`@ai-usage/ui`), 도메인 화면은 각 `services/<svc>/web/`
+- **차트:** Recharts 또는 Chart.js
 - **검증:** Zod (폼·스키마)
 - **(선택)** 데이터 패칭: TanStack Query; 서버 액션 패턴 도입 시 `next-safe-action` 등 팀 합의 후 사용
 
@@ -52,5 +54,5 @@
 4. `'use client'`는 최소화하고, RSC·서버 데이터 페칭을 우선한다.
 5. 반응형·접근성: Tailwind 기반 mobile-first, Shadcn/Radix 패턴 활용.
 6. 예상 가능한 오류는 Server Action 반환값 등으로 모델링하고, 예기치 않은 오류는 `error.tsx` / `global-error.tsx` 등으로 처리한다.
-7. 팀원 B·백엔드와 맞출 공통 응답 타입·에러 형식이 있으면 프론트 타입과 동기화한다.
+7. 다른 서비스와 맞출 공통 응답 타입·에러 형식이 있으면 타입과 동기화한다.
 8. 상세 규칙은 `.cursor/rules/project-common-nextjs.mdc`를 따른다.

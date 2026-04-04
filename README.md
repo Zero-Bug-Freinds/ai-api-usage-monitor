@@ -33,22 +33,38 @@
 - **백엔드(Proxy 등)**: **Spring Boot + Spring WebFlux** — 비동기 I/O·스트리밍·Provider 중계에 사용. **FastAPI(Python)는 사용하지 않습니다.**
 - **메시지 브로커**: **RabbitMQ** — `usage-recorded` 등 이벤트 발행·구독(Spring AMQP).
 - **기타 서비스**: 동일 Spring 생태계에서 Spring MVC + JPA 등으로 구현 가능(팀 합의).
-- 상세: `docs/architecture.md` §2.1, §6.2
+- 상세: `docs/architecture.md` §2.1, §6.2, §10.2, §13 · 웹 경계: `docs/contracts/web-split-boundary.md`
 
 ## 로컬 개발 관련(중요)
 - **Kubernetes는 사용하지 않음**: 배포하지 않는 캡스톤 환경을 전제로 합니다.
 - **실행 순서·(Google / OpenAI) 키·경로·로그/Rabbit/DB로 사용량 파이프라인 검증**은 **[`docs/local-run-and-usage-verification.md`](docs/local-run-and-usage-verification.md)** 를 본다.
 - **의존성(DB·큐·캐시)**: **Docker Compose**로 실행합니다. 예: `PostgreSQL`, `RabbitMQ`, `Redis`.
 - **API Gateway + Proxy**: `docker-compose.yml`에서 **컨테이너로 함께 기동**할 수 있습니다(호스트 포트 기본 `8080` / `8081`). 계약·경로는 `docs/contracts/gateway-proxy.md`를 참고합니다.
+- **루트 `.env` + Compose:** `docker compose`는 프로젝트 루트의 **`.env`**만 자동 로드합니다. **`GATEWAY_SHARED_SECRET`** 은 Compose가 `${GATEWAY_SHARED_SECRET:-}` 로 넘길 때 **빈 값만 두면** 컨테이너 안 Spring이 yml 기본값을 쓰지 못해 게이트웨이 기동이 실패할 수 있으므로, **`.env.example`과 같이 비어 있지 않은 값**으로 맞추거나 해당 줄을 제거하세요(상세: `docs/contracts/gateway-proxy.md` §5, `docs/architecture.md` §10.1). **호스트에서 `bootRun`만** 할 때는 Gradle/IDE가 루트 `.env`를 읽지 않으므로, 필요하면 동일 변수를 실행 구성에 넣습니다.
 - **identity-service** 등 그 외 앱도 **로컬 JVM** 실행을 기본으로 하며, 필요 시 Compose에 추가할 수 있습니다.
+- **컨테이너 배포 모델**: 백엔드·프론트 **이미지 분리 + Docker Compose 스택**(패턴 B, `docs/architecture.md` §10.1). Next는 루트 **`pnpm` workspace**(`packages/ui` + 각 `web`)를 포함해 **저장소 루트를 build context**로 `docker build -f services/identity-service/web/Dockerfile …`, `docker build -f services/usage-service/web/Dockerfile …` 하거나, **`profile: web`** 으로 Compose에 **`identity-web`**, **`usage-web`**, **`web-edge`**(Nginx, `docker/web-edge/nginx.conf`)를 함께 올립니다.
+- **단일 도메인**: **`web-edge`** 기본 호스트 포트 **`8888`**(`WEB_EDGE_PORT`)에서 진입 — `/dashboard`는 `/dashboard/`로 리다이렉트(308) 후 **`/dashboard/`** 접두만 Usage `web`; `/api/v1/` 접두는 API Gateway; 그 외(예: `/dashboard2`)는 Identity `web`(`docker/web-edge/nginx.conf`, `docs/architecture.md` §10.2, `docs/contracts/web-split-boundary.md`).
+
+## 개발 방식(풀스택·서비스 소유)
+
+별도 “프론트 전담” 역할을 두지 않고, **도메인 서비스를 담당하는 사람이 Spring 백엔드와(필요 시) 같은 폴더의 `web/`(Next)를 함께** 유지합니다. 상세·디렉터리 표는 `docs/repository-structure.md` §6, `docs/architecture.md` §13을 참고합니다.
+
+### 빌드 순서(요약)
+
+1. **Java:** `proxy-service`·`api-gateway-service` 는 이미지 빌드 전 해당 디렉터리에서 `./gradlew bootJar` 로 `app.jar` 를 둔다. **identity-service**·**usage-service** 백엔드 Dockerfile 은 이미지 안에서 Gradle 을 돌려 JAR 을 만든다(usage 는 저장소 루트에서 `docker build -f services/usage-service/Dockerfile …`).
+2. **Next.js:** 저장소 루트에서 **`pnpm install`**(전역 pnpm 없으면 `npx pnpm@9 install`) 후 **`pnpm build:web`**(또는 각 `web`에서 `pnpm build`). `output: 'standalone'` 산출물을 Docker가 복사(`docs/architecture.md` §10.1).
+3. **공유 UI:** **`packages/ui`**(`@ai-usage/ui`) — Shadcn 래퍼·`cn`; 두 Next 앱이 workspace 로 참조한다.
+
+로컬 포트·`.env` 힌트는 루트 **`.env.example`**, 각 **`services/*/web/.env.example`**, **`docs/contracts/web-identity-bff.md` §9**, **`docs/contracts/web-split-boundary.md`** 를 본다.
 
 ## 모노레포 레이아웃(요약)
 실행 가능한 앱은 `services/` 하위에 둡니다. (`docs/repository-structure.md` 참고)
 - `services/api-gateway-service` — API Gateway(Spring Cloud Gateway), JWT·라우팅·Proxy로 신뢰 헤더 전달
 - `services/proxy-service` — AI Provider 프록시(WebFlux), usage 이벤트 발행
 - `services/usage-service` — `UsageRecordedEvent` 소비·PostgreSQL 원장 저장(Spring AMQP + JPA)
-- `services/identity-service` — 계정·조직·API Key 등(Identity)
+- `services/identity-service` — 계정·조직·API Key 등(Identity; 목표 Next는 `services/identity-service/web/`)
 - `libs/usage-events` — 공유 이벤트(`UsageRecordedEvent` 등)
+- `apps/web` — **이행 완료** 안내(`README.md`만). UI+BFF 소스는 `services/identity-service/web`, `services/usage-service/web`.
 
 ## 문서
 - **로컬 실행·테스트(Gateway / Proxy / usage·이벤트·DB)**: `docs/local-run-and-usage-verification.md`
@@ -59,6 +75,7 @@
 - 아키텍처 문서: `docs/architecture.md`
 - 시퀀스 다이어그램(AI 호출·이벤트·대시보드 조회): `docs/sequence-diagrams.md`
 - 저장소·디렉터리 구조(모노레포): `docs/repository-structure.md`
+- Identity vs Usage 웹 라우트·BFF 경계: `docs/contracts/web-split-boundary.md`
 - MSA 이론 배경: `docs/msa-architecture-theory.md`
 - 코드 컨벤션(네이밍·스타일): `docs/code-conventions.md`
 - 브랜치·Git Flow·보호 규칙: `docs/branch-conventions.md`

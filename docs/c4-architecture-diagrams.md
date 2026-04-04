@@ -6,7 +6,7 @@
 **문서 버전:** 0.2 (저장소 트리·게이트웨이 트러스트 헤더·프록시 키 조회·Gemini usage 파싱 반영)
 
 분석 대상:
-- `apps/web` (Next.js UI + BFF Route Handlers, 팀원 C · Frontend)
+- `apps/web` (Next.js UI + BFF Route Handlers — 과도기; 목표 `services/*/web/`, 서비스 단위 풀스택)
 - `services/api-gateway-service`
 - `services/proxy-service`
 - `services/identity-service`
@@ -330,9 +330,9 @@ UserRepository --> User
 RoleRepository --> Role
 ```
 
-## Web Application (`apps/web`) — 구조·흐름 (팀원 C · Frontend)
+## Web Application (`apps/web`) — 구조·흐름 (서비스 단위 풀스택)
 
-**목적:** 브라우저 대상 UI와 인증 BFF를 **현재 저장소 트리 기준(As-Is)** 으로 시각화한다. **팀원 C(프론트)** 가 라우트·컴포넌트·BFF를 바꿀 때 **이 절의 다이어그램과 불릿 목록을 함께 갱신**한다. (집계·알림 **백엔드**는 `docs/architecture.md` §12.)
+**목적:** 브라우저 대상 UI와 BFF를 **현재 저장소 트리 기준(As-Is)** 으로 시각화한다. **해당 도메인 담당자**가 라우트·컴포넌트·BFF를 바꿀 때 **이 절의 다이어그램과 불릿 목록을 함께 갱신**한다. (집계·알림 **전담 백엔드**는 `docs/architecture.md` §12; `web/` 분리 후에는 Identity·Usage 각 `web/` 절로 나눌 수 있다.)
 
 **동기화 체크리스트 (PR 또는 주기적으로):**
 

@@ -1,0 +1,10 @@
+{
+  "name": "ai-api-usage-monitor",
+  "private": true,
+  "packageManager": "pnpm@9.15.9",
+  "scripts": {
+    "build:identity-web": "pnpm --filter identity-web build",
+    "build:usage-web": "pnpm --filter usage-web build",
+    "build:web": "pnpm build:identity-web && pnpm build:usage-web"
+  }
+}
