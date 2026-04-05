@@ -116,6 +116,10 @@
 - 책임 범위(중요)
   - “AI 호출의 실시간 처리와 Provider 연동”의 핵심 서비스
   - quota 강제는 “차단/허용 판단” 관점에서 실시간으로 수행
+- **도메인·운영 경계**(Identity·Usage 등 **전용 DB를 쓰는 서비스**와 구분)
+  - **전용 DB 없음:** 자체 영속 저장소를 두지 않는다.
+  - **게이트웨이 뒤 전용:** 외부에서 Proxy로 이어지는 공개 진입은 API Gateway를 통한 경로만 전제로 한다(신뢰 헤더·경로 정본: [`docs/contracts/gateway-proxy.md`](contracts/gateway-proxy.md)).
+  - **이벤트 발행자:** usage 관련 이벤트를 **RabbitMQ**로 발행한다.
 
 ### 4.3 Identity & Organization Service
 - 역할
