@@ -40,6 +40,12 @@ export type CreateExternalKeyRequest = {
   alias: string
 }
 
+export type UpdateExternalKeyRequest = {
+  alias: string
+  provider?: ExternalKeyProvider
+  externalKey?: string
+}
+
 /** Identity `POST /api/auth/external-keys`의 `data` 본문과 동기화 */
 export type CreateExternalKeyResponseData = {
   id: number
@@ -54,6 +60,10 @@ export type ExternalKeySummary = {
   provider: ExternalKeyProvider
   alias: string
   createdAt: string
+  /** ISO-8601, 삭제 예정일 때만 */
+  deletionRequestedAt?: string | null
+  /** ISO-8601, 영구 삭제 예정 시각(유예 종료) */
+  permanentDeletionAt?: string | null
 }
 
 /** Identity `GET /api/auth/external-keys`의 `data` 본문과 동기화 */

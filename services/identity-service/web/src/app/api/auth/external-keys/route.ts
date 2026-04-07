@@ -55,12 +55,18 @@ function getUpstreamMessage(upstreamJson: unknown): string | null {
 function isExternalKeySummary(data: unknown): boolean {
   if (typeof data !== "object" || data === null) return false
   const o = data as Record<string, unknown>
+  const optionalIso = (v: unknown) =>
+    v === null ||
+    v === undefined ||
+    (typeof v === "string" && (v.length === 0 || !Number.isNaN(Date.parse(v))))
   return (
     typeof o.id === "number" &&
     typeof o.provider === "string" &&
     (o.provider === "GEMINI" || o.provider === "OPENAI" || o.provider === "ANTHROPIC") &&
     typeof o.alias === "string" &&
-    typeof o.createdAt === "string"
+    typeof o.createdAt === "string" &&
+    optionalIso(o.deletionRequestedAt) &&
+    optionalIso(o.permanentDeletionAt)
   )
 }
 
