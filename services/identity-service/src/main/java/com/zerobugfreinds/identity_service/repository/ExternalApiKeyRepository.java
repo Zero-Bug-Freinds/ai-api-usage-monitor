@@ -4,18 +4,32 @@ import com.zerobugfreinds.identity_service.domain.ExternalApiKeyProvider;
 import com.zerobugfreinds.identity_service.entity.ExternalApiKeyEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+
 /**
  * 외부 API 키 영속성.
  */
 public interface ExternalApiKeyRepository extends JpaRepository<ExternalApiKeyEntity, Long> {
 
-	boolean existsByUserIdAndProviderAndKeyHash(Long userId, ExternalApiKeyProvider provider, String keyHash);
+	boolean existsByUserIdAndProviderAndKeyHashAndDeletionRequestedAtIsNull(
+			Long userId,
+			ExternalApiKeyProvider provider,
+			String keyHash
+	);
 
-	long countByUserIdAndProviderAndKeyHash(Long userId, ExternalApiKeyProvider provider, String keyHash);
+	long countByUserIdAndProviderAndKeyHashAndDeletionRequestedAtIsNull(
+			Long userId,
+			ExternalApiKeyProvider provider,
+			String keyHash
+	);
 
+	/** 별칭은 삭제 예정 행까지 포함해 사용자당 유일(유예 중에도 동일 별칭으로 새 등록 불가). */
 	boolean existsByUserIdAndKeyAlias(Long userId, String keyAlias);
+	boolean existsByUserIdAndKeyAliasAndIdNot(Long userId, String keyAlias, Long id);
 
-	boolean existsByUserIdAndProviderAndKeyHashAndIdNot(
+	boolean existsByUserIdAndProviderAndKeyHashAndIdNotAndDeletionRequestedAtIsNull(
 			Long userId,
 			ExternalApiKeyProvider provider,
 			String keyHash,
@@ -24,12 +38,16 @@ public interface ExternalApiKeyRepository extends JpaRepository<ExternalApiKeyEn
 
 	long countByUserId(Long userId);
 
-	java.util.List<ExternalApiKeyEntity> findAllByUserIdOrderByCreatedAtDesc(Long userId);
+	List<ExternalApiKeyEntity> findAllByUserIdOrderByCreatedAtDesc(Long userId);
 
-	java.util.Optional<ExternalApiKeyEntity> findTopByUserIdAndProviderOrderByCreatedAtDesc(
+	Optional<ExternalApiKeyEntity> findTopByUserIdAndProviderAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(
 			Long userId,
 			ExternalApiKeyProvider provider
 	);
 
-	java.util.Optional<ExternalApiKeyEntity> findByIdAndUserId(Long id, Long userId);
+	Optional<ExternalApiKeyEntity> findByIdAndUserId(Long id, Long userId);
+
+	Optional<ExternalApiKeyEntity> findByIdAndUserIdAndDeletionRequestedAtIsNull(Long id, Long userId);
+
+	List<ExternalApiKeyEntity> findAllByPermanentDeletionAtIsNotNullAndPermanentDeletionAtBefore(Instant now);
 }

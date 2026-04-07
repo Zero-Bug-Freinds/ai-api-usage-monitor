@@ -42,6 +42,17 @@ function formatCreatedAt(iso: string) {
   return d.toLocaleString("ko-KR")
 }
 
+function formatDeadline(iso: string | null | undefined) {
+  if (!iso) return ""
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleString("ko-KR")
+}
+
+function isPendingDeletion(row: ExternalKeySummary) {
+  return Boolean(row.deletionRequestedAt && row.permanentDeletionAt)
+}
+
 export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] }) {
   const [session, setSession] = React.useState<SessionResponse | null>(null)
   const [loading, setLoading] = React.useState(true)
@@ -60,6 +71,10 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
   const [externalKeys, setExternalKeys] = React.useState<ExternalKeySummary[] | null>(null)
   const [keysLoading, setKeysLoading] = React.useState(false)
   const [keysError, setKeysError] = React.useState<string | null>(null)
+  const [keyActionId, setKeyActionId] = React.useState<number | null>(null)
+  const [editAliasId, setEditAliasId] = React.useState<number | null>(null)
+  const [editAliasValue, setEditAliasValue] = React.useState("")
+  const [saveAliasLoadingId, setSaveAliasLoadingId] = React.useState<number | null>(null)
 
   const loadExternalKeys = React.useCallback(async (signal?: AbortSignal) => {
     setKeysLoading(true)
@@ -182,6 +197,102 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
     }
   }
 
+  async function requestKeyDeletion(id: number) {
+    const ok = window.confirm(
+      "이 API 키를 삭제 예약합니다.\n\n일주일 동안 취소할 수 있으며, 일주일이 지나면 DB에서 키가 영구 삭제됩니다. 과거 사용량 로그는 usage 쪽 기록에 남을 수 있습니다."
+    )
+    if (!ok) return
+    setKeyActionId(id)
+    try {
+      const { response, json } = await apiFetch<unknown>(
+        `/api/auth/external-keys/${id}`,
+        { method: "DELETE", credentials: "include", cache: "no-store", headers: { Accept: "application/json" } },
+        { authRequired: true }
+      )
+      const apiResponse = asApiResponse(json)
+      if (response.ok && apiResponse?.success) {
+        void loadExternalKeys()
+      } else {
+        setKeysError(apiResponse?.message ?? "삭제 예약에 실패했습니다")
+      }
+    } catch {
+      setKeysError("삭제 예약에 실패했습니다")
+    } finally {
+      setKeyActionId(null)
+    }
+  }
+
+  async function cancelKeyDeletion(id: number) {
+    setKeyActionId(id)
+    try {
+      const { response, json } = await apiFetch<unknown>(
+        `/api/auth/external-keys/${id}/deletion-cancel`,
+        { method: "POST", credentials: "include", cache: "no-store", headers: { Accept: "application/json" } },
+        { authRequired: true }
+      )
+      const apiResponse = asApiResponse(json)
+      if (response.ok && apiResponse?.success) {
+        void loadExternalKeys()
+      } else {
+        setKeysError(apiResponse?.message ?? "삭제 취소에 실패했습니다")
+      }
+    } catch {
+      setKeysError("삭제 취소에 실패했습니다")
+    } finally {
+      setKeyActionId(null)
+    }
+  }
+
+  function startAliasEdit(row: ExternalKeySummary) {
+    setKeysError(null)
+    setEditAliasId(row.id)
+    setEditAliasValue(row.alias)
+  }
+
+  function cancelAliasEdit() {
+    setEditAliasId(null)
+    setEditAliasValue("")
+  }
+
+  async function saveAliasEdit(row: ExternalKeySummary) {
+    const aliasTrimmed = editAliasValue.trim()
+    if (!aliasTrimmed) {
+      setKeysError("별칭(alias)은 필수입니다")
+      return
+    }
+    if (aliasTrimmed === row.alias) {
+      cancelAliasEdit()
+      return
+    }
+
+    setSaveAliasLoadingId(row.id)
+    setKeysError(null)
+    try {
+      const { response, json } = await apiFetch<unknown>(
+        `/api/auth/external-keys/${row.id}`,
+        {
+          method: "PUT",
+          credentials: "include",
+          cache: "no-store",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ alias: aliasTrimmed }),
+        },
+        { authRequired: true }
+      )
+      const apiResponse = asApiResponse(json)
+      if (response.ok && apiResponse?.success) {
+        cancelAliasEdit()
+        void loadExternalKeys()
+      } else {
+        setKeysError(apiResponse?.message ?? "별칭 수정에 실패했습니다")
+      }
+    } catch {
+      setKeysError("별칭 수정에 실패했습니다")
+    } finally {
+      setSaveAliasLoadingId(null)
+    }
+  }
+
   return (
     <div className="flex min-h-[40vh] flex-col gap-8 py-4">
       <div className="space-y-2">
@@ -222,7 +333,9 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
         <section className="max-w-lg space-y-3 rounded-lg border border-border bg-card p-5 shadow-sm">
           <div className="space-y-1">
             <h2 className="text-sm font-semibold tracking-tight">등록된 외부 API Key</h2>
-            <p className="text-sm text-muted-foreground">Provider·별칭·등록일만 표시됩니다. 키 값은 저장되지 않거나 암호화되어 있습니다.</p>
+            <p className="text-sm text-muted-foreground">
+              Provider·별칭·등록일만 표시됩니다. 삭제 예정인 키는 별칭 옆에 표시되며, 일주일 이내 취소할 수 있습니다.
+            </p>
           </div>
 
           {keysLoading || externalKeys === null ? (
@@ -239,13 +352,90 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
           {!keysLoading && !keysError && externalKeys !== null && externalKeys.length > 0 ? (
             <ul className="divide-y divide-border rounded-md border border-border">
               {externalKeys.map((row) => (
-                <li key={row.id} className="flex flex-col gap-1 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-                  <div className="font-medium">
-                    <span className="text-foreground">{providerLabel(row.provider)}</span>
-                    <span className="mx-2 text-muted-foreground">·</span>
-                    <span className="text-foreground">{row.alias}</span>
+                <li
+                  key={row.id}
+                  className="flex flex-col gap-2 px-4 py-3 text-sm sm:flex-row sm:items-start sm:justify-between"
+                >
+                  <div className="min-w-0 space-y-1">
+                    <div className="font-medium">
+                      <span className="text-foreground">{providerLabel(row.provider)}</span>
+                      <span className="mx-2 text-muted-foreground">·</span>
+                      {editAliasId === row.id ? (
+                        <input
+                          className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                          value={editAliasValue}
+                          onChange={(e) => setEditAliasValue(e.target.value)}
+                          disabled={saveAliasLoadingId === row.id}
+                          autoComplete="off"
+                        />
+                      ) : (
+                        <span className="text-foreground">{row.alias}</span>
+                      )}
+                      {isPendingDeletion(row) ? (
+                        <span className="ml-1.5 text-amber-700 dark:text-amber-500">(삭제 예정)</span>
+                      ) : null}
+                    </div>
+                    {isPendingDeletion(row) && row.permanentDeletionAt ? (
+                      <p className="text-xs text-muted-foreground">
+                        영구 삭제 예정: {formatDeadline(row.permanentDeletionAt)}까지 취소 가능
+                      </p>
+                    ) : null}
                   </div>
-                  <div className="text-muted-foreground tabular-nums">{formatCreatedAt(row.createdAt)}</div>
+                  <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
+                    <div className="text-muted-foreground tabular-nums sm:text-right">{formatCreatedAt(row.createdAt)}</div>
+                    <div className="flex flex-wrap gap-2">
+                      {!isPendingDeletion(row) ? (
+                        editAliasId === row.id ? (
+                          <>
+                            <button
+                              type="button"
+                              className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
+                              disabled={saveAliasLoadingId === row.id}
+                              onClick={() => void saveAliasEdit(row)}
+                            >
+                              {saveAliasLoadingId === row.id ? "저장 중…" : "저장"}
+                            </button>
+                            <button
+                              type="button"
+                              className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
+                              disabled={saveAliasLoadingId === row.id}
+                              onClick={cancelAliasEdit}
+                            >
+                              취소
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
+                            disabled={keyActionId === row.id}
+                            onClick={() => startAliasEdit(row)}
+                          >
+                            별칭 수정
+                          </button>
+                        )
+                      ) : null}
+                      {isPendingDeletion(row) ? (
+                        <button
+                          type="button"
+                          className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
+                          disabled={keyActionId === row.id}
+                          onClick={() => void cancelKeyDeletion(row.id)}
+                        >
+                          {keyActionId === row.id ? "처리 중…" : "삭제 취소"}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="rounded-md border border-destructive/40 bg-background px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                          disabled={keyActionId === row.id}
+                          onClick={() => void requestKeyDeletion(row.id)}
+                        >
+                          {keyActionId === row.id ? "처리 중…" : "삭제 예약"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </li>
               ))}
             </ul>

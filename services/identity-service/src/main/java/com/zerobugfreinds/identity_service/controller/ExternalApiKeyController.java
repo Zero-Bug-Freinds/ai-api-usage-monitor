@@ -11,6 +11,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -45,13 +46,7 @@ public class ExternalApiKeyController {
 				request.alias(),
 				request.externalKey()
 		);
-		ExternalApiKeyRegisterResponse data = new ExternalApiKeyRegisterResponse(
-				saved.getId(),
-				saved.getProvider().name(),
-				saved.getKeyAlias(),
-				saved.getCreatedAt()
-		);
-		return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok("외부 API 키가 등록되었습니다", data));
+		return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok("외부 API 키가 등록되었습니다", toResponse(saved)));
 	}
 
 	@GetMapping("/external-keys")
@@ -59,12 +54,7 @@ public class ExternalApiKeyController {
 			@AuthenticationPrincipal IdentityUserPrincipal principal
 	) {
 		List<ExternalApiKeyRegisterResponse> data = externalApiKeyService.getMyKeys(principal.userId()).stream()
-				.map(key -> new ExternalApiKeyRegisterResponse(
-						key.getId(),
-						key.getProvider().name(),
-						key.getKeyAlias(),
-						key.getCreatedAt()
-				))
+				.map(ExternalApiKeyController::toResponse)
 				.toList();
 		return ResponseEntity.ok(ApiResponse.ok("외부 API 키 목록 조회에 성공했습니다", data));
 	}
@@ -82,12 +72,41 @@ public class ExternalApiKeyController {
 				request.alias(),
 				request.externalKey()
 		);
-		ExternalApiKeyRegisterResponse data = new ExternalApiKeyRegisterResponse(
-				saved.getId(),
-				saved.getProvider().name(),
-				saved.getKeyAlias(),
-				saved.getCreatedAt()
+		return ResponseEntity.ok(ApiResponse.ok("외부 API 키가 수정되었습니다", toResponse(saved)));
+	}
+
+	/**
+	 * 삭제 요청: 7일 유예 후 스케줄러가 행을 제거한다. 유예 중에는 취소 가능.
+	 */
+	@DeleteMapping("/external-keys/{id}")
+	public ResponseEntity<ApiResponse<ExternalApiKeyRegisterResponse>> requestDeletion(
+			@AuthenticationPrincipal IdentityUserPrincipal principal,
+			@PathVariable("id") Long id
+	) {
+		ExternalApiKeyEntity saved = externalApiKeyService.requestDeletion(principal.userId(), id);
+		return ResponseEntity.ok(ApiResponse.ok(
+				"삭제가 예약되었습니다. 일주일 이내에 취소할 수 있으며, 이후에는 키가 영구 삭제됩니다.",
+				toResponse(saved)
+		));
+	}
+
+	@PostMapping("/external-keys/{id}/deletion-cancel")
+	public ResponseEntity<ApiResponse<ExternalApiKeyRegisterResponse>> cancelDeletion(
+			@AuthenticationPrincipal IdentityUserPrincipal principal,
+			@PathVariable("id") Long id
+	) {
+		ExternalApiKeyEntity saved = externalApiKeyService.cancelDeletion(principal.userId(), id);
+		return ResponseEntity.ok(ApiResponse.ok("삭제 예약이 취소되었습니다", toResponse(saved)));
+	}
+
+	private static ExternalApiKeyRegisterResponse toResponse(ExternalApiKeyEntity key) {
+		return new ExternalApiKeyRegisterResponse(
+				key.getId(),
+				key.getProvider().name(),
+				key.getKeyAlias(),
+				key.getCreatedAt(),
+				key.getDeletionRequestedAt(),
+				key.getPermanentDeletionAt()
 		);
-		return ResponseEntity.ok(ApiResponse.ok("외부 API 키가 수정되었습니다", data));
 	}
 }

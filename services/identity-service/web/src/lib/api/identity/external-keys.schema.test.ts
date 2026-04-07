@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { createExternalKeyRequestSchema } from "./external-keys.schema"
+import { createExternalKeyRequestSchema, updateExternalKeyRequestSchema } from "./external-keys.schema"
 
 describe("createExternalKeyRequestSchema", () => {
   it("accepts a valid payload", () => {
@@ -28,6 +28,33 @@ describe("createExternalKeyRequestSchema", () => {
       provider: "ANTHROPIC",
       externalKey: "test",
       alias: " ",
+    })
+
+    expect(parsed.success).toBe(false)
+  })
+})
+
+describe("updateExternalKeyRequestSchema", () => {
+  it("accepts alias-only payload", () => {
+    const parsed = updateExternalKeyRequestSchema.safeParse({
+      alias: "새 별칭",
+    })
+
+    expect(parsed.success).toBe(true)
+  })
+
+  it("rejects empty alias", () => {
+    const parsed = updateExternalKeyRequestSchema.safeParse({
+      alias: " ",
+    })
+
+    expect(parsed.success).toBe(false)
+  })
+
+  it("rejects externalKey update without provider", () => {
+    const parsed = updateExternalKeyRequestSchema.safeParse({
+      alias: "OpenAI 키 1",
+      externalKey: "sk-live",
     })
 
     expect(parsed.success).toBe(false)

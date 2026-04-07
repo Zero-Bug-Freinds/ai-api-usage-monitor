@@ -6,7 +6,10 @@ import com.zerobugfreinds.identity_service.exception.AuthContractViolationExcept
 import com.zerobugfreinds.identity_service.exception.DuplicateExternalApiKeyAliasException;
 import com.zerobugfreinds.identity_service.exception.DuplicateExternalApiKeyException;
 import com.zerobugfreinds.identity_service.exception.DuplicateEmailException;
+import com.zerobugfreinds.identity_service.exception.ExternalApiKeyAlreadyPendingDeletionException;
 import com.zerobugfreinds.identity_service.exception.ExternalApiKeyNotFoundException;
+import com.zerobugfreinds.identity_service.exception.ExternalApiKeyNotPendingDeletionException;
+import com.zerobugfreinds.identity_service.exception.ExternalApiKeyPendingDeletionException;
 import com.zerobugfreinds.identity_service.exception.InvalidCredentialsException;
 import com.zerobugfreinds.identity_service.exception.InvalidSignupRequestException;
 import org.springframework.http.HttpStatus;
@@ -67,6 +70,24 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(ExternalApiKeyNotFoundException.class)
 	@ResponseStatus(HttpStatus.NOT_FOUND)
 	public ApiResponse<Void> handleExternalApiKeyNotFound(ExternalApiKeyNotFoundException ex) {
+		return ApiResponse.fail(ex.getMessage());
+	}
+
+	@ExceptionHandler(ExternalApiKeyAlreadyPendingDeletionException.class)
+	@ResponseStatus(HttpStatus.CONFLICT)
+	public ApiResponse<Void> handleExternalApiKeyAlreadyPendingDeletion(ExternalApiKeyAlreadyPendingDeletionException ex) {
+		return ApiResponse.fail(ex.getMessage());
+	}
+
+	@ExceptionHandler(ExternalApiKeyNotPendingDeletionException.class)
+	@ResponseStatus(HttpStatus.BAD_REQUEST)
+	public ApiResponse<Void> handleExternalApiKeyNotPendingDeletion(ExternalApiKeyNotPendingDeletionException ex) {
+		return ApiResponse.fail(ex.getMessage());
+	}
+
+	@ExceptionHandler(ExternalApiKeyPendingDeletionException.class)
+	@ResponseStatus(HttpStatus.BAD_REQUEST)
+	public ApiResponse<Void> handleExternalApiKeyPendingDeletion(ExternalApiKeyPendingDeletionException ex) {
 		return ApiResponse.fail(ex.getMessage());
 	}
 
