@@ -54,4 +54,13 @@ public class TeamController {
 		TeamSummaryResponse team = teamService.inviteMember(principal.userId(), teamId, request.userId().trim());
 		return ResponseEntity.ok(ApiResponse.ok("팀 초대가 완료되었습니다", team));
 	}
+
+	@GetMapping("/teams/{id}/members")
+	public ResponseEntity<ApiResponse<List<String>>> getTeamMembers(
+			@AuthenticationPrincipal TeamUserPrincipal principal,
+			@PathVariable("id") Long teamId
+	) {
+		List<String> members = teamService.getTeamMemberUserIds(principal.userId(), teamId);
+		return ResponseEntity.ok(ApiResponse.ok("팀 멤버 조회에 성공했습니다", members));
+	}
 }

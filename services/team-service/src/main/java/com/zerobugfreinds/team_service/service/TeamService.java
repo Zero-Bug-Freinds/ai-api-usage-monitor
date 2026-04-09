@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -22,10 +23,16 @@ import java.util.stream.Collectors;
 public class TeamService {
 	private final TeamRepository teamRepository;
 	private final TeamMemberRepository teamMemberRepository;
+	private final IdentityUserLookupClient identityUserLookupClient;
 
-	public TeamService(TeamRepository teamRepository, TeamMemberRepository teamMemberRepository) {
+	public TeamService(
+			TeamRepository teamRepository,
+			TeamMemberRepository teamMemberRepository,
+			IdentityUserLookupClient identityUserLookupClient
+	) {
 		this.teamRepository = teamRepository;
 		this.teamMemberRepository = teamMemberRepository;
+		this.identityUserLookupClient = identityUserLookupClient;
 	}
 
 	@Transactional
@@ -70,16 +77,35 @@ public class TeamService {
 		if (!StringUtils.hasText(actorUserId) || !StringUtils.hasText(inviteeUserId)) {
 			throw new IllegalArgumentException("userId는 필수입니다");
 		}
+		String invitee = inviteeUserId.trim();
+		if (!identityUserLookupClient.existsByEmail(invitee)) {
+			throw new IllegalArgumentException("존재하지 않는 사용자 아이디(이메일)입니다");
+		}
 		TeamEntity team = teamRepository.findById(teamId)
 				.orElseThrow(() -> new TeamNotFoundException("팀을 찾을 수 없습니다"));
 
 		if (!teamMemberRepository.existsByTeamIdAndUserId(teamId, actorUserId)) {
 			throw new ForbiddenTeamAccessException("팀 멤버만 초대할 수 있습니다");
 		}
-		if (teamMemberRepository.existsByTeamIdAndUserId(teamId, inviteeUserId)) {
+		if (teamMemberRepository.existsByTeamIdAndUserId(teamId, invitee)) {
 			throw new DuplicateTeamMemberException("이미 팀에 참여 중인 사용자입니다");
 		}
-		teamMemberRepository.save(TeamMemberEntity.of(teamId, inviteeUserId, TeamMemberRole.MEMBER));
+		teamMemberRepository.save(TeamMemberEntity.of(teamId, invitee, TeamMemberRole.MEMBER));
 		return new TeamSummaryResponse(String.valueOf(team.getId()), team.getName());
+	}
+
+	@Transactional(readOnly = true)
+	public List<String> getTeamMemberUserIds(String actorUserId, Long teamId) {
+		if (!StringUtils.hasText(actorUserId)) {
+			throw new IllegalArgumentException("userId는 필수입니다");
+		}
+		if (!teamMemberRepository.existsByTeamIdAndUserId(teamId, actorUserId)) {
+			throw new ForbiddenTeamAccessException("팀 멤버만 조회할 수 있습니다");
+		}
+		return teamMemberRepository.findAllByTeamId(teamId).stream()
+				.map(TeamMemberEntity::getUserId)
+				.filter(StringUtils::hasText)
+				.sorted(Comparator.naturalOrder())
+				.toList();
 	}
 }

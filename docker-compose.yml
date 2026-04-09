@@ -151,10 +151,13 @@ services:
       TEAM_POSTGRES_DB: ${TEAM_POSTGRES_DB:-team_db}
       TEAM_POSTGRES_USER: ${TEAM_POSTGRES_USER:-team_app}
       TEAM_POSTGRES_PASSWORD: ${TEAM_POSTGRES_PASSWORD:-team_app}
-      SECURITY_JWT_SECRET: ${GATEWAY_JWT_SECRET:-change-this-jwt-secret-for-team-service-change-this-32bytes}
+      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://host.docker.internal:8090}
+      SECURITY_JWT_SECRET: ${JWT_SECRET:-change-this-secret-key-to-at-least-32-bytes}
       TEAM_SERVICE_PORT: 8093
     depends_on:
       - postgres
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${TEAM_SERVICE_PORT:-8093}:8093"
 

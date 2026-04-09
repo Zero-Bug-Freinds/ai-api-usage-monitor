@@ -41,6 +41,7 @@ public class SecurityConfig {
 						.requestMatchers("/api/auth/login").permitAll()
 						.requestMatchers("/api/auth/logout").permitAll()
 						.requestMatchers("/internal/api-keys/**").permitAll()
+						.requestMatchers("/internal/users/**").permitAll()
 						.requestMatchers("/error").permitAll()
 						.anyRequest().authenticated()
 				)

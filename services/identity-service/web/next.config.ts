@@ -37,7 +37,7 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/api/team/v1/:path*",
-        destination: `${team}/api/team/v1/:path*`,
+        destination: `${team}/teams/api/team/v1/:path*`,
       },
     ];
   },

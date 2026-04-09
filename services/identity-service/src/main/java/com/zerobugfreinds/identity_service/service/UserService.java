@@ -76,4 +76,12 @@ public class UserService {
 		String accessToken = jwtTokenProvider.generateAccessToken(user);
 		return new LoginResponse(accessToken, "Bearer", jwtTokenProvider.getAccessTokenTtlSeconds());
 	}
+
+	@Transactional(readOnly = true)
+	public boolean existsByEmail(String email) {
+		if (email == null || email.isBlank()) {
+			return false;
+		}
+		return userRepository.existsByEmail(email.trim());
+	}
 }
