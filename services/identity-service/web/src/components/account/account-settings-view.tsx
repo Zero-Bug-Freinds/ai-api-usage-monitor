@@ -49,6 +49,25 @@ function formatDeadline(iso: string | null | undefined) {
   return d.toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })
 }
 
+function formatBudgetUsd(value: number | null | undefined) {
+  if (value === null || value === undefined) return null
+  return new Intl.NumberFormat("ko-KR", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(value)
+}
+
+function sanitizeBudgetInput(value: string) {
+  const normalized = value.replace(/,/g, ".")
+  const filtered = normalized.replace(/[^\d.]/g, "")
+  const [integerPart, ...rest] = filtered.split(".")
+  const fractionPart = rest.join("")
+  if (rest.length === 0) return integerPart
+  return `${integerPart}.${fractionPart}`
+}
+
 function isPendingDeletion(row: ExternalKeySummary) {
   return Boolean(row.deletionRequestedAt && row.permanentDeletionAt)
 }
@@ -61,6 +80,7 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
   const [provider, setProvider] = React.useState<ExternalKeyProvider>("OPENAI")
   const [alias, setAlias] = React.useState(() => defaultAlias("OPENAI"))
   const [externalKey, setExternalKey] = React.useState("")
+  const [monthlyBudgetUsdInput, setMonthlyBudgetUsdInput] = React.useState("")
   const [aliasTouched, setAliasTouched] = React.useState(false)
   const [submitLoading, setSubmitLoading] = React.useState(false)
   const [submitMessage, setSubmitMessage] = React.useState<{ kind: "success" | "error"; text: string } | null>(
@@ -72,9 +92,10 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
   const [keysLoading, setKeysLoading] = React.useState(false)
   const [keysError, setKeysError] = React.useState<string | null>(null)
   const [keyActionId, setKeyActionId] = React.useState<number | null>(null)
-  const [editAliasId, setEditAliasId] = React.useState<number | null>(null)
+  const [editKeyId, setEditKeyId] = React.useState<number | null>(null)
   const [editAliasValue, setEditAliasValue] = React.useState("")
-  const [saveAliasLoadingId, setSaveAliasLoadingId] = React.useState<number | null>(null)
+  const [editMonthlyBudgetUsdInput, setEditMonthlyBudgetUsdInput] = React.useState("")
+  const [saveEditLoadingId, setSaveEditLoadingId] = React.useState<number | null>(null)
 
   const loadExternalKeys = React.useCallback(async (signal?: AbortSignal) => {
     setKeysLoading(true)
@@ -149,6 +170,7 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
 
     const aliasTrimmed = alias.trim()
     const externalKeyTrimmed = externalKey.trim()
+    const budgetTrimmed = monthlyBudgetUsdInput.trim()
 
     if (!aliasTrimmed) {
       setSubmitMessage({ kind: "error", text: "별칭(alias)은 필수입니다" })
@@ -158,6 +180,17 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
       setSubmitMessage({ kind: "error", text: "외부 API Key는 필수입니다" })
       return
     }
+
+    if (!budgetTrimmed) {
+      setSubmitMessage({ kind: "error", text: "월 예산은 필수입니다" })
+      return
+    }
+    const parsedBudget = Number(budgetTrimmed)
+    if (!Number.isFinite(parsedBudget) || parsedBudget < 0) {
+      setSubmitMessage({ kind: "error", text: "예산은 0 이상의 숫자로 입력해 주세요" })
+      return
+    }
+    const monthlyBudgetUsd = Number(parsedBudget.toFixed(2))
 
     setSubmitLoading(true)
     setSubmitMessage(null)
@@ -174,6 +207,7 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
             provider,
             alias: aliasTrimmed,
             externalKey: externalKeyTrimmed,
+            monthlyBudgetUsd,
           }),
         },
         { authRequired: true }
@@ -193,6 +227,7 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
       setSubmitMessage({ kind: "error", text: "등록에 실패했습니다" })
     } finally {
       setExternalKey("")
+      setMonthlyBudgetUsdInput("")
       setSubmitLoading(false)
     }
   }
@@ -243,29 +278,46 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
     }
   }
 
-  function startAliasEdit(row: ExternalKeySummary) {
+  function startKeyEdit(row: ExternalKeySummary) {
     setKeysError(null)
-    setEditAliasId(row.id)
+    setEditKeyId(row.id)
     setEditAliasValue(row.alias)
+    setEditMonthlyBudgetUsdInput(
+      row.monthlyBudgetUsd !== null && row.monthlyBudgetUsd !== undefined ? String(row.monthlyBudgetUsd) : ""
+    )
   }
 
-  function cancelAliasEdit() {
-    setEditAliasId(null)
+  function cancelKeyEdit() {
+    setEditKeyId(null)
     setEditAliasValue("")
+    setEditMonthlyBudgetUsdInput("")
   }
 
-  async function saveAliasEdit(row: ExternalKeySummary) {
+  async function saveKeyEdit(row: ExternalKeySummary) {
     const aliasTrimmed = editAliasValue.trim()
     if (!aliasTrimmed) {
       setKeysError("별칭(alias)은 필수입니다")
       return
     }
-    if (aliasTrimmed === row.alias) {
-      cancelAliasEdit()
+    const budgetTrimmed = editMonthlyBudgetUsdInput.trim()
+    if (!budgetTrimmed) {
+      setKeysError("월 예산은 필수입니다")
+      return
+    }
+    const parsedBudget = Number(budgetTrimmed)
+    if (!Number.isFinite(parsedBudget) || parsedBudget < 0) {
+      setKeysError("예산은 0 이상의 숫자로 입력해 주세요")
+      return
+    }
+    const monthlyBudgetUsd = Number(parsedBudget.toFixed(2))
+    const normalizedCurrentBudget =
+      row.monthlyBudgetUsd === null || row.monthlyBudgetUsd === undefined ? null : Number(row.monthlyBudgetUsd.toFixed(2))
+    if (aliasTrimmed === row.alias && monthlyBudgetUsd === normalizedCurrentBudget) {
+      cancelKeyEdit()
       return
     }
 
-    setSaveAliasLoadingId(row.id)
+    setSaveEditLoadingId(row.id)
     setKeysError(null)
     try {
       const { response, json } = await apiFetch<unknown>(
@@ -275,21 +327,21 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
           credentials: "include",
           cache: "no-store",
           headers: { "Content-Type": "application/json", Accept: "application/json" },
-          body: JSON.stringify({ alias: aliasTrimmed }),
+          body: JSON.stringify({ alias: aliasTrimmed, monthlyBudgetUsd }),
         },
         { authRequired: true }
       )
       const apiResponse = asApiResponse(json)
       if (response.ok && apiResponse?.success) {
-        cancelAliasEdit()
+        cancelKeyEdit()
         void loadExternalKeys()
       } else {
-        setKeysError(apiResponse?.message ?? "별칭 수정에 실패했습니다")
+        setKeysError(apiResponse?.message ?? "정보 수정에 실패했습니다")
       }
     } catch {
-      setKeysError("별칭 수정에 실패했습니다")
+      setKeysError("정보 수정에 실패했습니다")
     } finally {
-      setSaveAliasLoadingId(null)
+      setSaveEditLoadingId(null)
     }
   }
 
@@ -343,13 +395,13 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
           ) : null}
           {keysError && !keysLoading && externalKeys !== null ? <p className="text-sm text-destructive">{keysError}</p> : null}
 
-          {!keysLoading && !keysError && externalKeys !== null && externalKeys.length === 0 ? (
+          {!keysLoading && externalKeys !== null && externalKeys.length === 0 ? (
             <p className="rounded-md border border-dashed border-border bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground">
               등록된 외부 키가 없습니다. 아래에서 추가할 수 있습니다.
             </p>
           ) : null}
 
-          {!keysLoading && !keysError && externalKeys !== null && externalKeys.length > 0 ? (
+          {!keysLoading && externalKeys !== null && externalKeys.length > 0 ? (
             <ul className="divide-y divide-border rounded-md border border-border">
               {externalKeys.map((row) => (
                 <li
@@ -360,14 +412,26 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
                     <div className="font-medium">
                       <span className="text-foreground">{providerLabel(row.provider)}</span>
                       <span className="mx-2 text-muted-foreground">·</span>
-                      {editAliasId === row.id ? (
-                        <input
-                          className="h-8 rounded-md border border-input bg-background px-2 text-sm"
-                          value={editAliasValue}
-                          onChange={(e) => setEditAliasValue(e.target.value)}
-                          disabled={saveAliasLoadingId === row.id}
-                          autoComplete="off"
-                        />
+                      {editKeyId === row.id ? (
+                        <div className="inline-flex flex-col gap-2 align-middle">
+                          <input
+                            className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                            value={editAliasValue}
+                            onChange={(e) => setEditAliasValue(e.target.value)}
+                            disabled={saveEditLoadingId === row.id}
+                            autoComplete="off"
+                          />
+                          <input
+                            className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                            type="text"
+                            inputMode="decimal"
+                            value={editMonthlyBudgetUsdInput}
+                            onChange={(e) => setEditMonthlyBudgetUsdInput(sanitizeBudgetInput(e.target.value))}
+                            placeholder="월 예산(USD)"
+                            disabled={saveEditLoadingId === row.id}
+                            required
+                          />
+                        </div>
                       ) : (
                         <span className="text-foreground">{row.alias}</span>
                       )}
@@ -380,26 +444,29 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
                         영구 삭제 예정: {formatDeadline(row.permanentDeletionAt)}까지 취소 가능
                       </p>
                     ) : null}
+                    {row.monthlyBudgetUsd !== null && row.monthlyBudgetUsd !== undefined ? (
+                      <p className="text-xs text-muted-foreground">월 예산: {formatBudgetUsd(row.monthlyBudgetUsd)}</p>
+                    ) : null}
                   </div>
                   <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
                     <div className="text-muted-foreground tabular-nums sm:text-right">{formatCreatedAt(row.createdAt)}</div>
                     <div className="flex flex-wrap gap-2">
                       {!isPendingDeletion(row) ? (
-                        editAliasId === row.id ? (
+                        editKeyId === row.id ? (
                           <>
                             <button
                               type="button"
                               className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
-                              disabled={saveAliasLoadingId === row.id}
-                              onClick={() => void saveAliasEdit(row)}
+                              disabled={saveEditLoadingId === row.id}
+                              onClick={() => void saveKeyEdit(row)}
                             >
-                              {saveAliasLoadingId === row.id ? "저장 중…" : "저장"}
+                              {saveEditLoadingId === row.id ? "저장 중…" : "저장"}
                             </button>
                             <button
                               type="button"
                               className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
-                              disabled={saveAliasLoadingId === row.id}
-                              onClick={cancelAliasEdit}
+                              disabled={saveEditLoadingId === row.id}
+                              onClick={cancelKeyEdit}
                             >
                               취소
                             </button>
@@ -409,9 +476,9 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
                             type="button"
                             className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
                             disabled={keyActionId === row.id}
-                            onClick={() => startAliasEdit(row)}
+                            onClick={() => startKeyEdit(row)}
                           >
-                            별칭 수정
+                            수정
                           </button>
                         )
                       ) : null}
@@ -500,6 +567,23 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
               onChange={(e) => setExternalKey(e.target.value)}
               placeholder="키를 입력하세요"
               autoComplete="off"
+              disabled={submitLoading}
+              required
+            />
+          </div>
+
+          <div className="grid gap-1.5">
+            <label className="text-sm font-medium" htmlFor="external-key-monthly-budget-usd">
+              월 예산 (USD)
+            </label>
+            <input
+              id="external-key-monthly-budget-usd"
+              className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              type="text"
+              inputMode="decimal"
+              value={monthlyBudgetUsdInput}
+              onChange={(e) => setMonthlyBudgetUsdInput(sanitizeBudgetInput(e.target.value))}
+              placeholder="예: 20"
               disabled={submitLoading}
               required
             />

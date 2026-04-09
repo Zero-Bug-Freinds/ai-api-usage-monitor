@@ -38,12 +38,14 @@ export type CreateExternalKeyRequest = {
   provider: ExternalKeyProvider
   externalKey: string
   alias: string
+  monthlyBudgetUsd: number
 }
 
 export type UpdateExternalKeyRequest = {
   alias: string
   provider?: ExternalKeyProvider
   externalKey?: string
+  monthlyBudgetUsd: number
 }
 
 /** Identity `POST /api/auth/external-keys`의 `data` 본문과 동기화 */
@@ -52,6 +54,7 @@ export type CreateExternalKeyResponseData = {
   provider: ExternalKeyProvider
   alias: string
   createdAt: string
+  monthlyBudgetUsd?: number | null
 }
 
 /** Identity `GET /api/auth/external-keys`의 `data` 아이템과 동기화 */
@@ -60,6 +63,7 @@ export type ExternalKeySummary = {
   provider: ExternalKeyProvider
   alias: string
   createdAt: string
+  monthlyBudgetUsd?: number | null
   /** ISO-8601, 삭제 예정일 때만 */
   deletionRequestedAt?: string | null
   /** ISO-8601, 영구 삭제 예정 시각(유예 종료) */

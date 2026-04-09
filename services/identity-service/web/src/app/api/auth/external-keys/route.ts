@@ -41,6 +41,10 @@ const createExternalKeyRequestSchema = z.object({
     .trim()
     .min(1, "externalKey는 필수입니다"),
   alias: z.string({ message: "alias는 문자열이어야 합니다" }).trim().min(1, "alias는 필수입니다"),
+  monthlyBudgetUsd: z
+    .number({ message: "monthlyBudgetUsd는 숫자여야 합니다" })
+    .min(0, "monthlyBudgetUsd는 0 이상이어야 합니다")
+    .multipleOf(0.01, "monthlyBudgetUsd는 소수점 둘째 자리까지 입력할 수 있습니다"),
 })
 
 function getUpstreamMessage(upstreamJson: unknown): string | null {
@@ -59,12 +63,14 @@ function isExternalKeySummary(data: unknown): boolean {
     v === null ||
     v === undefined ||
     (typeof v === "string" && (v.length === 0 || !Number.isNaN(Date.parse(v))))
+  const optionalBudget = (v: unknown) => v === null || v === undefined || typeof v === "number"
   return (
     typeof o.id === "number" &&
     typeof o.provider === "string" &&
     (o.provider === "GEMINI" || o.provider === "OPENAI" || o.provider === "ANTHROPIC") &&
     typeof o.alias === "string" &&
     typeof o.createdAt === "string" &&
+    optionalBudget(o.monthlyBudgetUsd) &&
     optionalIso(o.deletionRequestedAt) &&
     optionalIso(o.permanentDeletionAt)
   )
