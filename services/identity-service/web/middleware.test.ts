@@ -36,10 +36,16 @@ describe("middleware (auth-required gate)", () => {
     expect(org.status).toBe(307)
     expect(org.headers.get("location")).toContain(encodeURIComponent("/organizations/acme/billing"))
   })
+
+  it("applies to teams prefix", () => {
+    const team = middleware(makeRequest("/teams"))
+    expect(team.status).toBe(307)
+    expect(team.headers.get("location")).toContain(encodeURIComponent("/teams"))
+  })
 })
 
 describe("middleware config.matcher", () => {
   it("lists auth-required App Router prefixes (keep in sync with app/*/[[...path]])", () => {
-    expect(config.matcher).toEqual(["/settings/:path*", "/organizations/:path*"])
+    expect(config.matcher).toEqual(["/settings/:path*", "/organizations/:path*", "/teams/:path*"])
   })
 })

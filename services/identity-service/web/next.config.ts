@@ -36,12 +36,8 @@ const nextConfig: NextConfig = {
         destination: `${origin}/dashboard/:path*`,
       },
       {
-        source: "/teams",
-        destination: `${team}/teams`,
-      },
-      {
-        source: "/teams/:path*",
-        destination: `${team}/teams/:path*`,
+        source: "/api/team/v1/:path*",
+        destination: `${team}/api/team/v1/:path*`,
       },
     ];
   },

@@ -8,6 +8,7 @@ describe("protected app routes (match middleware prefixes)", () => {
   it.each([
     ["settings", () => import("@/app/settings/[[...path]]/page")],
     ["organizations", () => import("@/app/organizations/[[...path]]/page")],
+    ["teams", () => import("@/app/teams/[[...path]]/page")],
   ])("%s [[...path]] page loads", async (_, load) => {
     const mod = await load()
     expect(mod.default).toBeTypeOf("function")
