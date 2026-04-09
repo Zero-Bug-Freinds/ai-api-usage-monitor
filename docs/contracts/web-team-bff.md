@@ -38,3 +38,20 @@
 
 - 팀 생성/조회/초대는 모두 인증 필요다.
 - 권한 검증(팀 멤버만 초대 가능 등)은 Team Service가 최종 책임을 가진다.
+- 팀원 초대 시 Team Service는 Identity 내부 API(`GET /internal/users/exists?email=...`)로
+  사용자 존재 여부를 확인한 뒤, **실제로 존재하는 아이디(이메일)만** 초대를 허용한다.
+
+---
+
+## 5. 팀원 초대 검증 규칙
+
+- 입력값 `inviteeUserId`는 가입/로그인에 사용한 이메일 형식의 아이디를 기준으로 한다.
+- 존재하지 않는 아이디(이메일)이면 Team Service는 초대를 거부한다.
+- Identity 연동 실패(네트워크/5xx/비정상 응답) 시 안전하게 초대를 거부한다.
+
+### 5.1 실패 응답 예시
+
+- `POST /api/team/v1/teams/{id}/members`
+  - `400` (`success=false`): 존재하지 않는 사용자 아이디(이메일)로 초대 요청한 경우
+  - `403` (`success=false`): 요청자가 해당 팀의 초대 권한이 없는 경우
+  - `404` (`success=false`): 대상 팀이 존재하지 않는 경우
