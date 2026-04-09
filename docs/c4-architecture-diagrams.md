@@ -3,16 +3,18 @@
 이 문서는 목표 설계가 아니라, 현재 저장소에 존재하는 구현 코드 기준으로
 시스템 아키텍처를 C4 모델(C1 → C4)로 정리한다.
 
-**문서 버전:** 0.4 (정본 Web: `services/*/web/` — Identity·Usage 분리 반영)
+**문서 버전:** 0.5 (정본 Web: `services/*/web/` — Identity·Usage·Team 분리 반영)
 
 분석 대상:
-- **`services/identity-service/web`** (정본: 랜딩·인증·설정/org/team UI + `/api/auth/**`·`/api/identity/**` BFF)
+- **`services/identity-service/web`** (정본: 랜딩·인증·설정/org UI + `/api/auth/**`·`/api/identity/**` BFF)
 - **`services/usage-service/web`** (정본: 대시보드 UI + `/api/usage/**` BFF → 게이트웨이)
+- **`services/team-service/web`** (정본: 팀 생성/조회/초대 UI + `/api/team/v1/**` BFF)
 - `apps/web` (과도기·레거시; 안내용 `README` 위주 — 런타임 정본 아님)
 - `services/api-gateway-service`
 - `services/proxy-service`
 - `services/identity-service`
 - `services/usage-service`
+- `services/team-service`
 - `libs/usage-events`
 - 서비스별 `application.yml`/`application.properties`
 - `test-report/` (팀·실험 보고·원인 분석 메모, 런타임 코드 아님)

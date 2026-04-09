@@ -31,18 +31,15 @@ describe("middleware (auth-required gate)", () => {
     expect(res.headers.get("location")).toMatch(/\/login/)
   })
 
-  it("applies to organizations and teams prefixes", () => {
+  it("applies to organizations prefix", () => {
     const org = middleware(makeRequest("/organizations/acme/billing"))
     expect(org.status).toBe(307)
     expect(org.headers.get("location")).toContain(encodeURIComponent("/organizations/acme/billing"))
-
-    const teams = middleware(makeRequest("/teams", "access_token=t"))
-    expect(teams.status).toBe(200)
   })
 })
 
 describe("middleware config.matcher", () => {
   it("lists auth-required App Router prefixes (keep in sync with app/*/[[...path]])", () => {
-    expect(config.matcher).toEqual(["/settings/:path*", "/organizations/:path*", "/teams/:path*"])
+    expect(config.matcher).toEqual(["/settings/:path*", "/organizations/:path*"])
   })
 })
