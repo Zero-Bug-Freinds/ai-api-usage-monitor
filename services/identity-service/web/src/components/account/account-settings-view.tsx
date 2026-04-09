@@ -39,14 +39,14 @@ function roleLabel(role: string) {
 function formatCreatedAt(iso: string) {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleString("ko-KR")
+  return d.toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })
 }
 
 function formatDeadline(iso: string | null | undefined) {
   if (!iso) return ""
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleString("ko-KR")
+  return d.toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })
 }
 
 function isPendingDeletion(row: ExternalKeySummary) {
