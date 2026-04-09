@@ -7,6 +7,10 @@ function noStoreHeaders() {
   return { "Cache-Control": "no-store" }
 }
 
+function isSecureCookie(): boolean {
+  return process.env.NODE_ENV === "production"
+}
+
 function json<T>(status: number, body: ApiResponse<T>) {
   return NextResponse.json(body, { status, headers: noStoreHeaders() })
 }
@@ -35,7 +39,7 @@ function clearAccessTokenCookie(res: NextResponse) {
     name: ACCESS_TOKEN_COOKIE,
     value: "",
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: isSecureCookie(),
     sameSite: "lax",
     path: "/",
     maxAge: 0,

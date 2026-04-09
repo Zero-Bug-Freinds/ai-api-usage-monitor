@@ -19,6 +19,12 @@ function safeMessage(err: unknown, fallback: string) {
   return typeof err === "string" ? err : fallback
 }
 
+function statusFallbackMessage(status: number): string {
+  if (status === 401) return "이메일 또는 비밀번호가 올바르지 않습니다"
+  if (status >= 500) return "서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+  return "로그인에 실패했습니다"
+}
+
 export function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -44,6 +50,7 @@ export function LoginForm() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "include",
           body: JSON.stringify(values),
         },
         { authRequired: false }
@@ -61,8 +68,8 @@ export function LoginForm() {
       return
     }
 
-    const message = json?.message ?? "로그인에 실패했습니다"
-    setState({ status: "error", message: safeMessage(message, "로그인에 실패했습니다") })
+    const message = json?.message ?? statusFallbackMessage(res.status)
+    setState({ status: "error", message: safeMessage(message, statusFallbackMessage(res.status)) })
   }
 
   const isSubmitting = state.status === "submitting"

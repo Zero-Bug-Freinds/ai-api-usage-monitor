@@ -124,9 +124,9 @@
 ### 4.3 Identity & Organization Service
 - 역할
   - 회원/개인 사용자 모드
-  - 조직/팀 생성, 멤버십, 권한(RBAC)
+  - 조직 생성, 멤버십, 권한(RBAC)
 - 책임 범위
-  - 사용자-조직-팀-권한 모델을 관리한다.
+  - 사용자-조직-권한 모델을 관리한다.
   - Quote/Key 설정의 “정책 값(설정)”을 제공한다.
 
 ### 4.4 API Key Service
@@ -173,6 +173,18 @@
 - 책임 범위
   - Quota/비용 임계치 도달 이벤트를 받아 “알림만” 수행한다.
   - 알림 중복 방지 및 발송 이력 관리(최소 구현 포함)
+
+### 4.10 Team Service
+- 역할
+  - 팀 생성/조회
+  - 팀 멤버(아이디 기반) 초대
+  - 팀 API Key 등록/조회
+- 책임 범위
+  - 팀 도메인의 데이터 소유권을 분리해 관리한다.
+  - 팀 멤버십 기준 권한(예: 팀 멤버만 초대 가능)을 서버에서 강제한다.
+  - 팀원 초대 시 Identity 서비스의 사용자 존재 여부를 검증해,
+    실제 가입된 사용자(이메일 아이디)만 초대되도록 보장한다.
+  - 팀 API Key는 암호화 저장하고, 조회 시 원문 대신 마스킹된 요약만 제공한다.
 
 ---
 
@@ -385,6 +397,7 @@
 
 - **Identity 계열**: `services/identity-service` + `services/identity-service/web/` — 랜딩·인증·조직/팀 설정 UI, `/api/auth/**`·`/api/identity/**` BFF 등. 계약: `docs/contracts/web-identity-bff.md`.
 - **Usage·대시보드 계열**: `services/usage-service` + `services/usage-service/web/` — 사용량 대시보드, `/api/usage/**` BFF → 게이트웨이. 계약: `docs/contracts/web-gateway-bff.md`, `docs/contracts/gateway-proxy.md`.
+- **Team 계열**: `services/team-service` + `services/team-service/web/` — 팀 생성/조회/초대 및 팀 API Key 등록/조회 API, Team BFF. 브라우저 `/teams` UI는 Identity `web`가 소유하고 팀 API(`/api/team/v1/**`)만 Team BFF로 연동. 계약: `docs/contracts/web-team-bff.md`.
 - **웹 경계**: `docs/contracts/web-split-boundary.md` — 경로·BFF·미들웨어 변경 시 **본 문서·계약 문서**를 코드와 같이 갱신한다.
 - **Proxy·API Gateway**: 공개 AI·Usage HTTP 진입·신뢰 헤더 — 게이트웨이·프록시 구현 팀과 **HTTP 계약**만 맞춘다.
 

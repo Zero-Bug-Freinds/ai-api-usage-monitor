@@ -31,13 +31,16 @@ describe("middleware (auth-required gate)", () => {
     expect(res.headers.get("location")).toMatch(/\/login/)
   })
 
-  it("applies to organizations and teams prefixes", () => {
+  it("applies to organizations prefix", () => {
     const org = middleware(makeRequest("/organizations/acme/billing"))
     expect(org.status).toBe(307)
     expect(org.headers.get("location")).toContain(encodeURIComponent("/organizations/acme/billing"))
+  })
 
-    const teams = middleware(makeRequest("/teams", "access_token=t"))
-    expect(teams.status).toBe(200)
+  it("applies to teams prefix", () => {
+    const team = middleware(makeRequest("/teams"))
+    expect(team.status).toBe(307)
+    expect(team.headers.get("location")).toContain(encodeURIComponent("/teams"))
   })
 })
 
