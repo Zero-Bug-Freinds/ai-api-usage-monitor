@@ -1,6 +1,6 @@
 # Identity 인증 API 계약 (백엔드)
 
-버전: 1.2  
+버전: 1.4  
 관련: [architecture.md](./architecture.md) §1.3, [contracts/web-identity-bff.md](./contracts/web-identity-bff.md)
 
 ---
@@ -37,9 +37,11 @@
 | `POST` | `/api/auth/signup`  | 불필요 | 회원가입                     |
 | `POST` | `/api/auth/login`   | 불필요 | 로그인 및 액세스 토큰 발급          |
 | `GET`  | `/api/auth/session` | 필요  | 세션(인증 상태) 확인             |
-| `GET`  | `/api/auth/external-keys` | 필요  | 내 외부 AI API 키 목록 조회 (`id`, `provider`, `alias`, `createdAt`) |
-| `POST` | `/api/auth/external-keys` | 필요  | 외부 AI API 키 등록 (`provider`, `externalKey`, `alias`) |
-| `PUT`  | `/api/auth/external-keys/{id}` | 필요  | 외부 AI API 키 수정 (`provider`, `externalKey`, `alias`) |
+| `GET`  | `/api/auth/external-keys` | 필요  | 내 외부 AI API 키 목록 조회 (`id`, `provider`, `alias`, `monthlyBudgetUsd`, `createdAt`) |
+| `POST` | `/api/auth/external-keys` | 필요  | 외부 AI API 키 등록 (`provider`, `externalKey`, `alias`, `monthlyBudgetUsd`) |
+| `PUT`  | `/api/auth/external-keys/{id}` | 필요  | 외부 AI API 키 수정 (`alias`, `monthlyBudgetUsd` 필수, `externalKey`는 선택) |
+| `DELETE` | `/api/auth/external-keys/{id}` | 필요  | 외부 AI API 키 삭제 예약(7일 유예) |
+| `POST` | `/api/auth/external-keys/{id}/deletion-cancel` | 필요  | 외부 AI API 키 삭제 예약 취소 |
 | `POST` | `/api/auth/logout`  | 불필요 | 로그아웃 신호 응답(BFF 쿠키 삭제 유도) |
 
 
@@ -124,6 +126,7 @@
       "id": 1,
       "provider": "GEMINI",
       "alias": "데모용 제미나이 키",
+      "monthlyBudgetUsd": 20.5,
       "createdAt": "2026-03-29T08:05:19.296098200Z"
     }
   ]
@@ -144,7 +147,7 @@
 
 ## 7. 외부 API 키 등록 계약
 
-클라이언트가 Gemini 등 **제3자에서 발급받은 API 키 평문**과 **제공자(`provider`)**, **별칭(`alias`)**을 전달하면, 서버는 키 평문을 **AES-256-GCM으로 암호화해 DB에 저장**하고, 응답 본문에는 **평문·암호문을 포함하지 않는다**. 동일 사용자가 동일 `provider`에 대해 동일 키 평문을 중복 등록하면 `409`를 반환한다.
+클라이언트가 Gemini 등 **제3자에서 발급받은 API 키 평문**과 **제공자(`provider`)**, **별칭(`alias`)**, **월 예산(`monthlyBudgetUsd`)**을 전달하면, 서버는 키 평문을 **AES-256-GCM으로 암호화해 DB에 저장**하고, 응답 본문에는 **평문·암호문을 포함하지 않는다**. 동일 사용자가 동일 `provider`에 대해 동일 키 평문을 중복 등록하면 `409`를 반환한다.
 
 ### 7.1 요청
 
@@ -162,12 +165,13 @@
 | `provider` | string (enum) | 예 | `GEMINI`, `OPENAI`, `ANTHROPIC` 중 하나 | `"GEMINI"` |
 | `externalKey` | string | 예 | 공백만 불가, 최대 4096자 | 제3자가 발급한 비밀 키 |
 | `alias` | string | 예 | 공백만 불가, 최대 100자 | `"데모용 Gemini"` |
+| `monthlyBudgetUsd` | number | 예 | 0 이상, 소수점 둘째 자리까지 | `20.5` |
 
 요청 본문 예시:
 
 | 항목 | 예시 JSON |
 | --- | --- |
-| Body | `{"provider":"GEMINI","externalKey":"<비밀키>","alias":"데모용 Gemini"}` |
+| Body | `{"provider":"GEMINI","externalKey":"<비밀키>","alias":"데모용 Gemini","monthlyBudgetUsd":20.5}` |
 
 ### 7.2 성공 응답 (`201 Created`)
 
@@ -187,6 +191,7 @@
 | `data.id` | number | `1` | 등록 레코드 ID |
 | `data.provider` | string | `"GEMINI"` | 제공자 |
 | `data.alias` | string | `"데모용 제미나이 키"` | 별칭 |
+| `data.monthlyBudgetUsd` | number | `20.5` | 월 예산(USD) |
 | `data.createdAt` | string | `"2026-03-29T08:05:19.296098200Z"` | 등록 시각(ISO-8601 UTC, 나노초 포함 가능) |
 
 응답 본문 예시:
@@ -199,6 +204,7 @@
     "id": 1,
     "provider": "GEMINI",
     "alias": "데모용 제미나이 키",
+    "monthlyBudgetUsd": 20.5,
     "createdAt": "2026-03-29T08:05:19.296098200Z"
   }
 }
@@ -211,6 +217,7 @@
 | `provider` 누락 | `400` | `{"success":false,"message":"provider는 필수입니다","data":null}` |
 | `externalKey` 누락 | `400` | `{"success":false,"message":"externalKey는 필수입니다","data":null}` |
 | `alias` 누락 | `400` | `{"success":false,"message":"alias는 필수입니다","data":null}` |
+| `monthlyBudgetUsd` 누락 | `400` | `{"success":false,"message":"monthlyBudgetUsd는 필수입니다","data":null}` |
 | `provider` 값 불가 | `400` | `{"success":false,"message":"provider 값이 올바르지 않습니다. 허용: GEMINI, OPENAI, ANTHROPIC","data":null}` (또는 본문 형식 오류 메시지) |
 | 동일 provider·동일 키 재등록 | `409` | `{"success":false,"message":"이미 등록된 API 키입니다","data":null}` |
 
@@ -230,7 +237,7 @@
 
 ## 9. 외부 API 키 수정 계약
 
-외부 API 키 ID를 기준으로 `provider`/`externalKey`/`alias`를 수정한다. 응답 본문에는 **키 평문·암호문을 포함하지 않는다**.
+외부 API 키 ID를 기준으로 별칭(`alias`)과 월 예산(`monthlyBudgetUsd`)을 수정한다. 필요 시 `externalKey`와 `provider`를 함께 보내 키 자체도 교체할 수 있다. 응답 본문에는 **키 평문·암호문을 포함하지 않는다**.
 
 ### 9.1 요청
 
@@ -251,9 +258,10 @@
 
 | 필드 | 타입 | 필수 | 제약 | 예시 값 |
 | --- | --- | --- | --- | --- |
-| `provider` | string (enum) | 예 | `GEMINI`, `OPENAI`, `ANTHROPIC` 중 하나 | `"GEMINI"` |
-| `externalKey` | string | 예 | 공백만 불가, 최대 4096자 | 제3자가 발급한 비밀 키 |
+| `provider` | string (enum) | 조건부 | `GEMINI`, `OPENAI`, `ANTHROPIC` 중 하나 (`externalKey`를 함께 보낼 때 필수) | `"GEMINI"` |
+| `externalKey` | string | 아니오 | 공백만 불가, 최대 4096자 (`provider`와 함께 보낼 때 키 교체) | 제3자가 발급한 비밀 키 |
 | `alias` | string | 예 | 공백만 불가, 최대 100자 | `"데모용 Gemini (수정)"` |
+| `monthlyBudgetUsd` | number | 예 | 0 이상, 소수점 둘째 자리까지 | `35.0` |
 
 ### 9.2 성공 응답 (`200 OK`)
 
@@ -272,6 +280,7 @@
     "id": 1,
     "provider": "GEMINI",
     "alias": "데모용 Gemini (수정)",
+    "monthlyBudgetUsd": 35.0,
     "createdAt": "2026-03-29T08:05:19.296098200Z"
   }
 }
@@ -282,6 +291,9 @@
 | 상황 | 상태 코드 | 예시 JSON |
 | --- | --- | --- |
 | 수정 대상 키 없음 | `404` | `{"success":false,"message":"등록된 API 키를 찾을 수 없습니다","data":null}` |
+| `externalKey`는 있는데 `provider` 누락 | `400` | `{"success":false,"message":"externalKey를 수정할 때 provider는 필수입니다","data":null}` |
+| `monthlyBudgetUsd` 누락 | `400` | `{"success":false,"message":"monthlyBudgetUsd는 필수입니다","data":null}` |
+| 삭제 예정 키 수정 시도 | `409` | `{"success":false,"message":"삭제 예정인 키는 수정할 수 없습니다. 취소 후 다시 시도하세요.","data":null}` |
 | 별칭 중복 | `409` | `{"success":false,"message":"이미 사용 중인 별칭입니다","data":null}` |
 | 동일 provider·동일 키 중복 | `409` | `{"success":false,"message":"이미 등록된 API 키입니다","data":null}` |
 
@@ -302,6 +314,28 @@
 
 ---
 
+## 10.1 외부 API 키 삭제 예약/취소 계약
+
+삭제는 즉시 물리 삭제가 아니라 **7일 유예(soft delete)** 로 처리한다. 유예 중에는 삭제 취소가 가능하며, 유예 종료 후 스케줄러가 물리 삭제한다.
+
+### 삭제 예약: `DELETE /api/auth/external-keys/{id}`
+
+| 상황 | 상태 코드 | 예시 JSON |
+| --- | --- | --- |
+| 삭제 예약 성공 | `200` | `{"success":true,"message":"삭제가 예약되었습니다. 일주일 이내에 취소할 수 있으며, 이후에는 키가 영구 삭제됩니다.","data":{"id":1,"provider":"GEMINI","alias":"데모 키","createdAt":"...","deletionRequestedAt":"...","permanentDeletionAt":"..."}}` |
+| 대상 키 없음 | `404` | `{"success":false,"message":"등록된 API 키를 찾을 수 없습니다","data":null}` |
+| 이미 삭제 예정 | `409` | `{"success":false,"message":"이미 삭제 예정인 키입니다","data":null}` |
+
+### 삭제 취소: `POST /api/auth/external-keys/{id}/deletion-cancel`
+
+| 상황 | 상태 코드 | 예시 JSON |
+| --- | --- | --- |
+| 삭제 취소 성공 | `200` | `{"success":true,"message":"삭제 예약이 취소되었습니다","data":{"id":1,"provider":"GEMINI","alias":"데모 키","createdAt":"...","deletionRequestedAt":null,"permanentDeletionAt":null}}` |
+| 대상 키 없음 | `404` | `{"success":false,"message":"등록된 API 키를 찾을 수 없습니다","data":null}` |
+| 삭제 예정 상태 아님 | `409` | `{"success":false,"message":"삭제 예정 상태가 아닙니다","data":null}` |
+
+---
+
 ## 11. 오류 코드 기준
 
 
@@ -309,9 +343,10 @@
 | --------- | ----- | ---------------------------- |
 | 입력 검증 실패  | `400` | 필드 유효성/정책 위반 (`provider`·`externalKey`·`alias` 등) |
 | 로그인 인증 실패 | `401` | 이메일/비밀번호 불일치                 |
-| 보호 API 미인증 | `401` | 액세스 토큰 없음/무효 (`GET/POST/PUT /api/auth/external-keys` 등) |
+| 보호 API 미인증 | `401` | 액세스 토큰 없음/무효 (`GET/POST/PUT/DELETE /api/auth/external-keys` 등) |
 | 외부 API 키 별칭 중복 | `409` | 동일 사용자 기준 별칭 재사용              |
 | 외부 API 키 중복 등록 | `409` | 동일 사용자·동일 provider·동일 키 평문 재등록 |
+| 외부 API 키 삭제 예정 충돌 | `409` | 이미 삭제 예정이거나, 삭제 예정 상태가 아닌 키 취소 등 상태 충돌 |
 | 외부 API 키 미존재 | `404` | 수정/조회 대상 외부 API 키를 찾을 수 없음    |
 | 이메일 중복    | `409` | 회원가입 중복                      |
 | 인증 계약 위반  | `502` | 업스트림/내부 계약 위반(`tokenType` 등) |

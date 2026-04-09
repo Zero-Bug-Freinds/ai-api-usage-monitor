@@ -39,7 +39,37 @@ function roleLabel(role: string) {
 function formatCreatedAt(iso: string) {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleString("ko-KR")
+  return d.toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })
+}
+
+function formatDeadline(iso: string | null | undefined) {
+  if (!iso) return ""
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })
+}
+
+function formatBudgetUsd(value: number | null | undefined) {
+  if (value === null || value === undefined) return null
+  return new Intl.NumberFormat("ko-KR", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(value)
+}
+
+function sanitizeBudgetInput(value: string) {
+  const normalized = value.replace(/,/g, ".")
+  const filtered = normalized.replace(/[^\d.]/g, "")
+  const [integerPart, ...rest] = filtered.split(".")
+  const fractionPart = rest.join("")
+  if (rest.length === 0) return integerPart
+  return `${integerPart}.${fractionPart}`
+}
+
+function isPendingDeletion(row: ExternalKeySummary) {
+  return Boolean(row.deletionRequestedAt && row.permanentDeletionAt)
 }
 
 export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] }) {
@@ -50,6 +80,7 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
   const [provider, setProvider] = React.useState<ExternalKeyProvider>("OPENAI")
   const [alias, setAlias] = React.useState(() => defaultAlias("OPENAI"))
   const [externalKey, setExternalKey] = React.useState("")
+  const [monthlyBudgetUsdInput, setMonthlyBudgetUsdInput] = React.useState("")
   const [aliasTouched, setAliasTouched] = React.useState(false)
   const [submitLoading, setSubmitLoading] = React.useState(false)
   const [submitMessage, setSubmitMessage] = React.useState<{ kind: "success" | "error"; text: string } | null>(
@@ -60,6 +91,11 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
   const [externalKeys, setExternalKeys] = React.useState<ExternalKeySummary[] | null>(null)
   const [keysLoading, setKeysLoading] = React.useState(false)
   const [keysError, setKeysError] = React.useState<string | null>(null)
+  const [keyActionId, setKeyActionId] = React.useState<number | null>(null)
+  const [editKeyId, setEditKeyId] = React.useState<number | null>(null)
+  const [editAliasValue, setEditAliasValue] = React.useState("")
+  const [editMonthlyBudgetUsdInput, setEditMonthlyBudgetUsdInput] = React.useState("")
+  const [saveEditLoadingId, setSaveEditLoadingId] = React.useState<number | null>(null)
 
   const loadExternalKeys = React.useCallback(async (signal?: AbortSignal) => {
     setKeysLoading(true)
@@ -134,6 +170,7 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
 
     const aliasTrimmed = alias.trim()
     const externalKeyTrimmed = externalKey.trim()
+    const budgetTrimmed = monthlyBudgetUsdInput.trim()
 
     if (!aliasTrimmed) {
       setSubmitMessage({ kind: "error", text: "별칭(alias)은 필수입니다" })
@@ -143,6 +180,17 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
       setSubmitMessage({ kind: "error", text: "외부 API Key는 필수입니다" })
       return
     }
+
+    if (!budgetTrimmed) {
+      setSubmitMessage({ kind: "error", text: "월 예산은 필수입니다" })
+      return
+    }
+    const parsedBudget = Number(budgetTrimmed)
+    if (!Number.isFinite(parsedBudget) || parsedBudget < 0) {
+      setSubmitMessage({ kind: "error", text: "예산은 0 이상의 숫자로 입력해 주세요" })
+      return
+    }
+    const monthlyBudgetUsd = Number(parsedBudget.toFixed(2))
 
     setSubmitLoading(true)
     setSubmitMessage(null)
@@ -159,6 +207,7 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
             provider,
             alias: aliasTrimmed,
             externalKey: externalKeyTrimmed,
+            monthlyBudgetUsd,
           }),
         },
         { authRequired: true }
@@ -178,7 +227,121 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
       setSubmitMessage({ kind: "error", text: "등록에 실패했습니다" })
     } finally {
       setExternalKey("")
+      setMonthlyBudgetUsdInput("")
       setSubmitLoading(false)
+    }
+  }
+
+  async function requestKeyDeletion(id: number) {
+    const ok = window.confirm(
+      "이 API 키를 삭제 예약합니다.\n\n일주일 동안 취소할 수 있으며, 일주일이 지나면 DB에서 키가 영구 삭제됩니다. 과거 사용량 로그는 usage 쪽 기록에 남을 수 있습니다."
+    )
+    if (!ok) return
+    setKeyActionId(id)
+    try {
+      const { response, json } = await apiFetch<unknown>(
+        `/api/auth/external-keys/${id}`,
+        { method: "DELETE", credentials: "include", cache: "no-store", headers: { Accept: "application/json" } },
+        { authRequired: true }
+      )
+      const apiResponse = asApiResponse(json)
+      if (response.ok && apiResponse?.success) {
+        void loadExternalKeys()
+      } else {
+        setKeysError(apiResponse?.message ?? "삭제 예약에 실패했습니다")
+      }
+    } catch {
+      setKeysError("삭제 예약에 실패했습니다")
+    } finally {
+      setKeyActionId(null)
+    }
+  }
+
+  async function cancelKeyDeletion(id: number) {
+    setKeyActionId(id)
+    try {
+      const { response, json } = await apiFetch<unknown>(
+        `/api/auth/external-keys/${id}/deletion-cancel`,
+        { method: "POST", credentials: "include", cache: "no-store", headers: { Accept: "application/json" } },
+        { authRequired: true }
+      )
+      const apiResponse = asApiResponse(json)
+      if (response.ok && apiResponse?.success) {
+        void loadExternalKeys()
+      } else {
+        setKeysError(apiResponse?.message ?? "삭제 취소에 실패했습니다")
+      }
+    } catch {
+      setKeysError("삭제 취소에 실패했습니다")
+    } finally {
+      setKeyActionId(null)
+    }
+  }
+
+  function startKeyEdit(row: ExternalKeySummary) {
+    setKeysError(null)
+    setEditKeyId(row.id)
+    setEditAliasValue(row.alias)
+    setEditMonthlyBudgetUsdInput(
+      row.monthlyBudgetUsd !== null && row.monthlyBudgetUsd !== undefined ? String(row.monthlyBudgetUsd) : ""
+    )
+  }
+
+  function cancelKeyEdit() {
+    setEditKeyId(null)
+    setEditAliasValue("")
+    setEditMonthlyBudgetUsdInput("")
+  }
+
+  async function saveKeyEdit(row: ExternalKeySummary) {
+    const aliasTrimmed = editAliasValue.trim()
+    if (!aliasTrimmed) {
+      setKeysError("별칭(alias)은 필수입니다")
+      return
+    }
+    const budgetTrimmed = editMonthlyBudgetUsdInput.trim()
+    if (!budgetTrimmed) {
+      setKeysError("월 예산은 필수입니다")
+      return
+    }
+    const parsedBudget = Number(budgetTrimmed)
+    if (!Number.isFinite(parsedBudget) || parsedBudget < 0) {
+      setKeysError("예산은 0 이상의 숫자로 입력해 주세요")
+      return
+    }
+    const monthlyBudgetUsd = Number(parsedBudget.toFixed(2))
+    const normalizedCurrentBudget =
+      row.monthlyBudgetUsd === null || row.monthlyBudgetUsd === undefined ? null : Number(row.monthlyBudgetUsd.toFixed(2))
+    if (aliasTrimmed === row.alias && monthlyBudgetUsd === normalizedCurrentBudget) {
+      cancelKeyEdit()
+      return
+    }
+
+    setSaveEditLoadingId(row.id)
+    setKeysError(null)
+    try {
+      const { response, json } = await apiFetch<unknown>(
+        `/api/auth/external-keys/${row.id}`,
+        {
+          method: "PUT",
+          credentials: "include",
+          cache: "no-store",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ alias: aliasTrimmed, monthlyBudgetUsd }),
+        },
+        { authRequired: true }
+      )
+      const apiResponse = asApiResponse(json)
+      if (response.ok && apiResponse?.success) {
+        cancelKeyEdit()
+        void loadExternalKeys()
+      } else {
+        setKeysError(apiResponse?.message ?? "정보 수정에 실패했습니다")
+      }
+    } catch {
+      setKeysError("정보 수정에 실패했습니다")
+    } finally {
+      setSaveEditLoadingId(null)
     }
   }
 
@@ -222,7 +385,9 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
         <section className="max-w-lg space-y-3 rounded-lg border border-border bg-card p-5 shadow-sm">
           <div className="space-y-1">
             <h2 className="text-sm font-semibold tracking-tight">등록된 외부 API Key</h2>
-            <p className="text-sm text-muted-foreground">Provider·별칭·등록일만 표시됩니다. 키 값은 저장되지 않거나 암호화되어 있습니다.</p>
+            <p className="text-sm text-muted-foreground">
+              Provider·별칭·등록일만 표시됩니다. 삭제 예정인 키는 별칭 옆에 표시되며, 일주일 이내 취소할 수 있습니다.
+            </p>
           </div>
 
           {keysLoading || externalKeys === null ? (
@@ -230,22 +395,114 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
           ) : null}
           {keysError && !keysLoading && externalKeys !== null ? <p className="text-sm text-destructive">{keysError}</p> : null}
 
-          {!keysLoading && !keysError && externalKeys !== null && externalKeys.length === 0 ? (
+          {!keysLoading && externalKeys !== null && externalKeys.length === 0 ? (
             <p className="rounded-md border border-dashed border-border bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground">
               등록된 외부 키가 없습니다. 아래에서 추가할 수 있습니다.
             </p>
           ) : null}
 
-          {!keysLoading && !keysError && externalKeys !== null && externalKeys.length > 0 ? (
+          {!keysLoading && externalKeys !== null && externalKeys.length > 0 ? (
             <ul className="divide-y divide-border rounded-md border border-border">
               {externalKeys.map((row) => (
-                <li key={row.id} className="flex flex-col gap-1 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-                  <div className="font-medium">
-                    <span className="text-foreground">{providerLabel(row.provider)}</span>
-                    <span className="mx-2 text-muted-foreground">·</span>
-                    <span className="text-foreground">{row.alias}</span>
+                <li
+                  key={row.id}
+                  className="flex flex-col gap-2 px-4 py-3 text-sm sm:flex-row sm:items-start sm:justify-between"
+                >
+                  <div className="min-w-0 space-y-1">
+                    <div className="font-medium">
+                      <span className="text-foreground">{providerLabel(row.provider)}</span>
+                      <span className="mx-2 text-muted-foreground">·</span>
+                      {editKeyId === row.id ? (
+                        <div className="inline-flex flex-col gap-2 align-middle">
+                          <input
+                            className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                            value={editAliasValue}
+                            onChange={(e) => setEditAliasValue(e.target.value)}
+                            disabled={saveEditLoadingId === row.id}
+                            autoComplete="off"
+                          />
+                          <input
+                            className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                            type="text"
+                            inputMode="decimal"
+                            value={editMonthlyBudgetUsdInput}
+                            onChange={(e) => setEditMonthlyBudgetUsdInput(sanitizeBudgetInput(e.target.value))}
+                            placeholder="월 예산(USD)"
+                            disabled={saveEditLoadingId === row.id}
+                            required
+                          />
+                        </div>
+                      ) : (
+                        <span className="text-foreground">{row.alias}</span>
+                      )}
+                      {isPendingDeletion(row) ? (
+                        <span className="ml-1.5 text-amber-700 dark:text-amber-500">(삭제 예정)</span>
+                      ) : null}
+                    </div>
+                    {isPendingDeletion(row) && row.permanentDeletionAt ? (
+                      <p className="text-xs text-muted-foreground">
+                        영구 삭제 예정: {formatDeadline(row.permanentDeletionAt)}까지 취소 가능
+                      </p>
+                    ) : null}
+                    {row.monthlyBudgetUsd !== null && row.monthlyBudgetUsd !== undefined ? (
+                      <p className="text-xs text-muted-foreground">월 예산: {formatBudgetUsd(row.monthlyBudgetUsd)}</p>
+                    ) : null}
                   </div>
-                  <div className="text-muted-foreground tabular-nums">{formatCreatedAt(row.createdAt)}</div>
+                  <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
+                    <div className="text-muted-foreground tabular-nums sm:text-right">{formatCreatedAt(row.createdAt)}</div>
+                    <div className="flex flex-wrap gap-2">
+                      {!isPendingDeletion(row) ? (
+                        editKeyId === row.id ? (
+                          <>
+                            <button
+                              type="button"
+                              className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
+                              disabled={saveEditLoadingId === row.id}
+                              onClick={() => void saveKeyEdit(row)}
+                            >
+                              {saveEditLoadingId === row.id ? "저장 중…" : "저장"}
+                            </button>
+                            <button
+                              type="button"
+                              className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
+                              disabled={saveEditLoadingId === row.id}
+                              onClick={cancelKeyEdit}
+                            >
+                              취소
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
+                            disabled={keyActionId === row.id}
+                            onClick={() => startKeyEdit(row)}
+                          >
+                            수정
+                          </button>
+                        )
+                      ) : null}
+                      {isPendingDeletion(row) ? (
+                        <button
+                          type="button"
+                          className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
+                          disabled={keyActionId === row.id}
+                          onClick={() => void cancelKeyDeletion(row.id)}
+                        >
+                          {keyActionId === row.id ? "처리 중…" : "삭제 취소"}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="rounded-md border border-destructive/40 bg-background px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                          disabled={keyActionId === row.id}
+                          onClick={() => void requestKeyDeletion(row.id)}
+                        >
+                          {keyActionId === row.id ? "처리 중…" : "삭제 예약"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -310,6 +567,23 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
               onChange={(e) => setExternalKey(e.target.value)}
               placeholder="키를 입력하세요"
               autoComplete="off"
+              disabled={submitLoading}
+              required
+            />
+          </div>
+
+          <div className="grid gap-1.5">
+            <label className="text-sm font-medium" htmlFor="external-key-monthly-budget-usd">
+              월 예산 (USD)
+            </label>
+            <input
+              id="external-key-monthly-budget-usd"
+              className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              type="text"
+              inputMode="decimal"
+              value={monthlyBudgetUsdInput}
+              onChange={(e) => setMonthlyBudgetUsdInput(sanitizeBudgetInput(e.target.value))}
+              placeholder="예: 20"
               disabled={submitLoading}
               required
             />

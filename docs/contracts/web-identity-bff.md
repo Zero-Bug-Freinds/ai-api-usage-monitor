@@ -1,6 +1,6 @@
 # Web(Next.js) ↔ Identity 인증 BFF 계약
 
-버전: 1.13  
+버전: 1.15  
 관련: [docs/architecture.md](../architecture.md) §1.3, §3.3, §10.2, §13, [Identity 인증 API 계약](../identity-auth-api-contract.md), [Web·Gateway Usage BFF](./web-gateway-bff.md)(Usage BFF·`basePath` 호출 맵), [저장소 구조](../repository-structure.md) §6, [웹 경계](./web-split-boundary.md)(§2.3 로컬 `web-edge` Nginx)
 
 **소스 트리:** BFF·화면의 **정본**은 `services/identity-service/web/` 이다. **공용 UI(Shadcn 래퍼·`cn`)** 는 루트 pnpm workspace **`@ai-usage/ui`**(`packages/ui`)를 참조한다([web-split-boundary.md §1.1](./web-split-boundary.md)). Identity vs Usage 라우트·미들웨어 매처는 [web-split-boundary.md](./web-split-boundary.md) §2·§3.
@@ -22,7 +22,9 @@
 | 로그인 | `POST /api/auth/login` | `POST /api/auth/login` |
 | 외부 API 키 조회(개인) | `GET /api/auth/external-keys` | `GET /api/auth/external-keys` |
 | 외부 API 키 등록(개인) | `POST /api/auth/external-keys` | `POST /api/auth/external-keys` |
-| 외부 API 키 수정(개인) | 미지원 (현재 BFF 미구현) | `PUT /api/auth/external-keys/{id}` |
+| 외부 API 키 수정(개인) | `PUT /api/auth/external-keys/{id}` | `PUT /api/auth/external-keys/{id}` |
+| 외부 API 키 삭제 예약(개인) | `DELETE /api/auth/external-keys/{id}` | `DELETE /api/auth/external-keys/{id}` |
+| 외부 API 키 삭제 취소(개인) | `POST /api/auth/external-keys/{id}/deletion-cancel` | `POST /api/auth/external-keys/{id}/deletion-cancel` |
 | 세션(로그인 여부 단일 기준) | `GET /api/auth/session` | `GET /api/auth/session` (BFF가 쿠키 JWT를 Bearer로 전달해 프록시) |
 | 로그아웃 | `POST /api/auth/logout` | `POST /api/auth/logout` (선택 프록시; stateless이며 실질 로그아웃은 BFF의 쿠키 삭제) |
 
@@ -61,7 +63,7 @@
 
 ### 2.3 `POST /api/auth/external-keys` 동작
 
-1. 브라우저 → BFF: `POST /api/auth/external-keys` (JSON body: `provider`, `externalKey`, `alias`)
+1. 브라우저 → BFF: `POST /api/auth/external-keys` (JSON body: `provider`, `externalKey`, `alias`, `monthlyBudgetUsd`)
 2. BFF: 입력 본문을 Zod로 검증한다(요청 본문이므로 검증 대상).
 3. **`access_token` 쿠키가 없거나 값이 비어 있으면** BFF는 Identity를 호출하지 않고 `401` + `ApiResponse<null>` (`success=false`, `data=null`)로 응답한다.
 4. BFF → Identity: `POST {IDENTITY_SERVICE_URL}/api/auth/external-keys`
@@ -71,12 +73,32 @@
 6. **Identity가 `400`/`401`/`409` 등으로 거절**하면 상태 코드와 JSON 본문을 **그대로** 프론트에 전달한다(§6).
 7. `IDENTITY_SERVICE_URL` 미설정, 업스트림 연결 실패, 업스트림 응답이 계약과 맞지 않는 경우 등은 BFF가 `500`/`502` 등으로 처리할 수 있다. 단, **외부 API 키 평문(`externalKey`)은 로그/에러 메시지에 포함하지 않는다.**
 
-### 2.4 `PUT /api/auth/external-keys/{id}` 지원 상태
+### 2.4 `PUT /api/auth/external-keys/{id}` 동작
 
-- Identity 백엔드는 `PUT /api/auth/external-keys/{id}`를 지원한다([Identity 인증 API 계약](../identity-auth-api-contract.md) §9).
-- 그러나 현재 BFF(`services/identity-service/web/src/app/api/auth/external-keys/route.ts`)는 `GET`/`POST`만 구현되어 있다.
-- 따라서 브라우저에서 BFF 경유로 외부 API 키 수정이 필요하면, BFF에 `PUT` 핸들러를 추가해 업스트림 `PUT` 프록시를 구현해야 한다.
-- 본 문서 버전에서는 Web BFF의 `PUT /api/auth/external-keys/{id}`를 **미지원**으로 정의한다.
+1. 브라우저 → BFF: `PUT /api/auth/external-keys/{id}` (JSON body: `alias`, `monthlyBudgetUsd` 필수, `externalKey`/`provider` 선택)
+2. BFF: 입력 본문을 Zod로 검증한다.
+   - `alias`는 필수
+   - `monthlyBudgetUsd`는 필수(0 이상, 소수점 둘째 자리까지)
+   - `externalKey`를 보내면 `provider`도 함께 필수
+3. **`access_token` 쿠키가 없거나 값이 비어 있으면** BFF는 Identity를 호출하지 않고 `401` + `ApiResponse<null>` (`success=false`, `data=null`)로 응답한다.
+4. BFF → Identity: `PUT {IDENTITY_SERVICE_URL}/api/auth/external-keys/{id}`
+   - `Authorization: Bearer {access_token}`
+   - `Content-Type: application/json`, `Accept: application/json`
+5. 성공/오류 모두 Identity의 상태 코드/JSON 본문을 가능한 그대로 전달하고, 응답에 `Cache-Control: no-store`를 적용한다.
+
+### 2.5 `DELETE /api/auth/external-keys/{id}` 동작 (삭제 예약)
+
+1. 브라우저 → BFF: `DELETE /api/auth/external-keys/{id}`
+2. **`access_token` 쿠키가 없거나 값이 비어 있으면** BFF는 Identity를 호출하지 않고 `401`로 응답한다.
+3. BFF → Identity: `DELETE {IDENTITY_SERVICE_URL}/api/auth/external-keys/{id}`
+4. 성공 시 Identity 응답(`deletionRequestedAt`, `permanentDeletionAt` 포함 가능)을 그대로 전달한다.
+
+### 2.6 `POST /api/auth/external-keys/{id}/deletion-cancel` 동작
+
+1. 브라우저 → BFF: `POST /api/auth/external-keys/{id}/deletion-cancel`
+2. **`access_token` 쿠키가 없거나 값이 비어 있으면** BFF는 Identity를 호출하지 않고 `401`로 응답한다.
+3. BFF → Identity: `POST {IDENTITY_SERVICE_URL}/api/auth/external-keys/{id}/deletion-cancel`
+4. 성공 시 Identity 응답을 그대로 전달한다.
 
 ---
 
@@ -193,8 +215,7 @@ curl -sS -i -X POST "http://localhost:3000/api/auth/signup" \
 ## 8. 캐시/보안 정책
 
 - 로그인/로그아웃/**`GET /api/auth/session`(세션 체크)** 응답에는 `Cache-Control: no-store`를 적용한다.
-- **`GET /api/auth/external-keys` / `POST /api/auth/external-keys`** 응답에도 `Cache-Control: no-store`를 적용한다.
-- 추후 BFF가 `PUT /api/auth/external-keys/{id}`를 지원하면 해당 응답에도 동일하게 `Cache-Control: no-store`를 적용한다.
+- **`GET`/`POST`/`PUT`/`DELETE /api/auth/external-keys`** 및 **`POST /api/auth/external-keys/{id}/deletion-cancel`** 응답에도 `Cache-Control: no-store`를 적용한다.
 - MVP는 **Access Token only**(Refresh Token 미포함)로 운영하고, 만료 시 재로그인한다.
 - CSRF는 MVP에서 `SameSite=Lax + BFF 경유`를 기본으로 하고, **차기 스프린트에서 상태 변경 API는 BFF 경유에 더해 `Origin/Referer` 검증(또는 CSRF 토큰) 적용을 표준으로 한다.**
 

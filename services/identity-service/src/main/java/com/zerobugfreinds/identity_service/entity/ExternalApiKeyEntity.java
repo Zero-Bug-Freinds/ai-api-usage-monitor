@@ -12,10 +12,13 @@ import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
+import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 
 /**
  * 사용자가 등록한 외부 AI API 키. 실제 키 평문은 DB에 두지 않고 암호문만 저장한다.
+ * 삭제 요청 시 행은 유지되고 유예 기간 후 스케줄러가 행을 제거한다(usage 쪽 사용 로그의 apiKeyId 문자열은 별도 DB에 남음).
  */
 @Entity
 @Table(
@@ -49,8 +52,19 @@ public class ExternalApiKeyEntity {
 	@Column(name = "encrypted_key", nullable = false)
 	private String encryptedKey;
 
+	@Column(name = "monthly_budget_usd", precision = 12, scale = 2)
+	private BigDecimal monthlyBudgetUsd;
+
 	@Column(name = "created_at", nullable = false)
 	private Instant createdAt;
+
+	/** 비어 있지 않으면 삭제 예정(유예 중). */
+	@Column(name = "deletion_requested_at")
+	private Instant deletionRequestedAt;
+
+	/** 이 시각이 지나면 스케줄러가 행을 물리 삭제한다. 삭제 예정이 아니면 null. */
+	@Column(name = "permanent_deletion_at")
+	private Instant permanentDeletionAt;
 
 	protected ExternalApiKeyEntity() {
 	}
@@ -60,7 +74,8 @@ public class ExternalApiKeyEntity {
 			ExternalApiKeyProvider provider,
 			String keyAlias,
 			String keyHash,
-			String encryptedKey
+			String encryptedKey,
+			BigDecimal monthlyBudgetUsd
 	) {
 		ExternalApiKeyEntity entity = new ExternalApiKeyEntity();
 		entity.userId = userId;
@@ -68,6 +83,7 @@ public class ExternalApiKeyEntity {
 		entity.keyAlias = keyAlias;
 		entity.keyHash = keyHash;
 		entity.encryptedKey = encryptedKey;
+		entity.monthlyBudgetUsd = monthlyBudgetUsd;
 		entity.createdAt = Instant.now();
 		return entity;
 	}
@@ -76,12 +92,35 @@ public class ExternalApiKeyEntity {
 			ExternalApiKeyProvider provider,
 			String keyAlias,
 			String keyHash,
-			String encryptedKey
+			String encryptedKey,
+			BigDecimal monthlyBudgetUsd
 	) {
 		this.provider = provider;
 		this.keyAlias = keyAlias;
 		this.keyHash = keyHash;
 		this.encryptedKey = encryptedKey;
+		this.monthlyBudgetUsd = monthlyBudgetUsd;
+	}
+
+	public void updateAliasAndBudget(String keyAlias, BigDecimal monthlyBudgetUsd) {
+		this.keyAlias = keyAlias;
+		this.monthlyBudgetUsd = monthlyBudgetUsd;
+	}
+
+	/** 삭제 예정으로 표시한다(서비스에서 중복 여부를 검증한다). */
+	public void markPendingDeletion(Instant now, Duration retention) {
+		this.deletionRequestedAt = now;
+		this.permanentDeletionAt = now.plus(retention);
+	}
+
+	/** 삭제 예정을 취소한다. */
+	public void clearPendingDeletion() {
+		this.deletionRequestedAt = null;
+		this.permanentDeletionAt = null;
+	}
+
+	public boolean isPendingDeletion() {
+		return this.deletionRequestedAt != null;
 	}
 
 	public Long getId() {
@@ -108,7 +147,19 @@ public class ExternalApiKeyEntity {
 		return encryptedKey;
 	}
 
+	public BigDecimal getMonthlyBudgetUsd() {
+		return monthlyBudgetUsd;
+	}
+
 	public Instant getCreatedAt() {
 		return createdAt;
+	}
+
+	public Instant getDeletionRequestedAt() {
+		return deletionRequestedAt;
+	}
+
+	public Instant getPermanentDeletionAt() {
+		return permanentDeletionAt;
 	}
 }
