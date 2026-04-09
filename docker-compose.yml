@@ -103,11 +103,12 @@ services:
       context: .
       dockerfile: services/identity-service/web/Dockerfile
       args:
-        NEXT_PUBLIC_USAGE_WEB_ORIGIN: ${NEXT_PUBLIC_USAGE_WEB_ORIGIN:-http://localhost:${USAGE_WEB_PORT:-3001}}
+        NEXT_PUBLIC_USAGE_WEB_ORIGIN: ${NEXT_PUBLIC_USAGE_WEB_ORIGIN:-http://usage-web:3000}
     depends_on:
       - api-gateway-service
     environment:
       IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://host.docker.internal:8090}
+      USAGE_WEB_INTERNAL_ORIGIN: http://usage-web:3000
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
