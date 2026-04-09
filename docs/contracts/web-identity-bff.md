@@ -1,6 +1,6 @@
 # Web(Next.js) ↔ Identity 인증 BFF 계약
 
-버전: 1.14  
+버전: 1.15  
 관련: [docs/architecture.md](../architecture.md) §1.3, §3.3, §10.2, §13, [Identity 인증 API 계약](../identity-auth-api-contract.md), [Web·Gateway Usage BFF](./web-gateway-bff.md)(Usage BFF·`basePath` 호출 맵), [저장소 구조](../repository-structure.md) §6, [웹 경계](./web-split-boundary.md)(§2.3 로컬 `web-edge` Nginx)
 
 **소스 트리:** BFF·화면의 **정본**은 `services/identity-service/web/` 이다. **공용 UI(Shadcn 래퍼·`cn`)** 는 루트 pnpm workspace **`@ai-usage/ui`**(`packages/ui`)를 참조한다([web-split-boundary.md §1.1](./web-split-boundary.md)). Identity vs Usage 라우트·미들웨어 매처는 [web-split-boundary.md](./web-split-boundary.md) §2·§3.
@@ -63,7 +63,7 @@
 
 ### 2.3 `POST /api/auth/external-keys` 동작
 
-1. 브라우저 → BFF: `POST /api/auth/external-keys` (JSON body: `provider`, `externalKey`, `alias`)
+1. 브라우저 → BFF: `POST /api/auth/external-keys` (JSON body: `provider`, `externalKey`, `alias`, `monthlyBudgetUsd`)
 2. BFF: 입력 본문을 Zod로 검증한다(요청 본문이므로 검증 대상).
 3. **`access_token` 쿠키가 없거나 값이 비어 있으면** BFF는 Identity를 호출하지 않고 `401` + `ApiResponse<null>` (`success=false`, `data=null`)로 응답한다.
 4. BFF → Identity: `POST {IDENTITY_SERVICE_URL}/api/auth/external-keys`
@@ -75,9 +75,10 @@
 
 ### 2.4 `PUT /api/auth/external-keys/{id}` 동작
 
-1. 브라우저 → BFF: `PUT /api/auth/external-keys/{id}` (JSON body: `alias` 필수, `externalKey`/`provider` 선택)
+1. 브라우저 → BFF: `PUT /api/auth/external-keys/{id}` (JSON body: `alias`, `monthlyBudgetUsd` 필수, `externalKey`/`provider` 선택)
 2. BFF: 입력 본문을 Zod로 검증한다.
    - `alias`는 필수
+   - `monthlyBudgetUsd`는 필수(0 이상, 소수점 둘째 자리까지)
    - `externalKey`를 보내면 `provider`도 함께 필수
 3. **`access_token` 쿠키가 없거나 값이 비어 있으면** BFF는 Identity를 호출하지 않고 `401` + `ApiResponse<null>` (`success=false`, `data=null`)로 응답한다.
 4. BFF → Identity: `PUT {IDENTITY_SERVICE_URL}/api/auth/external-keys/{id}`
