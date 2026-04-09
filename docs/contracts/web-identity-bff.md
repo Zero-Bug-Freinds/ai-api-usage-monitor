@@ -157,7 +157,7 @@
 - `access_token` **httpOnly 쿠키**가 없으면 BFF는 Identity를 호출하지 않고 `401`을 반환한다.
 - 경로는 **`v1`으로 시작하는 세그먼트만** 허용한다(예: 브라우저 `GET /api/identity/v1/me/organizations` → 업스트림 `GET /api/v1/me/organizations`). **`/api/auth/*`** 는 §2의 전용 BFF 라우트를 쓴다.
 - 응답 본문·상태 코드는 업스트림을 그대로 전달한다(캐시는 `Cache-Control: no-store`).
-- 웹 **설정** 화면의 계정 요약은 `GET /api/auth/session`(§2)을 사용한다. **조직 목록**은 Identity 서비스의 `GET /api/v1/me/organizations`를 사용하며, 팀 도메인은 `team-service`로 분리되어 [web-team-bff.md](./web-team-bff.md)를 따른다.
+- 웹 **설정** 화면의 계정 요약은 `GET /api/auth/session`(§2)을 사용한다. **조직 목록**은 Identity 서비스의 `GET /api/v1/me/organizations`를 사용하며, 팀 도메인은 `team-service`로 분리되어 [web-team-bff.md](./web-team-bff.md)를 따른다. `/teams` UI는 Identity `web`에서 렌더링하고 팀 API(`/api/team/v1/*`)만 Team BFF로 rewrite한다.
 
 ---
 
@@ -180,7 +180,7 @@
 
 | 항목 | 내용 |
 |------|------|
-| **matcher (정본)** | `/settings/:path*`, `/organizations/:path*` |
+| **matcher (정본)** | `/settings/:path*`, `/organizations/:path*`, `/teams/:path*` |
 | **판단 기준** | 요청에 **`access_token` httpOnly 쿠키**가 있고 값이 비어 있지 않으면 통과. **JWT 서명·만료 검증은 여기서 하지 않는다** (쿠키만 없으면 로그인 유도). 토큰 유효성은 `GET /api/auth/session`(§2.1) 등 BFF·업스트림에서 판단한다. |
 | **미통과 시** | `307` 리다이렉트 → `/login?next=<원래 pathname>` (`next`는 로그인 후 되돌아갈 경로; 소비 시 오픈 리다이렉트 방지를 위해 `services/identity-service/web/src/lib/auth/safe-next-path.ts` 등으로 검증한다). |
 | **대응 라우트** | 위 접두사마다 App Router **`[[...path]]` optional catch-all** 페이지를 둔다. **사용량 대시보드**는 `services/usage-service/web/src/app/dashboard/[[...path]]/page.tsx` 및 Usage `middleware.ts`를 본다. |

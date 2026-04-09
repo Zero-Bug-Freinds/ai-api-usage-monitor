@@ -14,15 +14,15 @@
 
 ## 2. 엔드포인트 계약
 
-| 브라우저 경로 (`/teams` basePath 포함) | Upstream |
+| 브라우저 경로 (Identity `web` 기준) | Upstream |
 |---|---|
-| `GET /teams/api/team/v1/me/teams` | `GET /api/v1/me/teams` |
-| `POST /teams/api/team/v1/teams` | `POST /api/v1/teams` |
-| `POST /teams/api/team/v1/teams/{id}/members` | `POST /api/v1/teams/{id}/members` |
-| `GET /teams/api/auth/session` | Identity `GET /api/auth/session` |
+| `GET /api/team/v1/me/teams` | Team BFF `GET /api/team/v1/me/teams` → Team Service `GET /api/v1/me/teams` |
+| `POST /api/team/v1/teams` | Team BFF `POST /api/team/v1/teams` → Team Service `POST /api/v1/teams` |
+| `POST /api/team/v1/teams/{id}/members` | Team BFF `POST /api/team/v1/teams/{id}/members` → Team Service `POST /api/v1/teams/{id}/members` |
 
+- Identity `web`는 `/teams` UI를 직접 렌더링하고, Next rewrite로 `GET/POST /api/team/v1/*`를 Team BFF(`team-web`)로 전달한다.
 - Team BFF는 `TEAM_SERVICE_URL` 환경 변수로 Team Service를 프록시한다.
-- Team BFF는 `IDENTITY_SERVICE_URL`로 세션 확인을 프록시한다.
+- Team BFF는 `IDENTITY_SERVICE_URL`로 세션 확인(`GET /api/auth/session`)을 프록시한다.
 
 ---
 
