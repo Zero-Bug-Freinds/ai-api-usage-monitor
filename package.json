@@ -5,6 +5,7 @@
   "scripts": {
     "build:identity-web": "pnpm --filter identity-web build",
     "build:usage-web": "pnpm --filter usage-web build",
-    "build:web": "pnpm build:identity-web && pnpm build:usage-web"
+    "build:team-web": "pnpm --filter team-web build",
+    "build:web": "pnpm build:identity-web && pnpm build:usage-web && pnpm build:team-web"
   }
 }

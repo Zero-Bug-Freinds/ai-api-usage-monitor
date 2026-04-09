@@ -5,7 +5,15 @@ function usageOrigin(): string {
   return (
     process.env.USAGE_WEB_INTERNAL_ORIGIN ??
     process.env.NEXT_PUBLIC_USAGE_WEB_ORIGIN ??
-    "http://localhost:3001"
+    "http://host.docker.internal:3001"
+  ).replace(/\/+$/, "");
+}
+
+function teamOrigin(): string {
+  return (
+    process.env.TEAM_WEB_INTERNAL_ORIGIN ??
+    process.env.NEXT_PUBLIC_TEAM_WEB_ORIGIN ??
+    "http://host.docker.internal:3002"
   ).replace(/\/+$/, "");
 }
 
@@ -17,6 +25,7 @@ const nextConfig: NextConfig = {
   transpilePackages: ["@ai-usage/ui"],
   async rewrites() {
     const origin = usageOrigin();
+    const team = teamOrigin();
     return [
       {
         source: "/dashboard",
@@ -25,6 +34,10 @@ const nextConfig: NextConfig = {
       {
         source: "/dashboard/:path*",
         destination: `${origin}/dashboard/:path*`,
+      },
+      {
+        source: "/api/team/v1/:path*",
+        destination: `${team}/teams/api/team/v1/:path*`,
       },
     ];
   },
