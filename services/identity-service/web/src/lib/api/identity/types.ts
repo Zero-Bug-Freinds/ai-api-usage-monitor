@@ -38,14 +38,14 @@ export type CreateExternalKeyRequest = {
   provider: ExternalKeyProvider
   externalKey: string
   alias: string
-  monthlyBudgetUsd?: number
+  monthlyBudgetUsd: number
 }
 
 export type UpdateExternalKeyRequest = {
   alias: string
   provider?: ExternalKeyProvider
   externalKey?: string
-  monthlyBudgetUsd?: number | null
+  monthlyBudgetUsd: number
 }
 
 /** Identity `POST /api/auth/external-keys`의 `data` 본문과 동기화 */

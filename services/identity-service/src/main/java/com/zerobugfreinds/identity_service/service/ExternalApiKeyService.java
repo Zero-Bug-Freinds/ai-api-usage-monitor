@@ -61,6 +61,9 @@ public class ExternalApiKeyService {
 		if (!StringUtils.hasText(normalizedKey)) {
 			throw new IllegalArgumentException("externalKey는 필수입니다");
 		}
+		if (monthlyBudgetUsd == null) {
+			throw new IllegalArgumentException("monthlyBudgetUsd는 필수입니다");
+		}
 
 		if (externalApiKeyRepository.existsByUserIdAndKeyAlias(userId, trimmedAlias)) {
 			throw new DuplicateExternalApiKeyAliasException("이미 사용 중인 별칭입니다");
@@ -134,6 +137,9 @@ public class ExternalApiKeyService {
 			throw new IllegalArgumentException("alias는 필수입니다");
 		}
 		String normalizedKey = StringUtils.hasText(plainKey) ? plainKey.trim() : "";
+		if (monthlyBudgetUsd == null) {
+			throw new IllegalArgumentException("monthlyBudgetUsd는 필수입니다");
+		}
 
 		Optional<ExternalApiKeyEntity> active = externalApiKeyRepository.findByIdAndUserIdAndDeletionRequestedAtIsNull(
 				externalKeyId,

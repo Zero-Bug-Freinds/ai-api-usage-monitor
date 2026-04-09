@@ -44,8 +44,7 @@ const createExternalKeyRequestSchema = z.object({
   monthlyBudgetUsd: z
     .number({ message: "monthlyBudgetUsd는 숫자여야 합니다" })
     .min(0, "monthlyBudgetUsd는 0 이상이어야 합니다")
-    .multipleOf(0.01, "monthlyBudgetUsd는 소수점 둘째 자리까지 입력할 수 있습니다")
-    .optional(),
+    .multipleOf(0.01, "monthlyBudgetUsd는 소수점 둘째 자리까지 입력할 수 있습니다"),
 })
 
 function getUpstreamMessage(upstreamJson: unknown): string | null {

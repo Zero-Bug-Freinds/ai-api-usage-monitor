@@ -5,6 +5,7 @@ import com.zerobugfreinds.identity_service.domain.ExternalApiKeyProvider;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
@@ -26,6 +27,7 @@ public record ExternalApiKeyUpdateRequest(
 
 		@DecimalMin(value = "0.0", inclusive = true, message = "monthlyBudgetUsd는 0 이상이어야 합니다")
 		@Digits(integer = 10, fraction = 2, message = "monthlyBudgetUsd는 소수점 둘째 자리까지 입력할 수 있습니다")
+		@NotNull(message = "monthlyBudgetUsd는 필수입니다")
 		@JsonProperty("monthlyBudgetUsd")
 		BigDecimal monthlyBudgetUsd
 ) {

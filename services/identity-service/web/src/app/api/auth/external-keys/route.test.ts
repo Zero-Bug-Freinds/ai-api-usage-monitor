@@ -190,7 +190,7 @@ describe("GET /api/auth/external-keys (route handler)", () => {
 
 describe("POST /api/auth/external-keys (route handler)", () => {
   it("returns 401 when access_token cookie is missing", async () => {
-    const res = await POST(jsonRequest({ provider: "OPENAI", externalKey: "k", alias: "a" }))
+    const res = await POST(jsonRequest({ provider: "OPENAI", externalKey: "k", alias: "a", monthlyBudgetUsd: 10 }))
     expect(res.status).toBe(401)
     const json = (await res.json()) as { success: boolean; data: null }
     expect(json.success).toBe(false)
@@ -201,7 +201,7 @@ describe("POST /api/auth/external-keys (route handler)", () => {
   it("returns 500 when IDENTITY_SERVICE_URL is missing", async () => {
     const res = await POST(
       jsonRequest(
-        { provider: "OPENAI", externalKey: "k", alias: "a" },
+        { provider: "OPENAI", externalKey: "k", alias: "a", monthlyBudgetUsd: 10 },
         "access_token=test-token-value"
       )
     )
@@ -297,7 +297,7 @@ describe("POST /api/auth/external-keys (route handler)", () => {
 
     const res = await POST(
       jsonRequest(
-        { provider: "OPENAI", externalKey: "sk", alias: "a" },
+        { provider: "OPENAI", externalKey: "sk", alias: "a", monthlyBudgetUsd: 10 },
         "access_token=test-token-value"
       )
     )
@@ -323,7 +323,7 @@ describe("POST /api/auth/external-keys (route handler)", () => {
 
     const res = await POST(
       jsonRequest(
-        { provider: "OPENAI", externalKey: "sk", alias: "a" },
+        { provider: "OPENAI", externalKey: "sk", alias: "a", monthlyBudgetUsd: 10 },
         "access_token=test-token-value"
       )
     )
@@ -341,7 +341,7 @@ describe("POST /api/auth/external-keys (route handler)", () => {
 
     const res = await POST(
       jsonRequest(
-        { provider: "OPENAI", externalKey: "sk", alias: "a" },
+        { provider: "OPENAI", externalKey: "sk", alias: "a", monthlyBudgetUsd: 10 },
         "access_token=test-token-value"
       )
     )

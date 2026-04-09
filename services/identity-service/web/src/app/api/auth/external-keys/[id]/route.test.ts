@@ -23,7 +23,7 @@ afterEach(() => {
 
 describe("PUT /api/auth/external-keys/[id] (route handler)", () => {
   it("returns 401 when access_token cookie is missing", async () => {
-    const res = await PUT(putRequest({ alias: "새 별칭" }), context)
+    const res = await PUT(putRequest({ alias: "새 별칭", monthlyBudgetUsd: 10 }), context)
     expect(res.status).toBe(401)
   })
 
@@ -53,7 +53,7 @@ describe("PUT /api/auth/external-keys/[id] (route handler)", () => {
     })
     vi.stubGlobal("fetch", fetchMock)
 
-    const res = await PUT(putRequest({ alias: "새 별칭" }, "access_token=test-token"), context)
+    const res = await PUT(putRequest({ alias: "새 별칭", monthlyBudgetUsd: 40 }, "access_token=test-token"), context)
     expect(res.status).toBe(200)
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })

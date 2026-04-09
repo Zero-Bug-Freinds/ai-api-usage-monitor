@@ -59,6 +59,15 @@ function formatBudgetUsd(value: number | null | undefined) {
   }).format(value)
 }
 
+function sanitizeBudgetInput(value: string) {
+  const normalized = value.replace(/,/g, ".")
+  const filtered = normalized.replace(/[^\d.]/g, "")
+  const [integerPart, ...rest] = filtered.split(".")
+  const fractionPart = rest.join("")
+  if (rest.length === 0) return integerPart
+  return `${integerPart}.${fractionPart}`
+}
+
 function isPendingDeletion(row: ExternalKeySummary) {
   return Boolean(row.deletionRequestedAt && row.permanentDeletionAt)
 }
@@ -172,15 +181,16 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
       return
     }
 
-    let monthlyBudgetUsd: number | undefined
-    if (budgetTrimmed.length > 0) {
-      const parsedBudget = Number(budgetTrimmed)
-      if (!Number.isFinite(parsedBudget) || parsedBudget < 0) {
-        setSubmitMessage({ kind: "error", text: "예산은 0 이상의 숫자로 입력해 주세요" })
-        return
-      }
-      monthlyBudgetUsd = Number(parsedBudget.toFixed(2))
+    if (!budgetTrimmed) {
+      setSubmitMessage({ kind: "error", text: "월 예산은 필수입니다" })
+      return
     }
+    const parsedBudget = Number(budgetTrimmed)
+    if (!Number.isFinite(parsedBudget) || parsedBudget < 0) {
+      setSubmitMessage({ kind: "error", text: "예산은 0 이상의 숫자로 입력해 주세요" })
+      return
+    }
+    const monthlyBudgetUsd = Number(parsedBudget.toFixed(2))
 
     setSubmitLoading(true)
     setSubmitMessage(null)
@@ -197,7 +207,7 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
             provider,
             alias: aliasTrimmed,
             externalKey: externalKeyTrimmed,
-            ...(monthlyBudgetUsd !== undefined ? { monthlyBudgetUsd } : {}),
+            monthlyBudgetUsd,
           }),
         },
         { authRequired: true }
@@ -290,15 +300,16 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
       return
     }
     const budgetTrimmed = editMonthlyBudgetUsdInput.trim()
-    let monthlyBudgetUsd: number | null = null
-    if (budgetTrimmed.length > 0) {
-      const parsedBudget = Number(budgetTrimmed)
-      if (!Number.isFinite(parsedBudget) || parsedBudget < 0) {
-        setKeysError("예산은 0 이상의 숫자로 입력해 주세요")
-        return
-      }
-      monthlyBudgetUsd = Number(parsedBudget.toFixed(2))
+    if (!budgetTrimmed) {
+      setKeysError("월 예산은 필수입니다")
+      return
     }
+    const parsedBudget = Number(budgetTrimmed)
+    if (!Number.isFinite(parsedBudget) || parsedBudget < 0) {
+      setKeysError("예산은 0 이상의 숫자로 입력해 주세요")
+      return
+    }
+    const monthlyBudgetUsd = Number(parsedBudget.toFixed(2))
     const normalizedCurrentBudget =
       row.monthlyBudgetUsd === null || row.monthlyBudgetUsd === undefined ? null : Number(row.monthlyBudgetUsd.toFixed(2))
     if (aliasTrimmed === row.alias && monthlyBudgetUsd === normalizedCurrentBudget) {
@@ -384,13 +395,13 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
           ) : null}
           {keysError && !keysLoading && externalKeys !== null ? <p className="text-sm text-destructive">{keysError}</p> : null}
 
-          {!keysLoading && !keysError && externalKeys !== null && externalKeys.length === 0 ? (
+          {!keysLoading && externalKeys !== null && externalKeys.length === 0 ? (
             <p className="rounded-md border border-dashed border-border bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground">
               등록된 외부 키가 없습니다. 아래에서 추가할 수 있습니다.
             </p>
           ) : null}
 
-          {!keysLoading && !keysError && externalKeys !== null && externalKeys.length > 0 ? (
+          {!keysLoading && externalKeys !== null && externalKeys.length > 0 ? (
             <ul className="divide-y divide-border rounded-md border border-border">
               {externalKeys.map((row) => (
                 <li
@@ -412,14 +423,13 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
                           />
                           <input
                             className="h-8 rounded-md border border-input bg-background px-2 text-sm"
-                            type="number"
+                            type="text"
                             inputMode="decimal"
-                            min="0"
-                            step="0.01"
                             value={editMonthlyBudgetUsdInput}
-                            onChange={(e) => setEditMonthlyBudgetUsdInput(e.target.value)}
-                            placeholder="월 예산(USD, 선택)"
+                            onChange={(e) => setEditMonthlyBudgetUsdInput(sanitizeBudgetInput(e.target.value))}
+                            placeholder="월 예산(USD)"
                             disabled={saveEditLoadingId === row.id}
+                            required
                           />
                         </div>
                       ) : (
@@ -564,19 +574,18 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
 
           <div className="grid gap-1.5">
             <label className="text-sm font-medium" htmlFor="external-key-monthly-budget-usd">
-              월 예산 (USD, 선택)
+              월 예산 (USD)
             </label>
             <input
               id="external-key-monthly-budget-usd"
               className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-              type="number"
+              type="text"
               inputMode="decimal"
-              min="0"
-              step="0.01"
               value={monthlyBudgetUsdInput}
-              onChange={(e) => setMonthlyBudgetUsdInput(e.target.value)}
+              onChange={(e) => setMonthlyBudgetUsdInput(sanitizeBudgetInput(e.target.value))}
               placeholder="예: 20"
               disabled={submitLoading}
+              required
             />
           </div>
 
