@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -39,7 +40,13 @@ public class ExternalApiKeyService {
 	}
 
 	@Transactional
-	public ExternalApiKeyEntity register(Long userId, ExternalApiKeyProvider provider, String alias, String plainKey) {
+	public ExternalApiKeyEntity register(
+			Long userId,
+			ExternalApiKeyProvider provider,
+			String alias,
+			String plainKey,
+			BigDecimal monthlyBudgetUsd
+	) {
 		if (userId == null) {
 			throw new IllegalArgumentException("userId는 필수입니다");
 		}
@@ -83,7 +90,8 @@ public class ExternalApiKeyService {
 				provider,
 				trimmedAlias,
 				keyHash,
-				encrypted
+				encrypted,
+				monthlyBudgetUsd
 		);
 		ExternalApiKeyEntity saved = externalApiKeyRepository.save(entity);
 
@@ -112,7 +120,8 @@ public class ExternalApiKeyService {
 			Long externalKeyId,
 			ExternalApiKeyProvider provider,
 			String alias,
-			String plainKey
+			String plainKey,
+			BigDecimal monthlyBudgetUsd
 	) {
 		if (userId == null) {
 			throw new IllegalArgumentException("userId는 필수입니다");
@@ -160,9 +169,9 @@ public class ExternalApiKeyService {
 			}
 
 			String encrypted = encryptionUtil.encryptAes256Gcm(normalizedKey);
-			entity.updateCredential(provider, trimmedAlias, keyHash, encrypted);
+			entity.updateCredential(provider, trimmedAlias, keyHash, encrypted, monthlyBudgetUsd);
 		} else {
-			entity.updateAlias(trimmedAlias);
+			entity.updateAliasAndBudget(trimmedAlias, monthlyBudgetUsd);
 		}
 
 		log.info(

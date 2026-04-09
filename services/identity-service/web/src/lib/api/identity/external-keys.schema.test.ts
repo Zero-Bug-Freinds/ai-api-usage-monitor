@@ -32,6 +32,28 @@ describe("createExternalKeyRequestSchema", () => {
 
     expect(parsed.success).toBe(false)
   })
+
+  it("accepts optional monthly budget", () => {
+    const parsed = createExternalKeyRequestSchema.safeParse({
+      provider: "OPENAI",
+      externalKey: "sk-test",
+      alias: "OpenAI 키 1",
+      monthlyBudgetUsd: 25.5,
+    })
+
+    expect(parsed.success).toBe(true)
+  })
+
+  it("rejects negative monthly budget", () => {
+    const parsed = createExternalKeyRequestSchema.safeParse({
+      provider: "OPENAI",
+      externalKey: "sk-test",
+      alias: "OpenAI 키 1",
+      monthlyBudgetUsd: -1,
+    })
+
+    expect(parsed.success).toBe(false)
+  })
 })
 
 describe("updateExternalKeyRequestSchema", () => {
@@ -58,5 +80,23 @@ describe("updateExternalKeyRequestSchema", () => {
     })
 
     expect(parsed.success).toBe(false)
+  })
+
+  it("accepts alias with monthly budget", () => {
+    const parsed = updateExternalKeyRequestSchema.safeParse({
+      alias: "새 별칭",
+      monthlyBudgetUsd: 12.34,
+    })
+
+    expect(parsed.success).toBe(true)
+  })
+
+  it("accepts null monthly budget for clearing", () => {
+    const parsed = updateExternalKeyRequestSchema.safeParse({
+      alias: "새 별칭",
+      monthlyBudgetUsd: null,
+    })
+
+    expect(parsed.success).toBe(true)
   })
 })

@@ -3,6 +3,7 @@ package com.zerobugfreinds.identity_service.dto;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
@@ -15,10 +16,11 @@ public record ExternalApiKeyRegisterResponse(
 		String provider,
 		@JsonProperty("alias") String alias,
 		Instant createdAt,
+		@JsonProperty("monthlyBudgetUsd") BigDecimal monthlyBudgetUsd,
 		Instant deletionRequestedAt,
 		Instant permanentDeletionAt
 ) {
 	public ExternalApiKeyRegisterResponse(Long id, String provider, String alias, Instant createdAt) {
-		this(id, provider, alias, createdAt, null, null);
+		this(id, provider, alias, createdAt, null, null, null);
 	}
 }

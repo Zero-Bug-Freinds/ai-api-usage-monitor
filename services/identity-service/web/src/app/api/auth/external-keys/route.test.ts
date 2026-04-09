@@ -243,7 +243,12 @@ describe("POST /api/auth/external-keys (route handler)", () => {
         "Content-Type": "application/json",
       })
       expect(init?.body).toBe(
-        JSON.stringify({ provider: "OPENAI", externalKey: "sk-live", alias: "OpenAI 키 1" })
+        JSON.stringify({
+          provider: "OPENAI",
+          externalKey: "sk-live",
+          alias: "OpenAI 키 1",
+          monthlyBudgetUsd: 30.25,
+        })
       )
 
       return new Response(
@@ -255,6 +260,7 @@ describe("POST /api/auth/external-keys (route handler)", () => {
             provider: "OPENAI",
             alias: "OpenAI 키 1",
             createdAt: "2026-03-30T00:00:00Z",
+            monthlyBudgetUsd: 30.25,
           },
         }),
         { status: 201, headers: { "Content-Type": "application/json" } }
@@ -264,7 +270,7 @@ describe("POST /api/auth/external-keys (route handler)", () => {
 
     const res = await POST(
       jsonRequest(
-        { provider: "OPENAI", externalKey: "sk-live", alias: "OpenAI 키 1" },
+        { provider: "OPENAI", externalKey: "sk-live", alias: "OpenAI 키 1", monthlyBudgetUsd: 30.25 },
         "access_token=test-token-value"
       )
     )

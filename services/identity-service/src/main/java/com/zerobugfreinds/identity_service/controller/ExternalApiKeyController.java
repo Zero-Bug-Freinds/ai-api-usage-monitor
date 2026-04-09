@@ -44,7 +44,8 @@ public class ExternalApiKeyController {
 				principal.userId(),
 				request.provider(),
 				request.alias(),
-				request.externalKey()
+				request.externalKey(),
+				request.monthlyBudgetUsd()
 		);
 		return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok("외부 API 키가 등록되었습니다", toResponse(saved)));
 	}
@@ -70,7 +71,8 @@ public class ExternalApiKeyController {
 				id,
 				request.provider(),
 				request.alias(),
-				request.externalKey()
+				request.externalKey(),
+				request.monthlyBudgetUsd()
 		);
 		return ResponseEntity.ok(ApiResponse.ok("외부 API 키가 수정되었습니다", toResponse(saved)));
 	}
@@ -105,6 +107,7 @@ public class ExternalApiKeyController {
 				key.getProvider().name(),
 				key.getKeyAlias(),
 				key.getCreatedAt(),
+				key.getMonthlyBudgetUsd(),
 				key.getDeletionRequestedAt(),
 				key.getPermanentDeletionAt()
 		);
