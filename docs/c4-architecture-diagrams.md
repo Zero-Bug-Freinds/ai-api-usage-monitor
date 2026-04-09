@@ -3,10 +3,12 @@
 이 문서는 목표 설계가 아니라, 현재 저장소에 존재하는 구현 코드 기준으로
 시스템 아키텍처를 C4 모델(C1 → C4)로 정리한다.
 
-**문서 버전:** 0.2 (저장소 트리·게이트웨이 트러스트 헤더·프록시 키 조회·Gemini usage 파싱 반영)
+**문서 버전:** 0.4 (정본 Web: `services/*/web/` — Identity·Usage 분리 반영)
 
 분석 대상:
-- `apps/web` (Next.js UI + BFF Route Handlers — 과도기; 목표 `services/*/web/`, 서비스 단위 풀스택)
+- **`services/identity-service/web`** (정본: 랜딩·인증·설정/org/team UI + `/api/auth/**`·`/api/identity/**` BFF)
+- **`services/usage-service/web`** (정본: 대시보드 UI + `/api/usage/**` BFF → 게이트웨이)
+- `apps/web` (과도기·레거시; 안내용 `README` 위주 — 런타임 정본 아님)
 - `services/api-gateway-service`
 - `services/proxy-service`
 - `services/identity-service`
@@ -28,11 +30,12 @@ flowchart TB
 
     subgraph platform["AI Usage Platform (As-Is)"]
       direction TB
-      web["Next.js Web (apps/web)"]
+      identityWeb["Identity Web<br/>services/identity-service/web"]
+      usageWeb["Usage Web<br/>services/usage-service/web"]
       gateway["API Gateway Service"]
       proxy["Proxy Service"]
-      identity["Identity Service"]
-      usage["Usage Service"]
+      identity["Identity Service (Spring)"]
+      usage["Usage Service (Spring)"]
     end
 
     subgraph ext["External systems"]
@@ -49,9 +52,11 @@ flowchart TB
       usageDb["PostgreSQL (usage_db)"]
     end
 
-    browser -->|HTTPS| web
-    web -->|BFF| identity
-    client -->|Auth| identity
+    browser -->|HTTPS| identityWeb
+    browser -->|HTTPS<br/>/dashboard 등| usageWeb
+    identityWeb -->|BFF /api/auth·identity| identity
+    usageWeb -->|BFF /api/usage| gateway
+    client -->|Auth API| identity
     client -->|AI API| gateway
     gateway -->|/proxy| proxy
 
@@ -76,7 +81,8 @@ Person(client, "Developer/User", "Auth and AI API consumer")
 Person(browserUser, "Browser user", "Web UI and same-origin BFF")
 
 System_Boundary(platform, "AI Usage Platform") {
-    Container(webapp, "Web App (apps/web)", "Next.js", "UI + auth BFF, httpOnly cookie")
+    Container(idWeb, "Identity Web", "Next.js", "랜딩·인증·설정; /api/auth/* · /api/identity/* BFF, httpOnly cookie")
+    Container(usWeb, "Usage Web", "Next.js", "대시보드; /api/usage/* BFF → Gateway")
     Container(gateway, "API Gateway", "Spring Cloud Gateway", "JWT; /api/v1/ai→/proxy; trust headers")
     Container(proxy, "Proxy Service", "Spring WebFlux", "Relay; usage parse; MQ publish; key→Identity")
     Container(identity, "Identity Service", "Spring + JPA", "Signup/login, JWT")
@@ -91,8 +97,10 @@ System_Ext(openai, "OpenAI API", "LLM provider")
 System_Ext(anthropic, "Anthropic API", "LLM provider")
 System_Ext(google, "Google Gemini API", "LLM provider")
 
-Rel(browserUser, webapp, "HTTPS UI + /api/auth/*", "HTTPS")
-Rel(webapp, identity, "signup/login proxy", "HTTPS")
+Rel(browserUser, idWeb, "HTTPS UI + /api/auth/*", "HTTPS")
+Rel(browserUser, usWeb, "HTTPS /dashboard + /api/usage/*", "HTTPS")
+Rel(idWeb, identity, "auth/settings/org BFF → Identity REST", "HTTPS")
+Rel(usWeb, gateway, "usage BFF → /api/v1/usage/...", "HTTPS")
 Rel(client, identity, "auth API direct", "HTTPS")
 Rel(client, gateway, "AI request", "HTTPS")
 Rel(gateway, proxy, "forward + trust headers", "HTTP")
@@ -144,10 +152,16 @@ flowchart TB
   subgraph ID["Identity Service"]
     direction TB
     idCtl["AuthController"]
+    idExtCtl["ExternalApiKeyController<br/>/api/auth/external-keys*"]
     idSvc["UserService"]
+    idExtSvc["ExternalApiKeyService<br/>register/update/deletion/purge"]
     idRepo["User / Role repository"]
+    idExtRepo["ExternalApiKeyRepository"]
     idJwt["JwtTokenProvider · JwtAuthFilter"]
+    idPurge["ExternalApiKeyPurgeScheduler"]
     idCtl --> idSvc --> idRepo
+    idExtCtl --> idExtSvc --> idExtRepo
+    idExtSvc --> idPurge
     idSvc --> idJwt
   end
 
@@ -330,16 +344,16 @@ UserRepository --> User
 RoleRepository --> Role
 ```
 
-## Web Application (`apps/web`) — 구조·흐름 (서비스 단위 풀스택)
+## Identity Web (`services/identity-service/web`) — 구조·흐름
 
-**목적:** 브라우저 대상 UI와 BFF를 **현재 저장소 트리 기준(As-Is)** 으로 시각화한다. **해당 도메인 담당자**가 라우트·컴포넌트·BFF를 바꿀 때 **이 절의 다이어그램과 불릿 목록을 함께 갱신**한다. (집계·알림 **전담 백엔드**는 `docs/architecture.md` §12; `web/` 분리 후에는 Identity·Usage 각 `web/` 절로 나눌 수 있다.)
+**목적:** Identity 도메인의 브라우저 UI·BFF를 **정본 트리** 기준으로 시각화한다. Usage 대시보드·Usage BFF는 **`services/usage-service/web`** 절(W2 시퀀스의 `Usage BFF`)을 본다. 집계·알림 전담 백엔드는 `docs/architecture.md` 참고.
 
 **동기화 체크리스트 (PR 또는 주기적으로):**
 
-1. `apps/web/src/app` 아래 **새 `page.tsx` / `route.ts` / 동적 세그먼트**가 생기면 디렉터리 맵·흐름도에 반영한다.
-2. `middleware.ts`의 **`config.matcher`** 가 바뀌면 미들웨어 다이어그램과 설명을 맞춘다.
-3. BFF가 Identity·게이트웨이를 호출하는 방식이 바뀌면 시퀀스 다이어그램을 수정한다(계약은 `docs/contracts/web-identity-bff.md`, Usage 프록시는 `docs/contracts/web-gateway-bff.md`).
-4. **구현과 계약 문서가 어긋나면 다이어그램은 코드 우선**으로 두고, 계약 문서 정리는 별도 작업으로 남긴다.
+1. `services/identity-service/web/src/app` 아래 **새 `page.tsx` / `route.ts` / 동적 세그먼트**가 생기면 W1·흐름도에 반영한다.
+2. `services/identity-service/web/middleware.ts`의 **`config.matcher`** 가 바뀌면 W4와 설명을 맞춘다.
+3. BFF가 Identity 업스트림을 호출하는 방식이 바뀌면 W2를 수정한다(계약: `docs/contracts/web-identity-bff.md`).
+4. **구현과 계약 문서가 어긋나면 다이어그램은 코드 우선**으로 둔다.
 
 ### W1 — 디렉터리·파일 맵 (논리 트리)
 
@@ -348,7 +362,7 @@ RoleRepository --> Role
 ```mermaid
 %%{init: {'flowchart': {'nodeSpacing': 22, 'rankSpacing': 36, 'padding': 14}}}%%
 flowchart TB
-  subgraph AW["apps/web"]
+  subgraph IDW["services/identity-service/web"]
     direction TB
     MW["middleware.ts<br/>쿠키 검사 · matcher"]
     NC["next.config.ts"]
@@ -359,7 +373,6 @@ flowchart TB
       LOGIN["login/page.tsx"]
       SIGNUP["signup/page.tsx"]
       subgraph PROT["보호 catch-all 페이지"]
-        DASH["dashboard/[[...path]]"]
         ORG["organizations/[[...path]]"]
         TEAM["teams/[[...path]]"]
         SET["settings/[[...path]]"]
@@ -368,27 +381,28 @@ flowchart TB
         RAL["auth/login/route.ts + route.test.ts"]
         RAS["auth/signup/route.ts + route.test.ts"]
         RASE["auth/session/route.ts + route.test.ts"]
+        RALO["auth/logout/route.ts + route.test.ts"]
         RAEK["auth/external-keys/route.ts + route.test.ts"]
-        RU["usage/[[...path]] + test"]
-        RI["identity/[[...path]] + test"]
+        RAEKID["auth/external-keys/[id]/route.ts + test"]
+        RAEKDC["auth/external-keys/[id]/deletion-cancel/route.ts"]
+        RI["identity/[[...path]] + route.test.ts"]
       end
     end
     subgraph COMP["src/components"]
       direction TB
       LF["login/login-form.tsx"]
       SF["signup/signup-form.tsx"]
-      UD["usage/usage-dashboard"]
-      ACCT["account/ organizations-view · account-settings-view.tsx 등"]
+      ACCT["account/ account-settings-view · organizations-view 등"]
+      LAND["landing/ …"]
       UI["ui/ shadcn"]
     end
     subgraph LIB["src/lib"]
       direction TB
       CF["api/client-fetch (+ test)"]
-      FU["usage/fetch-usage"]
-      IDT["api/identity/types"]
+      IDT["api/identity/types · external-keys.schema"]
       IDS["login.schema (+ test)"]
       IDSU["signup.schema (+ test)"]
-      UT["utils.ts"]
+      UT["utils.ts · auth/ …"]
     end
     TS["src/test/setup.ts"]
   end
@@ -396,19 +410,21 @@ flowchart TB
 
 ### W2 — 런타임 흐름 (브라우저 ↔ BFF ↔ Identity·게이트웨이)
 
-> **현행 구현 기준:** `POST` 로그인·회원가입은 Identity로 프록시 후 httpOnly `access_token` 쿠키 설정. **`GET /api/auth/session`** 은 BFF가 **Identity `GET /api/auth/session`** 을 Bearer로 호출해 본문을 검증·전달한다. 대시보드 사용량은 브라우저가 **`GET /api/usage/...`** 로 호출하면 Usage BFF가 **`{API_GATEWAY_URL}/api/v1/usage/...`** 로 프록시한다(`GATEWAY_DEV_MODE` 시 Identity 세션으로 `X-User-Id` 보강). 계약: `docs/contracts/web-identity-bff.md`, `docs/contracts/web-gateway-bff.md`, `docs/contracts/gateway-proxy.md`.
+> **Identity Web**(`services/identity-service/web`): 로그인·회원가입·세션·외부 API 키·Identity 관리 API BFF. **`POST` 로그인·회원가입** 후 httpOnly `access_token` 설정. **`GET /api/auth/session`** 은 Identity Bearer 프록시. **external-keys** 는 `GET/POST/PUT/DELETE` 및 `deletion-cancel` 포함.  
+> **Usage Web**(`services/usage-service/web`): 브라우저가 **`GET /api/usage/...`**(basePath 반영 시 경로 접두 다름)로 호출하면 Usage BFF가 **`{API_GATEWAY_URL}/api/v1/usage/...`** 로 프록시(`GATEWAY_DEV_MODE` 시 세션으로 `X-User-Id` 보강).  
+> 계약: `docs/contracts/web-identity-bff.md`, `docs/contracts/web-gateway-bff.md`, `docs/contracts/gateway-proxy.md`.
 
 ```mermaid
 %%{init: {'sequence': {'actorMargin': 36, 'messageMargin': 18}}}%%
 sequenceDiagram
   participant B as Browser
-  participant P as Pages
-  participant H as Auth BFF
+  participant P as Identity pages
+  participant H as Identity BFF
   participant U as Usage BFF
   participant GW as API Gateway
   participant I as Identity
 
-  B->>P: GET login signup dashboard
+  B->>P: GET login signup settings orgs teams
   P->>H: POST login or signup
   H->>I: POST login or signup
   I-->>H: tokens
@@ -431,16 +447,34 @@ sequenceDiagram
   I-->>H: 201/400/401/409 ApiResponse
   H-->>B: ApiResponse (no-store)
 
-  B->>U: GET /api/usage/dashboard/...
-  Note over U: Bearer·dev 시 X-User-Id
+  B->>H: PUT /api/auth/external-keys/{id}
+  Note over B,H: settings 화면에서 별칭 수정(키 교체는 선택)
+  H->>I: PUT external-keys/{id} + Bearer
+  I-->>H: 200/400/401/404/409 ApiResponse
+  H-->>B: ApiResponse (no-store)
+
+  B->>H: DELETE /api/auth/external-keys/{id}
+  Note over B,H: 즉시 삭제가 아닌 7일 삭제 예약
+  H->>I: DELETE external-keys/{id} + Bearer
+  I-->>H: 200/401/404/409 ApiResponse
+  H-->>B: ApiResponse (no-store)
+
+  B->>H: POST /api/auth/external-keys/{id}/deletion-cancel
+  Note over B,H: 유예 기간 내 삭제 예약 취소
+  H->>I: POST external-keys/{id}/deletion-cancel + Bearer
+  I-->>H: 200/401/404/409 ApiResponse
+  H-->>B: ApiResponse (no-store)
+
+  B->>U: GET /api/usage/... (Usage Web 앱)
+  Note over U: services/usage-service/web · Bearer·dev 시 X-User-Id
   U->>GW: /api/v1/usage/...
   GW-->>U: upstream
   U-->>B: usage JSON
 
-  Note over B: middleware dashboard settings orgs teams
+  Note over B: Identity middleware: settings orgs teams (dashboard는 Usage Web)
 ```
 
-### W3 — 레이어 관계 (UI · 공용 클라이언트 · BFF · 도메인 라이브러리)
+### W3 — 레이어 관계 (Identity Web: UI · client-fetch · BFF)
 
 ```mermaid
 %%{init: {'flowchart': {'nodeSpacing': 30, 'rankSpacing': 40, 'padding': 12}}}%%
@@ -460,7 +494,7 @@ flowchart TB
     RL["POST login"]
     RS["POST signup"]
     RQ["GET session"]
-    RE["GET/POST external-keys"]
+    RE["GET/POST/PUT/DELETE external-keys<br/>+ POST deletion-cancel"]
   end
   subgraph LB["lib"]
     CF["client-fetch"]
@@ -474,6 +508,7 @@ flowchart TB
   SF --> CF
   CF --> RL
   CF --> RS
+  CF --> RQ
   CF --> RE
   RL --> ZL
   RS --> ZL
@@ -481,10 +516,11 @@ flowchart TB
   RE --> ZL
   RL --> IDN
   RS --> IDN
+  RQ --> IDN
   RE --> IDN
 ```
 
-### W4 — 미들웨어와 보호 경로
+### W4 — 미들웨어와 보호 경로 (`services/identity-service/web`)
 
 ```mermaid
 %%{init: {'flowchart': {'nodeSpacing': 28, 'rankSpacing': 44, 'padding': 12}}}%%
@@ -500,9 +536,8 @@ flowchart TD
   COOK -->|Y| NEXT
   COOK -->|N| REDIR
 
-  subgraph MT["matcher (현행)"]
+  subgraph MT["matcher (현행 Identity Web)"]
     direction TB
-    M1["/dashboard/:path*"]
     M2["/settings/:path*"]
     M3["/organizations/:path*"]
     M4["/teams/:path*"]
@@ -511,7 +546,15 @@ flowchart TD
   MW -.-> MT
 ```
 
-`matcher` 가 가리키는 경로에 대응하는 **`app/dashboard/...` 등 페이지**를 추가·이동하면, W1 트리와 `docs/repository-structure.md` 도 함께 업데이트한다.
+`matcher` 에 맞는 **`src/app/settings|organizations|teams/...` 페이지**를 추가·이동하면 W1과 `docs/repository-structure.md` 를 함께 갱신한다. **대시보드 보호**는 `services/usage-service/web/middleware.ts` 를 본다.
+
+### W5 — Usage Web 요약 (`services/usage-service/web`)
+
+| 항목 | 내용 |
+|------|------|
+| BFF | `src/app/api/usage/[[...path]]/route.ts` → `API_GATEWAY_URL` 프록시 |
+| UI | `src/app/dashboard/...` (기본 basePath는 팀 설정·Compose와 정합) |
+| 계약 | `docs/contracts/web-gateway-bff.md`, `docs/contracts/web-split-boundary.md` |
 
 ## 저장소 문서·실험 디렉터리 (비애플리케이션 코드)
 
@@ -524,17 +567,23 @@ flowchart TD
 
 ## 참고 코드/문서
 
-- `apps/web/middleware.ts`
-- `apps/web/src/app/api/auth/login/route.ts`
-- `apps/web/src/app/api/auth/login/route.test.ts`
-- `apps/web/src/app/api/auth/signup/route.ts`
-- `apps/web/src/app/api/auth/signup/route.test.ts`
-- `apps/web/src/app/api/auth/session/route.ts`
-- `apps/web/src/app/api/auth/session/route.test.ts`
-- `apps/web/src/app/api/auth/external-keys/route.ts`
-- `apps/web/src/app/api/auth/external-keys/route.test.ts`
-- `apps/web/src/app/api/usage/[[...path]]/route.ts`
-- `apps/web/src/app/api/identity/[[...path]]/route.ts`
+**Identity Web (정본)**  
+- `services/identity-service/web/middleware.ts`  
+- `services/identity-service/web/src/app/api/auth/login/route.ts` (+ `route.test.ts`)  
+- `services/identity-service/web/src/app/api/auth/signup/route.ts` (+ `route.test.ts`)  
+- `services/identity-service/web/src/app/api/auth/session/route.ts` (+ `route.test.ts`)  
+- `services/identity-service/web/src/app/api/auth/logout/route.ts` (+ `route.test.ts`)  
+- `services/identity-service/web/src/app/api/auth/external-keys/route.ts` (+ `route.test.ts`)  
+- `services/identity-service/web/src/app/api/auth/external-keys/[id]/route.ts` (+ `route.test.ts`)  
+- `services/identity-service/web/src/app/api/auth/external-keys/[id]/deletion-cancel/route.ts`  
+- `services/identity-service/web/src/app/api/identity/[[...path]]/route.ts` (+ `route.test.ts`)  
+- `services/identity-service/web/src/components/account/account-settings-view.tsx`  
+
+**Usage Web (정본)**  
+- `services/usage-service/web/src/app/api/usage/[[...path]]/route.ts` (+ `route.test.ts`)  
+
+**과도기**  
+- `apps/web/` — 통합 레거시; 런타임 정본은 위 두 `web/` 을 본다 (`apps/web/README.md` 등 안내 참고).
 - `docs/contracts/web-identity-bff.md`
 - `docs/contracts/web-gateway-bff.md`
 - `services/api-gateway-service/src/main/resources/application.yml`
@@ -549,6 +598,9 @@ flowchart TD
 - `services/usage-service/src/main/java/com/eevee/usageservice/consumer/UsageRecordedEventListener.java`
 - `services/usage-service/src/main/java/com/eevee/usageservice/service/UsageRecordedService.java`
 - `services/identity-service/src/main/java/com/zerobugfreinds/identity_service/controller/AuthController.java`
+- `services/identity-service/src/main/java/com/zerobugfreinds/identity_service/controller/ExternalApiKeyController.java`
 - `services/identity-service/src/main/java/com/zerobugfreinds/identity_service/service/UserService.java`
+- `services/identity-service/src/main/java/com/zerobugfreinds/identity_service/service/ExternalApiKeyService.java`
+- `services/identity-service/src/main/java/com/zerobugfreinds/identity_service/scheduler/ExternalApiKeyPurgeScheduler.java`
 - `services/identity-service/src/main/java/com/zerobugfreinds/identity_service/security/JwtTokenProvider.java`
 - `services/identity-service/src/main/java/com/zerobugfreinds/identity_service/security/JwtAuthenticationFilter.java`
