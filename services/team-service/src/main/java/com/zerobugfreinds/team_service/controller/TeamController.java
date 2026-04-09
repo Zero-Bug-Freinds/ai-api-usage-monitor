@@ -3,8 +3,11 @@ package com.zerobugfreinds.team_service.controller;
 import com.zerobugfreinds.team_service.common.ApiResponse;
 import com.zerobugfreinds.team_service.dto.CreateTeamRequest;
 import com.zerobugfreinds.team_service.dto.InviteTeamMemberRequest;
+import com.zerobugfreinds.team_service.dto.RegisterTeamApiKeyRequest;
+import com.zerobugfreinds.team_service.dto.TeamApiKeySummaryResponse;
 import com.zerobugfreinds.team_service.dto.TeamSummaryResponse;
 import com.zerobugfreinds.team_service.security.TeamUserPrincipal;
+import com.zerobugfreinds.team_service.service.TeamApiKeyService;
 import com.zerobugfreinds.team_service.service.TeamService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -23,9 +26,11 @@ import java.util.List;
 @RequestMapping("/api/v1")
 public class TeamController {
 	private final TeamService teamService;
+	private final TeamApiKeyService teamApiKeyService;
 
-	public TeamController(TeamService teamService) {
+	public TeamController(TeamService teamService, TeamApiKeyService teamApiKeyService) {
 		this.teamService = teamService;
+		this.teamApiKeyService = teamApiKeyService;
 	}
 
 	@PostMapping("/teams")
@@ -62,5 +67,30 @@ public class TeamController {
 	) {
 		List<String> members = teamService.getTeamMemberUserIds(principal.userId(), teamId);
 		return ResponseEntity.ok(ApiResponse.ok("팀 멤버 조회에 성공했습니다", members));
+	}
+
+	@PostMapping("/teams/{id}/api-keys")
+	public ResponseEntity<ApiResponse<TeamApiKeySummaryResponse>> registerTeamApiKey(
+			@AuthenticationPrincipal TeamUserPrincipal principal,
+			@PathVariable("id") Long teamId,
+			@Valid @RequestBody RegisterTeamApiKeyRequest request
+	) {
+		TeamApiKeySummaryResponse created = teamApiKeyService.register(
+				principal.userId(),
+				teamId,
+				request.provider(),
+				request.alias(),
+				request.externalKey()
+		);
+		return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok("팀 API 키가 등록되었습니다", created));
+	}
+
+	@GetMapping("/teams/{id}/api-keys")
+	public ResponseEntity<ApiResponse<List<TeamApiKeySummaryResponse>>> getTeamApiKeys(
+			@AuthenticationPrincipal TeamUserPrincipal principal,
+			@PathVariable("id") Long teamId
+	) {
+		List<TeamApiKeySummaryResponse> apiKeys = teamApiKeyService.getTeamApiKeys(principal.userId(), teamId);
+		return ResponseEntity.ok(ApiResponse.ok("팀 API 키 목록 조회에 성공했습니다", apiKeys));
 	}
 }

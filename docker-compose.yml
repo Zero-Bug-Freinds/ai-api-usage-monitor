@@ -153,6 +153,7 @@ services:
       TEAM_POSTGRES_PASSWORD: ${TEAM_POSTGRES_PASSWORD:-team_app}
       IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://host.docker.internal:8090}
       SECURITY_JWT_SECRET: ${JWT_SECRET:-change-this-secret-key-to-at-least-32-bytes}
+      TEAM_API_KEY_ENCRYPTION_SECRET: ${TEAM_API_KEY_ENCRYPTION_SECRET:-change-this-team-api-key-encryption-secret-min-32-chars}
       TEAM_SERVICE_PORT: 8093
     depends_on:
       - postgres
