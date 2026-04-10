@@ -58,8 +58,8 @@
 
 #### 3.1.1 대시보드 UI 표시(시각·차트)
 
-- **사용 로그 테이블:** API가 주는 `occurredAt`(ISO-8601, 보통 UTC 기준 오프셋/Z)은 브라우저에서 **`Asia/Seoul`(KST)** 로 포맷해 표시한다(`services/usage-service/web/src/lib/usage/format-occurred-at-kst.ts` 등). 헤더 문구는 이에 맞춘다.
-- **집계·요약 카드:** 일자·“오늘” 등 백엔드가 **UTC 일자**로 집계하는 값은 그 의미를 유지하고, 로그 행 시각만 KST로 바꾼다(카드 문구를 KST로 바꾸면 의미가 어긋날 수 있음).
+- **사용 로그 테이블:** API가 주는 `occurredAt`(ISO-8601)은 브라우저에서 **`Asia/Seoul`(KST)** 기준으로 포맷해 표시한다(`services/usage-service/web/src/lib/usage/format-occurred-at-kst.ts` 등). 헤더 문구는 이에 맞춘다.
+- **집계·요약 카드:** 일자·“오늘” 등 대시보드 집계는 **KST 기준 일자**로 해석/표시하며, 로그 행 시각과 동일한 KST 기준을 사용한다.
 - **차트 색상:** 대시보드 차트 팔레트는 **무채색 계열**로 통일해 UI 톤과 맞춘다(`usage-dashboard.tsx`의 `CHART_COLORS`, 그리드 스트로크 등).
 
 ### 3.2 프론트 호출·401
