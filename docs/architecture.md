@@ -9,6 +9,7 @@
   - 본 문서(`architecture.md`)는 **이 팀 프로젝트의 구조·스택·서비스 분해**를 다룬다. 위 이론 문서는 구현과 무관한 **일반 설명**을 위한 참고 자료이다.
 - **이벤트 소비 흐름**(proxy 발행 `UsageRecordedEvent` → usage·analytics·billing·alarm 등): [`docs/event-consumer-flow.md`](event-consumer-flow.md)
 - **usage ↔ analytics 관계**(이벤트 팬아웃, REST 조회, 하이브리드, DB 경계): [`docs/usage-analytics-relationship.md`](usage-analytics-relationship.md)
+- **서비스별 DB 구성·서비스 간 데이터 전달**(물리/논리 PostgreSQL, 타 서비스 DB 직접 접근 금지, API vs RabbitMQ, 조회 성능): [`docs/msa-database-and-service-integration.md`](msa-database-and-service-integration.md)
 
 ---
 
