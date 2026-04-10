@@ -1,0 +1,25 @@
+---
+description: MSA — per-service PostgreSQL boundaries and cross-service data access (API vs RabbitMQ); must follow
+alwaysApply: true
+---
+
+# MSA DB 구성 및 서비스 간 데이터 전달 (필수)
+
+상세 설명·예시·성능 가이드의 정본: **`docs/msa-database-and-service-integration.md`** (반드시 참조).
+
+## DB
+
+1. **서비스마다 전용 PostgreSQL을 물리적으로 분리**한다 (예: `identity_db`와 `usage_db`는 서로 다른 인스턴스/컨테이너·호스트 전제).
+2. **한 서비스**가 여러 DB가 필요하면 **같은 PostgreSQL 인스턴스 안에서 논리 DB(데이터베이스/스키마)를 여러 개** 둔다.
+3. **서로 다른 서비스**는 각자의 전용 PostgreSQL에 **자기 서비스 전용 DB만** 둔다. 타 서비스 테이블과 섞지 않는다.
+4. **어떤 서비스도 다른 서비스 DB에 JDBC 등으로 직접 접근하지 않는다.**
+
+## 데이터 참조
+
+- 다른 서비스 데이터가 필요하면 **`docs/msa-database-and-service-integration.md`** 에 따라 **HTTP API 조회** 또는 **RabbitMQ 이벤트 발행·구독** 중에서 선택한다 (목적·성능·복잡도·일관성).
+- API로 참조할 때 **건수에 비례해 동일 공통 서비스를 반복 호출하는 설계**는 지양한다. 가능하면 **ID 목록 등으로 묶은 일괄 조회**로 호출 횟수를 일정하게 유지한다.
+- RabbitMQ 사용 시 **비동기·버퍼·결합 완화**를 활용하되, **멱등성·중복·스키마 진화**를 설계에 포함한다.
+
+## AI 협업
+
+- DB 분리·연동 규칙을 바꾸면 **`docs/msa-database-and-service-integration.md`** 를 먼저 갱신하고, `docs/architecture.md` / `docs/repository-structure.md` 와 모순이 없는지 확인한다.
