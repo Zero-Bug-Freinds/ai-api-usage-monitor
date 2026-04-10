@@ -18,6 +18,9 @@ public class UsageAnalyticsJdbcRepository {
 
     private static final String ERR_PRED = "(NOT request_successful OR (upstream_status_code IS NOT NULL AND upstream_status_code >= 400))";
 
+    /** Must match {@code UsageDashboardService} date-range zone (KST). */
+    private static final String BUCKET_ZONE = "Asia/Seoul";
+
     private final JdbcTemplate jdbc;
 
     public UsageAnalyticsJdbcRepository(JdbcTemplate jdbc) {
@@ -49,16 +52,16 @@ public class UsageAnalyticsJdbcRepository {
 
     public List<DailyUsagePoint> aggregateDaily(String userId, Instant from, Instant toExclusive) {
         String sql = """
-                SELECT (occurred_at AT TIME ZONE 'UTC')::date AS d,
+                SELECT (occurred_at AT TIME ZONE '%s')::date AS d,
                        COUNT(*)::bigint,
                        COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0)::bigint,
                        COALESCE(SUM(prompt_tokens), 0)::bigint,
                        COALESCE(SUM(estimated_cost), 0)
                 FROM usage_recorded_log
                 WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ?
-                GROUP BY (occurred_at AT TIME ZONE 'UTC')::date
+                GROUP BY (occurred_at AT TIME ZONE '%s')::date
                 ORDER BY d
-                """.formatted(ERR_PRED);
+                """.formatted(BUCKET_ZONE, ERR_PRED, BUCKET_ZONE);
         return jdbc.query(
                 sql,
                 (rs, rowNum) -> {
@@ -79,16 +82,16 @@ public class UsageAnalyticsJdbcRepository {
 
     public List<MonthlyUsagePoint> aggregateMonthly(String userId, Instant from, Instant toExclusive) {
         String sql = """
-                SELECT to_char((occurred_at AT TIME ZONE 'UTC'), 'YYYY-MM') AS ym,
+                SELECT to_char((occurred_at AT TIME ZONE '%s'), 'YYYY-MM') AS ym,
                        COUNT(*)::bigint,
                        COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0)::bigint,
                        COALESCE(SUM(prompt_tokens), 0)::bigint,
                        COALESCE(SUM(estimated_cost), 0)
                 FROM usage_recorded_log
                 WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ?
-                GROUP BY to_char((occurred_at AT TIME ZONE 'UTC'), 'YYYY-MM')
+                GROUP BY to_char((occurred_at AT TIME ZONE '%s'), 'YYYY-MM')
                 ORDER BY ym
-                """.formatted(ERR_PRED);
+                """.formatted(BUCKET_ZONE, ERR_PRED, BUCKET_ZONE);
         return jdbc.query(
                 sql,
                 (rs, rowNum) -> new MonthlyUsagePoint(

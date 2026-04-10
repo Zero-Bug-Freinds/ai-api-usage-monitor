@@ -39,7 +39,7 @@ import type {
   UsageProviderFilter,
   UsageSummaryResponse,
 } from "@/lib/usage/types"
-import { addUtcDays, formatUtcIsoDate } from "@/lib/usage/utc-dates"
+import { addKstDays, formatKstIsoDate } from "@/lib/usage/kst-dates"
 
 /** 무채색 팔레트: 파이·막대·라인 공통 (밝은 배경에서 대비 유지) */
 const CHART_COLORS = [
@@ -97,9 +97,9 @@ export function UsageDashboard() {
     setMainError(null)
     ;(async () => {
       try {
-        const t = formatUtcIsoDate()
-        const f30 = addUtcDays(t, -(RANGE_DAYS - 1))
-        const fy = addUtcDays(t, -MONTHLY_LOOKBACK_DAYS)
+        const t = formatKstIsoDate()
+        const f30 = addKstDays(t, -(RANGE_DAYS - 1))
+        const fy = addKstDays(t, -MONTHLY_LOOKBACK_DAYS)
 
         const [st, s30, d, m, bm] = await Promise.all([
           fetchUsageJson<UsageSummaryResponse>(
@@ -144,8 +144,8 @@ export function UsageDashboard() {
     setLogsError(null)
     ;(async () => {
       try {
-        const t = formatUtcIsoDate()
-        const f30 = addUtcDays(t, -(RANGE_DAYS - 1))
+        const t = formatKstIsoDate()
+        const f30 = addKstDays(t, -(RANGE_DAYS - 1))
         const providerParam =
           logProvider !== LOG_PROVIDER_ALL ? (logProvider as UsageProviderFilter) : undefined
         const q = buildUsageQuery({
@@ -236,7 +236,7 @@ export function UsageDashboard() {
             </span>
           </div>
           <p className="text-sm text-muted-foreground">
-            요약·차트·집계 구간은 UTC 기준 날짜(YYYY-MM-DD)입니다. 사용 로그의 시각은 한국 표준시(KST)로
+            요약·차트·집계 구간은 한국 표준시(KST) 기준 날짜(YYYY-MM-DD)입니다. 사용 로그 시각도 KST로
             표시합니다. (최근 {RANGE_DAYS}일 / 월별 최대 {MONTHLY_LOOKBACK_DAYS}일)
           </p>
         </div>
@@ -264,10 +264,10 @@ export function UsageDashboard() {
         <>
           <section className="mb-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
-              <p className="text-xs font-medium text-muted-foreground">오늘 집계(UTC) 총 비용</p>
+              <p className="text-xs font-medium text-muted-foreground">오늘 집계(KST) 총 비용</p>
               <p className="mt-1 text-2xl font-semibold tabular-nums">{formatUsd(todayCost)}</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                오늘 집계(UTC) API 요청 {(summaryToday?.totalRequests ?? 0).toLocaleString("en-US")}건
+                오늘 집계(KST) API 요청 {(summaryToday?.totalRequests ?? 0).toLocaleString("en-US")}건
               </p>
             </div>
             <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
