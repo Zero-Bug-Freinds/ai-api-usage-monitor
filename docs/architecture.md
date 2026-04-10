@@ -52,8 +52,8 @@
 ## 2. 핵심 아이디어
 
 - 사용자는 AI Provider API를 직접 호출하지 않고, 본 플랫폼의 **Proxy 엔드포인트**로 호출한다.
-- Proxy는 요청/응답을 중간에서 처리하며 **usage(토큰/비용) 정보를 즉시 기록**한다.
-- 기록된 usage를 기반으로 Billing, Analytics, Quota, Notification을 비동기 이벤트로 연계한다.
+- Proxy는 요청/응답을 중간에서 처리하며, usage(토큰/비용) 정보는 **RabbitMQ로 이벤트를 발행**하고 **Usage Tracking 서비스가 이를 소비해 DB에 저장**한다(Proxy가 Usage DB에 직접 쓰지 않음; §6).
+- 기록된 usage를 기반으로 Billing, Quota, Notification을 비동기 이벤트로 연계한다.
 
 ### 2.1 기술 스택(결정)
 - **애플리케이션 프레임워크(Proxy Service 등)**: **Spring Boot + Spring WebFlux**
@@ -78,6 +78,8 @@
 7) Quota 초과 상태가 되면 Notification(경고/차단)에 반영  
 8) 정산 리포트를 생성
 
+**((§3.1 3)–4) 단계와 병행** : usage 적재가 HTTP 동기 호출이 아니라 **메시지 브로커 이벤트**로 이어질 수 있다.
+
 ### 3.2 MSA 구성(서비스 분리 원칙)
 - 각 서비스는 “하나의 기능(도메인)을” 책임지는 경계로 정의한다.
 - 너무 잘게 쪼개지지 않되, 너무 비대해지지 않도록 한다.
@@ -89,8 +91,8 @@
   - 예: `PostgreSQL`, `RabbitMQ`, `Redis`
 - **Proxy Service**는 **로컬(개발 PC)** 에서 실행하는 것을 기본으로 한다.
   - 이유: 프록시는 수정 빈도가 높고 스트리밍/디버깅이 중요하므로, 컨테이너보다 로컬 실행이 생산성에 유리하다.
-  - 웹 UI(브라우저) 및 다른 서비스는 `localhost` + 환경변수로 Compose에 띄운 브로커/DB 주소에 연결한다.
-- 다른 애플리케이션 서비스(Identity, Usage Tracking 등)도 동일하게 **로컬 실행**을 원칙으로 하며, 팀 합의 하에 통합 테스트용으로 Compose에 포함할 수 있다.
+  - 웹 UI(브라우저) 및 다른 서비스는 실행 위치(호스트/컨테이너)에 따라 `localhost` 또는 `host.docker.internal`/Compose 서비스명(`api-gateway-service` 등) + 환경변수로 브로커·DB·API 주소에 연결한다.
+- 다른 애플리케이션 서비스(Identity, Usage Tracking, Team 등)도 기본은 **호스트 로컬 실행**으로 두되, 팀 합의에 따라 루트 Compose `profile: web`/서비스별 Compose에 포함해 함께 기동할 수 있다.
 
 ---
 
@@ -122,13 +124,15 @@
   - **게이트웨이 뒤 전용:** 외부에서 Proxy로 이어지는 공개 진입은 API Gateway를 통한 경로만 전제로 한다(신뢰 헤더·경로 정본: [`docs/contracts/gateway-proxy.md`](contracts/gateway-proxy.md)).
   - **이벤트 발행자:** usage 관련 이벤트를 **RabbitMQ**로 발행한다.
 
-### 4.3 Identity & Organization Service
+### 4.3 Identity Service
 - 역할
-  - 회원/개인 사용자 모드
-  - 조직 생성, 멤버십, 권한(RBAC)
+  - 회원가입·로그인·인증(JWT·세션 등)
+  - 개인 사용자 모드
+  - **조직** 생성·멤버십·권한(RBAC)
+  - **팀** 생성·팀 멤버·팀 API Key는 **§4.10 Team Service**가 담당하며, Identity는 가입 사용자 식별·존재 검증 등 **Team Service와 HTTP API로 연동**한다.
 - 책임 범위
-  - 사용자-조직-권한 모델을 관리한다.
-  - Quote/Key 설정의 “정책 값(설정)”을 제공한다.
+  - 사용자-조직-권한 모델을 관리한다(팀 단위 멤버십·팀 키 저장은 Team Service DB 소유).
+  - Quota/Key 설정의 “정책 값(설정)”을 제공한다.
 
 ### 4.4 API Key Service
 - 역할
@@ -138,16 +142,18 @@
   - Proxy가 요청 직전에 사용할 “자격증명”을 제공한다.
   - 키 원문이 로그/다른 서비스에 남지 않도록 한다.
 
-### 4.5 Usage Tracking Service
+**(§4.4와 병행):** 공급사 외부 API 키 등록·암호화 저장·조회 일부는 **독립 `api-key-service`가 아닌 `identity-service` 경계 안**에서 구현되어 있을 수 있다. 서비스 분해 §4.4의 책임 정의는 유지하되, 배포 단위는 팀이 합의한 경계를 따른다.
+
+### 4.5 Usage Service
 - 역할
-  - usage 로그 저장(사용자/팀/조직 단위 멀티 테넌시)
+  - **RabbitMQ**로 수신한 `UsageRecordedEvent`(Proxy 발행)를 **전용 PostgreSQL(`usage_db`)** 의 usage 로그 테이블에 영속한다. (사용자/팀/조직 단위 멀티 테넌시)
 - 책임 범위
-  - Proxy에서 전달받은 요청/응답 기반 usage를 저장한다.
-  - 저장된 usage를 기반으로 Billing/Analytics의 데이터 원천이 된다.
+  - 이벤트에 담긴 사용자·조직·팀·API 키 식별·Provider·모델·토큰·추정 비용·요청 경로 등을 **저장 모델**로 옮겨 기록한다(구현: `services/usage-service`의 `@RabbitListener` 소비 → JPA 저장).
+  - 저장된 로그는 이후 **Billing·Analytics** 등이 참조할 수 있는 **사실 데이터 원천**이 된다.
 
 ### 4.6 Billing Service
 - 역할
-  - usage 기반 비용 계산 및 정산 기록 저장
+  - usage 기반 비용 계산 및 비용 기록 저장
 - 책임 범위
   - 개인/팀/조직 단위 billing_record 생성 및 조회를 담당
   - 정산 금액의 “최종 진실”을 관리한다.
@@ -226,9 +232,9 @@
 ### 6.1 기본 이벤트 예시
 - `usage-recorded`
   - 발행 주체: Proxy Service
-  - 소비 주체: Billing Service, Analytics Service(집계), Quota Service(임계치 판단), Notification Service(트리거)
-- `quota-warning` / `quota-exceeded`
-  - 발행 주체: Quota Service
+  - 소비 주체: **Usage Service**(저장·**API 사용량 대시보드** 원천), **Billing Service**(**비용 대시보드**·비용 집계 및 예산 대비 지출 판단의 입력).
+- `billing-warning` / `billing-exceeded` (계획)
+  - 발행 주체: Billing Service — 예산 한도 대비 지출이 임계치에 근접·초과할 때 Notification용 이벤트 발행
   - 소비 주체: Notification Service
 - `billing-updated`(선택)
   - 발행 주체: Billing Service
@@ -318,6 +324,7 @@
 
 - **원칙**: Spring Boot 서비스는 **해당 서비스 디렉터리**의 `Dockerfile`로 빌드하고, Next.js는 **`services/<svc>/web/Dockerfile`**(standalone)로 빌드하되 **build context는 저장소 루트**(루트 `pnpm` workspace·`packages/ui` 포함)를 쓴다. 운영·스테이징에서도 **Compose(또는 동등한 오케스트레이션)로 각 이미지를 나란히 띄우는 모델**을 따른다.
 - **로컬**: 루트 `docker-compose.yml`은 인프라·일부 앱(예: proxy·gateway)을 포함할 수 있으며, **웹 컨테이너는 `profile: web`(`identity-web`, `usage-web`, `web-edge`) 등으로 선택 기동**해 호스트 개발과 병행할 수 있다. 호스트에서 Next를 직접 띄울 때는 저장소 루트 **`pnpm install`** 후 **`pnpm --filter identity-web dev`** / **`pnpm --filter usage-web dev`** 등(`packages/ui` workspace 포함 — `README.md`, `docs/repository-structure.md` §6).
+- 동일 `profile: web` 선택 시 루트 `docker-compose.yml`에는 위에 더해 `team-web`, `team-service` 컨테이너가 포함될 수 있고, 팀 도메인 전용 DB는 `postgres-team` 등 별도 PostgreSQL 컨테이너로 둘 수 있다(`docs/repository-structure.md` §2 참고).
 - **Compose 환경변수:** `docker compose`는 루트 **`.env`**만 자동 로드한다. `GATEWAY_SHARED_SECRET`처럼 compose 파일에서 `${VAR:-}` 형태로 넘기는 값은, `.env`에 **빈 할당(`VAR=`)만** 있으면 컨테이너에 빈 문자열이 들어가 **Spring `application.yml`의 기본값이 적용되지 않을 수 있다**(게이트웨이 기동 실패 등). **비어 있지 않은 값**으로 맞추거나 변수 줄을 제거하고, 게이트웨이·Proxy·usage-service의 공유 비밀은 [`docs/contracts/gateway-proxy.md`](contracts/gateway-proxy.md) §5와 동일하게 유지한다.
 
 ### 10.2 단일 도메인·엣지 라우팅(브라우저 URL 하나)
@@ -326,15 +333,19 @@
 
 - **엣지:** Nginx·Traefik 등 **리버스 프록시** 한 계층에서 `location`(또는 동등 규칙)으로 upstream을 고정한다.
 - **로컬 Compose(`profile: web`):** **`web-edge`** 서비스(이미지 `nginx`, 설정 **`docker/web-edge/nginx.conf`**)가 기본 **`${WEB_EDGE_PORT:-8888}:80`** 으로 호스트에 노출된다. 현재 저장소 규칙(정본은 설정 파일): **`/dashboard`** 는 **`308`** 으로 **`/dashboard/`** 로 보내고, **`/dashboard/`** 로 시작하는 경로만 **usage `web`** 으로 프록시한다(`/dashboard2` 등은 매칭되지 않아 **identity `web`**). **`/api/v1`** 은 **`/api/v1/`** 로 **`308`** 리다이렉트 후, **`/api/v1/*`** 는 **API Gateway**로 프록시한다(스트리밍 대비 **`proxy_buffering off`**·긴 read timeout). **그 외**는 **identity `web`**. (운영 엣지는 팀이 동일한 의미로 맞춘다.)
+- 동일 `web-edge` 설정에서 **`/teams`** 는 **`308`** 으로 **`/teams/`** 로 보내고, **`/teams/`** 로 시작하는 경로는 **team `web`** 으로 프록시한다(Next **`basePath=/teams`**).
 - **Usage Next `basePath`:** 단일 도메인에서 `/_next` 등 충돌을 피하기 위해 Usage 쪽 기본값은 **`/dashboard`**(`NEXT_PUBLIC_BASE_PATH`, Compose 빌드 args). 브라우저의 Usage BFF는 **`/dashboard/api/usage/...`** 형태가 된다(`docs/contracts/web-split-boundary.md`, `web-gateway-bff.md`).
+- Team `web`은 단일 도메인에서 **`/teams`** 접두를 **`basePath`** 로 쓸 수 있다(구현: `services/team-service/web`).
 - **쿠키·세션:** 동일 **`Site`/도메인**에서 경로만 나뉘면 `httpOnly` 세션 쿠키는 대부분 유지 가능하지만, **`Path`·`SameSite`** 는 분리 후 반드시 재검증한다(BFF 계약: `docs/contracts/web-identity-bff.md`).
 
 - **로컬 개발(필수에 가까운 구성)**
   - **Docker Compose**: `PostgreSQL`, `RabbitMQ`, `Redis` 등 의존성 컨테이너 기동
+  - 루트 Compose에서는 Identity·team·usage 등 **서비스별 전용 PostgreSQL 컨테이너**를 둘 수 있다.
   - **애플리케이션(Proxy WebFlux 등)**: 로컬 JVM에서 실행(IDE/터미널)하거나, 패턴 B에 맞게 **서비스별 이미지**로 Compose에 포함
 - **선택**
   - API Gateway·Proxy: 저장소 `docker-compose.yml`에 포함 가능(계약: `docs/contracts/gateway-proxy.md`)
   - Next.js: **도메인별 `services/<svc>/web`** — `docker compose --profile web up` 시 **`identity-web`**, **`usage-web`**, **`web-edge`**(루트 `docker-compose.yml`). 구 통합 앱 경로 `apps/web`에는 안내용 `README.md`만 둔다(`docs/repository-structure.md` §6.2).
+  - 동일 프로필에서 **`team-web`**(및 필요 시 **`team-service`**)이 함께 포함될 수 있다.
   - GitHub Actions(CI): 저장소 정책에 따라 도입(`docs/CI.md`)
   - Prometheus + Grafana, Loki, Jaeger: 시간 여유 시(관측 강화)
 - **Kubernetes / Ingress / ConfigMap·Secret(K8s)**
@@ -344,14 +355,16 @@
 
 ## 11. 서비스 간 책임 요약(개발자 참고)
 
-- Proxy Service: “AI 요청을 실제 Provider로 전달하고, usage를 즉시 기록”
-- Usage Tracking Service: “usage 로그의 사실 저장”
-- Billing Service: “usage 기반 정산 금액 계산 및 billing_record 저장”
-- Analytics & Reporting Service: “대시보드/리포트용 집계 데이터 생성”
-- Quota Service: “예산/제한 정책 소유 및 초과 기준 제공”
-- Notification Service: “Slack/Email 등 알림 발송”
-- Identity & Organization Service: “사용자/조직/팀/멤버십/RBAC”
-- API Key Service: “공급사 API Key의 암호화 저장/조회”
+- Proxy Service: “AI 요청을 실제 Provider로 전달하고, usage(토큰·비용) 정보를 **RabbitMQ 이벤트로 발행**한다(Usage DB에 직접 쓰지 않음; §2·§6).”
+- Usage Service: “**이벤트 소비·usage 로그 영속**(전용 DB) 및 **API 사용량 대시보드** 관련 데이터·API(§4.5·§6).”
+- Billing Service: “usage 기반 **비용 산출·정산·billing_record** 및 **비용 대시보드**; **예산 한도 대비 지출** 판단 후 **(계획)** Notification용 이벤트 발행(§6).”
+- Analytics & Reporting Service: “추가 **집계·리포트** 파이프라인(팀이 별도 서비스로 둘 때 §12와 연계); 사용량 **요약·차트**의 일부는 현재 Usage 경계에서 노출될 수 있다.”
+- Quota Service: “예산/제한 정책 소유 및 초과 기준 제공(§7).”
+- Notification Service: “Slack/Email 등 알림 발송; **(계획)** Billing이 발행하는 **예산·임계** 알림 이벤트 소비(§6).”
+- Identity Service: “인증·사용자·**조직**·멤버십·RBAC; 팀 도메인은 **Team Service**와 HTTP API로 연동(§4.3·§4.10).”
+- Team Service: “팀·팀원·팀 API Key 등 **팀 도메인** 데이터 소유·API(§4.10).”
+- API Key Service: “(논리 경계) 공급사 API Key 암호화 저장/조회; 구현 위치는 **identity-service** 등 팀 합의 경계(§4.4).”
+- **인프라·배포·웹 진입:** 패턴 B **이미지 분리**, 루트 **Docker Compose**, 선택 **`profile: web`**·**`web-edge`**·**`team-web`/`team-service`**·서비스별 DB 등은 **§10** 참고.
 - **집계·알림 전담 백엔드(Analytics·Notification 등)**: 아래 **§12** 참고 — **도메인 UI(`web/`) 담당과 동일 사람이 아닐 수 있음**(서비스 경계 유지).
 - **서비스 단위 웹·BFF**: 아래 **§13** 참고.
 
@@ -359,18 +372,20 @@
 
 ## 12. 백엔드 — Analytics·Reporting·Notification (집계·알림)
 
-**§4.7 Analytics & Reporting**, **§4.9 Notification** 에 해당하는 **집계·알림·리포트 파이프라인**은 백엔드 마이크로서비스(또는 동일 책임 모듈) 범위다. 구현 주체는 팀 합의에 따르며, **Identity·Usage 등 각 도메인의 `web/` 풀스택 작업**과 **혼동하지 않는다**(UI는 집계 API를 소비할 뿐, §12 파이프라인 구현 책임은 별도).
+**§4.7 Analytics & Reporting**, **§4.9 Notification** 에 해당하는 **추가 집계·알림·리포트 파이프라인**(팀이 별도 마이크로서비스 또는 모듈로 둘 때)을 다룬다. **API 사용량 대시보드**는 **Usage Service**, **비용 대시보드**는 **Billing Service** 가 각각 담당할 수 있음은 §4.5·§4.6·§11과 같다. 구현 주체는 팀 합의에 따르며, **Identity·Usage 등 각 도메인의 `web/` 풀스택 작업**과 **혼동하지 않는다**(UI는 API를 소비할 뿐, 본 절의 **별도** 파이프라인·워커 구현 책임과 구분한다).
 
 ### 12.1 담당 서비스·산출물
 
-- **Analytics & Reporting Service**(또는 동일 책임의 모듈): 집계 API, 리포트 생성 파이프라인.
-- **Notification Service**(또는 동일 책임의 워커): Slack·이메일 등 외부 채널 발송(§4.9와 정합).
+- **Usage Service**: **`usage-recorded`** 소비·로그 영속 및 **사용량 대시보드**용 조회·집계(§4.5·§6·§11).
+- **Billing Service**: **`usage-recorded`** 를 비용 산출·**비용 대시보드** 입력으로 쓰고, **(계획)** `billing-warning` / `billing-exceeded` 등으로 **Notification**에 알림을 넘긴다(§6·§11).
+- **Analytics & Reporting Service**(또는 동일 책임의 모듈): Usage·Billing **허용 API** 또는 후속 이벤트를 바탕으로 한 **추가** 집계 API·리포트 생성 파이프라인.
+- **Notification Service**(또는 동일 책임의 워커): Slack·이메일 등 외부 채널 발송; **(계획)** Billing 발행 **예산·임계** 이벤트 소비(§4.9·§6).
 
 ### 12.2 데이터 집계(Aggregation)
 
-- **입력**: Proxy 등에서 발행되는 **`usage-recorded`** 등 이벤트(§6.1), 필요 시 Usage/Billing 저장소 또는 이들을 조회하는 **허용된 API**만 사용한다(타 서비스 DB 직접 접근 지양, `docs/repository-structure.md` 참고).
+- **입력**: **`usage-recorded`**(§6.1)는 **Usage**·**Billing** 이 주 소비·활용 주체이며, 별도 Analytics 파이프라인은 **Usage/Billing DB에 JDBC 직접 접근 없이** 이들을 조회하는 **허용된 API**·이벤트만 사용한다(`docs/repository-structure.md` 참고).
 - **처리 방식**: 실시간 스트림 소비(**RabbitMQ** 소비자)와 **배치·스케줄 기반** 집계를 병행할 수 있다.
-- **산출 예시**: 일별·월별·모델별·팀/조직별 **비용·토큰 통계**, 대시보드용 요약 시계열.
+- **산출 예시**: 일별·월별·모델별·팀/조직별 **비용·토큰 통계**, 대시보드용 요약 시계열(일부는 Usage·Billing 경계에서 제공하고, 확장·장기 리포트는 Analytics 등).
 - **실시간 성능**: 대시보드 조회 부하 완화를 위해 **Redis** 카운터(예: 기간·스코프별 `INCRBY`)로 당일/당월 누적을 유지하는 패턴을 사용할 수 있다(§3.3·§10의 Redis 전제와 연계).
 
 ### 12.3 알림 엔진(Notification)
@@ -399,6 +414,7 @@
 - **Identity 계열**: `services/identity-service` + `services/identity-service/web/` — 랜딩·인증·조직/팀 설정 UI, `/api/auth/**`·`/api/identity/**` BFF 등. 계약: `docs/contracts/web-identity-bff.md`.
 - **Usage·대시보드 계열**: `services/usage-service` + `services/usage-service/web/` — 사용량 대시보드, `/api/usage/**` BFF → 게이트웨이. 계약: `docs/contracts/web-gateway-bff.md`, `docs/contracts/gateway-proxy.md`.
 - **Team 계열**: `services/team-service` + `services/team-service/web/` — 팀 생성/조회/초대 및 팀 API Key 등록/조회 API, Team BFF. 브라우저 `/teams` UI는 Identity `web`가 소유하고 팀 API(`/api/team/v1/**`)만 Team BFF로 연동. 계약: `docs/contracts/web-team-bff.md`.
+- **`/teams` 진입 방식:** **단일 도메인 `web-edge`** 를 쓰면 브라우저의 `/teams/*` 요청은 Nginx가 **team `web`** 으로 넘긴다. **Identity `web`만 호스트 오리진(엣지 없이 예: `localhost:3000`)으로 띄우는 경우**에는 Identity 앱의 `/teams` 페이지와 Next rewrite로 `/api/team/v1/**` 만 team `web` BFF(및 `team-service`)로 연동될 수 있다. 위 두 방식은 저장소 설정에 따라 병행 정의된다.
 - **웹 경계**: `docs/contracts/web-split-boundary.md` — 경로·BFF·미들웨어 변경 시 **본 문서·계약 문서**를 코드와 같이 갱신한다.
 - **Proxy·API Gateway**: 공개 AI·Usage HTTP 진입·신뢰 헤더 — 게이트웨이·프록시 구현 팀과 **HTTP 계약**만 맞춘다.
 
