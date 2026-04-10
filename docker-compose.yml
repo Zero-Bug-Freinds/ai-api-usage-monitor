@@ -29,14 +29,31 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-app}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
       POSTGRES_DB: ${POSTGRES_DB:-app}
-      TEAM_POSTGRES_DB: ${TEAM_POSTGRES_DB:-team_db}
-      TEAM_POSTGRES_USER: ${TEAM_POSTGRES_USER:-team_app}
-      TEAM_POSTGRES_PASSWORD: ${TEAM_POSTGRES_PASSWORD:-team_app}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./docker/postgres/init/03-create-team-db.sh:/docker-entrypoint-initdb.d/03-create-team-db.sh:ro
+
+  postgres-team:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+      TEAM_POSTGRES_DB: ${TEAM_POSTGRES_DB:-team_db}
+      TEAM_POSTGRES_USER: ${TEAM_POSTGRES_USER:-team_app}
+      TEAM_POSTGRES_PASSWORD: ${TEAM_POSTGRES_PASSWORD:-team_app}
+    ports:
+      - "${TEAM_POSTGRES_PORT:-5434}:5432"
+    volumes:
+      - postgres_team_data:/var/lib/postgresql/data
+      - ./docker/postgres/init/postgres-team-init.sql:/docker-entrypoint-initdb.d/postgres-team-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   postgres-usage:
     image: postgres:16-alpine
@@ -146,8 +163,8 @@ services:
       context: .
       dockerfile: services/team-service/Dockerfile
     environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
+      TEAM_POSTGRES_HOST: postgres-team
+      TEAM_POSTGRES_PORT: 5432
       TEAM_POSTGRES_DB: ${TEAM_POSTGRES_DB:-team_db}
       TEAM_POSTGRES_USER: ${TEAM_POSTGRES_USER:-team_app}
       TEAM_POSTGRES_PASSWORD: ${TEAM_POSTGRES_PASSWORD:-team_app}
@@ -156,7 +173,8 @@ services:
       TEAM_API_KEY_ENCRYPTION_SECRET: ${TEAM_API_KEY_ENCRYPTION_SECRET:-change-this-team-api-key-encryption-secret-min-32-chars}
       TEAM_SERVICE_PORT: 8093
     depends_on:
-      - postgres
+      postgres-team:
+        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -194,4 +212,5 @@ services:
 
 volumes:
   postgres_data:
+  postgres_team_data:
   postgres_usage_data:
