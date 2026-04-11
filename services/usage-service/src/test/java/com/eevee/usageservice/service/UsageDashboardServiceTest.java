@@ -9,9 +9,18 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class UsageDashboardServiceTest {
@@ -29,7 +38,12 @@ class UsageDashboardServiceTest {
     @BeforeEach
     void setUp() {
         properties.getAnalytics().setMaxRangeDays(10);
-        service = new UsageDashboardService(analyticsJdbcRepository, logRepository, properties);
+        service = new UsageDashboardService(
+                analyticsJdbcRepository,
+                logRepository,
+                properties,
+                Clock.systemUTC()
+        );
     }
 
     @Test
@@ -37,7 +51,8 @@ class UsageDashboardServiceTest {
         assertThatThrownBy(() -> service.summary(
                 "user",
                 LocalDate.of(2025, 2, 1),
-                LocalDate.of(2025, 1, 1)
+                LocalDate.of(2025, 1, 1),
+                null
         )).isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -46,7 +61,46 @@ class UsageDashboardServiceTest {
         assertThatThrownBy(() -> service.summary(
                 "user",
                 LocalDate.of(2025, 1, 1),
-                LocalDate.of(2025, 1, 20)
+                LocalDate.of(2025, 1, 20),
+                null
         )).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void costIntradayKpi_computesChangeRateWhenYesterdayNonZero() {
+        Clock clock = Clock.fixed(Instant.parse("2025-06-15T12:00:00Z"), ZoneOffset.UTC);
+        UsageDashboardService s = new UsageDashboardService(
+                analyticsJdbcRepository,
+                logRepository,
+                properties,
+                clock
+        );
+        when(analyticsJdbcRepository.sumEstimatedCost(eq("u"), any(), any(), isNull()))
+                .thenReturn(new BigDecimal("10.00"))
+                .thenReturn(new BigDecimal("5.00"));
+
+        var kpi = s.costIntradayKpi("u", null);
+
+        assertThat(kpi.todayEstimatedCost()).isEqualByComparingTo("10.00");
+        assertThat(kpi.yesterdaySameWindowEstimatedCost()).isEqualByComparingTo("5.00");
+        assertThat(kpi.changeRatePercent()).isEqualByComparingTo("100.00");
+    }
+
+    @Test
+    void costIntradayKpi_nullChangeRateWhenYesterdayZero() {
+        Clock clock = Clock.fixed(Instant.parse("2025-06-15T12:00:00Z"), ZoneOffset.UTC);
+        UsageDashboardService s = new UsageDashboardService(
+                analyticsJdbcRepository,
+                logRepository,
+                properties,
+                clock
+        );
+        when(analyticsJdbcRepository.sumEstimatedCost(eq("u"), any(), any(), isNull()))
+                .thenReturn(new BigDecimal("3.00"))
+                .thenReturn(BigDecimal.ZERO);
+
+        var kpi = s.costIntradayKpi("u", null);
+
+        assertThat(kpi.changeRatePercent()).isNull();
     }
 }
