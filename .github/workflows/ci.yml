@@ -20,10 +20,6 @@ concurrency:
 permissions:
   contents: read
 
-# Temporary: set to 'false' (or remove) to run billing-service + billing-web in CI again.
-env:
-  CI_SKIP_BILLING: 'true'
-
 jobs:
   changes:
     name: Detect changed paths
@@ -160,7 +156,7 @@ jobs:
     name: Build billing-service
     runs-on: ubuntu-latest
     needs: changes
-    if: env.CI_SKIP_BILLING != 'true' && (needs.changes.outputs.billing == 'true' || needs.changes.outputs.workflows == 'true')
+    if: needs.changes.outputs.billing == 'true' || needs.changes.outputs.workflows == 'true'
     defaults:
       run:
         working-directory: services/billing-service
@@ -215,30 +211,20 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Lint / test / build (Next apps)
         run: |
-          set -e
           pnpm --filter identity-web run lint
           pnpm --filter usage-web run lint
-          if [ "${CI_SKIP_BILLING}" != "true" ]; then
-            pnpm --filter billing-web run lint
-          fi
+          pnpm --filter billing-web run lint
           pnpm --filter team-web run lint
           pnpm --filter identity-web test
           pnpm --filter usage-web test
-          if [ "${CI_SKIP_BILLING}" != "true" ]; then
-            pnpm --filter billing-web test
-          fi
+          pnpm --filter billing-web test
           pnpm --filter team-web test
-          if [ "${CI_SKIP_BILLING}" != "true" ]; then
-            pnpm run build:web
-          else
-            pnpm build:identity-web && pnpm build:usage-web && pnpm build:team-web
-          fi
+          pnpm run build:web
       - name: Docker image (identity-web, standalone)
         run: docker build -f services/identity-service/web/Dockerfile -t identity-web:ci .
       - name: Docker image (usage-web, standalone)
         run: docker build -f services/usage-service/web/Dockerfile -t usage-web:ci .
       - name: Docker image (billing-web, standalone)
-        if: env.CI_SKIP_BILLING != 'true'
         run: docker build -f services/billing-service/web/Dockerfile -t billing-web:ci .
       - name: Docker image (team-web, standalone)
         run: docker build -f services/team-service/web/Dockerfile -t team-web:ci .

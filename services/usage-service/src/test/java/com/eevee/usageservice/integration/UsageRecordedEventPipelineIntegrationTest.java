@@ -30,7 +30,12 @@ import static org.awaitility.Awaitility.await;
  * <p>
  * Docker가 필요하다. 로컬에서 Docker 없이 빌드할 때는 {@code ./gradlew test -x integration} 등으로
  * 제외하거나, 이 클래스만 비활성화할 수 있다.
+ * <p>
+ * Testcontainers implement {@link AutoCloseable}; JUnit 5 + {@link org.testcontainers.junit.jupiter.Container}
+ * close them after the suite. {@code @SuppressWarnings("resource")} avoids false-positive “unassigned Closeable”
+ * on fluent configuration chains.
  */
+@SuppressWarnings("resource")
 @SpringBootTest
 @Testcontainers
 class UsageRecordedEventPipelineIntegrationTest {

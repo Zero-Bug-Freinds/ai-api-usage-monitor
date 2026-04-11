@@ -2,6 +2,11 @@
   "name": "ai-api-usage-monitor",
   "private": true,
   "packageManager": "pnpm@9.15.9",
+  "devDependencies": {
+    "eslint": "^9",
+    "next": "16.2.1",
+    "vitest": "^4.1.1"
+  },
   "scripts": {
     "build:identity-web": "pnpm --filter identity-web build",
     "build:usage-web": "pnpm --filter usage-web build",

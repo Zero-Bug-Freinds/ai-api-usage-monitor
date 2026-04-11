@@ -3,12 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3003",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "dev": "node ../../../node_modules/next/dist/bin/next dev -p 3003",
+    "build": "node ../../../node_modules/next/dist/bin/next build",
+    "start": "node ../../../node_modules/next/dist/bin/next start",
+    "lint": "node ../../../node_modules/eslint/bin/eslint.js .",
+    "test": "node ../../../node_modules/vitest/vitest.mjs run",
+    "test:watch": "node ../../../node_modules/vitest/vitest.mjs"
   },
   "dependencies": {
     "@ai-usage/ui": "workspace:*",
