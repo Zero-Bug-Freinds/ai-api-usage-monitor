@@ -10,11 +10,12 @@ import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
 
-public record RegisterTeamApiKeyRequest(
-        @NotNull(message = "provider는 필수입니다")
+/**
+ * 팀 API 키 수정. {@code externalKey}가 비어 있으면 키 값은 유지하고 별칭·예산만 갱신한다.
+ */
+public record UpdateTeamApiKeyRequest(
         TeamApiKeyProvider provider,
 
-        @NotBlank(message = "externalKey는 필수입니다")
         @Size(max = 4096)
         @JsonProperty("externalKey")
         String externalKey,
