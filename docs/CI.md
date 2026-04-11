@@ -28,6 +28,10 @@
 
 ## 로컬에서 워크플로와 동일한 검증
 
+### 지출 API 체인 스모크 (선택)
+
+호스트에서 billing·게이트웨이를 띄운 뒤 저장소 루트에서 `scripts/verify-expenditure-chain.sh`(또는 Windows `scripts/verify-expenditure-chain.ps1`)를 실행한다. `GATEWAY_DEV_MODE=false`일 때는 JWT 검증 경로까지 포함하려면 `.env`에 `EXPENDITURE_VERIFY_GATEWAY_JWT` 또는 identity 로그인용 `EXPENDITURE_VERIFY_LOGIN_*`를 두고, **`GATEWAY_JWT_SECRET`과 `JWT_SECRET`이 일치**하는지 확인한다. 상세는 `docs/billing-service-overview-20260412.md` §6.4.
+
 ```bash
 # Compose
 docker compose -f docker-compose.yml config

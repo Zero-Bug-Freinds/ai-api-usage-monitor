@@ -27,8 +27,9 @@ spring:
               filters:
                 - RemoveRequestHeader=Authorization
 
+            # Default matches scripts/bootrun.* billing port (8095); override via GATEWAY_BILLING_URI / .env.
             - id: billing-http
-              uri: ${GATEWAY_BILLING_URI:http://localhost:8093}
+              uri: ${GATEWAY_BILLING_URI:http://localhost:8095}
               predicates:
                 - Path=/api/v1/expenditure/**
               filters:

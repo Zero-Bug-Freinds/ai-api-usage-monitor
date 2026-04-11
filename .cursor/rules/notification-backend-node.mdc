@@ -1,0 +1,64 @@
+---
+description: Notification Service — Node/Nest backend, RabbitMQ consumers, PostgreSQL, idempotent outbound notifications
+globs:
+  - "services/notification-service/**/*.ts"
+  - "services/notification-service/**/*.js"
+  - "services/notification-service/prisma/**/*"
+alwaysApply: false
+---
+
+# Notification Backend Service (Node)
+
+**적용 범위:** `globs`가 가리키는 **`services/notification-service/`** 의 **백엔드(Node) 런타임** 코드. 브라우저 대면 UI·BFF는 **`services/notification-service/web/`** 에 두며, 그 트리는 **`project-common-nextjs.mdc`** · `docs/contracts/web-split-boundary.md` 를 따른다. **집계·알림 파이프라인**과 도메인 `web/` 구현을 혼동하지 말 것 — 상위 원칙은 **`docs/architecture.md` §12** 및 루트 **`.cursorrules`**.
+
+## 아키텍처에서의 역할
+
+- **책임:** Slack·이메일 등 **아웃바운드 알림 발송**, **발송 이력·멱등**(최소 구현), 필요 시 **내부 조회 API**(예: 인앱 알림함 목록을 위한 읽기 API).
+- **비책임:** Quota/비용 **임계치 계산**, 사용자·조직 **마스터 데이터 소유**(Identity·Team·Quota 등의 진실은 각 서비스에 둔다). 이 서비스는 이벤트 페이로드·허용된 API로 받은 식별자만 사용한다.
+- **브로커:** 프로젝트 단일 브로커는 **RabbitMQ** (`docs/architecture.md` §6). Kafka는 범위 밖이다.
+- **소비 예시(문서 §6.1):** `usage-recorded`(트리거), `quota-warning` / `quota-exceeded`, 팀 초대 등은 **발행 서비스와 합의한 라우팅 키·스키마**로 구독한다. 페이로드·계약은 팀이 `docs/contracts/` 또는 공유 이벤트 모듈로 정리한다.
+
+## 권장 기술 스택
+
+| 영역 | 권장 |
+|------|------|
+| Runtime | **Node.js** — 저장소 CI·다른 `web` 과 맞추려면 **22 LTS** 를 기본으로 한다. |
+| HTTP 프레임워크 | **NestJS** 를 기본으로 한다(문서 §2.1의 “Node(NestJS 등)”와 정합). Express/Fastify만 쓸 경우 **동일한 레이어·로깅·설정**을 강제해 일관성을 유지한다. |
+| DB | **PostgreSQL**. ORM은 **Prisma** 또는 팀 합의(예: Drizzle, TypeORM). 다른 서비스 DB에 **직접 접속하지 않는다**(`docs/msa-database-and-service-integration.md` 정신 준수). |
+| 메시지 | **RabbitMQ** 소비자(`amqplib` / Nest 마이크로서비스·`@golevelup/nestjs-rabbitmq` 등 팀 표준). |
+| 캐시·멱등 | 문서 §12.3에 따라 동일 임계치 **중복 알림 방지**에 **Redis** 활용을 검토한다(선택이 아니라 운영상 권장에 가깝다). |
+| API 문서 | **OpenAPI 3** — Nest에서는 **`@nestjs/swagger`**. |
+
+## 레이어링·코드 스타일
+
+1. **파일·디렉터리명:** **kebab-case** (Nest 모듈 관례와 맞출 것).
+2. **Controller:** HTTP 요청/응답·상태 코드·DTO 매핑만. 비즈니스 규칙은 Service(및 도메인 헬퍼)로.
+3. **Service:** 발송 결정, 템플릿 렌더링, 외부 채널 호출, 트랜잭션 경계(이력 저장).
+4. **시간:** 저장·로그·API의 시간대는 **UTC**로 통일하고, 필요 시 클라이언트에서 로컬 변환.
+5. **페이지네이션:** 목록 API는 **`offset` 기반 남용을 피하고** **cursor** 기반을 우선한다. 커서는 팀 합의로 예를 들어 **`createdAt` + `id`** 복합 정렬을 안정적으로 하고, **tie-break** 를 명시한다(Base64 등 인코딩은 **합의된 스키마**로만).
+
+## 알림 도메인 규칙
+
+1. **멱등·중복 방지:** 동일 **스코프·기간·임계치(또는 동일 초대 ID)** 에 대해 **한 번만 발송**되도록 DB 유니크 제약·Redis 키·이력 조회 중 하나 이상으로 보장한다(`docs/architecture.md` §4.9, §12.3).
+2. **이벤트 경계:** **서비스 간** 비동기 연계는 **RabbitMQ** 로만 한다. **단일 프로세스 안**에서 “발송 파이프라인”과 “DB 커밋 후 부가 작업”을 분리할 때만 Nest **`EventEmitter`** / 도메인 이벤트를 쓰고, **분산 트랜잭션처럼 취급하지 말 것**(실패 시 재시도·DLQ 정책은 별도 설계).
+3. **실시간:** 브라우저 푸시·SSE가 필요하면 **게이트웨이·BFF·별도 실시간 게이트**와의 계약을 문서화하고, 이 규칙 파일의 기본 책임인 **아웃바운드 채널 + 이력** 과 섞지 않는다.
+
+## 보안·관측성
+
+1. **`console.log` 금지.** Nest **`Logger`** 또는 구조화 로거(**pino** 등)를 사용한다.
+2. **비밀·토큰·Authorization 헤더**는 로그에 남기지 않거나 마스킹한다(`docs/architecture.md` §8.5).
+3. **외부 API**(Resend, Slack Webhook, SMTP 등) 호출은 **타임아웃·재시도 정책·에러 매핑**을 누락하지 않는다. 실패 시 **재처리 가능**하게 이력 상태를 남긴다.
+4. **테넌트:** 조회·발송 API는 서버에서 **`user_id` / `org_id` / `team_id`** 스코프를 강제한다(클라이언트 단일 입력만 신뢰하지 않음, §8.4 정신).
+
+## 금지·주의
+
+- 다른 마이크로서비스 **DB에 직접 JDBC/Prisma로 접속**해 알림을 끌어오는 패턴.
+- 알림 **비즈니스 규칙 전부**를 이 서비스에만 몰아넣어 Quota/Billing과 **중복·불일치**를 만드는 것(임계치는 발행 측 또는 Quota가 진실).
+- **Next.js Route Handler** 안에 RabbitMQ **장기 소비 루프**만 두는 패턴(배포 모델상 비권장) — 백엔드 프로세스와 분리한다.
+
+## 교차 참고
+
+- 이벤트·브로커: **`docs/architecture.md` §6, §7, §12**
+- 저장소 레이아웃: **`docs/repository-structure.md`**
+- DB·연동 경계: **`msa-db-and-integration-pointer.mdc`**, **`docs/msa-database-and-service-integration.md`**
+- 프론트·BFF(동일 서비스 `web/`): **`project-common-nextjs.mdc`**
