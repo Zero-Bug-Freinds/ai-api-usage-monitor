@@ -1,26 +1,17 @@
 package com.eevee.billingservice.integration;
 
-import com.eevee.billingservice.config.BillingRabbitProperties;
 import com.eevee.billingservice.repository.BillingProcessedEventRepository;
 import com.eevee.usage.events.AiProvider;
 import com.eevee.usage.events.TokenUsage;
-import com.eevee.usage.events.UsageCostFinalizedEvent;
 import com.eevee.usage.events.UsageRecordedEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
-import org.springframework.amqp.core.Binding;
-import org.springframework.amqp.core.BindingBuilder;
-import org.springframework.amqp.core.Queue;
-import org.springframework.amqp.core.TopicExchange;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.TestPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.containers.RabbitMQContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -34,10 +25,13 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
+/**
+ * When cost-out is disabled, billable rows are stored as not cost-event-applicable and no outbound message is sent.
+ */
 @SpringBootTest
-@Import(BillingRecordedEventPipelineIntegrationTest.CostFinalizedAmqpTestConfig.class)
+@TestPropertySource(properties = "billing.rabbit.cost-out.enabled=false")
 @Testcontainers
-class BillingRecordedEventPipelineIntegrationTest {
+class BillingRecordedEventCostOutDisabledIntegrationTest {
 
     @Container
     static RabbitMQContainer rabbit = new RabbitMQContainer("rabbitmq:3.13-alpine");
@@ -70,39 +64,17 @@ class BillingRecordedEventPipelineIntegrationTest {
     @Autowired
     private BillingProcessedEventRepository processedEventRepository;
 
-    static final String IT_COST_QUEUE = "it.usage.cost.finalized";
-
-    @TestConfiguration
-    static class CostFinalizedAmqpTestConfig {
-
-        @Bean
-        Queue integrationCostTestQueue() {
-            return new Queue(IT_COST_QUEUE, true);
-        }
-
-        @Bean
-        Binding integrationCostTestBinding(
-                Queue integrationCostTestQueue,
-                @Qualifier("billingCostEventsExchange") TopicExchange billingCostEventsExchange,
-                BillingRabbitProperties props
-        ) {
-            return BindingBuilder.bind(integrationCostTestQueue)
-                    .to(billingCostEventsExchange)
-                    .with(props.getCostOut().getRoutingKey());
-        }
-    }
-
     @Test
-    void jsonPublishedLikeProxy_isConsumedAndMarkedProcessed() throws Exception {
+    void billablePath_marksNotApplicable_andDoesNotPublishCostEvent() throws Exception {
         UUID eventId = UUID.randomUUID();
         UsageRecordedEvent event = new UsageRecordedEvent(
                 eventId,
                 Instant.parse("2025-06-01T12:00:00Z"),
-                "corr-it",
-                "user-it",
+                "corr-disabled",
+                "user-disabled",
                 null,
                 null,
-                "key-it",
+                "key-disabled",
                 "cafebabedeadbeef",
                 "managed",
                 AiProvider.OPENAI,
@@ -122,18 +94,8 @@ class BillingRecordedEventPipelineIntegrationTest {
         await().atMost(15, SECONDS).pollInterval(100, java.util.concurrent.TimeUnit.MILLISECONDS)
                 .until(() -> processedEventRepository.existsById(eventId));
 
-        assertThat(processedEventRepository.findById(eventId)).isPresent();
-
-        await().atMost(15, SECONDS).pollInterval(100, java.util.concurrent.TimeUnit.MILLISECONDS)
-                .until(() -> processedEventRepository.findById(eventId)
-                        .map(r -> r.getCostEventPublishedAt() != null)
-                        .orElse(false));
-
-        var costMsg = rabbitTemplate.receive(IT_COST_QUEUE, 5000);
-        assertThat(costMsg).isNotNull();
-        UsageCostFinalizedEvent costEvent = objectMapper.readValue(costMsg.getBody(), UsageCostFinalizedEvent.class);
-        assertThat(costEvent.eventId()).isEqualTo(eventId);
-        assertThat(costEvent.estimatedCostUsd()).isNotNull();
-        assertThat(costEvent.schemaVersion()).isEqualTo(UsageCostFinalizedEvent.CURRENT_SCHEMA_VERSION);
+        var row = processedEventRepository.findById(eventId).orElseThrow();
+        assertThat(row.isCostEventApplicable()).isFalse();
+        assertThat(row.getCostEventPublishedAt()).isNull();
     }
 }

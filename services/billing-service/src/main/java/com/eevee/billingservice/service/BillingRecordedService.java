@@ -1,5 +1,6 @@
 package com.eevee.billingservice.service;
 
+import com.eevee.billingservice.config.BillingRabbitProperties;
 import com.eevee.billingservice.domain.BillingProcessedEventEntity;
 import com.eevee.billingservice.domain.ProviderModelPriceEntity;
 import com.eevee.billingservice.repository.BillingProcessedEventRepository;
@@ -11,11 +12,14 @@ import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.Optional;
 
 @Service
 public class BillingRecordedService {
@@ -26,43 +30,122 @@ public class BillingRecordedService {
     private final BillingProcessedEventRepository processedEventRepository;
     private final ProviderModelPriceRepository priceRepository;
     private final BillingAggregationJdbc aggregationJdbc;
+    private final UsageCostFinalizedEventPublisher costFinalizedPublisher;
+    private final BillingProcessedEventLifecycle processedEventLifecycle;
+    private final BillingRabbitProperties rabbitProperties;
 
     public BillingRecordedService(
             BillingProcessedEventRepository processedEventRepository,
             ProviderModelPriceRepository priceRepository,
-            BillingAggregationJdbc aggregationJdbc
+            BillingAggregationJdbc aggregationJdbc,
+            UsageCostFinalizedEventPublisher costFinalizedPublisher,
+            BillingProcessedEventLifecycle processedEventLifecycle,
+            BillingRabbitProperties rabbitProperties
     ) {
         this.processedEventRepository = processedEventRepository;
         this.priceRepository = priceRepository;
         this.aggregationJdbc = aggregationJdbc;
+        this.costFinalizedPublisher = costFinalizedPublisher;
+        this.processedEventLifecycle = processedEventLifecycle;
+        this.rabbitProperties = rabbitProperties;
     }
 
     @Transactional
     public void process(UsageRecordedEvent event) {
-        if (processedEventRepository.existsById(event.eventId())) {
+        Optional<BillingProcessedEventEntity> existing = processedEventRepository.findById(event.eventId());
+        if (existing.isPresent()) {
+            handleAlreadyProcessed(event, existing.get());
             return;
         }
+
         Instant processedAt = Instant.now();
-        if (!Boolean.TRUE.equals(event.requestSuccessful())) {
-            processedEventRepository.save(new BillingProcessedEventEntity(event.eventId(), processedAt));
+        Optional<BillableComputation> billable = resolveBillable(event);
+        if (billable.isEmpty()) {
+            processedEventRepository.save(new BillingProcessedEventEntity(event.eventId(), processedAt, false));
             return;
+        }
+
+        BillableComputation bc = billable.get();
+        boolean costOutEnabled = rabbitProperties.getCostOut().isEnabled();
+        boolean applicable = costOutEnabled;
+
+        aggregationJdbc.upsertDaily(
+                bc.aggDate(),
+                bc.userId(),
+                bc.apiKeyId(),
+                event.provider(),
+                bc.model(),
+                bc.cost(),
+                bc.promptTokens(),
+                bc.completionTokens());
+        aggregationJdbc.upsertMonthly(bc.monthStart(), bc.userId(), bc.apiKeyId(), bc.cost());
+        aggregationJdbc.upsertSeen(bc.userId(), bc.apiKeyId(), event.provider(), bc.occurredAt());
+
+        processedEventRepository.save(new BillingProcessedEventEntity(event.eventId(), processedAt, applicable));
+
+        if (costOutEnabled) {
+            scheduleAfterCommit(() -> publishCostAndMark(event, bc.model(), bc.cost()));
+        }
+    }
+
+    private void handleAlreadyProcessed(UsageRecordedEvent event, BillingProcessedEventEntity row) {
+        if (!row.isCostEventApplicable()) {
+            return;
+        }
+        if (row.getCostEventPublishedAt() != null) {
+            return;
+        }
+        if (!rabbitProperties.getCostOut().isEnabled()) {
+            return;
+        }
+        Optional<BillableComputation> billable = resolveBillable(event);
+        if (billable.isEmpty()) {
+            log.warn(
+                    "Cost event still pending but event no longer resolves as billable; skipping republish eventId={}",
+                    event.eventId());
+            return;
+        }
+        BillableComputation bc = billable.get();
+        scheduleAfterCommit(() -> publishCostAndMark(event, bc.model(), bc.cost()));
+    }
+
+    private void publishCostAndMark(UsageRecordedEvent event, String model, BigDecimal costUsd) {
+        costFinalizedPublisher.publish(event, model, costUsd);
+        processedEventLifecycle.markCostEventPublished(event.eventId(), Instant.now());
+    }
+
+    private void scheduleAfterCommit(Runnable action) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            throw new IllegalStateException("Expected an active Spring transaction for billing event handling");
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                action.run();
+            }
+        });
+    }
+
+    /**
+     * Billable path: successful request with user, key, provider, model, and KST-derived aggregation keys.
+     */
+    private Optional<BillableComputation> resolveBillable(UsageRecordedEvent event) {
+        if (!Boolean.TRUE.equals(event.requestSuccessful())) {
+            return Optional.empty();
         }
         String userId = event.userId();
         String apiKeyId = event.apiKeyId();
         if (userId == null || userId.isBlank() || apiKeyId == null || apiKeyId.isBlank()) {
             log.debug("Skipping expenditure aggregation: missing userId or apiKeyId eventId={}", event.eventId());
-            processedEventRepository.save(new BillingProcessedEventEntity(event.eventId(), processedAt));
-            return;
+            return Optional.empty();
         }
         if (event.provider() == null) {
-            processedEventRepository.save(new BillingProcessedEventEntity(event.eventId(), processedAt));
-            return;
+            return Optional.empty();
         }
 
         String model = resolveModel(event);
         if (model == null || model.isBlank()) {
-            processedEventRepository.save(new BillingProcessedEventEntity(event.eventId(), processedAt));
-            return;
+            return Optional.empty();
         }
 
         Instant occurredAt = event.occurredAt();
@@ -78,11 +161,16 @@ public class BillingRecordedService {
         BigDecimal cost = ExpenditureCostCalculator.compute(event.tokenUsage(), price);
         ExpenditureCostCalculator.NormalizedTokens tokens = ExpenditureCostCalculator.normalizeTokens(event.tokenUsage());
 
-        aggregationJdbc.upsertDaily(aggDate, userId, apiKeyId, event.provider(), model, cost, tokens.promptTokens(), tokens.completionTokens());
-        aggregationJdbc.upsertMonthly(monthStart, userId, apiKeyId, cost);
-        aggregationJdbc.upsertSeen(userId, apiKeyId, event.provider(), occurredAt);
-
-        processedEventRepository.save(new BillingProcessedEventEntity(event.eventId(), processedAt));
+        return Optional.of(new BillableComputation(
+                userId,
+                apiKeyId,
+                aggDate,
+                monthStart,
+                model,
+                cost,
+                tokens.promptTokens(),
+                tokens.completionTokens(),
+                occurredAt));
     }
 
     private static String resolveModel(UsageRecordedEvent event) {
@@ -94,5 +182,18 @@ public class BillingRecordedService {
             return tu.model().trim();
         }
         return null;
+    }
+
+    private record BillableComputation(
+            String userId,
+            String apiKeyId,
+            LocalDate aggDate,
+            LocalDate monthStart,
+            String model,
+            BigDecimal cost,
+            long promptTokens,
+            long completionTokens,
+            Instant occurredAt
+    ) {
     }
 }
