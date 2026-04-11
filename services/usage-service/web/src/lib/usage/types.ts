@@ -30,11 +30,16 @@ export type ModelUsageAggregate = {
   inputTokens: number
 }
 
+export type UsageLogApiKeyItem = {
+  apiKeyId: string
+}
+
 export type UsageLogEntryResponse = {
   eventId: string
   occurredAt: string
   correlationId: string | null
   provider: string
+  apiKeyId: string | null
   model: string
   promptTokens: number | null
   completionTokens: number | null

@@ -7,6 +7,7 @@ import com.eevee.usageservice.api.dto.ModelUsageAggregate;
 import com.eevee.usageservice.api.dto.MonthlyUsagePoint;
 import com.eevee.usageservice.api.dto.PagedLogsResponse;
 import com.eevee.usageservice.api.dto.UsageCostIntradayKpiResponse;
+import com.eevee.usageservice.api.dto.UsageLogApiKeyItemResponse;
 import com.eevee.usageservice.api.dto.UsageSummaryResponse;
 import com.eevee.usageservice.security.UsageGatewayTrustFilter;
 import com.eevee.usageservice.service.UsageDashboardService;
@@ -93,18 +94,28 @@ public class UsageAnalyticsController {
         return dashboardService.byModel(userId, from, to, provider);
     }
 
+    @GetMapping("/logs/api-keys")
+    public List<UsageLogApiKeyItemResponse> logApiKeys(
+            HttpServletRequest request,
+            @RequestParam(required = false) AiProvider provider
+    ) {
+        String userId = currentUser(request);
+        return dashboardService.listLogApiKeys(userId, provider);
+    }
+
     @GetMapping("/logs")
     public PagedLogsResponse logs(
             HttpServletRequest request,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(required = false) AiProvider provider,
+            @RequestParam(required = false) String apiKeyId,
             @RequestParam(required = false) String model,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
         String userId = currentUser(request);
-        return dashboardService.logs(userId, from, to, provider, model, page, size);
+        return dashboardService.logs(userId, from, to, provider, apiKeyId, model, page, size);
     }
 
     private static String currentUser(HttpServletRequest request) {

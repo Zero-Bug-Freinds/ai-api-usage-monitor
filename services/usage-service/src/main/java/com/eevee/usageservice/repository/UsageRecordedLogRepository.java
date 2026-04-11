@@ -11,6 +11,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedLogEntity, UUID> {
@@ -28,6 +29,7 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
                     and u.occurredAt >= :from
                     and u.occurredAt < :toExclusive
                     and (:provider is null or u.provider = :provider)
+                    and (:apiKeyId is null or u.apiKeyId = :apiKeyId)
                     and (:modelMask is null or :modelMask = '' or lower(coalesce(u.model, '')) like lower(concat('%', :modelMask, '%')))
                     order by u.occurredAt desc
                     """,
@@ -37,6 +39,7 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
                     and u.occurredAt >= :from
                     and u.occurredAt < :toExclusive
                     and (:provider is null or u.provider = :provider)
+                    and (:apiKeyId is null or u.apiKeyId = :apiKeyId)
                     and (:modelMask is null or :modelMask = '' or lower(coalesce(u.model, '')) like lower(concat('%', :modelMask, '%')))
                     """
     )
@@ -45,7 +48,23 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
             @Param("from") Instant from,
             @Param("toExclusive") Instant toExclusive,
             @Param("provider") AiProvider provider,
+            @Param("apiKeyId") String apiKeyId,
             @Param("modelMask") String modelMask,
             Pageable pageable
+    );
+
+    @Query(
+            """
+                    select distinct u.apiKeyId from UsageRecordedLogEntity u
+                    where u.userId = :userId
+                    and u.apiKeyId is not null
+                    and u.apiKeyId <> ''
+                    and (:provider is null or u.provider = :provider)
+                    order by u.apiKeyId asc
+                    """
+    )
+    List<String> findDistinctApiKeyIdsByUserIdAndProvider(
+            @Param("userId") String userId,
+            @Param("provider") AiProvider provider
     );
 }

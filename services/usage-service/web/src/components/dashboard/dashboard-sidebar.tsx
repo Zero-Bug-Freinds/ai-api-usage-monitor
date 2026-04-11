@@ -7,6 +7,7 @@ import {
   Building2,
   ChevronLeft,
   LayoutDashboard,
+  ScrollText,
   Settings,
   UsersRound,
   Wallet,
@@ -15,10 +16,21 @@ import {
 import { LogoutButton } from "@/components/auth/logout-button"
 import { cn } from "@/lib/utils"
 
+/** Usage BFF 라우트(Next `basePath` 제외 pathname). 이 경로는 identity 오리진으로 보내지 않는다. */
+const USAGE_APP_RELATIVE_HREFS = new Set([
+  "/",
+  "/usagelog",
+  "/billing",
+  "/settings",
+  "/organizations",
+  "/teams",
+])
+
 /** Identity `web/`가 다른 오리진일 때(로컬 분리 포트). 단일 도메인 엣지에서는 빈 문자열. */
 function identityHref(path: string): string {
   const base = (process.env.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN ?? "").replace(/\/$/, "")
   if (path.startsWith("/dashboard")) return path
+  if (USAGE_APP_RELATIVE_HREFS.has(path)) return path
   return `${base}${path}`
 }
 
@@ -30,6 +42,7 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "사용량", icon: <LayoutDashboard className="size-4" aria-hidden /> },
+  { href: "/usagelog", label: "사용 로그", icon: <ScrollText className="size-4" aria-hidden /> },
   { href: "/billing", label: "지출", icon: <Wallet className="size-4" aria-hidden /> },
   { href: "/settings", label: "설정", icon: <Settings className="size-4" aria-hidden /> },
   { href: "/organizations", label: "조직", icon: <Building2 className="size-4" aria-hidden /> },

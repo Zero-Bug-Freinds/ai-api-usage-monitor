@@ -7,6 +7,7 @@ import com.eevee.usageservice.api.dto.ModelUsageAggregate;
 import com.eevee.usageservice.api.dto.MonthlyUsagePoint;
 import com.eevee.usageservice.api.dto.PagedLogsResponse;
 import com.eevee.usageservice.api.dto.UsageCostIntradayKpiResponse;
+import com.eevee.usageservice.api.dto.UsageLogApiKeyItemResponse;
 import com.eevee.usageservice.api.dto.UsageLogEntryResponse;
 import com.eevee.usageservice.api.dto.UsageSummaryResponse;
 import com.eevee.usageservice.config.UsageServiceProperties;
@@ -131,11 +132,19 @@ public class UsageDashboardService {
     }
 
     @Transactional(readOnly = true)
+    public List<UsageLogApiKeyItemResponse> listLogApiKeys(String userId, AiProvider provider) {
+        return logRepository.findDistinctApiKeyIdsByUserIdAndProvider(userId, provider).stream()
+                .map(UsageLogApiKeyItemResponse::new)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public PagedLogsResponse logs(
             String userId,
             LocalDate from,
             LocalDate toInclusive,
             AiProvider provider,
+            String apiKeyId,
             String modelMask,
             int page,
             int size
@@ -143,11 +152,13 @@ public class UsageDashboardService {
         Range r = validateRange(from, toInclusive);
         int pageIndex = Math.max(0, page);
         int pageSize = Math.min(200, Math.max(1, size));
+        String keyFilter = (apiKeyId != null && !apiKeyId.isBlank()) ? apiKeyId.trim() : null;
         Page<UsageRecordedLogEntity> p = logRepository.pageLogs(
                 userId,
                 r.from(),
                 r.toExclusive(),
                 provider,
+                keyFilter,
                 modelMask,
                 PageRequest.of(pageIndex, pageSize, Sort.by(Sort.Direction.DESC, "occurredAt"))
         );
@@ -167,6 +178,7 @@ public class UsageDashboardService {
                 e.getOccurredAt(),
                 e.getCorrelationId(),
                 e.getProvider().name(),
+                e.getApiKeyId(),
                 e.getModel(),
                 e.getPromptTokens(),
                 e.getCompletionTokens(),

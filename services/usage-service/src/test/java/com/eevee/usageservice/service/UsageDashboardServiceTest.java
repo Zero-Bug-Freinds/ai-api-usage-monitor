@@ -1,5 +1,6 @@
 package com.eevee.usageservice.service;
 
+import com.eevee.usageservice.api.dto.UsageLogApiKeyItemResponse;
 import com.eevee.usageservice.config.UsageServiceProperties;
 import com.eevee.usageservice.repository.UsageRecordedLogRepository;
 import com.eevee.usageservice.repository.analytics.UsageAnalyticsJdbcRepository;
@@ -14,6 +15,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -84,6 +86,16 @@ class UsageDashboardServiceTest {
         assertThat(kpi.todayEstimatedCost()).isEqualByComparingTo("10.00");
         assertThat(kpi.yesterdaySameWindowEstimatedCost()).isEqualByComparingTo("5.00");
         assertThat(kpi.changeRatePercent()).isEqualByComparingTo("100.00");
+    }
+
+    @Test
+    void listLogApiKeys_mapsDistinctIdsFromRepository() {
+        when(logRepository.findDistinctApiKeyIdsByUserIdAndProvider(eq("u"), isNull()))
+                .thenReturn(List.of("key-a", "key-b"));
+
+        List<UsageLogApiKeyItemResponse> rows = service.listLogApiKeys("u", null);
+
+        assertThat(rows).extracting(UsageLogApiKeyItemResponse::apiKeyId).containsExactly("key-a", "key-b");
     }
 
     @Test

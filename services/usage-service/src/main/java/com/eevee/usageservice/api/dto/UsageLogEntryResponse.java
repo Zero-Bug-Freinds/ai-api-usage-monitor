@@ -9,6 +9,7 @@ public record UsageLogEntryResponse(
         Instant occurredAt,
         String correlationId,
         String provider,
+        String apiKeyId,
         String model,
         Long promptTokens,
         Long completionTokens,
