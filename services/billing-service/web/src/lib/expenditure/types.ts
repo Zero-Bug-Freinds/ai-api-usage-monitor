@@ -20,3 +20,8 @@ export type ApiKeySeen = {
   provider: AiProviderCode;
   firstSeenAt: string;
 };
+
+export type TeamMonthRollup = {
+  totalCostUsd: number;
+  byUser: { userId: string; costUsd: number }[];
+};

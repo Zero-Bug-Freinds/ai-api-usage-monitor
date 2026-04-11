@@ -1,5 +1,6 @@
 package com.eevee.usageservice.config;
 
+import com.eevee.usage.events.UsageCostEventAmqp;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "usage.rabbit")
@@ -19,6 +20,12 @@ public class UsageRabbitProperties {
      * Dedicated queue for this service (pattern A — fan-out, independent DB).
      */
     private String queue = "usage-service.queue";
+
+    /**
+     * Inbound stream from billing-service: {@link com.eevee.usage.events.UsageCostFinalizedEvent} on
+     * {@link UsageCostEventAmqp#TOPIC_EXCHANGE_NAME} / {@link UsageCostEventAmqp#ROUTING_KEY_COST_FINALIZED}.
+     */
+    private CostFinalized costFinalized = new CostFinalized();
 
     public String getExchange() {
         return exchange;
@@ -42,5 +49,55 @@ public class UsageRabbitProperties {
 
     public void setQueue(String queue) {
         this.queue = queue;
+    }
+
+    public CostFinalized getCostFinalized() {
+        return costFinalized;
+    }
+
+    public void setCostFinalized(CostFinalized costFinalized) {
+        if (costFinalized != null) {
+            this.costFinalized = costFinalized;
+        }
+    }
+
+    public static class CostFinalized {
+
+        private boolean enabled = true;
+        private String exchange = UsageCostEventAmqp.TOPIC_EXCHANGE_NAME;
+        private String routingKey = UsageCostEventAmqp.ROUTING_KEY_COST_FINALIZED;
+        private String queue = UsageCostEventAmqp.SUGGESTED_USAGE_SERVICE_QUEUE;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getExchange() {
+            return exchange;
+        }
+
+        public void setExchange(String exchange) {
+            this.exchange = exchange;
+        }
+
+        public String getRoutingKey() {
+            return routingKey;
+        }
+
+        public void setRoutingKey(String routingKey) {
+            this.routingKey = routingKey;
+        }
+
+        public String getQueue() {
+            return queue;
+        }
+
+        public void setQueue(String queue) {
+            this.queue = queue;
+        }
     }
 }

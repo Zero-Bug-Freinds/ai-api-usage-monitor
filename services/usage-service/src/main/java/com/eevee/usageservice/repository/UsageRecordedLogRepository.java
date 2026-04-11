@@ -5,15 +5,21 @@ import com.eevee.usageservice.domain.UsageRecordedLogEntity;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
 public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedLogEntity, UUID> {
 
     boolean existsByEventId(UUID eventId);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update UsageRecordedLogEntity u set u.estimatedCost = :cost where u.eventId = :eventId")
+    int updateEstimatedCostByEventId(@Param("eventId") UUID eventId, @Param("cost") BigDecimal cost);
 
     @Query(
             value = """

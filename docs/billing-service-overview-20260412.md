@@ -306,7 +306,7 @@ X-Gateway-Auth: local-dev-gateway-shared-secret-do-not-use-in-prod
 | **인바운드 (비동기)** | **AMQP 구독** | `UsageRecordedEvent` JSON → 비용·집계 처리 |
 | **인바운드 (동기)** | **HTTP** | 지출 조회 REST; 클라이언트는 보통 **API Gateway** 경유 |
 | **아웃바운드 (동기, 선택)** | **HTTP** | `BILLING_IDENTITY_ENABLED=true`일 때 Identity에서 월 예산 USD 조회 |
-| **아웃바운드 (비동기)** | — | **미구현**(비용 확정 이벤트 발행은 요구사항 문서상 계획, 부록 A 참고) |
+| **아웃바운드 (비동기)** | **AMQP 발행** | `UsageCostFinalizedEvent` — `billing.events` / `usage.cost.finalized` (usage-service가 소비해 `usage_recorded_log.estimated_cost` 갱신). 상세: 부록 A, `docs/billing-pricing-catalog-ops.md`, `docs/billing-identity-budget.md`. |
 
 ### 8.1 API Gateway·헤더
 
@@ -365,10 +365,10 @@ X-Gateway-Auth: local-dev-gateway-shared-secret-do-not-use-in-prod
 
 | 항목 | 현재 구현 | 요구사항 §4 |
 |------|-----------|-------------|
-| RabbitMQ | **소비만** (`UsageRecordedEvent`) | 소비 + **비용 확정 이벤트 발행** |
-| Usage DB `estimated_cost` | billing이 직접 갱신하지 않음 | usage-service가 **소비 후 업데이트** |
+| RabbitMQ | 소비(`UsageRecordedEvent`) + **발행**(`UsageCostFinalizedEvent` → `billing.events` / `usage.cost.finalized`) | 동일 |
+| Usage DB `estimated_cost` | usage-service 리스너가 **소비 후 업데이트** | 동일 |
 
-따라서 요구사항을 충족하려면: **`libs/usage-events`(또는 별도 계약 모듈)에 비용 확정 이벤트 타입 추가**, **billing에서 `BillingRecordedService` 처리 성공 후 발행**, **usage-service에 리스너 및 로그 업데이트**가 이어져야 한다.
+구현 세부: `libs/usage-events`의 `UsageCostFinalizedEvent`, billing `UsageCostFinalizedEventPublisher`, usage `UsageCostFinalizedEventListener`.
 
 ---
 
