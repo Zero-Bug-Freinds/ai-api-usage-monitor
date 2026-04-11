@@ -28,6 +28,7 @@ jobs:
       identity: ${{ steps.filter.outputs.identity }}
       proxy: ${{ steps.filter.outputs.proxy }}
       usage: ${{ steps.filter.outputs.usage }}
+      billing: ${{ steps.filter.outputs.billing }}
       team: ${{ steps.filter.outputs.team }}
       web: ${{ steps.filter.outputs.web }}
       workflows: ${{ steps.filter.outputs.workflows }}
@@ -46,11 +47,15 @@ jobs:
             usage:
               - 'services/usage-service/**'
               - 'libs/usage-events/**'
+            billing:
+              - 'services/billing-service/**'
+              - 'libs/usage-events/**'
             team:
               - 'services/team-service/**'
             web:
               - 'services/identity-service/web/**'
               - 'services/usage-service/web/**'
+              - 'services/billing-service/web/**'
               - 'services/team-service/web/**'
               - 'packages/ui/**'
               - 'pnpm-workspace.yaml'
@@ -147,6 +152,27 @@ jobs:
       - name: Build and test
         run: ./gradlew build --no-daemon
 
+  billing-service:
+    name: Build billing-service
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.billing == 'true' || needs.changes.outputs.workflows == 'true'
+    defaults:
+      run:
+        working-directory: services/billing-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+          cache-dependency-path: services/billing-service/build.gradle
+      - name: Grant execute permission for gradlew
+        run: chmod +x ./gradlew
+      - name: Build and test
+        run: ./gradlew build --no-daemon
+
   team-service:
     name: Build team-service
     runs-on: ubuntu-latest
@@ -183,19 +209,23 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
       - name: Install workspace
         run: pnpm install --frozen-lockfile
-      - name: Lint / test / build (both Next apps)
+      - name: Lint / test / build (Next apps)
         run: |
           pnpm --filter identity-web run lint
           pnpm --filter usage-web run lint
+          pnpm --filter billing-web run lint
           pnpm --filter team-web run lint
           pnpm --filter identity-web test
           pnpm --filter usage-web test
+          pnpm --filter billing-web test
           pnpm --filter team-web test
           pnpm run build:web
       - name: Docker image (identity-web, standalone)
         run: docker build -f services/identity-service/web/Dockerfile -t identity-web:ci .
       - name: Docker image (usage-web, standalone)
         run: docker build -f services/usage-service/web/Dockerfile -t usage-web:ci .
+      - name: Docker image (billing-web, standalone)
+        run: docker build -f services/billing-service/web/Dockerfile -t billing-web:ci .
       - name: Docker image (team-web, standalone)
         run: docker build -f services/team-service/web/Dockerfile -t team-web:ci .
 
@@ -211,6 +241,7 @@ jobs:
       - identity-service
       - proxy-gateway-service
       - usage-service
+      - billing-service
       - team-service
       - web
     if: always()
@@ -229,11 +260,12 @@ jobs:
             echo "compose-validate did not succeed: ${{ needs.compose-validate.result }}"
             exit 1
           fi
-          for name in identity-service proxy-gateway-service usage-service team-service web; do
+          for name in identity-service proxy-gateway-service usage-service billing-service team-service web; do
             case "$name" in
               identity-service) v="${{ needs.identity-service.result }}" ;;
               proxy-gateway-service) v="${{ needs.proxy-gateway-service.result }}" ;;
               usage-service) v="${{ needs.usage-service.result }}" ;;
+              billing-service) v="${{ needs.billing-service.result }}" ;;
               team-service) v="${{ needs.team-service.result }}" ;;
               web) v="${{ needs.web.result }}" ;;
             esac
