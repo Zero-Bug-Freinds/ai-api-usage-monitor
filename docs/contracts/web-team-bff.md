@@ -21,8 +21,10 @@
 | `POST /api/team/v1/teams/{id}/members` | Team BFF `POST /api/team/v1/teams/{id}/members` → Team Service `POST /api/v1/teams/{id}/members` |
 | `GET /api/team/v1/teams/{id}/api-keys` | Team BFF `GET /api/team/v1/teams/{id}/api-keys` → Team Service `GET /api/v1/teams/{id}/api-keys` |
 | `POST /api/team/v1/teams/{id}/api-keys` | Team BFF `POST /api/team/v1/teams/{id}/api-keys` → Team Service `POST /api/v1/teams/{id}/api-keys` |
+| `PUT /api/team/v1/teams/{teamId}/api-keys/{keyId}` | Team BFF `PUT ...` → Team Service `PUT /api/v1/teams/{teamId}/api-keys/{keyId}` |
+| `DELETE /api/team/v1/teams/{teamId}/api-keys/{keyId}` | Team BFF `DELETE ...` → Team Service `DELETE /api/v1/teams/{teamId}/api-keys/{keyId}` |
 
-- Identity `web`는 `/teams` UI를 직접 렌더링하고, Next rewrite로 `GET/POST /api/team/v1/*`를 Team BFF(`team-web`)로 전달한다.
+- Identity `web`는 `/teams` UI(팀·멤버·팀 API Key·예산)를 렌더링하고, Next rewrite로 `GET/POST/PUT/DELETE /api/team/v1/*`를 Team BFF(`team-web`)로 전달한다.
 - Team BFF는 `TEAM_SERVICE_URL` 환경 변수로 Team Service를 프록시한다.
 - Team BFF는 `IDENTITY_SERVICE_URL`로 세션 확인(`GET /api/auth/session`)을 프록시한다.
 
@@ -38,7 +40,7 @@
 
 ## 4. 보안/권한
 
-- 팀 생성/조회/초대/팀 API Key 등록·조회는 모두 인증 필요다.
+- 팀 생성/조회/초대/팀 API Key 등록·조회·수정·삭제는 모두 인증 필요다.
 - 권한 검증(팀 멤버만 초대 가능 등)은 Team Service가 최종 책임을 가진다.
 - 팀원 초대 시 Team Service는 Identity 내부 API(`GET /internal/users/exists?email=...`)로
   사용자 존재 여부를 확인한 뒤, **실제로 존재하는 아이디(이메일)만** 초대를 허용한다.
@@ -60,18 +62,27 @@
   - `403` (`success=false`): 요청자가 해당 팀의 초대 권한이 없는 경우
   - `404` (`success=false`): 대상 팀이 존재하지 않는 경우
 
-### 5.2 팀 API Key 등록/조회
+### 5.2 팀 API Key 등록/조회/수정
 
 - `POST /api/team/v1/teams/{id}/api-keys`
-  - 요청 본문: `provider` (`OPENAI`/`GEMINI`/`CLAUDE`), `alias`, `externalKey`
-  - 성공: `201`, `data`에 등록된 키 요약(`id`, `provider`, `alias`, `keyPreview`, `createdAt`)
+  - 요청 본문: `provider` (`OPENAI`/`GEMINI`/`CLAUDE`), `alias`, `externalKey`, `monthlyBudgetUsd` (0 이상, USD 월 예산 한도 — identity-service 외부 키와 동일 개념)
+  - 성공: `201`, `data`에 등록된 키 요약(`id`, `provider`, `alias`, `keyPreview`, `monthlyBudgetUsd`, `createdAt`)
   - 실패:
     - `400` (`success=false`): 필수값 누락, alias 중복, 동일 provider+key 중복
     - `403` (`success=false`): 팀 멤버가 아닌 사용자의 등록 시도
     - `404` (`success=false`): 대상 팀이 존재하지 않는 경우
 
+- `PUT /api/team/v1/teams/{teamId}/api-keys/{keyId}`
+  - 요청 본문: `alias`, `monthlyBudgetUsd` (필수). Identity `/teams`·team `web` UI는 별칭·예산만 보낸다. 서버는 `externalKey`가 비어 있지 않을 때에만 키 값·provider 갱신을 허용한다(내부·다른 클라이언트용).
+  - 성공: `200`, 수정된 키 요약
+  - 실패: `400` (검증/중복/대상 없음), `403`, `404`
+
+- `DELETE /api/team/v1/teams/{teamId}/api-keys/{keyId}`
+  - 성공: `200`, 해당 키 행을 DB에서 제거(영구 삭제). Identity 개인 키의 「삭제 예약」과는 별도 정책이다.
+  - 실패: `400` (대상 없음 등), `403`, `404`
+
 - `GET /api/team/v1/teams/{id}/api-keys`
-  - 성공: `200`, 팀 API Key 목록(요약 정보만 반환)
+  - 성공: `200`, 팀 API Key 목록(요약 정보만 반환, `monthlyBudgetUsd` 포함)
   - 실패:
     - `403` (`success=false`): 팀 멤버가 아닌 사용자의 조회 시도
     - `404` (`success=false`): 대상 팀이 존재하지 않는 경우

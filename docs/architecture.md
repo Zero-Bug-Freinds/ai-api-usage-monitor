@@ -415,8 +415,8 @@
 
 - **Identity 계열**: `services/identity-service` + `services/identity-service/web/` — 랜딩·인증·조직/팀 설정 UI, `/api/auth/**`·`/api/identity/**` BFF 등. 계약: `docs/contracts/web-identity-bff.md`.
 - **Usage·대시보드 계열**: `services/usage-service` + `services/usage-service/web/` — 사용량 대시보드, `/api/usage/**` BFF → 게이트웨이. 계약: `docs/contracts/web-gateway-bff.md`, `docs/contracts/gateway-proxy.md`.
-- **Team 계열**: `services/team-service` + `services/team-service/web/` — 팀 생성/조회/초대 및 팀 API Key 등록/조회 API, Team BFF. 브라우저 `/teams` UI는 Identity `web`가 소유하고 팀 API(`/api/team/v1/**`)만 Team BFF로 연동. 계약: `docs/contracts/web-team-bff.md`.
-- **`/teams` 진입 방식:** **단일 도메인 `web-edge`** 를 쓰면 브라우저의 `/teams/*` 요청은 Nginx가 **team `web`** 으로 넘긴다. **Identity `web`만 호스트 오리진(엣지 없이 예: `localhost:3000`)으로 띄우는 경우**에는 Identity 앱의 `/teams` 페이지와 Next rewrite로 `/api/team/v1/**` 만 team `web` BFF(및 `team-service`)로 연동될 수 있다. 위 두 방식은 저장소 설정에 따라 병행 정의된다.
+- **Team 계열**: `services/team-service` + `services/team-service/web/` — 팀 도메인 REST·Team BFF. 팀 API Key·월 예산(USD)은 **Identity `web`의 `/teams`** 에서도 계정 설정의 개인 외부 키와 유사한 UX로 제공할 수 있으며, 동일 API는 **team `web`**(`basePath=/teams`)에서도 사용 가능하다. 브라우저 → `/api/team/v1/**` → Team BFF → `team-service`. 계약: `docs/contracts/web-team-bff.md`.
+- **`/teams` 진입 방식:** **단일 도메인 `web-edge`** 를 쓰면 `/teams/*` 를 **team `web`** 으로 넘길 수 있다. **Identity `web`만** 띄울 때는 `/teams` 페이지에서 팀·키·예산을 다루고 Next rewrite로 `/api/team/v1/**` 를 team `web` BFF(및 `team-service`)로 넘긴다.
 - **웹 경계**: `docs/contracts/web-split-boundary.md` — 경로·BFF·미들웨어 변경 시 **본 문서·계약 문서**를 코드와 같이 갱신한다.
 - **Proxy·API Gateway**: 공개 AI·Usage HTTP 진입·신뢰 헤더 — 게이트웨이·프록시 구현 팀과 **HTTP 계약**만 맞춘다.
 

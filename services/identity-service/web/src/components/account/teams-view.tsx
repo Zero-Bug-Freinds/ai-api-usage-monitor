@@ -1,12 +1,10 @@
 "use client"
 
 import * as React from "react"
+import { Eye, EyeOff } from "lucide-react"
 
-type ApiResponse<T> = {
-  success: boolean
-  message: string
-  data: T | null
-}
+import { apiFetch } from "@/lib/api/client-fetch"
+import type { ApiResponse } from "@/lib/api/identity/types"
 
 type TeamSummary = {
   id: string
@@ -18,17 +16,20 @@ type TeamSummaryLike = {
   name: string
 }
 
+type TeamKeyProvider = "OPENAI" | "GEMINI" | "CLAUDE"
+
 type TeamApiKeySummary = {
   id: number
   provider: string
   alias: string
   keyPreview: string
+  monthlyBudgetUsd: number | null
   createdAt: string
 }
 
-function asApiResponse(value: unknown): ApiResponse<unknown> | null {
-  if (!value || typeof value !== "object") return null
-  const r = value as Record<string, unknown>
+function asApiResponse(json: unknown): ApiResponse<unknown> | null {
+  if (!json || typeof json !== "object") return null
+  const r = json as Record<string, unknown>
   if (typeof r.success !== "boolean") return null
   if (typeof r.message !== "string") return null
   if (!("data" in r)) return null
@@ -50,13 +51,61 @@ function normalizeTeamApiKeySummary(item: unknown): TeamApiKeySummary | null {
   if (typeof v.alias !== "string") return null
   if (typeof v.keyPreview !== "string") return null
   if (typeof v.createdAt !== "string") return null
+  const b = v.monthlyBudgetUsd
+  let monthlyBudgetUsd: number | null = null
+  if (typeof b === "number" && Number.isFinite(b)) {
+    monthlyBudgetUsd = b
+  } else if (typeof b === "string" && b.trim() !== "") {
+    const n = Number(b)
+    if (Number.isFinite(n)) monthlyBudgetUsd = n
+  }
   return {
     id: v.id,
     provider: v.provider,
     alias: v.alias,
     keyPreview: v.keyPreview,
+    monthlyBudgetUsd,
     createdAt: v.createdAt,
   }
+}
+
+function providerLabel(provider: string) {
+  if (provider === "OPENAI") return "OpenAI"
+  if (provider === "GEMINI") return "Gemini"
+  if (provider === "CLAUDE") return "Claude"
+  return provider
+}
+
+function defaultAlias(provider: TeamKeyProvider) {
+  return `${providerLabel(provider)} 팀 키 1`
+}
+
+function formatCreatedAt(iso: string) {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })
+}
+
+function formatBudgetUsd(value: number | null | undefined) {
+  if (value === null || value === undefined) return null
+  return new Intl.NumberFormat("ko-KR", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(value)
+}
+
+const BUDGET_STEP = 0.01
+
+/** blur 또는 스피너 조정 후 소수 둘째 자리·0.01 단위로 맞춤 */
+function normalizeBudgetNumericString(raw: string): string {
+  const t = raw.trim()
+  if (t === "") return ""
+  const n = Number(t)
+  if (!Number.isFinite(n) || n < 0) return ""
+  const rounded = Math.round(n / BUDGET_STEP) * BUDGET_STEP
+  return Number(rounded.toFixed(2)).toString()
 }
 
 export function TeamsView() {
@@ -70,12 +119,28 @@ export function TeamsView() {
   const [createLoading, setCreateLoading] = React.useState(false)
   const [inviteInputByTeamId, setInviteInputByTeamId] = React.useState<Record<string, string>>({})
   const [inviteLoadingTeamId, setInviteLoadingTeamId] = React.useState<string | null>(null)
+  const [message, setMessage] = React.useState<{ kind: "success" | "error"; text: string } | null>(null)
+
   const [teamApiKeysByTeamId, setTeamApiKeysByTeamId] = React.useState<Record<string, TeamApiKeySummary[]>>({})
+  /** 목록 로드 실패(팀별). 수정·삭제 검증 오류는 `keysError`. */
+  const [apiKeysListErrorByTeamId, setApiKeysListErrorByTeamId] = React.useState<Record<string, string | null>>({})
+  const [keysError, setKeysError] = React.useState<string | null>(null)
   const [apiKeyAliasByTeamId, setApiKeyAliasByTeamId] = React.useState<Record<string, string>>({})
   const [apiKeyValueByTeamId, setApiKeyValueByTeamId] = React.useState<Record<string, string>>({})
-  const [apiKeyProviderByTeamId, setApiKeyProviderByTeamId] = React.useState<Record<string, string>>({})
-  const [apiKeyLoadingTeamId, setApiKeyLoadingTeamId] = React.useState<string | null>(null)
-  const [message, setMessage] = React.useState<{ kind: "success" | "error"; text: string } | null>(null)
+  const [apiKeyProviderByTeamId, setApiKeyProviderByTeamId] = React.useState<Record<string, TeamKeyProvider>>({})
+  const [apiKeyMonthlyBudgetByTeamId, setApiKeyMonthlyBudgetByTeamId] = React.useState<Record<string, string>>({})
+  const [apiKeyAliasTouchedByTeamId, setApiKeyAliasTouchedByTeamId] = React.useState<Record<string, boolean>>({})
+  const [apiKeyRegisterLoadingTeamId, setApiKeyRegisterLoadingTeamId] = React.useState<string | null>(null)
+  const [apiKeyRegisterMessageByTeamId, setApiKeyRegisterMessageByTeamId] = React.useState<
+    Record<string, { kind: "success" | "error"; text: string }>
+  >({})
+  const [apiKeyRevealByTeamId, setApiKeyRevealByTeamId] = React.useState<Record<string, boolean>>({})
+
+  const [editingKey, setEditingKey] = React.useState<{ teamId: string; row: TeamApiKeySummary } | null>(null)
+  const [editAlias, setEditAlias] = React.useState("")
+  const [editBudget, setEditBudget] = React.useState("")
+  const [saveEditLoading, setSaveEditLoading] = React.useState(false)
+  const [deleteLoadingKey, setDeleteLoadingKey] = React.useState<string | null>(null)
 
   function normalizeInviteUserIds(values: string[]): string[] {
     return Array.from(
@@ -91,33 +156,25 @@ export function TeamsView() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch("/api/team/v1/me/teams", {
-        method: "GET",
-        credentials: "include",
-        headers: { Accept: "application/json" },
-        cache: "no-store",
-      })
-      const json = (await res.json()) as unknown
+      const { response, json } = await apiFetch<unknown>(
+        "/api/team/v1/me/teams",
+        { method: "GET", credentials: "include", headers: { Accept: "application/json" }, cache: "no-store" },
+        { authRequired: true }
+      )
       const body = asApiResponse(json)
 
-      if (res.status === 404) {
+      if (response.status === 404) {
         setTeams([])
         return
       }
 
-      if (!res.ok || !body?.success) {
+      if (!response.ok || !body?.success) {
         setError(body?.message ?? "팀 목록을 불러오지 못했습니다")
         setTeams([])
         return
       }
 
-      if (body.data === null) {
-        setTeams([])
-        return
-      }
-
-      if (!Array.isArray(body.data)) {
-        setError("팀 목록을 불러오지 못했습니다")
+      if (body.data === null || !Array.isArray(body.data)) {
         setTeams([])
         return
       }
@@ -137,15 +194,13 @@ export function TeamsView() {
 
   const loadTeamMembers = React.useCallback(async (teamId: string) => {
     try {
-      const res = await fetch(`/api/team/v1/teams/${encodeURIComponent(teamId)}/members`, {
-        method: "GET",
-        credentials: "include",
-        headers: { Accept: "application/json" },
-        cache: "no-store",
-      })
-      const json = (await res.json()) as unknown
+      const { response, json } = await apiFetch<unknown>(
+        `/api/team/v1/teams/${encodeURIComponent(teamId)}/members`,
+        { method: "GET", credentials: "include", headers: { Accept: "application/json" }, cache: "no-store" },
+        { authRequired: true }
+      )
       const body = asApiResponse(json)
-      if (!res.ok || !body?.success || !Array.isArray(body.data)) {
+      if (!response.ok || !body?.success || !Array.isArray(body.data)) {
         setTeamMemberIdsByTeamId((prev) => ({ ...prev, [teamId]: [] }))
         return
       }
@@ -158,27 +213,35 @@ export function TeamsView() {
 
   const loadTeamApiKeys = React.useCallback(async (teamId: string) => {
     try {
-      const res = await fetch(`/api/team/v1/teams/${encodeURIComponent(teamId)}/api-keys`, {
-        method: "GET",
-        credentials: "include",
-        headers: { Accept: "application/json" },
-        cache: "no-store",
-      })
-      const json = (await res.json()) as unknown
+      const { response, json } = await apiFetch<unknown>(
+        `/api/team/v1/teams/${encodeURIComponent(teamId)}/api-keys`,
+        { method: "GET", credentials: "include", headers: { Accept: "application/json" }, cache: "no-store" },
+        { authRequired: true }
+      )
       const body = asApiResponse(json)
-      if (!res.ok || !body?.success || !Array.isArray(body.data)) {
+      if (!response.ok || !body?.success || !Array.isArray(body.data)) {
         setTeamApiKeysByTeamId((prev) => ({ ...prev, [teamId]: [] }))
+        const msg =
+          json && typeof json === "object" && "message" in json
+            ? String((json as { message: string }).message)
+            : "팀 API Key 목록을 불러오지 못했습니다"
+        setApiKeysListErrorByTeamId((prev) => ({ ...prev, [teamId]: msg }))
         return
       }
-      const apiKeyItems = body.data as unknown[]
+      const items = body.data as unknown[]
       setTeamApiKeysByTeamId((prev) => ({
         ...prev,
-        [teamId]: apiKeyItems
+        [teamId]: items
           .map((item) => normalizeTeamApiKeySummary(item))
           .filter((item): item is TeamApiKeySummary => item !== null),
       }))
+      setApiKeysListErrorByTeamId((prev) => ({ ...prev, [teamId]: null }))
     } catch {
       setTeamApiKeysByTeamId((prev) => ({ ...prev, [teamId]: [] }))
+      setApiKeysListErrorByTeamId((prev) => ({
+        ...prev,
+        [teamId]: "팀 API Key 목록을 불러오지 못했습니다",
+      }))
     }
   }, [])
 
@@ -190,6 +253,7 @@ export function TeamsView() {
     if (teams.length === 0) {
       setTeamMemberIdsByTeamId({})
       setTeamApiKeysByTeamId({})
+      setApiKeysListErrorByTeamId({})
       return
     }
     for (const team of teams) {
@@ -197,6 +261,20 @@ export function TeamsView() {
       void loadTeamApiKeys(team.id)
     }
   }, [teams, loadTeamMembers, loadTeamApiKeys])
+
+  React.useEffect(() => {
+    setApiKeyAliasByTeamId((prev) => {
+      let changed = false
+      const next = { ...prev }
+      for (const team of teams) {
+        if (next[team.id] === undefined) {
+          next[team.id] = defaultAlias("OPENAI")
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [teams])
 
   async function createTeam(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -210,15 +288,18 @@ export function TeamsView() {
     setCreateLoading(true)
     setMessage(null)
     try {
-      const res = await fetch("/api/team/v1/teams", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ name }),
-      })
-      const json = (await res.json()) as unknown
+      const { response, json } = await apiFetch<unknown>(
+        "/api/team/v1/teams",
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ name }),
+        },
+        { authRequired: true }
+      )
       const body = asApiResponse(json)
-      if (!res.ok || !body?.success) {
+      if (!response.ok || !body?.success) {
         setMessage({ kind: "error", text: body?.message ?? "팀 생성에 실패했습니다" })
         return
       }
@@ -235,25 +316,24 @@ export function TeamsView() {
       if (inviteUserIdsToSend.length > 0 && createdTeamId) {
         let invitedCount = 0
         let failedCount = 0
-
         for (const userId of inviteUserIdsToSend) {
           try {
-            const inviteRes = await fetch(`/api/team/v1/teams/${encodeURIComponent(createdTeamId)}/members`, {
-              method: "POST",
-              credentials: "include",
-              headers: { "Content-Type": "application/json", Accept: "application/json" },
-              body: JSON.stringify({ userId }),
-            })
-            if (inviteRes.ok) {
-              invitedCount += 1
-            } else {
-              failedCount += 1
-            }
+            const inviteRes = await apiFetch<unknown>(
+              `/api/team/v1/teams/${encodeURIComponent(createdTeamId)}/members`,
+              {
+                method: "POST",
+                credentials: "include",
+                headers: { "Content-Type": "application/json", Accept: "application/json" },
+                body: JSON.stringify({ userId }),
+              },
+              { authRequired: true }
+            )
+            if (inviteRes.response.ok) invitedCount += 1
+            else failedCount += 1
           } catch {
             failedCount += 1
           }
         }
-
         if (failedCount > 0) {
           setMessage({
             kind: "error",
@@ -316,15 +396,18 @@ export function TeamsView() {
     setInviteLoadingTeamId(teamId)
     setMessage(null)
     try {
-      const res = await fetch(`/api/team/v1/teams/${encodeURIComponent(teamId)}/members`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ userId }),
-      })
-      const json = (await res.json()) as unknown
+      const { response, json } = await apiFetch<unknown>(
+        `/api/team/v1/teams/${encodeURIComponent(teamId)}/members`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ userId }),
+        },
+        { authRequired: true }
+      )
       const body = asApiResponse(json)
-      if (!res.ok || !body?.success) {
+      if (!response.ok || !body?.success) {
         setMessage({ kind: "error", text: body?.message ?? "초대에 실패했습니다" })
         return
       }
@@ -337,58 +420,214 @@ export function TeamsView() {
     }
   }
 
-  async function registerTeamApiKey(teamId: string) {
-    if (apiKeyLoadingTeamId) return
-    const provider = (apiKeyProviderByTeamId[teamId] ?? "OPENAI").trim()
-    const alias = (apiKeyAliasByTeamId[teamId] ?? "").trim()
-    const externalKey = (apiKeyValueByTeamId[teamId] ?? "").trim()
-    if (!alias) {
-      setMessage({ kind: "error", text: "API Key 별칭을 입력해 주세요" })
+  function cancelEditKey() {
+    setEditingKey(null)
+    setEditAlias("")
+    setEditBudget("")
+    setSaveEditLoading(false)
+  }
+
+  function startEditKey(teamId: string, row: TeamApiKeySummary) {
+    setKeysError(null)
+    setEditingKey({ teamId, row })
+    setEditAlias(row.alias)
+    setEditBudget(
+      row.monthlyBudgetUsd !== null && row.monthlyBudgetUsd !== undefined ? String(row.monthlyBudgetUsd) : "",
+    )
+  }
+
+  async function saveEditKey() {
+    if (!editingKey) return
+    const { teamId, row } = editingKey
+    const aliasTrimmed = editAlias.trim()
+    const budgetTrimmed = editBudget.trim()
+    if (!aliasTrimmed) {
+      setKeysError("별칭은 필수입니다")
       return
     }
-    if (!externalKey) {
-      setMessage({ kind: "error", text: "API Key 값을 입력해 주세요" })
+    if (!budgetTrimmed) {
+      setKeysError("월 예산은 필수입니다")
+      return
+    }
+    const fracPart = budgetTrimmed.includes(".") ? (budgetTrimmed.split(".")[1] ?? "") : ""
+    if (fracPart.length > 2) {
+      setKeysError("월 예산은 소수점 둘째 자리까지만 입력할 수 있습니다")
+      return
+    }
+    const parsedBudget = Number(budgetTrimmed)
+    if (!Number.isFinite(parsedBudget) || parsedBudget < 0) {
+      setKeysError("예산은 0 이상의 숫자로 입력해 주세요")
+      return
+    }
+    const monthlyBudgetUsd = Number(parsedBudget.toFixed(2))
+    const normalizedCurrentBudget =
+      row.monthlyBudgetUsd === null || row.monthlyBudgetUsd === undefined
+        ? null
+        : Number(row.monthlyBudgetUsd.toFixed(2))
+    if (aliasTrimmed === row.alias && monthlyBudgetUsd === normalizedCurrentBudget) {
+      cancelEditKey()
       return
     }
 
-    setApiKeyLoadingTeamId(teamId)
-    setMessage(null)
+    const body = { alias: aliasTrimmed, monthlyBudgetUsd }
+
+    setSaveEditLoading(true)
+    setKeysError(null)
     try {
-      const res = await fetch(`/api/team/v1/teams/${encodeURIComponent(teamId)}/api-keys`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ provider, alias, externalKey }),
-      })
-      const json = (await res.json()) as unknown
-      const body = asApiResponse(json)
-      if (!res.ok || !body?.success) {
-        setMessage({ kind: "error", text: body?.message ?? "팀 API Key 등록에 실패했습니다" })
-        return
+      const { response, json } = await apiFetch<unknown>(
+        `/api/team/v1/teams/${encodeURIComponent(teamId)}/api-keys/${encodeURIComponent(String(row.id))}`,
+        {
+          method: "PUT",
+          credentials: "include",
+          cache: "no-store",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify(body),
+        },
+        { authRequired: true }
+      )
+      const apiResponse = asApiResponse(json)
+      if (response.ok && apiResponse?.success) {
+        cancelEditKey()
+        await loadTeamApiKeys(teamId)
+      } else {
+        setKeysError(apiResponse?.message ?? "팀 API Key 수정에 실패했습니다")
       }
-      setMessage({ kind: "success", text: "팀 API Key가 등록되었습니다" })
-      setApiKeyAliasByTeamId((prev) => ({ ...prev, [teamId]: "" }))
-      setApiKeyValueByTeamId((prev) => ({ ...prev, [teamId]: "" }))
-      await loadTeamApiKeys(teamId)
     } catch {
-      setMessage({ kind: "error", text: "팀 API Key 등록에 실패했습니다" })
+      setKeysError("팀 API Key 수정에 실패했습니다")
     } finally {
-      setApiKeyLoadingTeamId(null)
+      setSaveEditLoading(false)
+    }
+  }
+
+  async function deleteTeamKey(teamId: string, keyId: number) {
+    const ok = window.confirm(
+      "이 팀 API 키를 즉시 삭제합니다.\n\nDB에서 영구 삭제되며 복구할 수 없습니다. 과거 사용량 로그는 다른 서비스 기록에 남을 수 있습니다.",
+    )
+    if (!ok) return
+    const loadingKey = `${teamId}:${keyId}`
+    setDeleteLoadingKey(loadingKey)
+    setKeysError(null)
+    try {
+      const { response, json } = await apiFetch<unknown>(
+        `/api/team/v1/teams/${encodeURIComponent(teamId)}/api-keys/${encodeURIComponent(String(keyId))}`,
+        { method: "DELETE", credentials: "include", cache: "no-store", headers: { Accept: "application/json" } },
+        { authRequired: true }
+      )
+      const apiResponse = asApiResponse(json)
+      if (response.ok && apiResponse?.success) {
+        if (editingKey?.teamId === teamId && editingKey.row.id === keyId) cancelEditKey()
+        await loadTeamApiKeys(teamId)
+      } else {
+        setKeysError(apiResponse?.message ?? "삭제에 실패했습니다")
+      }
+    } catch {
+      setKeysError("삭제에 실패했습니다")
+    } finally {
+      setDeleteLoadingKey(null)
+    }
+  }
+
+  async function registerTeamApiKey(teamId: string) {
+    if (apiKeyRegisterLoadingTeamId) return
+    const provider = apiKeyProviderByTeamId[teamId] ?? "OPENAI"
+    const alias = (apiKeyAliasByTeamId[teamId] ?? "").trim()
+    const externalKey = (apiKeyValueByTeamId[teamId] ?? "").trim()
+    const budgetTrimmed = (apiKeyMonthlyBudgetByTeamId[teamId] ?? "").trim()
+
+    if (!alias) {
+      setApiKeyRegisterMessageByTeamId((prev) => ({
+        ...prev,
+        [teamId]: { kind: "error", text: "API Key 별칭을 입력해 주세요" },
+      }))
+      return
+    }
+    if (!externalKey) {
+      setApiKeyRegisterMessageByTeamId((prev) => ({
+        ...prev,
+        [teamId]: { kind: "error", text: "API Key 값을 입력해 주세요" },
+      }))
+      return
+    }
+    if (!budgetTrimmed) {
+      setApiKeyRegisterMessageByTeamId((prev) => ({
+        ...prev,
+        [teamId]: { kind: "error", text: "월 예산은 필수입니다" },
+      }))
+      return
+    }
+    const fracRegister = budgetTrimmed.includes(".") ? (budgetTrimmed.split(".")[1] ?? "") : ""
+    if (fracRegister.length > 2) {
+      setApiKeyRegisterMessageByTeamId((prev) => ({
+        ...prev,
+        [teamId]: { kind: "error", text: "월 예산은 소수점 둘째 자리까지만 입력할 수 있습니다" },
+      }))
+      return
+    }
+    const parsedBudget = Number(budgetTrimmed)
+    if (!Number.isFinite(parsedBudget) || parsedBudget < 0) {
+      setApiKeyRegisterMessageByTeamId((prev) => ({
+        ...prev,
+        [teamId]: { kind: "error", text: "예산은 0 이상의 숫자로 입력해 주세요" },
+      }))
+      return
+    }
+    const monthlyBudgetUsd = Number(parsedBudget.toFixed(2))
+
+    setApiKeyRegisterLoadingTeamId(teamId)
+    try {
+      const { response, json } = await apiFetch<unknown>(
+        `/api/team/v1/teams/${encodeURIComponent(teamId)}/api-keys`,
+        {
+          method: "POST",
+          credentials: "include",
+          cache: "no-store",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ provider, alias, externalKey, monthlyBudgetUsd }),
+        },
+        { authRequired: true }
+      )
+      const apiResponse = asApiResponse(json)
+      if (response.ok && apiResponse?.success) {
+        setApiKeyRegisterMessageByTeamId((prev) => ({
+          ...prev,
+          [teamId]: { kind: "success", text: apiResponse.message || "등록되었습니다" },
+        }))
+        setApiKeyAliasTouchedByTeamId((prev) => ({ ...prev, [teamId]: false }))
+        setApiKeyAliasByTeamId((prev) => ({ ...prev, [teamId]: defaultAlias(provider) }))
+        setApiKeyValueByTeamId((prev) => ({ ...prev, [teamId]: "" }))
+        setApiKeyMonthlyBudgetByTeamId((prev) => ({ ...prev, [teamId]: "" }))
+        setApiKeyRevealByTeamId((prev) => ({ ...prev, [teamId]: false }))
+        await loadTeamApiKeys(teamId)
+      } else {
+        setApiKeyRegisterMessageByTeamId((prev) => ({
+          ...prev,
+          [teamId]: { kind: "error", text: apiResponse?.message ?? "등록에 실패했습니다" },
+        }))
+      }
+    } catch {
+      setApiKeyRegisterMessageByTeamId((prev) => ({
+        ...prev,
+        [teamId]: { kind: "error", text: "등록에 실패했습니다" },
+      }))
+    } finally {
+      setApiKeyRegisterLoadingTeamId(null)
     }
   }
 
   return (
     <div className="flex min-h-[40vh] flex-col gap-8 py-4">
       <header className="space-y-2">
-        <h1 className="text-2xl font-semibold">팀 관리</h1>
-        <p className="text-sm text-zinc-600">팀 생성 후 멤버 초대와 팀 API Key 등록/조회가 가능합니다.</p>
+        <h1 className="text-2xl font-semibold tracking-tight">팀 관리</h1>
+        <p className="text-sm text-muted-foreground">
+          팀을 만든 뒤 멤버를 초대하고, 팀 단위 공급사 API 키와 월 예산(USD)을 등록·수정·삭제할 수 있습니다. (계정 설정의 개인 외부 키와 같은 사용 흐름입니다.)
+        </p>
       </header>
 
-      <section className="max-w-lg space-y-3 rounded-lg border border-zinc-200 bg-white p-4">
+      <section className="max-w-lg space-y-3 rounded-lg border border-border bg-card p-5 shadow-sm">
         {!showCreateForm ? (
           <button
             type="button"
-            className="h-10 rounded-md bg-black px-4 text-sm font-medium text-white disabled:opacity-60"
+            className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground disabled:opacity-60"
             onClick={openCreateForm}
             disabled={createLoading}
           >
@@ -397,12 +636,12 @@ export function TeamsView() {
         ) : (
           <form className="space-y-3" onSubmit={createTeam}>
             <div className="space-y-1">
-              <label htmlFor="team-name" className="text-xs font-medium text-zinc-700">
+              <label htmlFor="team-name" className="text-sm font-medium">
                 팀 이름 (필수)
               </label>
               <input
                 id="team-name"
-                className="h-10 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm"
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 value={teamName}
                 onChange={(e) => setTeamName(e.target.value)}
                 placeholder="예: 플랫폼팀"
@@ -413,11 +652,11 @@ export function TeamsView() {
             </div>
 
             <div className="space-y-2">
-              <p className="text-xs font-medium text-zinc-700">팀원 초대 (선택)</p>
+              <p className="text-sm font-medium">팀원 초대 (선택)</p>
               {inviteUserIds.map((value, index) => (
                 <div key={`invite-${index}`} className="flex items-center gap-2">
                   <input
-                    className="h-10 flex-1 rounded-md border border-zinc-300 bg-white px-3 text-sm"
+                    className="h-10 flex-1 rounded-md border border-input bg-background px-3 text-sm"
                     value={value}
                     onChange={(e) => updateInviteInput(index, e.target.value)}
                     placeholder="팀원 이메일(아이디) 입력"
@@ -426,7 +665,7 @@ export function TeamsView() {
                   />
                   <button
                     type="button"
-                    className="h-10 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium"
+                    className="h-10 rounded-md border border-border bg-background px-3 text-sm font-medium"
                     onClick={() => removeInviteInput(index)}
                     disabled={createLoading}
                     aria-label={`팀원 입력창 ${index + 1} 삭제`}
@@ -437,7 +676,7 @@ export function TeamsView() {
               ))}
               <button
                 type="button"
-                className="h-9 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium"
+                className="h-9 rounded-md border border-border bg-background px-3 text-sm font-medium"
                 onClick={addInviteInput}
                 disabled={createLoading}
               >
@@ -448,14 +687,14 @@ export function TeamsView() {
             <div className="flex gap-2">
               <button
                 type="submit"
-                className="h-10 rounded-md bg-black px-4 text-sm font-medium text-white disabled:opacity-60"
+                className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground disabled:opacity-60"
                 disabled={createLoading}
               >
-                {createLoading ? "생성 중..." : "생성"}
+                {createLoading ? "생성 중…" : "생성"}
               </button>
               <button
                 type="button"
-                className="h-10 rounded-md border border-zinc-300 bg-white px-4 text-sm font-medium"
+                className="h-10 rounded-md border border-border bg-background px-4 text-sm font-medium"
                 onClick={closeCreateForm}
                 disabled={createLoading}
               >
@@ -466,97 +705,291 @@ export function TeamsView() {
         )}
       </section>
 
-      {message ? <p className={message.kind === "success" ? "text-sm text-emerald-600" : "text-sm text-red-600"}>{message.text}</p> : null}
-      {loading ? <p className="text-sm text-zinc-500">불러오는 중...</p> : null}
-      {error && !loading ? <p className="text-sm text-red-600">{error}</p> : null}
+      {message ? (
+        <p className={message.kind === "success" ? "text-sm text-emerald-600" : "text-sm text-destructive"}>{message.text}</p>
+      ) : null}
+      {loading ? <p className="text-sm text-muted-foreground">불러오는 중…</p> : null}
+      {error && !loading ? <p className="text-sm text-destructive">{error}</p> : null}
 
-      {!loading && !error && teams.length === 0 ? <p className="text-sm text-zinc-500">아직 팀이 구성되지 않았습니다.</p> : null}
+      {!loading && !error && teams.length === 0 ? (
+        <p className="text-sm text-muted-foreground">아직 팀이 구성되지 않았습니다.</p>
+      ) : null}
+
+      {keysError ? <p className="text-sm text-destructive">{keysError}</p> : null}
 
       {!loading && teams.length > 0 ? (
-        <ul className="max-w-lg divide-y divide-zinc-200 rounded-lg border border-zinc-200 bg-white">
+        <ul className="max-w-lg divide-y divide-border rounded-lg border border-border bg-card shadow-sm">
           {teams.map((team) => (
-            <li key={team.id} className="space-y-2 px-4 py-3">
-              <p className="font-medium">{team.name}</p>
-              <p className="text-xs text-zinc-500">id: {team.id}</p>
-              <p className="text-xs text-zinc-600">멤버 수: {(teamMemberIdsByTeamId[team.id] ?? []).length}명</p>
-              {(teamMemberIdsByTeamId[team.id] ?? []).length > 0 ? (
-                <ul className="list-disc pl-5 text-xs text-zinc-700">
-                  {(teamMemberIdsByTeamId[team.id] ?? []).map((memberId) => (
-                    <li key={`${team.id}-${memberId}`}>{memberId}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-xs text-zinc-500">초대된 멤버가 없습니다.</p>
-              )}
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <input
-                  className="h-9 flex-1 rounded-md border border-zinc-300 bg-white px-3 text-sm"
-                  value={inviteInputByTeamId[team.id] ?? ""}
-                  onChange={(e) => setInviteInputByTeamId((prev) => ({ ...prev, [team.id]: e.target.value }))}
-                  placeholder="초대할 사용자 이메일(아이디)"
-                  autoComplete="off"
-                  disabled={inviteLoadingTeamId === team.id}
-                />
-                <button
-                  type="button"
-                  className="h-9 rounded-md border border-zinc-300 bg-white px-3 text-xs font-medium disabled:opacity-60"
-                  disabled={inviteLoadingTeamId === team.id}
-                  onClick={() => void invite(team.id)}
-                >
-                  {inviteLoadingTeamId === team.id ? "초대 중..." : "아이디로 초대"}
-                </button>
+            <li key={team.id} className="space-y-4 px-4 py-4">
+              <div>
+                <p className="font-medium">{team.name}</p>
+                <p className="text-xs text-muted-foreground">id: {team.id}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  멤버 {(teamMemberIdsByTeamId[team.id] ?? []).length}명
+                </p>
+                {(teamMemberIdsByTeamId[team.id] ?? []).length > 0 ? (
+                  <ul className="mt-1 list-disc pl-5 text-xs text-muted-foreground">
+                    {(teamMemberIdsByTeamId[team.id] ?? []).map((memberId) => (
+                      <li key={`${team.id}-${memberId}`}>{memberId}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-1 text-xs text-muted-foreground">초대된 멤버가 없습니다.</p>
+                )}
+                <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                  <input
+                    className="h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm"
+                    value={inviteInputByTeamId[team.id] ?? ""}
+                    onChange={(e) => setInviteInputByTeamId((prev) => ({ ...prev, [team.id]: e.target.value }))}
+                    placeholder="초대할 사용자 이메일(아이디)"
+                    autoComplete="off"
+                    disabled={inviteLoadingTeamId === team.id}
+                  />
+                  <button
+                    type="button"
+                    className="h-9 shrink-0 rounded-md border border-border bg-background px-3 text-xs font-medium disabled:opacity-60"
+                    disabled={inviteLoadingTeamId === team.id}
+                    onClick={() => void invite(team.id)}
+                  >
+                    {inviteLoadingTeamId === team.id ? "초대 중…" : "아이디로 초대"}
+                  </button>
+                </div>
               </div>
-              <div className="space-y-2 rounded-md border border-zinc-200 bg-zinc-50 p-3">
-                <p className="text-xs font-medium text-zinc-700">팀 API Key 등록</p>
-                <div className="flex flex-col gap-2">
+
+              <div className="space-y-2 rounded-md border border-border bg-muted/20 p-3">
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold">등록된 팀 API Key</p>
+                  <p className="text-xs text-muted-foreground">
+                    Provider·별칭·미리보기·월 예산만 표시됩니다. 수정 시에는 별칭과 월 예산만 바꿀 수 있고, 키 값은 등록 시에만 설정됩니다.
+                  </p>
+                </div>
+                {apiKeysListErrorByTeamId[team.id] ? (
+                  <p className="text-xs text-destructive">{apiKeysListErrorByTeamId[team.id]}</p>
+                ) : null}
+
+                {(teamApiKeysByTeamId[team.id] ?? []).length > 0 ? (
+                  <ul className="divide-y divide-border rounded-md border border-border bg-background">
+                    {(teamApiKeysByTeamId[team.id] ?? []).map((apiKey) => {
+                      const isEditing = editingKey?.teamId === team.id && editingKey.row.id === apiKey.id
+                      const delKey = `${team.id}:${apiKey.id}`
+                      const deleting = deleteLoadingKey === delKey
+                      return (
+                        <li key={`${team.id}-key-${apiKey.id}`} className="flex flex-col gap-2 px-3 py-3 text-sm sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0 space-y-1">
+                            <div className="font-medium">
+                              <span>{providerLabel(apiKey.provider)}</span>
+                              <span className="mx-2 text-muted-foreground">·</span>
+                              {isEditing ? (
+                                <span className="inline-flex flex-col gap-2 align-middle">
+                                  <input
+                                    className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                                    value={editAlias}
+                                    onChange={(e) => setEditAlias(e.target.value)}
+                                    disabled={saveEditLoading}
+                                    autoComplete="off"
+                                  />
+                                  <input
+                                    type="number"
+                                    step={0.01}
+                                    min={0}
+                                    className="h-8 w-full max-w-[12rem] rounded-md border border-input bg-background px-2 text-sm"
+                                    inputMode="decimal"
+                                    value={editBudget}
+                                    onChange={(e) => {
+                                      const v = e.target.value
+                                      if (v === "") {
+                                        setEditBudget("")
+                                        return
+                                      }
+                                      const n = Number(v)
+                                      if (!Number.isFinite(n) || n < 0) return
+                                      setEditBudget(v)
+                                    }}
+                                    onBlur={() =>
+                                      setEditBudget((prev) =>
+                                        prev.trim() === "" ? prev : normalizeBudgetNumericString(prev),
+                                      )
+                                    }
+                                    placeholder="월 예산 USD"
+                                    disabled={saveEditLoading}
+                                  />
+                                </span>
+                              ) : (
+                                <span>{apiKey.alias}</span>
+                              )}
+                            </div>
+                            <p className="text-xs text-muted-foreground">{apiKey.keyPreview}</p>
+                            <p className="text-xs text-muted-foreground">
+                              월 예산:{" "}
+                              {formatBudgetUsd(apiKey.monthlyBudgetUsd ?? undefined) ?? "— (미설정·기존 데이터)"}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
+                            <div className="text-xs text-muted-foreground tabular-nums sm:text-right">
+                              {formatCreatedAt(apiKey.createdAt)}
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {isEditing ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
+                                    disabled={saveEditLoading}
+                                    onClick={() => void saveEditKey()}
+                                  >
+                                    {saveEditLoading ? "저장 중…" : "저장"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
+                                    disabled={saveEditLoading}
+                                    onClick={cancelEditKey}
+                                  >
+                                    취소
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
+                                  disabled={deleting || saveEditLoading}
+                                  onClick={() => startEditKey(team.id, apiKey)}
+                                >
+                                  수정
+                                </button>
+                              )}
+                              {!isEditing ? (
+                                <button
+                                  type="button"
+                                  className="rounded-md border border-destructive/40 bg-background px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                                  disabled={deleting}
+                                  onClick={() => void deleteTeamKey(team.id, apiKey.id)}
+                                >
+                                  {deleting ? "삭제 중…" : "삭제"}
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                ) : (
+                  <p className="rounded-md border border-dashed border-border bg-background px-4 py-4 text-center text-xs text-muted-foreground">
+                    등록된 팀 API Key가 없습니다. 아래에서 추가할 수 있습니다.
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-3 rounded-md border border-border bg-muted/10 p-3">
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold">팀 API Key 등록</p>
+                  <p className="text-xs text-muted-foreground">제출 후 입력한 키 값은 보안을 위해 비웁니다.</p>
+                </div>
+                <div className="grid gap-2">
                   <select
-                    className="h-9 rounded-md border border-zinc-300 bg-white px-3 text-xs"
+                    className="h-9 rounded-md border border-input bg-background px-3 text-sm"
                     value={apiKeyProviderByTeamId[team.id] ?? "OPENAI"}
-                    onChange={(e) => setApiKeyProviderByTeamId((prev) => ({ ...prev, [team.id]: e.target.value }))}
-                    disabled={apiKeyLoadingTeamId === team.id}
+                    onChange={(e) => {
+                      const p = e.target.value as TeamKeyProvider
+                      setApiKeyProviderByTeamId((prev) => ({ ...prev, [team.id]: p }))
+                      if (!apiKeyAliasTouchedByTeamId[team.id]) {
+                        setApiKeyAliasByTeamId((prev) => ({ ...prev, [team.id]: defaultAlias(p) }))
+                      }
+                    }}
+                    disabled={apiKeyRegisterLoadingTeamId === team.id}
                   >
                     <option value="OPENAI">OPENAI</option>
                     <option value="GEMINI">GEMINI</option>
                     <option value="CLAUDE">CLAUDE</option>
                   </select>
                   <input
-                    className="h-9 rounded-md border border-zinc-300 bg-white px-3 text-xs"
+                    className="h-9 rounded-md border border-input bg-background px-3 text-sm"
                     value={apiKeyAliasByTeamId[team.id] ?? ""}
-                    onChange={(e) => setApiKeyAliasByTeamId((prev) => ({ ...prev, [team.id]: e.target.value }))}
-                    placeholder="API Key 별칭"
+                    onChange={(e) => {
+                      setApiKeyAliasTouchedByTeamId((prev) => ({ ...prev, [team.id]: true }))
+                      setApiKeyAliasByTeamId((prev) => ({ ...prev, [team.id]: e.target.value }))
+                    }}
+                    placeholder="별칭"
                     autoComplete="off"
-                    disabled={apiKeyLoadingTeamId === team.id}
+                    disabled={apiKeyRegisterLoadingTeamId === team.id}
                   />
+                  <div className="flex gap-1">
+                    <input
+                      type={apiKeyRevealByTeamId[team.id] ? "text" : "password"}
+                      className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm"
+                      value={apiKeyValueByTeamId[team.id] ?? ""}
+                      onChange={(e) => setApiKeyValueByTeamId((prev) => ({ ...prev, [team.id]: e.target.value }))}
+                      placeholder="API Key 값"
+                      autoComplete="new-password"
+                      disabled={apiKeyRegisterLoadingTeamId === team.id}
+                    />
+                    <button
+                      type="button"
+                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-input bg-background text-muted-foreground hover:bg-muted disabled:opacity-50"
+                      aria-label={apiKeyRevealByTeamId[team.id] ? "API Key 숨기기" : "API Key 보기"}
+                      disabled={apiKeyRegisterLoadingTeamId === team.id}
+                      onClick={() =>
+                        setApiKeyRevealByTeamId((prev) => ({ ...prev, [team.id]: !prev[team.id] }))
+                      }
+                    >
+                      {apiKeyRevealByTeamId[team.id] ? (
+                        <EyeOff className="h-4 w-4" aria-hidden />
+                      ) : (
+                        <Eye className="h-4 w-4" aria-hidden />
+                      )}
+                    </button>
+                  </div>
                   <input
-                    type="password"
-                    className="h-9 rounded-md border border-zinc-300 bg-white px-3 text-xs"
-                    value={apiKeyValueByTeamId[team.id] ?? ""}
-                    onChange={(e) => setApiKeyValueByTeamId((prev) => ({ ...prev, [team.id]: e.target.value }))}
-                    placeholder="API Key 값"
-                    autoComplete="new-password"
-                    disabled={apiKeyLoadingTeamId === team.id}
+                    type="number"
+                    step={0.01}
+                    min={0}
+                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    inputMode="decimal"
+                    value={apiKeyMonthlyBudgetByTeamId[team.id] ?? ""}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      if (v === "") {
+                        setApiKeyMonthlyBudgetByTeamId((prev) => ({ ...prev, [team.id]: "" }))
+                        return
+                      }
+                      const n = Number(v)
+                      if (!Number.isFinite(n) || n < 0) return
+                      setApiKeyMonthlyBudgetByTeamId((prev) => ({ ...prev, [team.id]: v }))
+                    }}
+                    onBlur={() =>
+                      setApiKeyMonthlyBudgetByTeamId((prev) => {
+                        const cur = prev[team.id] ?? ""
+                        if (cur.trim() === "") return prev
+                        const next = normalizeBudgetNumericString(cur)
+                        if (next === cur) return prev
+                        return { ...prev, [team.id]: next }
+                      })
+                    }
+                    placeholder="월 예산 USD (스피너 ±0.01)"
+                    autoComplete="off"
+                    disabled={apiKeyRegisterLoadingTeamId === team.id}
                   />
+                  {apiKeyRegisterMessageByTeamId[team.id] ? (
+                    <p
+                      className={
+                        apiKeyRegisterMessageByTeamId[team.id]?.kind === "success"
+                          ? "text-xs text-emerald-600"
+                          : "text-xs text-destructive"
+                      }
+                    >
+                      {apiKeyRegisterMessageByTeamId[team.id]?.text}
+                    </p>
+                  ) : null}
                   <button
                     type="button"
-                    className="h-9 rounded-md border border-zinc-300 bg-white px-3 text-xs font-medium disabled:opacity-60"
-                    disabled={apiKeyLoadingTeamId === team.id}
+                    className="inline-flex h-9 items-center rounded-md border border-border bg-background px-3 text-sm font-medium hover:bg-muted disabled:opacity-60"
+                    disabled={apiKeyRegisterLoadingTeamId === team.id}
                     onClick={() => void registerTeamApiKey(team.id)}
                   >
-                    {apiKeyLoadingTeamId === team.id ? "등록 중..." : "팀 API Key 등록"}
+                    {apiKeyRegisterLoadingTeamId === team.id ? "등록 중…" : "등록"}
                   </button>
                 </div>
-
-                {(teamApiKeysByTeamId[team.id] ?? []).length > 0 ? (
-                  <ul className="space-y-1 text-xs text-zinc-700">
-                    {(teamApiKeysByTeamId[team.id] ?? []).map((apiKey) => (
-                      <li key={`${team.id}-api-key-${apiKey.id}`} className="rounded border border-zinc-200 bg-white px-2 py-1">
-                        {apiKey.provider} / {apiKey.alias} / {apiKey.keyPreview}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-xs text-zinc-500">등록된 팀 API Key가 없습니다.</p>
-                )}
               </div>
             </li>
           ))}
