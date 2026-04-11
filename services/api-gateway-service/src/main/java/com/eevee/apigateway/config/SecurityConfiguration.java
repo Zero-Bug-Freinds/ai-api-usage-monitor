@@ -29,6 +29,7 @@ public class SecurityConfiguration {
                     .pathMatchers("/actuator/health", "/actuator/info").permitAll()
                     .pathMatchers("/api/v1/ai/**").permitAll()
                     .pathMatchers("/api/v1/usage/**").permitAll()
+                    .pathMatchers("/api/v1/expenditure/**").permitAll()
                     .anyExchange().denyAll()
             );
         } else {
@@ -41,6 +42,7 @@ public class SecurityConfiguration {
                     .pathMatchers("/actuator/health", "/actuator/info").permitAll()
                     .pathMatchers("/api/v1/ai/**").authenticated()
                     .pathMatchers("/api/v1/usage/**").authenticated()
+                    .pathMatchers("/api/v1/expenditure/**").authenticated()
                     .anyExchange().denyAll()
             );
         }

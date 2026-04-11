@@ -1,0 +1,3 @@
+rootProject.name = 'billing-service'
+include 'usage-events'
+project(':usage-events').projectDir = file("${rootDir}/../../libs/usage-events")

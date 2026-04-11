@@ -1,0 +1,49 @@
+server:
+  port: ${BILLING_SERVICE_PORT:8093}
+
+spring:
+  application:
+    name: billing-service
+  datasource:
+    url: jdbc:postgresql://${BILLING_POSTGRES_HOST:localhost}:${BILLING_POSTGRES_PORT:5435}/${BILLING_POSTGRES_DB:billing_db}
+    username: ${BILLING_POSTGRES_USER:billing_app}
+    password: ${BILLING_POSTGRES_PASSWORD:billing_app}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy
+    open-in-view: false
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: false
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:localhost}
+    port: ${SPRING_RABBITMQ_PORT:5672}
+    username: ${SPRING_RABBITMQ_USERNAME:${RABBITMQ_USER:guest}}
+    password: ${SPRING_RABBITMQ_PASSWORD:${RABBITMQ_PASSWORD:guest}}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+billing:
+  analytics:
+    max-range-days: ${BILLING_ANALYTICS_MAX_RANGE_DAYS:400}
+  rabbit:
+    exchange: usage.events
+    routing-key: usage.recorded
+    queue: billing-service.queue
+  gateway:
+    shared-secret: ${GATEWAY_SHARED_SECRET:local-dev-gateway-shared-secret-do-not-use-in-prod}
+  identity:
+    enabled: ${BILLING_IDENTITY_ENABLED:false}
+    base-url: ${BILLING_IDENTITY_BASE_URL:}
+    budget-path-template: ${BILLING_IDENTITY_BUDGET_PATH:}

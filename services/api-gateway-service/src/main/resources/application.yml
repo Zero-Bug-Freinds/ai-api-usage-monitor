@@ -27,6 +27,13 @@ spring:
               filters:
                 - RemoveRequestHeader=Authorization
 
+            - id: billing-http
+              uri: ${GATEWAY_BILLING_URI:http://localhost:8093}
+              predicates:
+                - Path=/api/v1/expenditure/**
+              filters:
+                - RemoveRequestHeader=Authorization
+
 management:
   endpoints:
     web:

@@ -191,6 +191,8 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
     }
 
     static boolean requiresGatewayTrustHeaders(String path) {
-        return path.startsWith("/api/v1/ai/") || path.startsWith("/api/v1/usage/");
+        return path.startsWith("/api/v1/ai/")
+                || path.startsWith("/api/v1/usage/")
+                || path.startsWith("/api/v1/expenditure/");
     }
 }

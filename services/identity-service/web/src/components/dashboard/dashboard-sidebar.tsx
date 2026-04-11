@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   Settings,
   UsersRound,
+  Wallet,
 } from "lucide-react"
 
 import { LogoutButton } from "@/components/auth/logout-button"
@@ -22,6 +23,7 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "사용량", icon: <LayoutDashboard className="size-4" aria-hidden /> },
+  { href: "/billing", label: "지출", icon: <Wallet className="size-4" aria-hidden /> },
   { href: "/settings", label: "설정", icon: <Settings className="size-4" aria-hidden /> },
   { href: "/organizations", label: "조직", icon: <Building2 className="size-4" aria-hidden /> },
   { href: "/teams", label: "팀", icon: <UsersRound className="size-4" aria-hidden /> },
