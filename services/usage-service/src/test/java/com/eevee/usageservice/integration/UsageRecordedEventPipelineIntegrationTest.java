@@ -2,6 +2,7 @@ package com.eevee.usageservice.integration;
 
 import com.eevee.usage.events.AiProvider;
 import com.eevee.usage.events.TokenUsage;
+import com.eevee.usage.events.UsageCostFinalizedEvent;
 import com.eevee.usage.events.UsageRecordedEvent;
 import com.eevee.usageservice.repository.UsageRecordedLogRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -102,5 +103,48 @@ class UsageRecordedEventPipelineIntegrationTest {
                 .until(() -> repository.existsByEventId(eventId));
 
         assertThat(repository.findById(eventId)).isPresent();
+    }
+
+    @Test
+    void costEventAfterUsageEvent_updatesEstimatedCost() throws Exception {
+        UUID eventId = UUID.randomUUID();
+        UsageRecordedEvent usageEvent = new UsageRecordedEvent(
+                eventId,
+                Instant.parse("2025-06-01T12:00:00Z"),
+                "corr-cost",
+                "user-cost",
+                null,
+                null,
+                "key-cost",
+                "cafebabedeadbeef",
+                "managed",
+                AiProvider.OPENAI,
+                "gpt-4o-mini",
+                new TokenUsage("gpt-4o-mini", 1L, 2L, 3L),
+                BigDecimal.ZERO,
+                "/proxy/openai/v1/chat/completions",
+                "api.openai.com",
+                false,
+                true,
+                200
+        );
+
+        rabbitTemplate.convertAndSend("usage.events", "usage.recorded", objectMapper.writeValueAsString(usageEvent));
+
+        await().atMost(15, SECONDS).pollInterval(100, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .until(() -> repository.existsByEventId(eventId));
+
+        BigDecimal priced = new BigDecimal("12.3456");
+        UsageCostFinalizedEvent costEvent = new UsageCostFinalizedEvent(eventId, priced, "USD", null);
+        rabbitTemplate.convertAndSend("usage.events", "usage.cost.finalized", objectMapper.writeValueAsString(costEvent));
+
+        await().atMost(15, SECONDS).pollInterval(100, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .until(() -> {
+                    return repository.findById(eventId)
+                            .map(e -> priced.compareTo(e.getEstimatedCost()) == 0)
+                            .orElse(false);
+                });
+
+        assertThat(repository.findById(eventId)).hasValueSatisfying(e -> assertThat(e.getEstimatedCost()).isEqualByComparingTo(priced));
     }
 }

@@ -39,6 +39,8 @@ usage:
     exchange: usage.events
     routing-key: usage.recorded
     queue: usage-service.queue
+    cost-routing-key: usage.cost.finalized
+    cost-queue: usage-service.cost.queue
   analytics:
     max-range-days: ${USAGE_ANALYTICS_MAX_RANGE_DAYS:400}
   gateway:

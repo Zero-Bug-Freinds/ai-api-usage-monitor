@@ -20,6 +20,17 @@ public class UsageRabbitProperties {
      */
     private String queue = "usage-service.queue";
 
+    /**
+     * Routing key for {@link com.eevee.usage.events.UsageCostFinalizedEvent} (billing → usage cost apply).
+     * Must match billing-service publish routing key.
+     */
+    private String costRoutingKey = "usage.cost.finalized";
+
+    /**
+     * Queue bound to {@link #getExchange()} with {@link #costRoutingKey} for cost-finalization messages.
+     */
+    private String costQueue = "usage-service.cost.queue";
+
     public String getExchange() {
         return exchange;
     }
@@ -42,5 +53,21 @@ public class UsageRabbitProperties {
 
     public void setQueue(String queue) {
         this.queue = queue;
+    }
+
+    public String getCostRoutingKey() {
+        return costRoutingKey;
+    }
+
+    public void setCostRoutingKey(String costRoutingKey) {
+        this.costRoutingKey = costRoutingKey;
+    }
+
+    public String getCostQueue() {
+        return costQueue;
+    }
+
+    public void setCostQueue(String costQueue) {
+        this.costQueue = costQueue;
     }
 }
