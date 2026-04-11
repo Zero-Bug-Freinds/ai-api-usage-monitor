@@ -1,0 +1,65 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "name": "bootRun: identity-service",
+      "request": "launch",
+      "mainClass": "com.zerobugfreinds.identity_service.IdentityServiceApplication",
+      "projectName": "identity-service",
+      "cwd": "${workspaceFolder}/services/identity-service",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "SERVER_PORT": "8090"
+      }
+    },
+    {
+      "type": "java",
+      "name": "bootRun: usage-service",
+      "request": "launch",
+      "mainClass": "com.eevee.usageservice.UsageServiceApplication",
+      "projectName": "usage-service",
+      "cwd": "${workspaceFolder}/services/usage-service",
+      "envFile": "${workspaceFolder}/.env"
+    },
+    {
+      "type": "java",
+      "name": "bootRun: team-service",
+      "request": "launch",
+      "mainClass": "com.zerobugfreinds.team_service.TeamServiceApplication",
+      "projectName": "team-service",
+      "cwd": "${workspaceFolder}/services/team-service",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "TEAM_SERVICE_PORT": "8094"
+      }
+    },
+    {
+      "type": "java",
+      "name": "bootRun: billing-service",
+      "request": "launch",
+      "mainClass": "com.eevee.billingservice.BillingServiceApplication",
+      "projectName": "billing-service",
+      "cwd": "${workspaceFolder}/services/billing-service",
+      "envFile": "${workspaceFolder}/.env"
+    },
+    {
+      "type": "java",
+      "name": "bootRun: api-gateway-service",
+      "request": "launch",
+      "mainClass": "com.eevee.apigateway.ApiGatewayApplication",
+      "projectName": "api-gateway-service",
+      "cwd": "${workspaceFolder}/services/api-gateway-service",
+      "envFile": "${workspaceFolder}/.env"
+    },
+    {
+      "type": "java",
+      "name": "bootRun: proxy-service",
+      "request": "launch",
+      "mainClass": "com.eevee.proxyservice.ProxyServiceApplication",
+      "projectName": "proxy-service",
+      "cwd": "${workspaceFolder}/services/proxy-service",
+      "envFile": "${workspaceFolder}/.env"
+    }
+  ]
+}

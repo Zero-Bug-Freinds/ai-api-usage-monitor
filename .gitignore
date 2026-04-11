@@ -31,7 +31,11 @@ services/*/bin/
 # --- IDE / OS ---
 .idea/
 *.iml
-.vscode/
+# Track shared VS Code/Cursor configs; ignore other local .vscode files.
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/extensions.json
 .DS_Store
 Thumbs.db
 
