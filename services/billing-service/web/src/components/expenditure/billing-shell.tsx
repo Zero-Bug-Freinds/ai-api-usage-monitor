@@ -1,19 +1,13 @@
 "use client";
 
 import type { ReactNode } from "react";
-import Link from "next/link";
 import { ChevronLeft, Wallet } from "lucide-react";
+
+import { getUsageDashboardHref } from "@/lib/usage-dashboard-href";
 
 type BillingShellProps = {
   children: ReactNode;
 };
-
-function usageDashboardHref(): string {
-  const base = (process.env.NEXT_PUBLIC_USAGE_WEB_ORIGIN ?? "").replace(/\/$/, "");
-  const basePath = (process.env.NEXT_PUBLIC_USAGE_BASE_PATH ?? "/dashboard").replace(/\/$/, "");
-  if (!base) return basePath || "/";
-  return `${base}${basePath}` || base;
-}
 
 export function BillingShell({ children }: BillingShellProps) {
   return (
@@ -24,13 +18,13 @@ export function BillingShell({ children }: BillingShellProps) {
           <p className="mt-0.5 text-sm font-semibold tracking-tight">지출</p>
         </div>
         <div className="px-2 py-2">
-          <Link
-            href={usageDashboardHref()}
+          <a
+            href={getUsageDashboardHref()}
             className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <ChevronLeft className="size-4 shrink-0" aria-hidden />
             사용량으로
-          </Link>
+          </a>
         </div>
         <div className="flex flex-1 items-start px-2 pt-2">
           <div className="flex w-full items-center gap-2 rounded-lg bg-muted px-2.5 py-2 text-sm font-medium text-foreground">

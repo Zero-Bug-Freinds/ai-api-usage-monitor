@@ -14,6 +14,9 @@ const nextConfig: NextConfig = {
   transpilePackages: ["@ai-usage/ui"],
   env: {
     NEXT_PUBLIC_BASE_PATH: basePath,
+    // Dev: usage is usually proxied on identity :3000; absolute href avoids `/billing` + `/dashboard` confusion.
+    NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:
+      process.env.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN ?? "http://localhost:3000",
   },
 };
 
