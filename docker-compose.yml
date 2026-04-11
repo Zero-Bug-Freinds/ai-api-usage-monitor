@@ -72,6 +72,21 @@ services:
       - postgres_usage_data:/var/lib/postgresql/data
       - ./docker/postgres/init/02-create-usage-db.sh:/docker-entrypoint-initdb.d/02-create-usage-db.sh:ro
 
+  postgres-billing:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+      BILLING_POSTGRES_DB: ${BILLING_POSTGRES_DB:-billing_db}
+      BILLING_POSTGRES_USER: ${BILLING_POSTGRES_USER:-billing_app}
+      BILLING_POSTGRES_PASSWORD: ${BILLING_POSTGRES_PASSWORD:-billing_app}
+    ports:
+      - "${BILLING_POSTGRES_PORT:-5435}:5432"
+    volumes:
+      - postgres_billing_data:/var/lib/postgresql/data
+      - ./docker/postgres/init/03-create-billing-db.sh:/docker-entrypoint-initdb.d/03-create-billing-db.sh:ro
+
   rabbitmq:
     image: rabbitmq:3-management-alpine
     ports:
@@ -214,3 +229,4 @@ volumes:
   postgres_data:
   postgres_team_data:
   postgres_usage_data:
+  postgres_billing_data:
