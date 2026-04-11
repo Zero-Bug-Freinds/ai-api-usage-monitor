@@ -13,21 +13,18 @@
 - **Proxy 기반 사용량 수집**: 사용자는 Provider를 직접 호출하지 않고 플랫폼 프록시로 호출
 - **비용 계산 및 정산**: 사용량(토큰/estimated cost)을 기반으로 개인/팀/조직 비용 집계
 - **대시보드**: 개인/조직·팀별 사용량 및 비용 확인
-- **Quota / Budget 제한(선택)**: soft limit(경고) / hard block(차단) 정책
-- **알림(선택)**: Slack/Email 등으로 임계치 도달 알림
+- **Budget 제한**: soft limit(경고) / hard block(차단) 정책
+- **알림**: Slack/Email 등으로 임계치 도달 알림
 
 ## 아키텍처(High-Level)
 - 외부 요청 진입: `API Gateway`
-- 핵심 도메인: `Proxy Service`(AI 호출 중계 + usage 기록)
-- 비동기 처리: `RabbitMQ` 이벤트 기반 연계(usage-recorded 등)
-- 도메인 서비스 분리:
-  - `Identity & Organization Service`(개인/조직/팀/RBAC)
-  - `API Key Service`(공급사 키 암호화 저장/조회)
-  - `Usage Tracking Service`(usage 저장)
-  - `Billing Service`(비용 계산/정산 기록 저장)
-  - `Analytics & Reporting Service`(대시보드 집계/리포트, 선택)
-  - `Quota Service`(정책/제한 기준)
-  - `Notification Service`(알림 발송, 선택)
+- 핵심 도메인: `Proxy Service`(AI 호출 중계 + usage 이벤트 발행)
+- 비동기 처리: `RabbitMQ` 이벤트 기반 연계(usage-recorded)
+- 도메인 서비스 분리(현재 `services/`에 Gradle 프로젝트로 있는 것: Gateway·Proxy·Identity·Usage·Team):
+  - `Identity Service`(인증·사용자·조직·RBAC; 공급사 외부 API 키 등은 이 경계에서 구현될 수 있음)
+  - `Team Service`(팀·팀원·팀 API Key 등 팀 도메인; Identity와 HTTP API로 연동)
+  - `Usage Service`(usage 이벤트 소비·저장 및 사용량 대시보드)
+  - `Billing Service` / `Quota Service` / `Notification Service`(목표 아키텍처·로드맵; 현재 저장소에는 해당 이름의 서비스 디렉터리 없음)
 
 ## 기술 스택(결정)
 - **백엔드(Proxy 등)**: **Spring Boot + Spring WebFlux** — 비동기 I/O·스트리밍·Provider 중계에 사용. **FastAPI(Python)는 사용하지 않습니다.**
@@ -37,13 +34,13 @@
 
 ## 로컬 개발 관련(중요)
 - **Kubernetes는 사용하지 않음**: 배포하지 않는 캡스톤 환경을 전제로 합니다.
-- **실행 순서·(Google / OpenAI) 키·경로·로그/Rabbit/DB로 사용량 파이프라인 검증**은 **[`docs/local-run-and-usage-verification.md`](docs/local-run-and-usage-verification.md)** 를 본다.
+- **실행 순서·(Google / OpenAI) 키·경로·로그/Rabbit/DB로 사용량 파이프라인 검증**은 **`docs/architecture.md`** §3.3·§10, **`docs/contracts/gateway-proxy.md`**, 루트 **`docker-compose.yml`** · **`.env.example`** 을 본다.
 - **의존성(DB·큐·캐시)**: **Docker Compose**로 실행합니다. 예: `PostgreSQL`, `RabbitMQ`, `Redis`.
 - **API Gateway + Proxy**: `docker-compose.yml`에서 **컨테이너로 함께 기동**할 수 있습니다(호스트 포트 기본 `8080` / `8081`). 계약·경로는 `docs/contracts/gateway-proxy.md`를 참고합니다.
 - **루트 `.env` + Compose:** `docker compose`는 프로젝트 루트의 **`.env`**만 자동 로드합니다. **`GATEWAY_SHARED_SECRET`** 은 Compose가 `${GATEWAY_SHARED_SECRET:-}` 로 넘길 때 **빈 값만 두면** 컨테이너 안 Spring이 yml 기본값을 쓰지 못해 게이트웨이 기동이 실패할 수 있으므로, **`.env.example`과 같이 비어 있지 않은 값**으로 맞추거나 해당 줄을 제거하세요(상세: `docs/contracts/gateway-proxy.md` §5, `docs/architecture.md` §10.1). **호스트에서 `bootRun`만** 할 때는 Gradle/IDE가 루트 `.env`를 읽지 않으므로, 필요하면 동일 변수를 실행 구성에 넣습니다.
 - **identity-service** 등 그 외 앱도 **로컬 JVM** 실행을 기본으로 하며, 필요 시 Compose에 추가할 수 있습니다.
-- **컨테이너 배포 모델**: 백엔드·프론트 **이미지 분리 + Docker Compose 스택**(패턴 B, `docs/architecture.md` §10.1). Next는 루트 **`pnpm` workspace**(`packages/ui` + 각 `web`)를 포함해 **저장소 루트를 build context**로 `docker build -f services/identity-service/web/Dockerfile …`, `docker build -f services/usage-service/web/Dockerfile …` 하거나, **`profile: web`** 으로 Compose에 **`identity-web`**, **`usage-web`**, **`web-edge`**(Nginx, `docker/web-edge/nginx.conf`)를 함께 올립니다.
-- **단일 도메인**: **`web-edge`** 기본 호스트 포트 **`8888`**(`WEB_EDGE_PORT`)에서 진입 — `/dashboard`는 `/dashboard/`로 리다이렉트(308) 후 **`/dashboard/`** 접두만 Usage `web`; `/api/v1/` 접두는 API Gateway; 그 외(예: `/dashboard2`)는 Identity `web`(`docker/web-edge/nginx.conf`, `docs/architecture.md` §10.2, `docs/contracts/web-split-boundary.md`).
+- **컨테이너 배포 모델**: 백엔드·프론트 **이미지 분리 + Docker Compose 스택**(패턴 B, `docs/architecture.md` §10.1). Next는 루트 **`pnpm` workspace**(`packages/ui` + 각 `web`)를 포함해 **저장소 루트를 build context**로 `docker build -f services/identity-service/web/Dockerfile …`, `docker build -f services/usage-service/web/Dockerfile …`, `docker build -f services/team-service/web/Dockerfile …` 하거나, **`profile: web`** 으로 Compose에 **`identity-web`**, **`usage-web`**, **`team-web`**, 필요 시 **`team-service`**, **`web-edge`**(Nginx, `docker/web-edge/nginx.conf`)를 함께 올립니다.
+- **단일 도메인**: **`web-edge`** 기본 호스트 포트 **`8888`**(`WEB_EDGE_PORT`)에서 진입 — `/dashboard`는 `/dashboard/`로 리다이렉트(308) 후 **`/dashboard/`** 접두만 Usage `web`; `/teams`는 `/teams/`로 리다이렉트(308) 후 **`/teams/`** 접두만 Team `web`; `/api/v1/` 접두는 API Gateway; 그 외(예: `/dashboard2`)는 Identity `web`(`docker/web-edge/nginx.conf`, `docs/architecture.md` §10.2, `docs/contracts/web-split-boundary.md`).
 
 ## 개발 방식(풀스택·서비스 소유)
 
@@ -53,7 +50,7 @@
 
 1. **Java:** `proxy-service`·`api-gateway-service` 는 이미지 빌드 전 해당 디렉터리에서 `./gradlew bootJar` 로 `app.jar` 를 둔다. **identity-service**·**usage-service** 백엔드 Dockerfile 은 이미지 안에서 Gradle 을 돌려 JAR 을 만든다(usage 는 저장소 루트에서 `docker build -f services/usage-service/Dockerfile …`).
 2. **Next.js:** 저장소 루트에서 **`pnpm install`**(전역 pnpm 없으면 `npx pnpm@9 install`) 후 **`pnpm build:web`**(또는 각 `web`에서 `pnpm build`). `output: 'standalone'` 산출물을 Docker가 복사(`docs/architecture.md` §10.1).
-3. **공유 UI:** **`packages/ui`**(`@ai-usage/ui`) — Shadcn 래퍼·`cn`; 두 Next 앱이 workspace 로 참조한다.
+3. **공유 UI:** **`packages/ui`**(`@ai-usage/ui`) — Shadcn 래퍼·`cn`; 세 Next 앱(identity-web·usage-web·team-web)이 workspace 로 참조한다.
 
 로컬 포트·`.env` 힌트는 루트 **`.env.example`**, 각 **`services/*/web/.env.example`**, **`docs/contracts/web-identity-bff.md` §9**, **`docs/contracts/web-split-boundary.md`** 를 본다.
 
@@ -63,17 +60,18 @@
 - `services/proxy-service` — AI Provider 프록시(WebFlux), usage 이벤트 발행
 - `services/usage-service` — `UsageRecordedEvent` 소비·PostgreSQL 원장 저장(Spring AMQP + JPA)
 - `services/identity-service` — 계정·조직·API Key 등(Identity; 목표 Next는 `services/identity-service/web/`)
+- `services/team-service` — 팀·팀원·팀 API Key 등(Team; Next는 `services/team-service/web/`)
 - `libs/usage-events` — 공유 이벤트(`UsageRecordedEvent` 등)
-- `apps/web` — **이행 완료** 안내(`README.md`만). UI+BFF 소스는 `services/identity-service/web`, `services/usage-service/web`.
+- `apps/web` — **이행 완료** 안내(`README.md`만). UI+BFF 소스는 `services/identity-service/web`, `services/usage-service/web`, `services/team-service/web`.
 
 ## 문서
-- **로컬 실행·테스트(Gateway / Proxy / usage·이벤트·DB)**: `docs/local-run-and-usage-verification.md`
+- **로컬 실행·테스트(Gateway / Proxy / usage·이벤트·DB)**: `docs/architecture.md` §3.3·§6·§10, `docs/contracts/gateway-proxy.md`
 - Gateway ↔ Proxy 계약: `docs/contracts/gateway-proxy.md`
-- Usage 이벤트 소비·팬아웃: `docs/event-consumer-flow.md` · usage/analytics 경계: `docs/usage-analytics-relationship.md`
+- **이벤트·usage·Billing·대시보드 책임 구분**: `docs/architecture.md` §2·§6·§11·§12
 - C4 다이어그램(코드 기준): `docs/c4-architecture-diagrams.md`
   - Mermaid Live Editor에서 렌더링/검증 가능: https://mermaid.live/
 - 아키텍처 문서: `docs/architecture.md`
-- 시퀀스 다이어그램(AI 호출·이벤트·대시보드 조회): `docs/sequence-diagrams.md`
+- 시퀀스·호출 흐름(다이어그램): `docs/c4-architecture-diagrams.md`, `docs/architecture.md`
 - 저장소·디렉터리 구조(모노레포): `docs/repository-structure.md`
 - Identity vs Usage 웹 라우트·BFF 경계: `docs/contracts/web-split-boundary.md`
 - MSA 이론 배경: `docs/msa-architecture-theory.md`

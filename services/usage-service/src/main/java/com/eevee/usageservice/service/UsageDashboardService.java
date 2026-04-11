@@ -19,12 +19,15 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 @Service
 public class UsageDashboardService {
+
+    /** Dashboard date ranges and buckets align with Korea Standard Time (same as identity-service convention). */
+    private static final ZoneId DASHBOARD_ZONE = ZoneId.of("Asia/Seoul");
 
     private final UsageAnalyticsJdbcRepository analyticsJdbcRepository;
     private final UsageRecordedLogRepository logRepository;
@@ -126,8 +129,8 @@ public class UsageDashboardService {
         if (days > max) {
             throw new IllegalArgumentException("Date range too large (max " + max + " days)");
         }
-        Instant start = from.atStartOfDay(ZoneOffset.UTC).toInstant();
-        Instant toExclusive = toInclusive.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+        Instant start = from.atStartOfDay(DASHBOARD_ZONE).toInstant();
+        Instant toExclusive = toInclusive.plusDays(1).atStartOfDay(DASHBOARD_ZONE).toInstant();
         return new Range(start, toExclusive);
     }
 

@@ -16,7 +16,7 @@
 # [Next] 빌드: 저장소 루트에서 pnpm install 후 `pnpm build:web` 또는 각 web 에서 build.
 #   Docker 이미지: build context 는 루트(.), dockerfile 은 services/<svc>/web/Dockerfile (workspace `packages/ui`).
 #
-# Next.js — 선택: docker compose --profile web up (identity-web + usage-web + web-edge)
+# Next.js — 선택: docker compose --profile web up (identity-web + usage-web + billing-web + web-edge)
 #   게이트웨이는 컨테이너 네트워크(api-gateway-service:8080)로 연결(API_GATEWAY_URL).
 #   Identity BFF는 기본적으로 호스트의 identity-service 를 host.docker.internal 로 향함(WEB_IDENTITY_SERVICE_URL).
 #   단일 도메인: web-edge(Nginx, docker/web-edge/nginx.conf) → 기본 ${WEB_EDGE_PORT:-8888}
@@ -71,6 +71,21 @@ services:
     volumes:
       - postgres_usage_data:/var/lib/postgresql/data
       - ./docker/postgres/init/02-create-usage-db.sh:/docker-entrypoint-initdb.d/02-create-usage-db.sh:ro
+
+  postgres-billing:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+      BILLING_POSTGRES_DB: ${BILLING_POSTGRES_DB:-billing_db}
+      BILLING_POSTGRES_USER: ${BILLING_POSTGRES_USER:-billing_app}
+      BILLING_POSTGRES_PASSWORD: ${BILLING_POSTGRES_PASSWORD:-billing_app}
+    ports:
+      - "${BILLING_POSTGRES_PORT:-5435}:5432"
+    volumes:
+      - postgres_billing_data:/var/lib/postgresql/data
+      - ./docker/postgres/init/03-create-billing-db.sh:/docker-entrypoint-initdb.d/03-create-billing-db.sh:ro
 
   rabbitmq:
     image: rabbitmq:3-management-alpine
@@ -130,6 +145,7 @@ services:
     environment:
       IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://host.docker.internal:8090}
       USAGE_WEB_INTERNAL_ORIGIN: ${USAGE_WEB_INTERNAL_ORIGIN:-http://host.docker.internal:3001}
+      BILLING_WEB_INTERNAL_ORIGIN: ${BILLING_WEB_INTERNAL_ORIGIN:-http://host.docker.internal:3003}
       TEAM_WEB_INTERNAL_ORIGIN: ${TEAM_WEB_INTERNAL_ORIGIN:-http://host.docker.internal:3002}
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -155,6 +171,25 @@ services:
       - "host.docker.internal:host-gateway"
     ports:
       - "${USAGE_WEB_PORT:-3001}:3000"
+
+  billing-web:
+    profiles:
+      - web
+    build:
+      context: .
+      dockerfile: services/billing-service/web/Dockerfile
+      args:
+        NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${IDENTITY_WEB_PORT:-3000}}
+    depends_on:
+      - api-gateway-service
+    environment:
+      API_GATEWAY_URL: http://api-gateway-service:8080
+      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://host.docker.internal:8090}
+      GATEWAY_DEV_MODE: ${GATEWAY_DEV_MODE:-true}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${BILLING_WEB_PORT:-3003}:3000"
 
   team-service:
     profiles:
@@ -203,6 +238,7 @@ services:
     depends_on:
       - identity-web
       - usage-web
+      - billing-web
       - team-web
       - api-gateway-service
     ports:
@@ -214,3 +250,4 @@ volumes:
   postgres_data:
   postgres_team_data:
   postgres_usage_data:
+  postgres_billing_data:

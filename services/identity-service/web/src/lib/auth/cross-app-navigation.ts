@@ -12,10 +12,10 @@ export function usageAppHref(path: string): string {
 }
 
 /**
- * `/dashboard`는 앱 내 보호 페이지로 전체 네비게이션으로 이동한다.
+ * `/dashboard`·`/billing` 은 rewrite 대상 앱으로 전체 네비게이션으로 이동한다.
  */
 export function navigateAfterLogin(nextPath: string, router: RouterLike): void {
-  if (nextPath.startsWith("/dashboard")) {
+  if (nextPath.startsWith("/dashboard") || nextPath.startsWith("/billing")) {
     window.location.assign(usageAppHref(nextPath))
     return
   }
