@@ -93,6 +93,7 @@
   - 이유: 프록시는 수정 빈도가 높고 스트리밍/디버깅이 중요하므로, 컨테이너보다 로컬 실행이 생산성에 유리하다.
   - 웹 UI(브라우저) 및 다른 서비스는 실행 위치(호스트/컨테이너)에 따라 `localhost` 또는 `host.docker.internal`/Compose 서비스명(`api-gateway-service` 등) + 환경변수로 브로커·DB·API 주소에 연결한다.
 - 다른 애플리케이션 서비스(Identity, Usage Tracking, Team 등)도 기본은 **호스트 로컬 실행**으로 두되, 팀 합의에 따라 루트 Compose `profile: web`/서비스별 Compose에 포함해 함께 기동할 수 있다.
+- **team-service와 billing-service**는 Spring 설정상 `TEAM_SERVICE_PORT` / `BILLING_SERVICE_PORT`가 없으면 둘 다 기본 **8093**이라 동시에 `bootRun`하면 포트가 충돌한다. 저장소에서는 `scripts/bootrun.ps1`·`scripts/bootrun.sh`와 VS Code `bootRun: billing-service`가 team **8094**·billing **8095**를 기본으로 넣어 분리한다. API Gateway가 호스트의 billing을 부를 때는 **`GATEWAY_BILLING_URI`를 billing이 실제 듣는 포트와 맞출 것**(루트 `.env.example` 참고).
 
 ---
 

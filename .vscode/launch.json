@@ -41,7 +41,10 @@
       "mainClass": "com.eevee.billingservice.BillingServiceApplication",
       "projectName": "billing-service",
       "cwd": "${workspaceFolder}/services/billing-service",
-      "envFile": "${workspaceFolder}/.env"
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "BILLING_SERVICE_PORT": "8095"
+      }
     },
     {
       "type": "java",
