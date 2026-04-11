@@ -37,6 +37,18 @@ async function fetchJson<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+function formatUsdTooltip(value: unknown): [string, string] {
+  if (value == null) {
+    return ["—", "USD"];
+  }
+  const raw = Array.isArray(value) ? value[0] : value;
+  const n = typeof raw === "number" ? raw : Number(raw);
+  if (Number.isNaN(n)) {
+    return ["—", "USD"];
+  }
+  return [`$${n.toFixed(4)}`, "USD"];
+}
+
 export function ExpenditureDashboard() {
   const [provider, setProvider] = useState<AiProviderCode>("GOOGLE");
   const [apiKeys, setApiKeys] = useState<ApiKeySeen[]>([]);
@@ -228,7 +240,7 @@ export function ExpenditureDashboard() {
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                 <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} width={56} />
-                <Tooltip formatter={(v: number) => [`$${v.toFixed(4)}`, "USD"]} />
+                <Tooltip formatter={formatUsdTooltip} />
                 <Line type="monotone" dataKey="usd" stroke="var(--color-chart-1)" strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
@@ -245,7 +257,7 @@ export function ExpenditureDashboard() {
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                 <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} width={56} />
-                <Tooltip formatter={(v: number) => [`$${v.toFixed(4)}`, "USD"]} />
+                <Tooltip formatter={formatUsdTooltip} />
                 <Bar dataKey="usd" fill="var(--color-chart-2)" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
