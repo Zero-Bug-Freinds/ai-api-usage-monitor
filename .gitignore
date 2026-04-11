@@ -25,6 +25,8 @@ coverage/
 
 # --- Gradle ---
 .gradle/
+# IDE/ stray outputs next to services (sources live under src/; prefer build/)
+services/*/bin/
 
 # --- IDE / OS ---
 .idea/
