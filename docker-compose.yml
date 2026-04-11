@@ -126,6 +126,8 @@ services:
     environment:
       GATEWAY_PROXY_URI: http://proxy-service:8081
       GATEWAY_USAGE_URI: ${GATEWAY_USAGE_URI:-http://host.docker.internal:8092}
+      # Host-run billing (bootRun default 8095). Override if billing runs elsewhere.
+      GATEWAY_BILLING_URI: ${GATEWAY_BILLING_URI:-http://host.docker.internal:8095}
       GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET:-}
       GATEWAY_JWT_SECRET: ${GATEWAY_JWT_SECRET:-}
       GATEWAY_DEV_MODE: ${GATEWAY_DEV_MODE:-true}
@@ -212,8 +214,9 @@ services:
         condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # Published host port: TEAM_SERVICE_HOST_PORT (not TEAM_SERVICE_PORT — see .env.example).
     ports:
-      - "${TEAM_SERVICE_PORT:-8093}:8093"
+      - "${TEAM_SERVICE_HOST_PORT:-8093}:8093"
 
   team-web:
     profiles:
@@ -224,7 +227,7 @@ services:
     depends_on:
       - team-service
     environment:
-      TEAM_SERVICE_URL: ${WEB_TEAM_SERVICE_URL:-http://host.docker.internal:8094}
+      TEAM_SERVICE_URL: ${WEB_TEAM_SERVICE_URL:-http://team-service:8093}
       IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://host.docker.internal:8090}
     extra_hosts:
       - "host.docker.internal:host-gateway"

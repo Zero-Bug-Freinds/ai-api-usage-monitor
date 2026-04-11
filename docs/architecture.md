@@ -93,6 +93,8 @@
   - 이유: 프록시는 수정 빈도가 높고 스트리밍/디버깅이 중요하므로, 컨테이너보다 로컬 실행이 생산성에 유리하다.
   - 웹 UI(브라우저) 및 다른 서비스는 실행 위치(호스트/컨테이너)에 따라 `localhost` 또는 `host.docker.internal`/Compose 서비스명(`api-gateway-service` 등) + 환경변수로 브로커·DB·API 주소에 연결한다.
 - 다른 애플리케이션 서비스(Identity, Usage Tracking, Team 등)도 기본은 **호스트 로컬 실행**으로 두되, 팀 합의에 따라 루트 Compose `profile: web`/서비스별 Compose에 포함해 함께 기동할 수 있다.
+- **team-service**는 `TEAM_SERVICE_PORT` 없으면 기본 **8093**, **billing-service**는 `BILLING_SERVICE_PORT` 없으면 기본 **8095** — 기본값끼리는 포트가 겹치지 않는다. `scripts/bootrun.ps1`·`bootrun.sh`는 team **8094**·billing **8095**를 넣어 과거(둘 다 8093) 충돌을 피한다. API Gateway **`GATEWAY_BILLING_URI`** 기본은 **`http://localhost:8095`** 와 billing 기본 포트가 일치한다(Compose 게이트웨이는 `host.docker.internal:8095`). 스모크: `scripts/verify-expenditure-chain.ps1` / `verify-expenditure-chain.sh`.
+- 루트 Compose의 **`team-service`**(`profiles: web`)는 **호스트 포트 매핑**에 **`TEAM_SERVICE_HOST_PORT`**(기본 **8093**)를 쓰고, 호스트에서 JVM으로 기동할 때의 **`TEAM_SERVICE_PORT`**(예: **8094**)와 변수명을 분리한다. 과거에는 둘 다 `TEAM_SERVICE_PORT`로 치환되어 `.env`에 **8094**를 두면 Compose가 호스트 **8094**를 Docker에 바인딩하고, 같은 머신에서 `bootRun`이 **8094**를 다시 쓰려 할 때(점유 PID가 **java**가 아니라 **Docker / wslrelay**인 유형) 충돌이 났다. **`TEAM_SERVICE_HOST_PORT`**는 Compose 전용, **`TEAM_SERVICE_PORT`**는 호스트 JVM용으로 구분한다. **`team-web`**은 같은 Compose 스택에서는 기본 **`http://team-service:8093`**, 호스트에서만 team을 띄울 때는 **`WEB_TEAM_SERVICE_URL`**을 호스트 포트에 맞춘다(`.env.example`).
 
 ---
 

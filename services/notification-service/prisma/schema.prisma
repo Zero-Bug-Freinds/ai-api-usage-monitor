@@ -1,0 +1,22 @@
+// Notification Service — 로컬/배포 DB URL은 환경변수 (docs/architecture.md §12)
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// 아웃바운드 알림 발송 시도·멱등 키 추적 (최소 스키마 — 팀이 확장)
+model NotificationDelivery {
+  id        String   @id @default(uuid()) @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// 동일 스코프·기간·임계치 등 팀 합의 문자열 (중복 발송 방지)
+  dedupeKey String   @unique @map("dedupe_key")
+  channel   String
+  status    String
+  payload   Json?
+
+  @@map("notification_deliveries")
+}

@@ -7,6 +7,7 @@
     "build:usage-web": "pnpm --filter usage-web build",
     "build:billing-web": "pnpm --filter billing-web build",
     "build:team-web": "pnpm --filter team-web build",
+    "build:notification-service": "pnpm --filter notification-service build",
     "build:web": "pnpm build:identity-web && pnpm build:usage-web && pnpm build:billing-web && pnpm build:team-web"
   }
 }
