@@ -32,16 +32,18 @@ import { formatOccurredAtKst } from "@/lib/usage/format-occurred-at-kst"
 import { formatRequestCount, formatTokenCount, formatUsd, toNumber } from "@/lib/usage/format"
 import type {
   DailyUsagePoint,
+  HourlyUsagePoint,
   ModelUsageAggregate,
   MonthlyUsagePoint,
   PagedLogsResponse,
+  PeriodMode,
+  UsageCostIntradayKpiResponse,
   UsageLogEntryResponse,
   UsageProviderFilter,
   UsageSummaryResponse,
 } from "@/lib/usage/types"
 import { addKstDays, formatKstIsoDate } from "@/lib/usage/kst-dates"
 
-/** 무채색 팔레트: 파이·막대·라인 공통 (밝은 배경에서 대비 유지) */
 const CHART_COLORS = [
   "#0a0a0a",
   "#404040",
@@ -50,13 +52,11 @@ const CHART_COLORS = [
   "#d4d4d4",
 ]
 
-const RANGE_DAYS = 30
 const MONTHLY_LOOKBACK_DAYS = 365
 const LOGS_PAGE_SIZE = 10
-
 const LOG_PROVIDER_ALL = "__all__"
+const DASHBOARD_PROVIDER_ALL = "__all__"
 
-/** Recharts Tooltip `value`는 배열 등이 될 수 있어 숫자 집계용으로만 안전 변환한다. */
 function tooltipNumericValue(value: unknown): number {
   if (typeof value === "number") return value
   if (typeof value === "string") return toNumber(value)
@@ -68,10 +68,42 @@ function truncateModelLabel(model: string, max = 36) {
   return `${model.slice(0, max - 1)}…`
 }
 
+function computeRange(
+  todayIso: string,
+  mode: PeriodMode,
+  customFrom: string,
+  customTo: string
+): { from: string; to: string } {
+  switch (mode) {
+    case "today":
+      return { from: todayIso, to: todayIso }
+    case "7d":
+      return { from: addKstDays(todayIso, -6), to: todayIso }
+    case "30d":
+      return { from: addKstDays(todayIso, -29), to: todayIso }
+    case "custom":
+      if (!customFrom || !customTo) return { from: todayIso, to: todayIso }
+      return { from: customFrom, to: customTo }
+    default:
+      return { from: todayIso, to: todayIso }
+  }
+}
+
+function providerQueryParam(v: string): UsageProviderFilter | undefined {
+  return v !== DASHBOARD_PROVIDER_ALL ? (v as UsageProviderFilter) : undefined
+}
+
 export function UsageDashboard() {
-  const [summaryToday, setSummaryToday] = React.useState<UsageSummaryResponse | null>(null)
-  const [summary30, setSummary30] = React.useState<UsageSummaryResponse | null>(null)
-  const [daily, setDaily] = React.useState<DailyUsagePoint[]>([])
+  const [periodMode, setPeriodMode] = React.useState<PeriodMode>("today")
+  const [dashboardProvider, setDashboardProvider] = React.useState<string>(DASHBOARD_PROVIDER_ALL)
+  const [customFrom, setCustomFrom] = React.useState(() => addKstDays(formatKstIsoDate(), -7))
+  const [customTo, setCustomTo] = React.useState(() => formatKstIsoDate())
+
+  const [summary, setSummary] = React.useState<UsageSummaryResponse | null>(null)
+  const [kpi, setKpi] = React.useState<UsageCostIntradayKpiResponse | null>(null)
+  const [hourly, setHourly] = React.useState<HourlyUsagePoint[]>([])
+  const [dailyMain, setDailyMain] = React.useState<DailyUsagePoint[]>([])
+  const [dailyAux30, setDailyAux30] = React.useState<DailyUsagePoint[]>([])
   const [monthly, setMonthly] = React.useState<MonthlyUsagePoint[]>([])
   const [byModel, setByModel] = React.useState<ModelUsageAggregate[]>([])
   const [mainLoading, setMainLoading] = React.useState(true)
@@ -97,33 +129,56 @@ export function UsageDashboard() {
     setMainError(null)
     ;(async () => {
       try {
-        const t = formatKstIsoDate()
-        const f30 = addKstDays(t, -(RANGE_DAYS - 1))
-        const fy = addKstDays(t, -MONTHLY_LOOKBACK_DAYS)
+        const today = formatKstIsoDate()
+        const { from, to } = computeRange(today, periodMode, customFrom, customTo)
+        const prov = providerQueryParam(dashboardProvider)
+        const qBase = buildUsageQuery({ from, to, provider: prov })
+        const fy = addKstDays(today, -MONTHLY_LOOKBACK_DAYS)
+        const f30 = addKstDays(today, -29)
 
-        const [st, s30, d, m, bm] = await Promise.all([
-          fetchUsageJson<UsageSummaryResponse>(
-            `dashboard/summary${buildUsageQuery({ from: t, to: t })}`
-          ),
-          fetchUsageJson<UsageSummaryResponse>(
-            `dashboard/summary${buildUsageQuery({ from: f30, to: t })}`
-          ),
-          fetchUsageJson<DailyUsagePoint[]>(
-            `dashboard/series/daily${buildUsageQuery({ from: f30, to: t })}`
-          ),
-          fetchUsageJson<MonthlyUsagePoint[]>(
-            `dashboard/series/monthly${buildUsageQuery({ from: fy, to: t })}`
-          ),
-          fetchUsageJson<ModelUsageAggregate[]>(
-            `dashboard/by-model${buildUsageQuery({ from: f30, to: t })}`
-          ),
+        const summaryP = fetchUsageJson<UsageSummaryResponse>(`dashboard/summary${qBase}`)
+        const dailyMainP = fetchUsageJson<DailyUsagePoint[]>(`dashboard/series/daily${qBase}`)
+        const monthlyP = fetchUsageJson<MonthlyUsagePoint[]>(
+          `dashboard/series/monthly${buildUsageQuery({ from: fy, to: today, provider: prov })}`
+        )
+        const byModelP = fetchUsageJson<ModelUsageAggregate[]>(
+          `dashboard/by-model${buildUsageQuery({ from, to, provider: prov })}`
+        )
+
+        let kpiP: Promise<UsageCostIntradayKpiResponse | null> = Promise.resolve(null)
+        let hourlyP: Promise<HourlyUsagePoint[]> = Promise.resolve([])
+        let dailyAuxP: Promise<DailyUsagePoint[]> = Promise.resolve([])
+
+        if (periodMode === "today") {
+          kpiP = fetchUsageJson<UsageCostIntradayKpiResponse>(
+            `dashboard/kpi/cost-intraday${buildUsageQuery({ provider: prov })}`
+          )
+          hourlyP = fetchUsageJson<HourlyUsagePoint[]>(
+            `dashboard/series/hourly${buildUsageQuery({ date: today, provider: prov })}`
+          )
+          dailyAuxP = fetchUsageJson<DailyUsagePoint[]>(
+            `dashboard/series/daily${buildUsageQuery({ from: f30, to: today, provider: prov })}`
+          )
+        }
+
+        const [sum, dMain, m, bm, kp, hr, dAux] = await Promise.all([
+          summaryP,
+          dailyMainP,
+          monthlyP,
+          byModelP,
+          kpiP,
+          hourlyP,
+          dailyAuxP,
         ])
+
         if (!cancelled) {
-          setSummaryToday(st)
-          setSummary30(s30)
-          setDaily(Array.isArray(d) ? d : [])
+          setSummary(sum)
+          setDailyMain(Array.isArray(dMain) ? dMain : [])
           setMonthly(Array.isArray(m) ? m : [])
           setByModel(Array.isArray(bm) ? bm : [])
+          setKpi(kp)
+          setHourly(Array.isArray(hr) ? hr : [])
+          setDailyAux30(Array.isArray(dAux) ? dAux : [])
         }
       } catch (e) {
         if (!cancelled) {
@@ -136,7 +191,7 @@ export function UsageDashboard() {
     return () => {
       cancelled = true
     }
-  }, [mainRefresh])
+  }, [mainRefresh, periodMode, customFrom, customTo, dashboardProvider])
 
   React.useEffect(() => {
     let cancelled = false
@@ -145,7 +200,7 @@ export function UsageDashboard() {
     ;(async () => {
       try {
         const t = formatKstIsoDate()
-        const f30 = addKstDays(t, -(RANGE_DAYS - 1))
+        const f30 = addKstDays(t, -29)
         const providerParam =
           logProvider !== LOG_PROVIDER_ALL ? (logProvider as UsageProviderFilter) : undefined
         const q = buildUsageQuery({
@@ -171,14 +226,34 @@ export function UsageDashboard() {
     }
   }, [logsPage, appliedModelMask, logProvider])
 
+  const hourlyChart = React.useMemo(
+    () =>
+      hourly.map((row) => ({
+        label: `${row.hour}시`,
+        requestCount: row.requestCount,
+        cost: toNumber(row.estimatedCost),
+      })),
+    [hourly]
+  )
+
   const dailyChart = React.useMemo(
     () =>
-      daily.map((row) => ({
+      dailyMain.map((row) => ({
         date: row.date,
         requestCount: row.requestCount,
         cost: toNumber(row.estimatedCost),
       })),
-    [daily]
+    [dailyMain]
+  )
+
+  const dailyAuxChart = React.useMemo(
+    () =>
+      dailyAux30.map((row) => ({
+        date: row.date,
+        requestCount: row.requestCount,
+        cost: toNumber(row.estimatedCost),
+      })),
+    [dailyAux30]
   )
 
   const monthlyChart = React.useMemo(
@@ -213,17 +288,28 @@ export function UsageDashboard() {
       }))
   }, [byModel])
 
-  const hasMainData =
-    (summary30 && summary30.totalRequests > 0) ||
-    daily.length > 0 ||
-    monthly.length > 0 ||
-    byModel.some((m) => m.requestCount > 0)
-
-  const todayCost = summaryToday ? toNumber(summaryToday.totalEstimatedCost) : 0
-  const s30Requests = summary30?.totalRequests ?? 0
-  const s30Tokens = summary30?.totalInputTokens ?? 0
-  const s30Cost = summary30 ? toNumber(summary30.totalEstimatedCost) : 0
+  const totalCost = summary ? toNumber(summary.totalEstimatedCost) : 0
+  const totalReq = summary?.totalRequests ?? 0
+  const totalTok = summary?.totalInputTokens ?? 0
   const monthlyHasActivity = monthlyChart.some((r) => r.requestCount > 0 || r.cost > 0)
+
+  const todayCostKpi = kpi ? toNumber(kpi.todayEstimatedCost) : totalCost
+  const changeRate = kpi?.changeRatePercent != null ? toNumber(kpi.changeRatePercent) : null
+  const windowEndLabel = kpi?.comparisonWindowEnd
+    ? new Date(kpi.comparisonWindowEnd).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })
+    : null
+
+  const hasMainData =
+    totalReq > 0 || dailyMain.length > 0 || hourly.length > 0 || byModel.some((m) => m.requestCount > 0)
+
+  const periodLabel =
+    periodMode === "today"
+      ? "오늘(KST)"
+      : periodMode === "7d"
+        ? "최근 7일(KST)"
+        : periodMode === "30d"
+          ? "최근 30일(KST)"
+          : "사용자 지정(KST)"
 
   return (
     <div className="w-full min-h-full pb-8">
@@ -236,8 +322,7 @@ export function UsageDashboard() {
             </span>
           </div>
           <p className="text-sm text-muted-foreground">
-            요약·차트·집계 구간은 한국 표준시(KST) 기준 날짜(YYYY-MM-DD)입니다. 사용 로그 시각도 KST로
-            표시합니다. (최근 {RANGE_DAYS}일 / 월별 최대 {MONTHLY_LOOKBACK_DAYS}일)
+            집계·차트 구간은 한국 표준시(KST) 기준입니다. 사용 로그 시각도 KST로 표시합니다.
           </p>
         </div>
         <Button
@@ -252,6 +337,66 @@ export function UsageDashboard() {
         </Button>
       </header>
 
+      <div className="mb-8 flex flex-col gap-4 rounded-lg border border-border bg-muted/20 p-4 sm:flex-row sm:flex-wrap sm:items-end">
+        <div className="space-y-2 sm:w-44">
+          <Label htmlFor="dash-period">기간</Label>
+          <Select
+            value={periodMode}
+            onValueChange={(v) => setPeriodMode(v as PeriodMode)}
+          >
+            <SelectTrigger id="dash-period" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="today">오늘</SelectItem>
+              <SelectItem value="7d">최근 7일</SelectItem>
+              <SelectItem value="30d">최근 30일</SelectItem>
+              <SelectItem value="custom">사용자 정의</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {periodMode === "custom" ? (
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="dash-from">시작일</Label>
+              <Input
+                id="dash-from"
+                type="date"
+                value={customFrom}
+                onChange={(e) => setCustomFrom(e.target.value)}
+                className="w-[160px]"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="dash-to">종료일</Label>
+              <Input
+                id="dash-to"
+                type="date"
+                value={customTo}
+                onChange={(e) => setCustomTo(e.target.value)}
+                className="w-[160px]"
+              />
+            </div>
+          </div>
+        ) : null}
+
+        <div className="space-y-2 sm:w-44">
+          <Label htmlFor="dash-provider">공급사</Label>
+          <Select value={dashboardProvider} onValueChange={setDashboardProvider}>
+            <SelectTrigger id="dash-provider" className="w-full">
+              <SelectValue placeholder="전체" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={DASHBOARD_PROVIDER_ALL}>전체</SelectItem>
+              <SelectItem value="OPENAI">OpenAI</SelectItem>
+              <SelectItem value="ANTHROPIC">Anthropic</SelectItem>
+              <SelectItem value="GOOGLE">Google</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
       {mainError ? (
         <p className="mb-6 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {mainError}
@@ -264,29 +409,138 @@ export function UsageDashboard() {
         <>
           <section className="mb-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
-              <p className="text-xs font-medium text-muted-foreground">오늘 집계(KST) 총 비용</p>
-              <p className="mt-1 text-2xl font-semibold tabular-nums">{formatUsd(todayCost)}</p>
+              <p className="text-xs font-medium text-muted-foreground">
+                {periodMode === "today" ? "오늘의 예상 지출액" : `${periodLabel} 총 비용`}
+              </p>
+              <p className="mt-1 text-2xl font-semibold tabular-nums">
+                {formatUsd(periodMode === "today" ? todayCostKpi : totalCost)}
+              </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                오늘 집계(KST) API 요청 {(summaryToday?.totalRequests ?? 0).toLocaleString("en-US")}건
+                {periodMode === "today"
+                  ? `요청 ${(summary?.totalRequests ?? 0).toLocaleString("en-US")}건 · 기준 ${periodLabel}`
+                  : `요청 ${totalReq.toLocaleString("en-US")}건`}
               </p>
             </div>
+
             <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
-              <p className="text-xs font-medium text-muted-foreground">최근 {RANGE_DAYS}일 요청 수</p>
-              <p className="mt-1 text-2xl font-semibold tabular-nums">{formatRequestCount(s30Requests)}</p>
+              <p className="text-xs font-medium text-muted-foreground">
+                {periodMode === "today" ? "전일 동기 대비 증감률" : "기간 총 요청"}
+              </p>
+              {periodMode === "today" ? (
+                <>
+                  <p className="mt-1 text-2xl font-semibold tabular-nums">
+                    {changeRate == null ? "비교 불가" : `${changeRate >= 0 ? "+" : ""}${changeRate.toFixed(2)}%`}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {changeRate == null
+                      ? "전일 동일 구간 비용 합이 0이라 비율을 표시하지 않습니다."
+                      : windowEndLabel
+                        ? `비교 시각까지(KST): ${windowEndLabel}`
+                        : "어제 동일 길이 구간과 비교"}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="mt-1 text-2xl font-semibold tabular-nums">{formatRequestCount(totalReq)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">증감률은 &quot;오늘&quot; 모드에서 제공됩니다.</p>
+                </>
+              )}
             </div>
+
             <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
-              <p className="text-xs font-medium text-muted-foreground">최근 {RANGE_DAYS}일 입력 토큰</p>
-              <p className="mt-1 text-2xl font-semibold tabular-nums">{formatTokenCount(s30Tokens)}</p>
+              <p className="text-xs font-medium text-muted-foreground">{periodLabel} 입력 토큰</p>
+              <p className="mt-1 text-2xl font-semibold tabular-nums">{formatTokenCount(totalTok)}</p>
             </div>
+
             <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
-              <p className="text-xs font-medium text-muted-foreground">최근 {RANGE_DAYS}일 총 비용</p>
-              <p className="mt-1 text-2xl font-semibold tabular-nums">{formatUsd(s30Cost)}</p>
+              <p className="text-xs font-medium text-muted-foreground">
+                {periodMode === "today" ? "전일 동일 구간 비용(참고)" : `${periodLabel} 오류 건수`}
+              </p>
+              <p className="mt-1 text-2xl font-semibold tabular-nums">
+                {periodMode === "today" && kpi
+                  ? formatUsd(toNumber(kpi.yesterdaySameWindowEstimatedCost))
+                  : (summary?.totalErrors ?? 0).toLocaleString("en-US")}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {periodMode === "today" ? "비교용(어제 동일 길이 구간)" : "실패·4xx·5xx 집계"}
+              </p>
             </div>
           </section>
 
           {!hasMainData ? (
             <p className="mb-10 text-center text-sm text-muted-foreground">사용 데이터가 없습니다</p>
           ) : null}
+
+          <section className="mb-10 rounded-lg border border-border p-4 shadow-sm">
+            <h2 className="mb-4 text-lg font-medium">
+              {periodMode === "today" ? "시간별 요청·비용 (오늘)" : "일별 요청·비용 (선택 기간)"}
+            </h2>
+            {periodMode === "today" ? (
+              hourlyChart.length === 0 ? (
+                <p className="text-sm text-muted-foreground">사용 데이터가 없습니다</p>
+              ) : (
+                <div className="h-[400px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={hourlyChart}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                      <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                      <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
+                      <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
+                      <Tooltip
+                        formatter={(value, name) =>
+                          name === "비용 (USD)"
+                            ? formatUsd(tooltipNumericValue(value))
+                            : tooltipNumericValue(value)
+                        }
+                      />
+                      <Legend />
+                      <Bar yAxisId="left" dataKey="requestCount" name="요청 수" fill={CHART_COLORS[3]} radius={[4, 4, 0, 0]} />
+                      <Line
+                        yAxisId="right"
+                        type="monotone"
+                        dataKey="cost"
+                        name="비용 (USD)"
+                        stroke={CHART_COLORS[0]}
+                        strokeWidth={2}
+                        dot={false}
+                      />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              )
+            ) : dailyChart.length === 0 ? (
+              <p className="text-sm text-muted-foreground">사용 데이터가 없습니다</p>
+            ) : (
+              <div className="h-[400px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={dailyChart}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                    <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                    <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
+                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
+                    <Tooltip
+                      formatter={(value, name) =>
+                        name === "비용 (USD)"
+                          ? formatUsd(tooltipNumericValue(value))
+                          : tooltipNumericValue(value)
+                      }
+                    />
+                    <Legend />
+                    <Bar yAxisId="left" dataKey="requestCount" name="요청 수" fill={CHART_COLORS[3]} radius={[4, 4, 0, 0]} />
+                    <Line
+                      yAxisId="right"
+                      type="monotone"
+                      dataKey="cost"
+                      name="비용 (USD)"
+                      stroke={CHART_COLORS[0]}
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </section>
 
           <div className="mb-10 grid gap-8 lg:grid-cols-2">
             <section className="rounded-lg border border-border p-4 shadow-sm">
@@ -359,14 +613,12 @@ export function UsageDashboard() {
             )}
           </section>
 
-          <section className="mb-10 rounded-lg border border-border p-4 shadow-sm">
-            <h2 className="mb-4 text-lg font-medium">일별 요청·비용 (최근 {RANGE_DAYS}일)</h2>
-            {dailyChart.length === 0 ? (
-              <p className="text-sm text-muted-foreground">사용 데이터가 없습니다</p>
-            ) : (
+          {periodMode === "today" && dailyAuxChart.length > 0 ? (
+            <section className="mb-10 rounded-lg border border-border p-4 shadow-sm">
+              <h2 className="mb-4 text-lg font-medium">일별 요청·비용 (최근 30일, 보조)</h2>
               <div className="h-[360px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={dailyChart}>
+                  <ComposedChart data={dailyAuxChart}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                     <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                     <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
@@ -392,8 +644,8 @@ export function UsageDashboard() {
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
-            )}
-          </section>
+            </section>
+          ) : null}
 
           <section className="mb-10 rounded-lg border border-border p-4 shadow-sm">
             <h2 className="mb-4 text-lg font-medium">월별 요청·비용</h2>
