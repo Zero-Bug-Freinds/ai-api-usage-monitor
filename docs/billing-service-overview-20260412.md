@@ -204,8 +204,31 @@
 
 ### 6.3 기타
 
-- **HTTP 포트**: 기본 `8093` (`BILLING_SERVICE_PORT`).
+- **HTTP 포트**: Spring 기본값은 `application.yml`의 `8093` (`BILLING_SERVICE_PORT`). 저장소의 `scripts/bootrun.ps1` / `bootrun.sh`는 팀 기본으로 **8095**를 넣어 team-service(8094)와 충돌을 피합니다. **실제 기동 포트**와 API Gateway의 **`GATEWAY_BILLING_URI`**(및 Docker Compose에서 호스트 billing을 부를 때의 URL)를 반드시 동일하게 맞춥니다.
 - **헬스**: `management.endpoints.web.exposure.include: health,info`.
+
+### 6.4 로컬 체크리스트: `GET /api/v1/expenditure/api-keys` 500·502·연결 문제
+
+**정상 동작**: 해당 경로는 DB에 해당 사용자의 `billing_user_api_key_seen` 행이 없으면 **HTTP 200 + `[]`** 입니다. **HTTP 500**은 애플리케이션 예외(예: 미처리 DB 오류)로, **대부분 인프라·설정 불일치**에서 발생합니다. 아래를 같은 요청 ID(`X-Correlation-Id`)로 **billing-service 로그**와 맞춰 확인합니다.
+
+| 점검 | 내용 |
+|------|------|
+| **PostgreSQL (billing)** | 루트 `docker compose`로 `postgres-billing` 기동. 호스트 포트 기본 **5435**, DB명 **`billing_db`** (`docker/postgres/init/03-create-billing-db.sh`). |
+| **JDBC 환경 변수** | `.env`(또는 실행 환경)의 `BILLING_POSTGRES_HOST` / `PORT` / `DB` / `USER` / `PASSWORD`가 `application.yml`의 `spring.datasource`와 일치하는지 확인. 잘못된 포트·DB명은 연결 거부 또는 잘못된 DB 접속으로 이어짐. |
+| **스키마** | 로컬은 `ddl-auto: update`로 엔티티 기준 스키마가 맞춰짐. 수동으로 깨진 스키마·권한이 있으면 기동 로그 또는 첫 쿼리에서 `DataAccessException`이 남음. |
+| **billing 포트 ↔ Gateway** | `GATEWAY_BILLING_URI`가 **실제 billing `server.port`**와 같아야 함(예: 호스트에서 billing만 **8095**로 띄웠다면 `http://localhost:8095`). 기본값만 쓰면 Gateway는 `8093`을 가리켜 **502 Bad Gateway**가 나올 수 있음. |
+| **Gateway ↔ billing 신뢰 헤더** | `BillingGatewayTrustFilter`: `X-User-Id` 필수. `GATEWAY_SHARED_SECRET`이 비어 있지 않으면 **`X-Gateway-Auth`** 가 billing의 `billing.gateway.shared-secret`과 일치해야 함(`.env.example` 기본값 동일). 불일치 시 billing은 **403**, 헤더 누락 시 **401**. |
+| **지출 웹 BFF** | `services/billing-service/web`은 `API_GATEWAY_URL`로 Gateway만 호출. **`API_GATEWAY_URL` 미설정** 시 BFF가 **500**을 반환할 수 있음(앱 설정 문제). `GATEWAY_DEV_MODE` 사용 시 `IDENTITY_SERVICE_URL` 등 추가 요구사항은 `§4.10` 참고. |
+
+**런타임 개선(선택)**: `DataAccessException`은 HTTP **503**과 JSON 본문(`error: DATABASE_UNAVAILABLE`, 선택적 `hint`)으로 매핑되며, 원인은 서버 로그에 스택으로 남깁니다. 운영에서 힌트를 끄려면 `BILLING_EXPOSE_DATASOURCE_FAILURE_HINT=false` 또는 `billing.error.expose-datasource-failure-hint: false` 를 사용합니다.
+
+**직접 검증 예시**(로컬 billing이 8095이고 공유 시크릿이 기본인 경우):
+
+```http
+GET /api/v1/expenditure/api-keys
+X-User-Id: <테스트 사용자 ID>
+X-Gateway-Auth: local-dev-gateway-shared-secret-do-not-use-in-prod
+```
 
 ---
 
@@ -232,7 +255,7 @@
 
 | 항목 | 내용 |
 |------|------|
-| **라우팅** | `Path=/api/v1/expenditure/**` → `GATEWAY_BILLING_URI`(기본 `http://localhost:8093`). |
+| **라우팅** | `Path=/api/v1/expenditure/**` → `GATEWAY_BILLING_URI`(기본 `http://localhost:8093`; `bootrun` 기본 billing 포트 **8095**와 맞출 것). |
 | **보안** | Spring Security에서 expenditure 경로는 인증 정책에 포함되며, **게이트웨이가 내부 헤더를 세팅**하는 패턴을 쓴다. |
 | **billing 측 검증** | `BillingGatewayTrustFilter`: `/api/v1/expenditure`만 대상. `billing.gateway.shared-secret`이 비어 있지 않으면 **`X-Gateway-Auth`** 가 일치해야 하고, **`X-User-Id`** 가 필수. |
 

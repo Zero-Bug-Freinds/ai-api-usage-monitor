@@ -35,6 +35,9 @@ management:
         include: health,info
 
 billing:
+  error:
+    # Set false in environments where error bodies must not include operational hints.
+    expose-datasource-failure-hint: ${BILLING_EXPOSE_DATASOURCE_FAILURE_HINT:true}
   analytics:
     max-range-days: ${BILLING_ANALYTICS_MAX_RANGE_DAYS:400}
   rabbit:
