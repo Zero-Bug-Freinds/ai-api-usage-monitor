@@ -204,7 +204,7 @@
 
 ### 6.3 기타
 
-- **HTTP 포트**: Spring 기본값은 `application.yml`의 `8093` (`BILLING_SERVICE_PORT`). 저장소의 `scripts/bootrun.ps1` / `bootrun.sh`는 팀 기본으로 **8095**를 넣어 team-service(8094)와 충돌을 피합니다. **실제 기동 포트**와 API Gateway의 **`GATEWAY_BILLING_URI`**(및 Docker Compose에서 호스트 billing을 부를 때의 URL)를 반드시 동일하게 맞춥니다.
+- **HTTP 포트**: `application.yml` 기본값은 **8095** (`BILLING_SERVICE_PORT`) — `api-gateway-service`의 **`GATEWAY_BILLING_URI`** 기본(`http://localhost:8095`)과 맞춤. team-service는 기본 **8093**이라 동시에 예전처럼 둘 다 8093을 쓰던 충돌은 피합니다. **실제 기동 포트**를 바꾼 경우 Gateway·Compose의 billing URI를 동일하게 맞춥니다.
 - **헬스**: `management.endpoints.web.exposure.include: health,info`.
 
 ### 6.4 로컬 체크리스트: `GET /api/v1/expenditure/api-keys` 500·502·연결 문제
@@ -216,11 +216,26 @@
 | **PostgreSQL (billing)** | 루트 `docker compose`로 `postgres-billing` 기동. 호스트 포트 기본 **5435**, DB명 **`billing_db`** (`docker/postgres/init/03-create-billing-db.sh`). |
 | **JDBC 환경 변수** | `.env`(또는 실행 환경)의 `BILLING_POSTGRES_HOST` / `PORT` / `DB` / `USER` / `PASSWORD`가 `application.yml`의 `spring.datasource`와 일치하는지 확인. 잘못된 포트·DB명은 연결 거부 또는 잘못된 DB 접속으로 이어짐. |
 | **스키마** | 로컬은 `ddl-auto: update`로 엔티티 기준 스키마가 맞춰짐. 수동으로 깨진 스키마·권한이 있으면 기동 로그 또는 첫 쿼리에서 `DataAccessException`이 남음. |
-| **billing 포트 ↔ Gateway** | `GATEWAY_BILLING_URI`가 **실제 billing `server.port`**와 같아야 함(예: 호스트에서 billing만 **8095**로 띄웠다면 `http://localhost:8095`). 기본값만 쓰면 Gateway는 `8093`을 가리켜 **502 Bad Gateway**가 나올 수 있음. |
+| **billing 포트 ↔ Gateway** | `GATEWAY_BILLING_URI`가 **실제 billing `server.port`**와 같아야 함. 저장소 기본은 둘 다 **8095**(`localhost` 호스트 / Compose 게이트웨이는 `host.docker.internal:8095`). |
 | **Gateway ↔ billing 신뢰 헤더** | `BillingGatewayTrustFilter`: `X-User-Id` 필수. `GATEWAY_SHARED_SECRET`이 비어 있지 않으면 **`X-Gateway-Auth`** 가 billing의 `billing.gateway.shared-secret`과 일치해야 함(`.env.example` 기본값 동일). 불일치 시 billing은 **403**, 헤더 누락 시 **401**. |
 | **지출 웹 BFF** | `services/billing-service/web`은 `API_GATEWAY_URL`로 Gateway만 호출. **`API_GATEWAY_URL` 미설정** 시 BFF가 **500**을 반환할 수 있음(앱 설정 문제). `GATEWAY_DEV_MODE` 사용 시 `IDENTITY_SERVICE_URL` 등 추가 요구사항은 `§4.10` 참고. |
 
 **런타임 개선(선택)**: `DataAccessException`은 HTTP **503**과 JSON 본문(`error: DATABASE_UNAVAILABLE`, 선택적 `hint`)으로 매핑되며, 원인은 서버 로그에 스택으로 남깁니다. 운영에서 힌트를 끄려면 `BILLING_EXPOSE_DATASOURCE_FAILURE_HINT=false` 또는 `billing.error.expose-datasource-failure-hint: false` 를 사용합니다.
+
+**한 줄 검증**(저장소 루트, billing·(게이트웨이 ②번은) api-gateway 기동 후): `.\scripts\verify-expenditure-chain.ps1` 또는 `./scripts/verify-expenditure-chain.sh`
+
+| 단계 | 내용 |
+|------|------|
+| **① 직접 billing** | 항상 실행: `X-User-Id` + `X-Gateway-Auth` → HTTP **200** (빈 목록이면 `[]`). |
+| **② 게이트웨이** | **`GATEWAY_DEV_MODE=true`**(또는 미설정): `X-User-Id` 만으로 게이트웨이 경유 검사(UI dev 모드와 유사). |
+| **② 게이트웨이 (JWT)** | **`GATEWAY_DEV_MODE=false`**: 브라우저/BFF와 동일하게 **`Authorization: Bearer`** 가 필요. 스크립트는 아래 중 하나면 ②를 수행한다. 없으면 ②는 **SKIPPED**(①만으로도 billing·DB·포트·`GATEWAY_BILLING_URI` 직접 정합은 확인됨). |
+
+JWT 경로를 켜려면(`.env` 권장, **비밀번호는 커밋하지 말 것**):
+
+- **`EXPENDITURE_VERIFY_GATEWAY_JWT`**: 이미 가진 액세스 토큰 문자열(로컬 로그인 후 복사 등).
+- 또는 **`EXPENDITURE_VERIFY_LOGIN_EMAIL`** + **`EXPENDITURE_VERIFY_LOGIN_PASSWORD`**: identity `POST /api/auth/login`으로 토큰 획득(기본 베이스 URL `IDENTITY_SERVICE_URL` 또는 `EXPENDITURE_VERIFY_IDENTITY_URL`, 기본 `http://127.0.0.1:8090`).
+
+**필수 정합**: 게이트웨이가 JWT를 검증하려면 **`GATEWAY_JWT_SECRET`**(게이트웨이 `gateway.jwt.secret`)과 identity 서명 키 **`JWT_SECRET`**(`security.jwt.secret`)이 **동일한 값**이어야 한다(`.env.example`의 `GATEWAY_JWT_SECRET` / `JWT_SECRET` 참고). 불일치 시 ②에서 **401**이 난다.
 
 **직접 검증 예시**(로컬 billing이 8095이고 공유 시크릿이 기본인 경우):
 
@@ -255,7 +270,7 @@ X-Gateway-Auth: local-dev-gateway-shared-secret-do-not-use-in-prod
 
 | 항목 | 내용 |
 |------|------|
-| **라우팅** | `Path=/api/v1/expenditure/**` → `GATEWAY_BILLING_URI`(기본 `http://localhost:8093`; `bootrun` 기본 billing 포트 **8095**와 맞출 것). |
+| **라우팅** | `Path=/api/v1/expenditure/**` → `GATEWAY_BILLING_URI`(기본 `http://localhost:8095`; Docker Compose 게이트웨이는 기본 `http://host.docker.internal:8095`). |
 | **보안** | Spring Security에서 expenditure 경로는 인증 정책에 포함되며, **게이트웨이가 내부 헤더를 세팅**하는 패턴을 쓴다. |
 | **billing 측 검증** | `BillingGatewayTrustFilter`: `/api/v1/expenditure`만 대상. `billing.gateway.shared-secret`이 비어 있지 않으면 **`X-Gateway-Auth`** 가 일치해야 하고, **`X-User-Id`** 가 필수. |
 

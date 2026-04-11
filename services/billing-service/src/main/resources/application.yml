@@ -1,5 +1,6 @@
 server:
-  port: ${BILLING_SERVICE_PORT:8093}
+  # Default matches api-gateway GATEWAY_BILLING_URI and scripts/bootrun.* (team-service stays 8093).
+  port: ${BILLING_SERVICE_PORT:8095}
 
 spring:
   application:
