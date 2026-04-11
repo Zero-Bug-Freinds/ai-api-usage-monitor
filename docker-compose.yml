@@ -212,8 +212,9 @@ services:
         condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # Published host port: TEAM_SERVICE_HOST_PORT (not TEAM_SERVICE_PORT — see .env.example).
     ports:
-      - "${TEAM_SERVICE_PORT:-8093}:8093"
+      - "${TEAM_SERVICE_HOST_PORT:-8093}:8093"
 
   team-web:
     profiles:
@@ -224,7 +225,7 @@ services:
     depends_on:
       - team-service
     environment:
-      TEAM_SERVICE_URL: ${WEB_TEAM_SERVICE_URL:-http://host.docker.internal:8094}
+      TEAM_SERVICE_URL: ${WEB_TEAM_SERVICE_URL:-http://team-service:8093}
       IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://host.docker.internal:8090}
     extra_hosts:
       - "host.docker.internal:host-gateway"
