@@ -15,6 +15,8 @@ COPY services/billing-service/web ./services/billing-service/web
 
 WORKDIR /repo/services/billing-service/web
 ENV NEXT_TELEMETRY_DISABLED=1
+ARG NEXT_PUBLIC_IDENTITY_WEB_ORIGIN=
+ENV NEXT_PUBLIC_IDENTITY_WEB_ORIGIN=$NEXT_PUBLIC_IDENTITY_WEB_ORIGIN
 RUN pnpm run build
 
 FROM node:22-alpine AS runner

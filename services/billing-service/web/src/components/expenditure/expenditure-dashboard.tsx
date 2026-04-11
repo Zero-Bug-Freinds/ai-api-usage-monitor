@@ -22,6 +22,12 @@ const PROVIDERS: { value: AiProviderCode; label: string }[] = [
   { value: "ANTHROPIC", label: "Anthropic" },
 ];
 
+function expenditureApiPath(path: string): string {
+  const base = (process.env.NEXT_PUBLIC_BASE_PATH ?? "").replace(/\/$/, "");
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  return `${base}${normalized}`;
+}
+
 async function fetchJson<T>(path: string): Promise<T> {
   const res = await fetch(path, { credentials: "include", cache: "no-store" });
   if (!res.ok) {
@@ -45,7 +51,7 @@ export function ExpenditureDashboard() {
   const loadApiKeys = useCallback(async () => {
     const q = new URLSearchParams();
     q.set("provider", provider);
-    const list = await fetchJson<ApiKeySeen[]>(`/api/expenditure/api-keys?${q.toString()}`);
+    const list = await fetchJson<ApiKeySeen[]>(expenditureApiPath(`/api/expenditure/api-keys?${q.toString()}`));
     setApiKeys(list);
     if (list.length > 0) {
       const sorted = [...list].sort((a, b) => a.firstSeenAt.localeCompare(b.firstSeenAt));
@@ -81,16 +87,16 @@ export function ExpenditureDashboard() {
     try {
       const qSummary = new URLSearchParams(qBase);
       qSummary.set("provider", provider);
-      const s = await fetchJson<ExpenditureSummary>(`/api/expenditure/summary?${qSummary.toString()}`);
+      const s = await fetchJson<ExpenditureSummary>(expenditureApiPath(`/api/expenditure/summary?${qSummary.toString()}`));
       setSummary(s);
 
       const qDaily = new URLSearchParams(qBase);
       qDaily.set("provider", provider);
-      const d = await fetchJson<DailyPoint[]>(`/api/expenditure/daily?${qDaily.toString()}`);
+      const d = await fetchJson<DailyPoint[]>(expenditureApiPath(`/api/expenditure/daily?${qDaily.toString()}`));
       setDaily(d);
 
       const qMonthly = new URLSearchParams({ apiKeyId, from: range.from, to: range.to });
-      const m = await fetchJson<MonthlyPoint[]>(`/api/expenditure/monthly?${qMonthly.toString()}`);
+      const m = await fetchJson<MonthlyPoint[]>(expenditureApiPath(`/api/expenditure/monthly?${qMonthly.toString()}`));
       setMonthly(m);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "데이터를 불러오지 못했습니다");
