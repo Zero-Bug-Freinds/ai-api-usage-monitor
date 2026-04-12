@@ -12,6 +12,7 @@ import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 
 @Entity
@@ -51,6 +52,9 @@ public class TeamApiKeyEntity {
     @Column(name = "encrypted_key", nullable = false)
     private String encryptedKey;
 
+    @Column(name = "monthly_budget_usd", precision = 12, scale = 2)
+    private BigDecimal monthlyBudgetUsd;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -62,7 +66,8 @@ public class TeamApiKeyEntity {
             TeamApiKeyProvider provider,
             String keyAlias,
             String keyHash,
-            String encryptedKey
+            String encryptedKey,
+            BigDecimal monthlyBudgetUsd
     ) {
         TeamApiKeyEntity entity = new TeamApiKeyEntity();
         entity.teamId = teamId;
@@ -70,8 +75,28 @@ public class TeamApiKeyEntity {
         entity.keyAlias = keyAlias;
         entity.keyHash = keyHash;
         entity.encryptedKey = encryptedKey;
+        entity.monthlyBudgetUsd = monthlyBudgetUsd;
         entity.createdAt = Instant.now();
         return entity;
+    }
+
+    public void updateCredential(
+            TeamApiKeyProvider provider,
+            String keyAlias,
+            String keyHash,
+            String encryptedKey,
+            BigDecimal monthlyBudgetUsd
+    ) {
+        this.provider = provider;
+        this.keyAlias = keyAlias;
+        this.keyHash = keyHash;
+        this.encryptedKey = encryptedKey;
+        this.monthlyBudgetUsd = monthlyBudgetUsd;
+    }
+
+    public void updateAliasAndBudget(String keyAlias, BigDecimal monthlyBudgetUsd) {
+        this.keyAlias = keyAlias;
+        this.monthlyBudgetUsd = monthlyBudgetUsd;
     }
 
     public Long getId() {
@@ -96,6 +121,10 @@ public class TeamApiKeyEntity {
 
     public String getEncryptedKey() {
         return encryptedKey;
+    }
+
+    public BigDecimal getMonthlyBudgetUsd() {
+        return monthlyBudgetUsd;
     }
 
     public Instant getCreatedAt() {
