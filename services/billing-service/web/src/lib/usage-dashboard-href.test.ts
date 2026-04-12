@@ -28,11 +28,25 @@ describe("getUsageDashboardHref", () => {
     expect(getUsageDashboardHref()).toBe("http://localhost:3001/dashboard");
   });
 
+  it("does not put dashboard under /billing when usage URL mistakenly includes /billing", () => {
+    vi.stubEnv("NEXT_PUBLIC_USAGE_WEB_ORIGIN", "http://localhost:3001/billing");
+    vi.stubEnv("NEXT_PUBLIC_IDENTITY_WEB_ORIGIN", "http://localhost:3000");
+    vi.stubEnv("NEXT_PUBLIC_USAGE_BASE_PATH", "/dashboard");
+    expect(getUsageDashboardHref()).toBe("http://localhost:3001/dashboard");
+  });
+
   it("respects NEXT_PUBLIC_USAGE_BASE_PATH with identity origin", () => {
     vi.stubEnv("NEXT_PUBLIC_USAGE_WEB_ORIGIN", "");
     vi.stubEnv("NEXT_PUBLIC_IDENTITY_WEB_ORIGIN", "http://localhost:3000");
     vi.stubEnv("NEXT_PUBLIC_USAGE_BASE_PATH", "/usage");
     expect(getUsageDashboardHref()).toBe("http://localhost:3000/usage");
+  });
+
+  it("does not put dashboard under /billing when identity URL mistakenly includes /billing", () => {
+    vi.stubEnv("NEXT_PUBLIC_USAGE_WEB_ORIGIN", "");
+    vi.stubEnv("NEXT_PUBLIC_IDENTITY_WEB_ORIGIN", "http://localhost:3000/billing");
+    vi.stubEnv("NEXT_PUBLIC_USAGE_BASE_PATH", "/dashboard");
+    expect(getUsageDashboardHref()).toBe("http://localhost:3000/dashboard");
   });
 
   it("joins origin and base path when usage runs on another origin", () => {

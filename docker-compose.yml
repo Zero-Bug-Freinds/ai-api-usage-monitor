@@ -174,6 +174,9 @@ services:
     ports:
       - "${USAGE_WEB_PORT:-3001}:3000"
 
+  # billing-web "사용량으로" → getUsageDashboardHref (services/billing-service/web/src/lib/usage-dashboard-href.ts).
+  # 단일 도메인(web-edge :8888)이면 루트 .env.example 과 같이 NEXT_PUBLIC_IDENTITY_WEB_ORIGIN=http://localhost:8888,
+  # NEXT_PUBLIC_USAGE_WEB_ORIGIN 은 비우면 같은 호스트의 /dashboard 로 갑니다. 분리 포트로만 쓸 때만 USAGE_WEB_ORIGIN 을 채움.
   billing-web:
     profiles:
       - web
@@ -182,6 +185,8 @@ services:
       dockerfile: services/billing-service/web/Dockerfile
       args:
         NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${IDENTITY_WEB_PORT:-3000}}
+        NEXT_PUBLIC_USAGE_WEB_ORIGIN: ${NEXT_PUBLIC_USAGE_WEB_ORIGIN:-}
+        NEXT_PUBLIC_USAGE_BASE_PATH: ${NEXT_PUBLIC_USAGE_BASE_PATH:-/dashboard}
     depends_on:
       - api-gateway-service
     environment:
