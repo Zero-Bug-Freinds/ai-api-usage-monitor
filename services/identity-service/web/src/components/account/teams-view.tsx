@@ -24,6 +24,9 @@ type TeamApiKeySummary = {
   alias: string
   monthlyBudgetUsd: number | null
   createdAt: string
+  deletionRequestedAt?: string | null
+  permanentDeletionAt?: string | null
+  deletionGraceDays?: number | null
 }
 
 function asApiResponse(json: unknown): ApiResponse<unknown> | null {
@@ -57,12 +60,22 @@ function normalizeTeamApiKeySummary(item: unknown): TeamApiKeySummary | null {
     const n = Number(b)
     if (Number.isFinite(n)) monthlyBudgetUsd = n
   }
+  const delReq = v.deletionRequestedAt
+  const delPerm = v.permanentDeletionAt
+  const gd = v.deletionGraceDays
+  let deletionGraceDays: number | null = null
+  if (typeof gd === "number" && Number.isFinite(gd)) {
+    deletionGraceDays = gd
+  }
   return {
     id: v.id,
     provider: v.provider,
     alias: v.alias,
     monthlyBudgetUsd,
     createdAt: v.createdAt,
+    deletionRequestedAt: typeof delReq === "string" ? delReq : null,
+    permanentDeletionAt: typeof delPerm === "string" ? delPerm : null,
+    deletionGraceDays,
   }
 }
 
@@ -94,6 +107,10 @@ function formatBudgetUsd(value: number | null | undefined) {
 }
 
 const BUDGET_STEP = 0.01
+
+const DEFAULT_DELETION_GRACE_DAYS = 7
+const MIN_DELETION_GRACE_DAYS = 1
+const MAX_DELETION_GRACE_DAYS = 365
 
 /** blur 또는 스피너 조정 후 소수 둘째 자리·0.01 단위로 맞춤 */
 function normalizeBudgetNumericString(raw: string): string {
@@ -138,6 +155,7 @@ export function TeamsView() {
   const [editBudget, setEditBudget] = React.useState("")
   const [saveEditLoading, setSaveEditLoading] = React.useState(false)
   const [deleteLoadingKey, setDeleteLoadingKey] = React.useState<string | null>(null)
+  const [cancelDeleteLoadingKey, setCancelDeleteLoadingKey] = React.useState<string | null>(null)
   /** 목록에서는 이름만 보이고, 펼친 팀만 상세·API 조회 */
   const [openTeamId, setOpenTeamId] = React.useState<string | null>(null)
 
@@ -509,15 +527,31 @@ export function TeamsView() {
 
   async function deleteTeamKey(teamId: string, keyId: number) {
     const ok = window.confirm(
-      "이 팀 API 키를 즉시 삭제합니다.\n\nDB에서 영구 삭제되며 복구할 수 없습니다. 과거 사용량 로그는 다른 서비스 기록에 남을 수 있습니다.",
+      `이 팀 API 키를 삭제 예정으로 등록합니다.\n\n유예 기간이 지나면 영구 삭제되며, 유예 중에는 언제든 삭제를 취소할 수 있습니다.\n유예 중에는 동일 키 값으로 재등록할 수 없습니다.\n\n다음 단계에서 유예 기간(일)을 입력합니다. (기본 ${DEFAULT_DELETION_GRACE_DAYS}일)`,
     )
     if (!ok) return
+    const raw = window.prompt(
+      `유예 기간(일) (${MIN_DELETION_GRACE_DAYS}~${MAX_DELETION_GRACE_DAYS}, 비우면 ${DEFAULT_DELETION_GRACE_DAYS}일)`,
+      String(DEFAULT_DELETION_GRACE_DAYS),
+    )
+    if (raw === null) return
+    const trimmed = raw.trim()
+    let graceDays = DEFAULT_DELETION_GRACE_DAYS
+    if (trimmed !== "") {
+      const n = Number.parseInt(trimmed, 10)
+      if (!Number.isFinite(n) || n < MIN_DELETION_GRACE_DAYS || n > MAX_DELETION_GRACE_DAYS) {
+        setKeysError(`유예 기간은 ${MIN_DELETION_GRACE_DAYS}~${MAX_DELETION_GRACE_DAYS}일 사이의 정수로 입력해 주세요`)
+        return
+      }
+      graceDays = n
+    }
     const loadingKey = `${teamId}:${keyId}`
     setDeleteLoadingKey(loadingKey)
     setKeysError(null)
     try {
+      const q = new URLSearchParams({ gracePeriodDays: String(graceDays) })
       const { response, json } = await apiFetch<unknown>(
-        `/api/team/v1/teams/${encodeURIComponent(teamId)}/api-keys/${encodeURIComponent(String(keyId))}`,
+        `/api/team/v1/teams/${encodeURIComponent(teamId)}/api-keys/${encodeURIComponent(String(keyId))}?${q.toString()}`,
         { method: "DELETE", credentials: "include", cache: "no-store", headers: { Accept: "application/json" } },
         { authRequired: true }
       )
@@ -532,6 +566,32 @@ export function TeamsView() {
       setKeysError("삭제에 실패했습니다")
     } finally {
       setDeleteLoadingKey(null)
+    }
+  }
+
+  async function cancelTeamKeyDeletion(teamId: string, keyId: number) {
+    const ok = window.confirm("삭제 예정을 해제하고 이 키를 계속 사용하시겠습니까?")
+    if (!ok) return
+    const loadingKey = `${teamId}:${keyId}`
+    setCancelDeleteLoadingKey(loadingKey)
+    setKeysError(null)
+    try {
+      const { response, json } = await apiFetch<unknown>(
+        `/api/team/v1/teams/${encodeURIComponent(teamId)}/api-keys/${encodeURIComponent(String(keyId))}/deletion/cancel`,
+        { method: "POST", credentials: "include", cache: "no-store", headers: { Accept: "application/json" } },
+        { authRequired: true },
+      )
+      const apiResponse = asApiResponse(json)
+      if (response.ok && apiResponse?.success) {
+        if (editingKey?.teamId === teamId && editingKey.row.id === keyId) cancelEditKey()
+        await loadTeamApiKeys(teamId)
+      } else {
+        setKeysError(apiResponse?.message ?? "삭제 예정 해제에 실패했습니다")
+      }
+    } catch {
+      setKeysError("삭제 예정 해제에 실패했습니다")
+    } finally {
+      setCancelDeleteLoadingKey(null)
     }
   }
 
@@ -807,6 +867,8 @@ export function TeamsView() {
                       const isEditing = editingKey?.teamId === team.id && editingKey.row.id === apiKey.id
                       const delKey = `${team.id}:${apiKey.id}`
                       const deleting = deleteLoadingKey === delKey
+                      const canceling = cancelDeleteLoadingKey === delKey
+                      const keyPendingDeletion = Boolean(apiKey.deletionRequestedAt)
                       return (
                         <li key={`${team.id}-key-${apiKey.id}`} className="flex flex-col gap-2 px-3 py-3 text-sm sm:flex-row sm:items-start sm:justify-between">
                           <div className="min-w-0 space-y-1">
@@ -849,13 +911,26 @@ export function TeamsView() {
                                   />
                                 </span>
                               ) : (
-                                <span>{apiKey.alias}</span>
+                                <span>
+                                  {apiKey.alias}
+                                  {keyPendingDeletion ? (
+                                    <span className="ml-1.5 text-amber-700 dark:text-amber-500">(삭제 예정)</span>
+                                  ) : null}
+                                </span>
                               )}
                             </div>
                             <p className="text-xs text-muted-foreground">
                               월 예산:{" "}
                               {formatBudgetUsd(apiKey.monthlyBudgetUsd ?? undefined) ?? "— (미설정·기존 데이터)"}
                             </p>
+                            {keyPendingDeletion && apiKey.permanentDeletionAt ? (
+                              <p className="text-xs text-amber-800 dark:text-amber-300">
+                                영구 삭제 예정: {formatCreatedAt(apiKey.permanentDeletionAt)}
+                                {typeof apiKey.deletionGraceDays === "number"
+                                  ? ` (${apiKey.deletionGraceDays}일 유예)`
+                                  : ""}
+                              </p>
+                            ) : null}
                           </div>
                           <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
                             <div className="text-xs text-muted-foreground tabular-nums sm:text-right">
@@ -885,21 +960,32 @@ export function TeamsView() {
                                 <button
                                   type="button"
                                   className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
-                                  disabled={deleting || saveEditLoading}
+                                  disabled={keyPendingDeletion || deleting || canceling || saveEditLoading}
                                   onClick={() => startEditKey(team.id, apiKey)}
                                 >
                                   수정
                                 </button>
                               )}
                               {!isEditing ? (
-                                <button
-                                  type="button"
-                                  className="rounded-md border border-destructive/40 bg-background px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
-                                  disabled={deleting}
-                                  onClick={() => void deleteTeamKey(team.id, apiKey.id)}
-                                >
-                                  {deleting ? "삭제 중…" : "삭제"}
-                                </button>
+                                keyPendingDeletion ? (
+                                  <button
+                                    type="button"
+                                    className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
+                                    disabled={canceling || deleting}
+                                    onClick={() => void cancelTeamKeyDeletion(team.id, apiKey.id)}
+                                  >
+                                    {canceling ? "처리 중…" : "삭제 취소"}
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="rounded-md border border-destructive/40 bg-background px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                                    disabled={deleting}
+                                    onClick={() => void deleteTeamKey(team.id, apiKey.id)}
+                                  >
+                                    {deleting ? "처리 중…" : "삭제"}
+                                  </button>
+                                )
                               ) : null}
                             </div>
                           </div>

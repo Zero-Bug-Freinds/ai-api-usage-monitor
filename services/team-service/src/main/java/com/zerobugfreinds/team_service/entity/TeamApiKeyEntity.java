@@ -13,6 +13,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 
 @Entity
@@ -58,6 +59,18 @@ public class TeamApiKeyEntity {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    /** 비어 있지 않으면 삭제 예정(유예 중). */
+    @Column(name = "deletion_requested_at")
+    private Instant deletionRequestedAt;
+
+    /** 유예 종료 후 물리 삭제 예정 시각. 삭제 예정이 아니면 null. */
+    @Column(name = "permanent_deletion_at")
+    private Instant permanentDeletionAt;
+
+    /** 삭제 요청 시 사용자가 선택한 유예 기간(일). 삭제 예정이 아니면 null. */
+    @Column(name = "deletion_grace_days")
+    private Integer deletionGraceDays;
+
     protected TeamApiKeyEntity() {
     }
 
@@ -99,6 +112,22 @@ public class TeamApiKeyEntity {
         this.monthlyBudgetUsd = monthlyBudgetUsd;
     }
 
+    public boolean isDeletionPending() {
+        return deletionRequestedAt != null;
+    }
+
+    public void markDeletionRequested(Instant now, int gracePeriodDays) {
+        this.deletionRequestedAt = now;
+        this.deletionGraceDays = gracePeriodDays;
+        this.permanentDeletionAt = now.plus(Duration.ofDays(gracePeriodDays));
+    }
+
+    public void clearDeletionRequest() {
+        this.deletionRequestedAt = null;
+        this.permanentDeletionAt = null;
+        this.deletionGraceDays = null;
+    }
+
     public Long getId() {
         return id;
     }
@@ -129,5 +158,17 @@ public class TeamApiKeyEntity {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public Instant getDeletionRequestedAt() {
+        return deletionRequestedAt;
+    }
+
+    public Instant getPermanentDeletionAt() {
+        return permanentDeletionAt;
+    }
+
+    public Integer getDeletionGraceDays() {
+        return deletionGraceDays;
     }
 }

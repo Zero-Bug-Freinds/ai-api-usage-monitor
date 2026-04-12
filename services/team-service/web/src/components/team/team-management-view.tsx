@@ -25,6 +25,9 @@ type TeamApiKeySummary = {
   alias: string
   monthlyBudgetUsd: number | null
   createdAt: string
+  deletionRequestedAt?: string | null
+  permanentDeletionAt?: string | null
+  deletionGraceDays?: number | null
 }
 
 function asApiResponse(value: unknown): ApiResponse<unknown> | null {
@@ -58,12 +61,22 @@ function normalizeTeamApiKeySummary(item: unknown): TeamApiKeySummary | null {
     const n = Number(b)
     if (Number.isFinite(n)) monthlyBudgetUsd = n
   }
+  const delReq = v.deletionRequestedAt
+  const delPerm = v.permanentDeletionAt
+  const gd = v.deletionGraceDays
+  let deletionGraceDays: number | null = null
+  if (typeof gd === "number" && Number.isFinite(gd)) {
+    deletionGraceDays = gd
+  }
   return {
     id: v.id,
     provider: v.provider,
     alias: v.alias,
     monthlyBudgetUsd,
     createdAt: v.createdAt,
+    deletionRequestedAt: typeof delReq === "string" ? delReq : null,
+    permanentDeletionAt: typeof delPerm === "string" ? delPerm : null,
+    deletionGraceDays,
   }
 }
 
@@ -75,6 +88,12 @@ function formatBudgetUsd(value: number | null | undefined) {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(value)
+}
+
+function formatDeletionDeadline(iso: string) {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })
 }
 
 const BUDGET_STEP = 0.01
@@ -576,6 +595,7 @@ export function TeamManagementView() {
                         editingTeamApiKey?.teamId === team.id && editingTeamApiKey?.keyId === apiKey.id
                       const updateKey = `${team.id}:${apiKey.id}`
                       const updating = teamApiKeyUpdateLoading === updateKey
+                      const keyPendingDeletion = Boolean(apiKey.deletionRequestedAt)
                       return (
                         <li
                           key={`${team.id}-api-key-${apiKey.id}`}
@@ -586,15 +606,30 @@ export function TeamManagementView() {
                               <div>
                                 <p>
                                   {apiKey.provider} · {apiKey.alias}
+                                  {keyPendingDeletion ? (
+                                    <span className="ml-1.5 rounded bg-zinc-200 px-1.5 py-0.5 text-[10px] font-medium text-zinc-700">
+                                      삭제 예정
+                                    </span>
+                                  ) : null}
                                 </p>
                                 <p className="text-[11px] text-zinc-500">
                                   월 예산:{" "}
                                   {formatBudgetUsd(apiKey.monthlyBudgetUsd ?? undefined) ?? "— (기존 데이터)"}
                                 </p>
+                                {keyPendingDeletion && apiKey.permanentDeletionAt ? (
+                                  <p className="text-[11px] text-amber-800">
+                                    영구 삭제 예정: {formatDeletionDeadline(apiKey.permanentDeletionAt)}
+                                    {typeof apiKey.deletionGraceDays === "number"
+                                      ? ` (${apiKey.deletionGraceDays}일 유예)`
+                                      : ""}
+                                  </p>
+                                ) : null}
                               </div>
                               <button
                                 type="button"
-                                className="h-8 shrink-0 rounded-md border border-zinc-300 bg-white px-2 text-[11px] font-medium"
+                                className="h-8 shrink-0 rounded-md border border-zinc-300 bg-white px-2 text-[11px] font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                                disabled={keyPendingDeletion}
+                                title={keyPendingDeletion ? "삭제 예정인 키는 수정할 수 없습니다" : undefined}
                                 onClick={() => startEditTeamApiKey(team.id, apiKey)}
                               >
                                 수정

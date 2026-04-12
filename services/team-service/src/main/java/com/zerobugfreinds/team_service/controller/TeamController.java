@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -109,13 +110,25 @@ public class TeamController {
 	}
 
 	@DeleteMapping("/teams/{teamId}/api-keys/{keyId}")
-	public ResponseEntity<ApiResponse<Void>> deleteTeamApiKey(
+	public ResponseEntity<ApiResponse<TeamApiKeySummaryResponse>> deleteTeamApiKey(
+			@AuthenticationPrincipal TeamUserPrincipal principal,
+			@PathVariable("teamId") Long teamId,
+			@PathVariable("keyId") Long keyId,
+			@RequestParam(name = "gracePeriodDays", required = false) Integer gracePeriodDays
+	) {
+		TeamApiKeySummaryResponse updated =
+				teamApiKeyService.delete(principal.userId(), teamId, keyId, gracePeriodDays);
+		return ResponseEntity.ok(ApiResponse.ok("팀 API 키가 삭제 예정으로 등록되었습니다", updated));
+	}
+
+	@PostMapping("/teams/{teamId}/api-keys/{keyId}/deletion/cancel")
+	public ResponseEntity<ApiResponse<TeamApiKeySummaryResponse>> cancelTeamApiKeyDeletion(
 			@AuthenticationPrincipal TeamUserPrincipal principal,
 			@PathVariable("teamId") Long teamId,
 			@PathVariable("keyId") Long keyId
 	) {
-		teamApiKeyService.delete(principal.userId(), teamId, keyId);
-		return ResponseEntity.ok(ApiResponse.ok("팀 API 키가 삭제되었습니다", null));
+		TeamApiKeySummaryResponse updated = teamApiKeyService.cancelDeletion(principal.userId(), teamId, keyId);
+		return ResponseEntity.ok(ApiResponse.ok("삭제 예정이 해제되었습니다", updated));
 	}
 
 	@GetMapping("/teams/{id}/api-keys")

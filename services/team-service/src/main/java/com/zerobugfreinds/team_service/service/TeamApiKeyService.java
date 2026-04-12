@@ -15,10 +15,17 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 public class TeamApiKeyService {
+    /** 삭제 예정 등록 시 유예 기간 기본값(일). */
+    public static final int DEFAULT_DELETION_GRACE_DAYS = 7;
+    private static final int MIN_DELETION_GRACE_DAYS = 1;
+    private static final int MAX_DELETION_GRACE_DAYS = 365;
+
     private final TeamRepository teamRepository;
     private final TeamMemberRepository teamMemberRepository;
     private final TeamApiKeyRepository teamApiKeyRepository;
@@ -60,7 +67,12 @@ public class TeamApiKeyService {
         if (teamApiKeyRepository.existsByTeamIdAndKeyAlias(teamId, normalizedAlias)) {
             throw new IllegalArgumentException("이미 사용 중인 API Key 별칭입니다");
         }
-        if (teamApiKeyRepository.existsByTeamIdAndProviderAndKeyHash(teamId, provider, keyHash)) {
+        Optional<TeamApiKeyEntity> sameKeyHash =
+                teamApiKeyRepository.findByTeamIdAndProviderAndKeyHash(teamId, provider, keyHash);
+        if (sameKeyHash.isPresent()) {
+            if (sameKeyHash.get().isDeletionPending()) {
+                throw new IllegalArgumentException("삭제 예정키와 중복입니다");
+            }
             throw new IllegalArgumentException("이미 등록된 API Key입니다");
         }
 
@@ -94,6 +106,9 @@ public class TeamApiKeyService {
 
         TeamApiKeyEntity entity = teamApiKeyRepository.findByIdAndTeamId(apiKeyId, teamId)
                 .orElseThrow(() -> new IllegalArgumentException("팀 API 키를 찾을 수 없습니다"));
+        if (entity.isDeletionPending()) {
+            throw new IllegalArgumentException("삭제 예정인 키는 수정할 수 없습니다");
+        }
 
         if (teamApiKeyRepository.existsByTeamIdAndKeyAliasAndIdNot(teamId, normalizedAlias, apiKeyId)) {
             throw new IllegalArgumentException("이미 사용 중인 API Key 별칭입니다");
@@ -107,9 +122,12 @@ public class TeamApiKeyService {
                 throw new IllegalArgumentException("externalKey 길이가 너무 깁니다");
             }
             String keyHash = encryptionUtil.sha256HexForUniqueness(provider.name(), normalizedExternalKey);
-            if (teamApiKeyRepository.existsByTeamIdAndProviderAndKeyHashAndIdNot(
-                    teamId, provider, keyHash, apiKeyId
-            )) {
+            Optional<TeamApiKeyEntity> sameKeyHashElsewhere = teamApiKeyRepository
+                    .findByTeamIdAndProviderAndKeyHashAndIdNot(teamId, provider, keyHash, apiKeyId);
+            if (sameKeyHashElsewhere.isPresent()) {
+                if (sameKeyHashElsewhere.get().isDeletionPending()) {
+                    throw new IllegalArgumentException("삭제 예정키와 중복입니다");
+                }
                 throw new IllegalArgumentException("이미 등록된 API Key입니다");
             }
             String encrypted = encryptionUtil.encryptAes256Gcm(normalizedExternalKey);
@@ -122,14 +140,36 @@ public class TeamApiKeyService {
     }
 
     @Transactional
-    public void delete(String actorUserId, Long teamId, Long apiKeyId) {
+    public TeamApiKeySummaryResponse delete(String actorUserId, Long teamId, Long apiKeyId, Integer gracePeriodDays) {
         validateTeamAccess(actorUserId, teamId);
         if (apiKeyId == null) {
             throw new IllegalArgumentException("apiKeyId는 필수입니다");
         }
         TeamApiKeyEntity entity = teamApiKeyRepository.findByIdAndTeamId(apiKeyId, teamId)
                 .orElseThrow(() -> new IllegalArgumentException("팀 API 키를 찾을 수 없습니다"));
-        teamApiKeyRepository.delete(entity);
+        if (entity.isDeletionPending()) {
+            throw new IllegalArgumentException("이미 삭제 예정인 키입니다");
+        }
+        int days = resolveGracePeriodDays(gracePeriodDays);
+        entity.markDeletionRequested(Instant.now(), days);
+        teamApiKeyRepository.save(entity);
+        return toSummary(entity);
+    }
+
+    @Transactional
+    public TeamApiKeySummaryResponse cancelDeletion(String actorUserId, Long teamId, Long apiKeyId) {
+        validateTeamAccess(actorUserId, teamId);
+        if (apiKeyId == null) {
+            throw new IllegalArgumentException("apiKeyId는 필수입니다");
+        }
+        TeamApiKeyEntity entity = teamApiKeyRepository.findByIdAndTeamId(apiKeyId, teamId)
+                .orElseThrow(() -> new IllegalArgumentException("팀 API 키를 찾을 수 없습니다"));
+        if (!entity.isDeletionPending()) {
+            throw new IllegalArgumentException("삭제 예정 상태가 아닙니다");
+        }
+        entity.clearDeletionRequest();
+        teamApiKeyRepository.save(entity);
+        return toSummary(entity);
     }
 
     @Transactional(readOnly = true)
@@ -173,13 +213,26 @@ public class TeamApiKeyService {
         return normalized;
     }
 
+    private static int resolveGracePeriodDays(Integer requested) {
+        int days = requested != null ? requested : DEFAULT_DELETION_GRACE_DAYS;
+        if (days < MIN_DELETION_GRACE_DAYS || days > MAX_DELETION_GRACE_DAYS) {
+            throw new IllegalArgumentException(
+                    "유예 기간은 " + MIN_DELETION_GRACE_DAYS + "일 이상 " + MAX_DELETION_GRACE_DAYS + "일 이하로 설정할 수 있습니다"
+            );
+        }
+        return days;
+    }
+
     private static TeamApiKeySummaryResponse toSummary(TeamApiKeyEntity entity) {
         return new TeamApiKeySummaryResponse(
                 entity.getId(),
                 entity.getProvider().name(),
                 entity.getKeyAlias(),
                 entity.getMonthlyBudgetUsd(),
-                entity.getCreatedAt()
+                entity.getCreatedAt(),
+                entity.getDeletionRequestedAt(),
+                entity.getPermanentDeletionAt(),
+                entity.getDeletionGraceDays()
         );
     }
 }

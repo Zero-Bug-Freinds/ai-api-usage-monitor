@@ -12,6 +12,19 @@ public interface TeamApiKeyRepository extends JpaRepository<TeamApiKeyEntity, Lo
 
     Optional<TeamApiKeyEntity> findByIdAndTeamId(Long id, Long teamId);
 
+    Optional<TeamApiKeyEntity> findByTeamIdAndProviderAndKeyHash(
+            Long teamId,
+            TeamApiKeyProvider provider,
+            String keyHash
+    );
+
+    Optional<TeamApiKeyEntity> findByTeamIdAndProviderAndKeyHashAndIdNot(
+            Long teamId,
+            TeamApiKeyProvider provider,
+            String keyHash,
+            Long id
+    );
+
     boolean existsByTeamIdAndProviderAndKeyHash(Long teamId, TeamApiKeyProvider provider, String keyHash);
 
     boolean existsByTeamIdAndKeyAlias(Long teamId, String keyAlias);
