@@ -7,6 +7,7 @@ import {
   CartesianGrid,
   Cell,
   ComposedChart,
+  LabelList,
   Legend,
   Line,
   Pie,
@@ -43,7 +44,7 @@ import { addKstDays, formatKstIsoDate } from "@/lib/usage/kst-dates"
 
 /** 공급사별 기본 색 — 모든 차트에서 동일 키에 동일 색 */
 const PROVIDER_COLOR: Record<string, string> = {
-  GOOGLE: "#16a34a",
+  GOOGLE: "#F97316",
   OPENAI: "#0a0a0a",
   ANTHROPIC: "#c2410c",
 }
@@ -165,7 +166,7 @@ function hashToUint(str: string): number {
  */
 function colorForModel(model: string, provider: string): string {
   const variants: Record<string, string[]> = {
-    GOOGLE: ["#14532d", "#15803d", "#16a34a", "#22c55e", "#4ade80", "#86efac"],
+    GOOGLE: ["#9a3412", "#c2410c", "#ea580c", "#F97316", "#fb923c", "#fdba74"],
     OPENAI: ["#0a0a0a", "#171717", "#262626", "#404040", "#525252", "#737373"],
     ANTHROPIC: ["#7c2d12", "#9a3412", "#c2410c", "#ea580c", "#fb923c", "#fdba74"],
   }
@@ -178,6 +179,104 @@ function labelForProviderCode(code: string): string {
   return PROVIDER_LABEL[code] ?? code
 }
 
+const HEX_6 = /^#?([0-9a-fA-F]{6})$/
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  const m = hex.trim().match(HEX_6)
+  if (!m) return null
+  const n = parseInt(m[1]!, 16)
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 }
+}
+
+function rgbaFromHex(hex: string, alpha: number): string {
+  const rgb = hexToRgb(hex)
+  if (!rgb) return `rgba(115, 115, 115, ${alpha})`
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`
+}
+
+type TokenStackRow = {
+  label: string
+  model: string
+  provider: string
+  requests: number
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  avgInputPerReq: number
+  avgOutputPerReq: number
+  pctInputOfBar: number
+  pctOutputOfBar: number
+  pctInputOfGrand: number
+  pctOutputOfGrand: number
+  fillInput: string
+  fillOutput: string
+}
+
+type TokenStackTooltipProps = {
+  active?: boolean
+  label?: string
+  payload?: Array<{ payload?: TokenStackRow }>
+}
+
+function TokenStackTooltip({ active, payload, label }: TokenStackTooltipProps) {
+  if (!active || !payload?.length) return null
+  const row = payload[0]?.payload
+  if (!row) return null
+  return (
+    <div className="rounded-md border border-border bg-card px-3 py-2 text-xs shadow-md">
+      <p className="font-medium text-foreground">{String(label)}</p>
+      <p className="mt-1 text-muted-foreground">
+        입력: {formatTokenCount(row.inputTokens)}{" "}
+        <span className="tabular-nums">({row.pctInputOfBar.toFixed(1)}% 막대)</span>
+        {" · "}
+        <span className="tabular-nums">전체 {row.pctInputOfGrand.toFixed(1)}%</span>
+      </p>
+      <p className="mt-0.5 text-muted-foreground">
+        출력: {formatTokenCount(row.outputTokens)}{" "}
+        <span className="tabular-nums">({row.pctOutputOfBar.toFixed(1)}% 막대)</span>
+        {" · "}
+        <span className="tabular-nums">전체 {row.pctOutputOfGrand.toFixed(1)}%</span>
+      </p>
+      <p className="mt-1 text-[11px] text-muted-foreground tabular-nums">
+        요청당 평균 — in {Math.round(row.avgInputPerReq).toLocaleString("en-US")} / out{" "}
+        {Math.round(row.avgOutputPerReq).toLocaleString("en-US")}
+      </p>
+    </div>
+  )
+}
+
+type TokenAvgLabelProps = {
+  x?: number | string
+  y?: number | string
+  width?: number | string
+  height?: number | string
+  payload?: TokenStackRow
+}
+
+function TokenAvgLabelList(props: TokenAvgLabelProps) {
+  const { x, y, width, height, payload } = props
+  if (payload == null || payload.totalTokens <= 0) return null
+  const text = `in:${Math.round(payload.avgInputPerReq).toLocaleString("en-US")} / out:${Math.round(
+    payload.avgOutputPerReq
+  ).toLocaleString("en-US")}`
+  const nx = typeof x === "number" ? x : Number(x)
+  const ny = typeof y === "number" ? y : Number(y)
+  const nw = typeof width === "number" ? width : Number(width)
+  const nh = typeof height === "number" ? height : Number(height)
+  if (!Number.isFinite(nx) || !Number.isFinite(ny)) return null
+  return (
+    <text
+      x={nx + nw + 6}
+      y={ny + nh / 2}
+      fill="var(--muted-foreground)"
+      fontSize={10}
+      dominantBaseline="middle"
+    >
+      {text.length > 42 ? `${text.slice(0, 41)}…` : text}
+    </text>
+  )
+}
+
 function isAbortError(e: unknown): boolean {
   return (
     (typeof DOMException !== "undefined" && e instanceof DOMException && e.name === "AbortError") ||
@@ -186,9 +285,10 @@ function isAbortError(e: unknown): boolean {
 }
 
 const H_BAR_MARGIN = { left: 8, right: 16 }
-/** 출력 토큰 차트: 왼쪽 차트와 모델 라벨 중복을 줄이기 위해 Y축만 좁힘 */
-const H_BAR_MARGIN_NO_Y_LABEL = { left: 4, right: 16 }
-const H_BAR_HEIGHT = 320
+/** 토큰 스택 막대: 행당 높이·차트 높이 상한 (가독성·스크롤 균형) */
+const TOKEN_ROW_HEIGHT_PX = 36
+const TOKEN_CHART_MIN_H = 280
+const TOKEN_CHART_MAX_H = 520
 
 export function UsageDashboard() {
   const [periodMode, setPeriodMode] = React.useState<PeriodMode>("today")
@@ -384,6 +484,46 @@ export function UsageDashboard() {
       }))
   }, [byModel])
 
+  const tokenStackRows = React.useMemo((): TokenStackRow[] => {
+    const sorted = [...byModel].sort((a, b) => b.requestCount - a.requestCount)
+    let grandIn = 0
+    let grandOut = 0
+    for (const m of sorted) {
+      grandIn += m.inputTokens
+      grandOut += m.outputTokens
+    }
+    const grandTotal = grandIn + grandOut
+    return sorted.map((m) => {
+      const base = colorForModel(m.model, m.provider)
+      const rc = m.requestCount
+      const inT = m.inputTokens
+      const outT = m.outputTokens
+      const total = inT + outT
+      return {
+        label: truncateModelLabel(m.model),
+        model: m.model,
+        provider: m.provider,
+        requests: rc,
+        inputTokens: inT,
+        outputTokens: outT,
+        totalTokens: total,
+        avgInputPerReq: rc > 0 ? inT / rc : 0,
+        avgOutputPerReq: rc > 0 ? outT / rc : 0,
+        pctInputOfBar: total > 0 ? (100 * inT) / total : 0,
+        pctOutputOfBar: total > 0 ? (100 * outT) / total : 0,
+        pctInputOfGrand: grandTotal > 0 ? (100 * inT) / grandTotal : 0,
+        pctOutputOfGrand: grandTotal > 0 ? (100 * outT) / grandTotal : 0,
+        fillInput: rgbaFromHex(base, 0.3),
+        fillOutput: rgbaFromHex(base, 1),
+      }
+    })
+  }, [byModel])
+
+  const tokenStackChartHeight = React.useMemo(() => {
+    const n = tokenStackRows.length
+    return Math.min(TOKEN_CHART_MAX_H, Math.max(TOKEN_CHART_MIN_H, n * TOKEN_ROW_HEIGHT_PX))
+  }, [tokenStackRows.length])
+
   const hasMainData =
     (kpiSummary && kpiSummary.totalRequests > 0) ||
     daily.length > 0 ||
@@ -562,7 +702,7 @@ export function UsageDashboard() {
             </p>
           ) : null}
 
-          <section className="mb-10 rounded-lg border border-border p-4 shadow-sm">
+          <section className="mb-8 rounded-lg border border-border p-4 shadow-sm">
             <h2 className="mb-4 text-lg font-medium">{mainChartTitle}</h2>
             {periodMode === "today" && hourlyChart.length > 0 ? (
               <div className="h-[380px] min-h-[380px] w-full min-w-0">
@@ -639,7 +779,7 @@ export function UsageDashboard() {
             )}
           </section>
 
-          <div className="mb-10 grid gap-6 lg:grid-cols-2 lg:gap-8">
+          <div className="mb-8 grid gap-5 lg:grid-cols-2 lg:gap-6">
             <section className="rounded-lg border border-border p-4 shadow-sm">
               <h2 className="mb-4 text-lg font-medium">모델별 요청 비중</h2>
               {pieData.length === 0 ? (
@@ -732,67 +872,53 @@ export function UsageDashboard() {
             </section>
           </div>
 
-          <div className="mb-10 grid gap-6 lg:grid-cols-2 lg:gap-8">
-            {modelBarRows.length === 0 ? (
-              <section className="rounded-lg border border-border bg-card p-4 shadow-sm lg:col-span-2">
-                <h2 className="mb-4 text-lg font-medium">모델별 입력·출력 토큰 (가로)</h2>
-                <p className="text-sm text-muted-foreground">집계 데이터 없음</p>
-              </section>
+          <section className="mb-8 rounded-lg border border-border bg-card p-4 shadow-sm min-w-0">
+            <h2 className="mb-4 text-lg font-medium">모델별 토큰 사용량</h2>
+            {tokenStackRows.length === 0 ? (
+              <p className="text-sm text-muted-foreground">집계 데이터 없음</p>
             ) : (
-              <>
-                <section className="rounded-lg border border-border bg-card p-4 shadow-sm min-w-0">
-                  <h2 className="mb-4 text-lg font-medium">모델별 입력 토큰 (가로)</h2>
-                  <div
-                    className="w-full max-w-full min-w-0"
-                    style={{ height: H_BAR_HEIGHT, minHeight: H_BAR_HEIGHT }}
+              <div
+                className="w-full max-w-full min-w-0"
+                style={{ height: tokenStackChartHeight, minHeight: tokenStackChartHeight }}
+              >
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    layout="vertical"
+                    data={tokenStackRows}
+                    margin={{ top: 8, left: 8, right: 120, bottom: 8 }}
                   >
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart layout="vertical" data={modelBarRows} margin={H_BAR_MARGIN}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                        <XAxis type="number" tick={{ fontSize: 11 }} />
-                        <YAxis type="category" dataKey="label" width={128} tick={{ fontSize: 11 }} />
-                        <Tooltip
-                          formatter={(v) => formatTokenCount(tooltipNumericValue(v))}
-                          labelFormatter={(label) => String(label)}
-                        />
-                        <Bar dataKey="tokens" name="입력 토큰" radius={[0, 4, 4, 0]}>
-                          {modelBarRows.map((row) => (
-                            <Cell key={`in-${row.model}`} fill={colorForModel(row.model, row.provider)} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </section>
-                <section className="rounded-lg border border-border bg-card p-4 shadow-sm min-w-0">
-                  <h2 className="mb-4 text-lg font-medium">모델별 출력 토큰 (가로)</h2>
-                  <div
-                    className="w-full max-w-full min-w-0"
-                    style={{ height: H_BAR_HEIGHT, minHeight: H_BAR_HEIGHT }}
-                  >
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart layout="vertical" data={modelBarRows} margin={H_BAR_MARGIN_NO_Y_LABEL}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                        <XAxis type="number" tick={{ fontSize: 11 }} />
-                        <YAxis type="category" dataKey="label" hide />
-                        <Tooltip
-                          formatter={(v) => formatTokenCount(tooltipNumericValue(v))}
-                          labelFormatter={(label) => String(label)}
-                        />
-                        <Bar dataKey="outTokens" name="출력 토큰" radius={[0, 4, 4, 0]}>
-                          {modelBarRows.map((row) => (
-                            <Cell key={`out-${row.model}`} fill={colorForModel(row.model, row.provider)} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </section>
-              </>
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="var(--border)"
+                      strokeOpacity={0.85}
+                    />
+                    <XAxis type="number" tick={{ fontSize: 11 }} tickCount={8} />
+                    <YAxis type="category" dataKey="label" width={128} tick={{ fontSize: 11 }} />
+                    <Tooltip content={TokenStackTooltip} cursor={{ fill: "var(--muted)", fillOpacity: 0.12 }} />
+                    <Legend />
+                    <Bar stackId="tokens" dataKey="inputTokens" name="입력 토큰" radius={[4, 0, 0, 4]}>
+                      {tokenStackRows.map((row) => (
+                        <Cell key={`stk-in-${row.model}`} fill={row.fillInput} />
+                      ))}
+                    </Bar>
+                    <Bar stackId="tokens" dataKey="outputTokens" name="출력 토큰" radius={[0, 4, 4, 0]}>
+                      {tokenStackRows.map((row) => (
+                        <Cell key={`stk-out-${row.model}`} fill={row.fillOutput} />
+                      ))}
+                      <LabelList
+                        position="right"
+                        content={(p: unknown) => (
+                          <TokenAvgLabelList {...(p as TokenAvgLabelProps)} />
+                        )}
+                      />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             )}
-          </div>
+          </section>
 
-          <section className="mb-10 rounded-lg border border-border p-4 shadow-sm">
+          <section className="mb-8 rounded-lg border border-border p-4 shadow-sm">
             <h2 className="mb-4 text-lg font-medium">월별 요청 수 (누적 추이)</h2>
             {monthlyChart.length === 0 || !monthlyHasActivity ? (
               <p className="text-sm text-muted-foreground">집계 데이터 없음</p>
@@ -808,7 +934,7 @@ export function UsageDashboard() {
                     <Bar
                       dataKey="requestCount"
                       name="요청 수"
-                      fill="#16a34a"
+                      fill="#64748b"
                       radius={[4, 4, 0, 0]}
                     />
                   </BarChart>
