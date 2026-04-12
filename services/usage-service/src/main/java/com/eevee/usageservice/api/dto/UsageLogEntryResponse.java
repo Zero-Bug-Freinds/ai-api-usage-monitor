@@ -10,6 +10,7 @@ public record UsageLogEntryResponse(
         String correlationId,
         String provider,
         String model,
+        String apiKeyId,
         Long promptTokens,
         Long completionTokens,
         Long totalTokens,
