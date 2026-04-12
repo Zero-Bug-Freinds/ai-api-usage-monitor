@@ -5,6 +5,7 @@ import Link from "next/link"
 
 import { usageEntryPublicPath } from "@ai-usage/shell"
 
+import { LogoutButton } from "@/components/auth/logout-button"
 import type { ApiResponse, SessionResponse } from "@/lib/api/identity/types"
 
 function parseSessionPayload(json: unknown): SessionResponse | null {
@@ -76,6 +77,10 @@ export function LandingHomeWithSession() {
                 >
                   설정
                 </Link>
+                <LogoutButton
+                  variant="outline"
+                  className="h-9 border-zinc-300 bg-white text-sm text-zinc-900 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:hover:bg-zinc-900"
+                />
               </>
             ) : (
               <>

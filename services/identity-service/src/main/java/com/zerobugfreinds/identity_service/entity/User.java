@@ -64,4 +64,11 @@ public class User {
 	public Role getRole() {
 		return role;
 	}
+
+	/**
+	 * BCrypt 등으로 인코딩된 비밀번호로 갱신한다 (비밀번호 재설정 등).
+	 */
+	public void setPassword(String password) {
+		this.password = password;
+	}
 }

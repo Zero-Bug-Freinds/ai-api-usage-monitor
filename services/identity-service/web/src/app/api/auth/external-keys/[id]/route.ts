@@ -118,15 +118,21 @@ export async function DELETE(request: Request, context: RouteContext) {
     return json(400, { success: false, message: "잘못된 키 id입니다", data: null })
   }
 
+  const url = new URL(request.url)
+  const search = url.search
+
   let upstream: Response
   try {
-    upstream = await fetch(`${identityBaseUrl}/api/auth/external-keys/${encodeURIComponent(id)}`, {
-      method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/json",
+    upstream = await fetch(
+      `${identityBaseUrl}/api/auth/external-keys/${encodeURIComponent(id)}${search}`,
+      {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+        },
       },
-    })
+    )
   } catch {
     return json(502, { success: false, message: "인증 서비스에 연결할 수 없습니다", data: null })
   }

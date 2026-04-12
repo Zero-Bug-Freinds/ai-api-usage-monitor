@@ -1,12 +1,15 @@
 package com.zerobugfreinds.identity_service.controller;
 
 import com.zerobugfreinds.identity_service.common.ApiResponse;
+import com.zerobugfreinds.identity_service.dto.ForgotPasswordRequest;
 import com.zerobugfreinds.identity_service.dto.LoginRequest;
 import com.zerobugfreinds.identity_service.dto.LoginResponse;
+import com.zerobugfreinds.identity_service.dto.ResetPasswordRequest;
 import com.zerobugfreinds.identity_service.dto.SessionResponse;
 import com.zerobugfreinds.identity_service.dto.SignupRequest;
 import com.zerobugfreinds.identity_service.dto.SignupResponse;
 import com.zerobugfreinds.identity_service.exception.AuthContractViolationException;
+import com.zerobugfreinds.identity_service.service.PasswordResetService;
 import com.zerobugfreinds.identity_service.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.http.CacheControl;
@@ -29,9 +32,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
 	private final UserService userService;
+	private final PasswordResetService passwordResetService;
 
-	public AuthController(UserService userService) {
+	public AuthController(UserService userService, PasswordResetService passwordResetService) {
 		this.userService = userService;
+		this.passwordResetService = passwordResetService;
 	}
 
 	/**
@@ -47,6 +52,28 @@ public class AuthController {
 	/**
 	 * 로그인.
 	 */
+	/**
+	 * 비밀번호 찾기: 이메일로 재설정 링크 발송(등록된 주소만 실제 발송).
+	 */
+	@PostMapping("/forgot-password")
+	public ResponseEntity<ApiResponse<Void>> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+		passwordResetService.requestForgotPassword(request);
+		return ResponseEntity.ok()
+				.cacheControl(CacheControl.noStore().mustRevalidate())
+				.body(ApiResponse.ok(PasswordResetService.FORGOT_PASSWORD_UNIFORM_MESSAGE, null));
+	}
+
+	/**
+	 * 비밀번호 재설정: 메일 링크의 토큰과 새 비밀번호로 갱신.
+	 */
+	@PostMapping("/reset-password")
+	public ResponseEntity<ApiResponse<Void>> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+		passwordResetService.resetPassword(request);
+		return ResponseEntity.ok()
+				.cacheControl(CacheControl.noStore().mustRevalidate())
+				.body(ApiResponse.ok("비밀번호가 변경되었습니다. 로그인해 주세요", null));
+	}
+
 	@PostMapping("/login")
 	public ResponseEntity<ApiResponse<LoginResponse>> login(@Valid @RequestBody LoginRequest request) {
 		LoginResponse body = userService.login(request);

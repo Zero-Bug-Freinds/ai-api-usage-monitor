@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server"
-import { signupRequestSchema } from "@/lib/api/identity/signup.schema"
-import type { ApiResponse, SignupResponse } from "@/lib/api/identity/types"
+
+import { forgotPasswordSchema } from "@/lib/api/identity/password-reset.schema"
+import type { ApiResponse } from "@/lib/api/identity/types"
 
 function json<T>(status: number, body: ApiResponse<T>) {
-  return NextResponse.json(body, { status })
+  return NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } })
 }
 
 function envIdentityBaseUrl() {
@@ -29,7 +30,7 @@ export async function POST(request: Request) {
     return json(400, { success: false, message: "JSON 형식이 올바르지 않습니다", data: null })
   }
 
-  const parsed = signupRequestSchema.safeParse(payload)
+  const parsed = forgotPasswordSchema.safeParse(payload)
   if (!parsed.success) {
     const first = parsed.error.issues[0]
     return json(400, { success: false, message: first?.message ?? "입력값이 올바르지 않습니다", data: null })
@@ -37,10 +38,10 @@ export async function POST(request: Request) {
 
   let upstream: Response
   try {
-    upstream = await fetch(`${identityBaseUrl}/api/auth/signup`, {
+    upstream = await fetch(`${identityBaseUrl}/api/auth/forgot-password`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...parsed.data, role: "USER" }),
+      body: JSON.stringify(parsed.data),
     })
   } catch {
     return json(502, { success: false, message: "인증 서비스에 연결할 수 없습니다", data: null })
@@ -54,8 +55,11 @@ export async function POST(request: Request) {
   }
 
   if (upstream.ok) {
-    const body = upstreamJson as ApiResponse<SignupResponse>
-    return json(201, body)
+    const body = upstreamJson as ApiResponse<null>
+    if (!body?.success) {
+      return json(502, { success: false, message: "응답 형식이 올바르지 않습니다", data: null })
+    }
+    return json(200, body)
   }
 
   const message =
@@ -68,4 +72,3 @@ export async function POST(request: Request) {
 
   return json(upstream.status, { success: false, message, data: null })
 }
-

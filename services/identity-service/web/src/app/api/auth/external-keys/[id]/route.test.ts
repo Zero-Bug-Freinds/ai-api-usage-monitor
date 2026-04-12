@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { PUT } from "./route"
+import { DELETE, PUT } from "./route"
 
 const context = { params: Promise.resolve({ id: "123" }) }
 
@@ -19,6 +19,28 @@ function putRequest(body: unknown, cookie?: string) {
 afterEach(() => {
   vi.restoreAllMocks()
   delete process.env.IDENTITY_SERVICE_URL
+})
+
+describe("DELETE /api/auth/external-keys/[id] (route handler)", () => {
+  it("forwards query string to upstream", async () => {
+    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
+    const fetchMock = vi.fn(async (url: string) => {
+      expect(url).toBe("http://localhost:8080/api/auth/external-keys/123?gracePeriodDays=14")
+      return new Response(JSON.stringify({ success: true, message: "ok", data: null }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const req = new Request("http://localhost/api/auth/external-keys/123?gracePeriodDays=14", {
+      method: "DELETE",
+      headers: { cookie: "access_token=t", Accept: "application/json" },
+    })
+    const res = await DELETE(req, context)
+    expect(res.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe("PUT /api/auth/external-keys/[id] (route handler)", () => {

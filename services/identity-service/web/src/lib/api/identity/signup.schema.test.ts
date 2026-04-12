@@ -7,7 +7,6 @@ const validBase = {
   password: "abc123!@",
   passwordConfirm: "abc123!@",
   name: "testDemo",
-  role: "USER" as const,
 }
 
 describe("signupRequestSchema", () => {

@@ -25,6 +25,12 @@ public interface ExternalApiKeyRepository extends JpaRepository<ExternalApiKeyEn
 			String keyHash
 	);
 
+	Optional<ExternalApiKeyEntity> findByUserIdAndProviderAndKeyHash(
+			Long userId,
+			ExternalApiKeyProvider provider,
+			String keyHash
+	);
+
 	/** 별칭은 삭제 예정 행까지 포함해 사용자당 유일(유예 중에도 동일 별칭으로 새 등록 불가). */
 	boolean existsByUserIdAndKeyAlias(Long userId, String keyAlias);
 	boolean existsByUserIdAndKeyAliasAndIdNot(Long userId, String keyAlias, Long id);

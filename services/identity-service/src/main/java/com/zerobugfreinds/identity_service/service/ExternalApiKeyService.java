@@ -1,6 +1,5 @@
 package com.zerobugfreinds.identity_service.service;
 
-import com.zerobugfreinds.identity_service.domain.ExternalApiKeyDeletionPolicy;
 import com.zerobugfreinds.identity_service.domain.ExternalApiKeyProvider;
 import com.zerobugfreinds.identity_service.dto.InternalApiKeyResponse;
 import com.zerobugfreinds.identity_service.entity.ExternalApiKeyEntity;
@@ -22,6 +21,10 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+
+import static com.zerobugfreinds.identity_service.domain.ExternalApiKeyDeletionPolicy.DEFAULT_GRACE_DAYS;
+import static com.zerobugfreinds.identity_service.domain.ExternalApiKeyDeletionPolicy.MAX_GRACE_DAYS;
+import static com.zerobugfreinds.identity_service.domain.ExternalApiKeyDeletionPolicy.MIN_GRACE_DAYS;
 
 /**
  * 외부 AI API 키 등록·삭제(유예 후 물리 삭제).
@@ -70,19 +73,18 @@ public class ExternalApiKeyService {
 		}
 
 		String keyHash = encryptionUtil.sha256HexForUniqueness(provider.name(), normalizedKey);
-		long duplicateCount = externalApiKeyRepository.countByUserIdAndProviderAndKeyHashAndDeletionRequestedAtIsNull(
-				userId,
-				provider,
-				keyHash
-		);
-		if (duplicateCount > 0) {
+		Optional<ExternalApiKeyEntity> existingSameHash =
+				externalApiKeyRepository.findByUserIdAndProviderAndKeyHash(userId, provider, keyHash);
+		if (existingSameHash.isPresent()) {
+			if (existingSameHash.get().isPendingDeletion()) {
+				throw new DuplicateExternalApiKeyException("삭제예정키와 중복된 키");
+			}
 			log.warn(
-					"[AUDIT] external_api_key_duplicate_detected userId={} provider={} alias={} hashPrefix={} duplicateCount={}",
+					"[AUDIT] external_api_key_duplicate_detected userId={} provider={} alias={} hashPrefix={}",
 					userId,
 					provider.name(),
 					trimmedAlias,
-					keyHash.substring(0, 8),
-					duplicateCount
+					keyHash.substring(0, 8)
 			);
 			throw new DuplicateExternalApiKeyException("이미 등록된 API 키입니다");
 		}
@@ -165,12 +167,12 @@ public class ExternalApiKeyService {
 				throw new IllegalArgumentException("externalKey를 수정할 때 provider는 필수입니다");
 			}
 			String keyHash = encryptionUtil.sha256HexForUniqueness(provider.name(), normalizedKey);
-			if (externalApiKeyRepository.existsByUserIdAndProviderAndKeyHashAndIdNotAndDeletionRequestedAtIsNull(
-					userId,
-					provider,
-					keyHash,
-					externalKeyId
-			)) {
+			Optional<ExternalApiKeyEntity> otherSameHash =
+					externalApiKeyRepository.findByUserIdAndProviderAndKeyHash(userId, provider, keyHash);
+			if (otherSameHash.isPresent() && !otherSameHash.get().getId().equals(externalKeyId)) {
+				if (otherSameHash.get().isPendingDeletion()) {
+					throw new DuplicateExternalApiKeyException("삭제예정키와 중복된 키");
+				}
 				throw new DuplicateExternalApiKeyException("이미 등록된 API 키입니다");
 			}
 
@@ -210,7 +212,7 @@ public class ExternalApiKeyService {
 	 * 삭제 요청: 유예 기간 후 {@link #purgeExpiredKeys()} 가 행을 제거한다.
 	 */
 	@Transactional
-	public ExternalApiKeyEntity requestDeletion(Long userId, Long externalKeyId) {
+	public ExternalApiKeyEntity requestDeletion(Long userId, Long externalKeyId, Integer gracePeriodDays) {
 		if (userId == null || externalKeyId == null) {
 			throw new IllegalArgumentException("userId와 externalKeyId는 필수입니다");
 		}
@@ -219,8 +221,9 @@ public class ExternalApiKeyService {
 		if (entity.isPendingDeletion()) {
 			throw new ExternalApiKeyAlreadyPendingDeletionException("이미 삭제 예정인 키입니다");
 		}
+		int days = resolveGracePeriodDays(gracePeriodDays);
 		Instant now = Instant.now();
-		entity.markPendingDeletion(now, ExternalApiKeyDeletionPolicy.PENDING_RETENTION);
+		entity.markPendingDeletion(now, days);
 		log.info(
 				"[AUDIT] external_api_key_deletion_requested userId={} keyId={} permanentDeletionAt={}",
 				userId,
@@ -262,5 +265,15 @@ public class ExternalApiKeyService {
 		}
 		externalApiKeyRepository.deleteAll(expired);
 		return expired.size();
+	}
+
+	private static int resolveGracePeriodDays(Integer requested) {
+		int days = requested != null ? requested : DEFAULT_GRACE_DAYS;
+		if (days < MIN_GRACE_DAYS || days > MAX_GRACE_DAYS) {
+			throw new IllegalArgumentException(
+					"유예 기간은 " + MIN_GRACE_DAYS + "일 이상 " + MAX_GRACE_DAYS + "일 이하로 설정할 수 있습니다"
+			);
+		}
+		return days;
 	}
 }
