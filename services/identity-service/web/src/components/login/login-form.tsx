@@ -100,7 +100,15 @@ export function LoginForm() {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="password">비밀번호</Label>
+          <div className="flex items-center justify-between gap-2">
+            <Label htmlFor="password">비밀번호</Label>
+            <Link
+              href="/forgot-password"
+              className="text-xs font-medium text-muted-foreground underline underline-offset-4 hover:text-foreground"
+            >
+              비밀번호를 잊으셨나요?
+            </Link>
+          </div>
           <div className="flex gap-1">
             <Input
               id="password"

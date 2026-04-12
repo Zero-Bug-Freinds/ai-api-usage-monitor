@@ -11,6 +11,7 @@ import com.zerobugfreinds.identity_service.exception.ExternalApiKeyNotFoundExcep
 import com.zerobugfreinds.identity_service.exception.ExternalApiKeyNotPendingDeletionException;
 import com.zerobugfreinds.identity_service.exception.ExternalApiKeyPendingDeletionException;
 import com.zerobugfreinds.identity_service.exception.InvalidCredentialsException;
+import com.zerobugfreinds.identity_service.exception.InvalidPasswordResetTokenException;
 import com.zerobugfreinds.identity_service.exception.InvalidSignupRequestException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -40,6 +41,12 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(InvalidSignupRequestException.class)
 	@ResponseStatus(HttpStatus.BAD_REQUEST)
 	public ApiResponse<Void> handleInvalidSignupRequest(InvalidSignupRequestException ex) {
+		return ApiResponse.fail(ex.getMessage());
+	}
+
+	@ExceptionHandler(InvalidPasswordResetTokenException.class)
+	@ResponseStatus(HttpStatus.BAD_REQUEST)
+	public ApiResponse<Void> handleInvalidPasswordResetToken(InvalidPasswordResetTokenException ex) {
 		return ApiResponse.fail(ex.getMessage());
 	}
 

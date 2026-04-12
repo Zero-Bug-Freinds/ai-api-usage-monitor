@@ -5,7 +5,7 @@ export const signupPasswordPolicyMessage =
   "비밀번호는 소문자/숫자/특수문자를 각각 1개 이상 포함하고 대문자 없이 8~100자여야 합니다"
 
 /** 백엔드 `SignupRequest` 정규식과 동일 */
-const SIGNUP_PASSWORD_REGEX =
+export const SIGNUP_PASSWORD_REGEX =
   /^(?=.*[a-z])(?=.*\d)(?=.*[^a-zA-Z0-9])(?=\S+$)[^A-Z]{8,100}$/
 
 export const signupRequestSchema = z

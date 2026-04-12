@@ -1,6 +1,6 @@
 # Web(Next.js) ↔ Identity 인증 BFF 계약
 
-버전: 1.19  
+버전: 1.20  
 관련: [docs/architecture.md](../architecture.md) §1.3, §3.3, §10.2, §13, [Identity 인증 API 계약](../identity-auth-api-contract.md), [Web·Gateway Usage BFF](./web-gateway-bff.md)(Usage BFF·`basePath` 호출 맵), [Web·Team BFF](./web-team-bff.md), [저장소 구조](../repository-structure.md) §6, [웹 경계](./web-split-boundary.md)(§2.4 로컬 `web-edge` Nginx)
 
 **소스 트리:** BFF·화면의 **정본**은 `services/identity-service/web/` 이다. **공용 UI(Shadcn 래퍼·`cn`)** 는 루트 pnpm workspace **`@ai-usage/ui`**(`packages/ui`)를 참조한다([web-split-boundary.md §1.1](./web-split-boundary.md)). Identity vs Usage 라우트·미들웨어 매처는 [web-split-boundary.md](./web-split-boundary.md) §2·§3.
@@ -19,6 +19,8 @@
 | 구분 | Web BFF 브라우저 경로(Next 동일 오리진) | Upstream Identity |
 |------|-----------------------|-------------------|
 | 회원가입 | `POST /api/auth/signup` | `POST /api/auth/signup` |
+| 비밀번호 찾기(재설정 메일 요청) | `POST /api/auth/forgot-password` | `POST /api/auth/forgot-password` |
+| 비밀번호 재설정 | `POST /api/auth/reset-password` | `POST /api/auth/reset-password` |
 | 로그인 | `POST /api/auth/login` | `POST /api/auth/login` |
 | 외부 API 키 조회(개인) | `GET /api/auth/external-keys` | `GET /api/auth/external-keys` |
 | 외부 API 키 등록(개인) | `POST /api/auth/external-keys` | `POST /api/auth/external-keys` |
@@ -102,6 +104,21 @@
 2. **`access_token` 쿠키가 없거나 값이 비어 있으면** BFF는 Identity를 호출하지 않고 `401`로 응답한다.
 3. BFF → Identity: `POST {IDENTITY_SERVICE_URL}/api/auth/external-keys/{id}/deletion-cancel`
 4. 성공 시 Identity 응답을 그대로 전달한다.
+
+### 2.7 `POST /api/auth/forgot-password` 동작
+
+1. 브라우저 → BFF: `POST /api/auth/forgot-password`, JSON `{ "email": "…" }`
+2. BFF: Zod로 이메일 형식을 검증한다.
+3. BFF → Identity: `POST {IDENTITY_SERVICE_URL}/api/auth/forgot-password` (동일 본문)
+4. **성공 시**(`200`) Identity의 `message`는 **이메일 존재 여부와 무관한 동일 문구**를 사용한다(이메일 열거 방지). BFF는 업스트림 본문을 그대로 전달한다. 응답에 `Cache-Control: no-store`를 적용한다.
+5. Identity·SMTP 미구성 시에는 서버 로그에 재설정 링크가 남을 수 있다(로컬 개발). 운영에서는 `IDENTITY_WEB_PUBLIC_BASE_URL`·SMTP를 설정한다([identity-auth-api-contract](../identity-auth-api-contract.md)).
+
+### 2.8 `POST /api/auth/reset-password` 동작
+
+1. 브라우저 → BFF: `POST /api/auth/reset-password`, JSON `{ "token": "…", "password": "…", "passwordConfirm": "…" }` (`token`은 메일 링크의 쿼리 값)
+2. BFF: Zod로 비밀번호 정책·일치 여부를 검증한다(회원가입과 동일 정책).
+3. BFF → Identity: `POST {IDENTITY_SERVICE_URL}/api/auth/reset-password`
+4. **성공 시** 비밀번호가 갱신되며, 웹은 안내 후 **`/login`** 으로 이동할 수 있다. 토큰이 잘못되었거나 만료된 경우 Identity는 `400`과 안내 메시지를 반환할 수 있다.
 
 ---
 

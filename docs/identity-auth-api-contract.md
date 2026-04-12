@@ -1,6 +1,6 @@
 # Identity 인증 API 계약 (백엔드)
 
-버전: 1.5  
+버전: 1.6  
 관련: [architecture.md](./architecture.md) §1.3, [contracts/web-identity-bff.md](./contracts/web-identity-bff.md)
 
 ---
@@ -35,6 +35,8 @@
 | 메서드    | 경로                  | 인증  | 설명                       |
 | ------ | ------------------- | --- | ------------------------ |
 | `POST` | `/api/auth/signup`  | 불필요 | 회원가입                     |
+| `POST` | `/api/auth/forgot-password` | 불필요 | 비밀번호 재설정 메일 요청(이메일 열거 방지용 동일 응답) |
+| `POST` | `/api/auth/reset-password` | 불필요 | 메일 링크 토큰으로 비밀번호 재설정 |
 | `POST` | `/api/auth/login`   | 불필요 | 로그인 및 액세스 토큰 발급          |
 | `GET`  | `/api/auth/session` | 필요  | 세션(인증 상태) 확인             |
 | `GET`  | `/api/auth/external-keys` | 필요  | 내 외부 AI API 키 목록 조회 (`id`, `provider`, `alias`, `monthlyBudgetUsd`, `createdAt`, 삭제 예정 시 `deletionRequestedAt`·`permanentDeletionAt`·`deletionGraceDays` 등) |
@@ -44,6 +46,25 @@
 | `POST` | `/api/auth/external-keys/{id}/deletion-cancel` | 필요  | 외부 AI API 키 삭제 예약 취소 |
 | `POST` | `/api/auth/logout`  | 불필요 | 로그아웃 신호 응답(BFF 쿠키 삭제 유도) |
 
+
+---
+
+## 3.1 비밀번호 찾기·재설정
+
+### 요청 본문
+
+- **`POST /api/auth/forgot-password`:** `{ "email": "user@example.com" }`
+- **`POST /api/auth/reset-password`:** `{ "token": "<메일 링크의 토큰>", "password": "…", "passwordConfirm": "…" }` — 비밀번호 규칙은 회원가입(`SignupRequest`)과 동일하다.
+
+### 동작
+
+- **forgot-password:** 등록된 이메일인 경우에만 재설정 토큰을 발급하고 메일을 보낸다. 응답 **메시지는 항상 동일**하여 이메일 존재 여부를 드러내지 않는다. SMTP가 설정되지 않은 환경에서는 재설정 링크가 서버 로그(INFO)로만 출력될 수 있다.
+- **reset-password:** 토큰은 DB에 SHA-256 해시로만 저장되며 일회용이다. 만료·재사용·불일치 시 `400`과 안내 메시지를 반환한다.
+- 설정: `identity.passwordReset.webBaseUrl`(공개 웹 베이스 URL, 메일 링크에 사용), `identity.passwordReset.tokenValidityHours`, `identity.passwordReset.mailFrom`, 선택적 `spring.mail.*`(SMTP).
+
+### 캐시 정책
+
+- 두 엔드포인트 응답에 `Cache-Control: no-store`를 적용한다.
 
 ---
 
