@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
-import { BillingShell } from "@/components/expenditure/billing-shell";
+import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 
 export default function ShellLayout({ children }: { children: ReactNode }) {
-  return <BillingShell>{children}</BillingShell>;
+  return <DashboardShell>{children}</DashboardShell>;
 }

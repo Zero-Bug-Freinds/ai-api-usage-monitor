@@ -2,12 +2,9 @@ package com.eevee.usageservice.api;
 
 import com.eevee.usage.events.AiProvider;
 import com.eevee.usageservice.api.dto.DailyUsagePoint;
-import com.eevee.usageservice.api.dto.HourlyUsagePoint;
 import com.eevee.usageservice.api.dto.ModelUsageAggregate;
 import com.eevee.usageservice.api.dto.MonthlyUsagePoint;
 import com.eevee.usageservice.api.dto.PagedLogsResponse;
-import com.eevee.usageservice.api.dto.UsageCostIntradayKpiResponse;
-import com.eevee.usageservice.api.dto.UsageLogApiKeyItemResponse;
 import com.eevee.usageservice.api.dto.UsageSummaryResponse;
 import com.eevee.usageservice.security.UsageGatewayTrustFilter;
 import com.eevee.usageservice.service.UsageDashboardService;
@@ -35,72 +32,40 @@ public class UsageAnalyticsController {
     public UsageSummaryResponse summary(
             HttpServletRequest request,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
-            @RequestParam(required = false) AiProvider provider
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
     ) {
         String userId = currentUser(request);
-        return dashboardService.summary(userId, from, to, provider);
+        return dashboardService.summary(userId, from, to);
     }
 
     @GetMapping("/dashboard/series/daily")
     public List<DailyUsagePoint> daily(
             HttpServletRequest request,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
-            @RequestParam(required = false) AiProvider provider
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
     ) {
         String userId = currentUser(request);
-        return dashboardService.dailySeries(userId, from, to, provider);
+        return dashboardService.dailySeries(userId, from, to);
     }
 
     @GetMapping("/dashboard/series/monthly")
     public List<MonthlyUsagePoint> monthly(
             HttpServletRequest request,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
-            @RequestParam(required = false) AiProvider provider
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
     ) {
         String userId = currentUser(request);
-        return dashboardService.monthlySeries(userId, from, to, provider);
-    }
-
-    @GetMapping("/dashboard/series/hourly")
-    public List<HourlyUsagePoint> hourly(
-            HttpServletRequest request,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
-            @RequestParam(required = false) AiProvider provider
-    ) {
-        String userId = currentUser(request);
-        return dashboardService.hourlySeries(userId, date, provider);
-    }
-
-    @GetMapping("/dashboard/kpi/cost-intraday")
-    public UsageCostIntradayKpiResponse costIntradayKpi(
-            HttpServletRequest request,
-            @RequestParam(required = false) AiProvider provider
-    ) {
-        String userId = currentUser(request);
-        return dashboardService.costIntradayKpi(userId, provider);
+        return dashboardService.monthlySeries(userId, from, to);
     }
 
     @GetMapping("/dashboard/by-model")
     public List<ModelUsageAggregate> byModel(
             HttpServletRequest request,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
-            @RequestParam(required = false) AiProvider provider
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
     ) {
         String userId = currentUser(request);
-        return dashboardService.byModel(userId, from, to, provider);
-    }
-
-    @GetMapping("/logs/api-keys")
-    public List<UsageLogApiKeyItemResponse> logApiKeys(
-            HttpServletRequest request,
-            @RequestParam(required = false) AiProvider provider
-    ) {
-        String userId = currentUser(request);
-        return dashboardService.listLogApiKeys(userId, provider);
+        return dashboardService.byModel(userId, from, to);
     }
 
     @GetMapping("/logs")
@@ -109,13 +74,12 @@ public class UsageAnalyticsController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(required = false) AiProvider provider,
-            @RequestParam(required = false) String apiKeyId,
             @RequestParam(required = false) String model,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
         String userId = currentUser(request);
-        return dashboardService.logs(userId, from, to, provider, apiKeyId, model, page, size);
+        return dashboardService.logs(userId, from, to, provider, model, page, size);
     }
 
     private static String currentUser(HttpServletRequest request) {

@@ -1,4 +1,4 @@
-# billing-service 개요 (구현 스냅샷, 2026-04-12)
+# billing-service 개요 (구현 스냅샷, 2026-04-12 · 본문 갱신 2026-04-11)
 
 ## 1) 목적·범위
 
@@ -14,7 +14,7 @@
 |------|------|
 | 백엔드 (Spring Boot) | `services/billing-service/` (Gradle 단일 모듈, `usage-events` 로컬 프로젝트 의존) |
 | 프론트 (Next.js, 선택) | `services/billing-service/web/` |
-| 공유 이벤트 타입 | `libs/usage-events` (`UsageRecordedEvent`, `TokenUsage`, `AiProvider` 등) |
+| 공유 이벤트 타입 | `libs/usage-events` (`UsageRecordedEvent`, `UsageCostFinalizedEvent`, `UsageCostEventAmqp`, `TokenUsage`, `AiProvider` 등) |
 
 ---
 
@@ -24,9 +24,9 @@
 
 | 패키지/영역 | 역할 |
 |-------------|------|
-| `config` | `application.yml` 바인딩(`BillingProperties`, `BillingRabbitProperties`, `IdentityProperties`), RabbitMQ 큐/교환기 바인딩, Jackson, 시드(`ProviderModelPriceSeed`) |
+| `config` | `application.yml` 바인딩(`BillingProperties`, `BillingRabbitProperties`, `IdentityProperties`), RabbitMQ 인바운드 큐·아웃바운드 비용 교환기(`billing.rabbit.cost-out.*`), Jackson, 시드(`ProviderModelPriceSeed`) |
 | `consumer` | RabbitMQ에서 `UsageRecordedEvent` JSON 수신·역직렬화 |
-| `service` | 비용 계산(`ExpenditureCostCalculator`), 이벤트 처리·집계(`BillingRecordedService`, `BillingAggregationJdbc`), 지출 조회(`ExpenditureQueryService`) |
+| `service` | 비용 계산(`ExpenditureCostCalculator`), 이벤트 처리·집계(`BillingRecordedService`, `BillingAggregationJdbc`), 비용 확정 발행(`UsageCostFinalizedEventPublisher`), 지출 조회(`ExpenditureQueryService`), 팀 월 롤업(`ExpenditureTeamRollupService`) |
 | `repository` / `domain` | JPA 엔티티·리포지토리 (`provider_model_price`, 집계·멱등 테이블 등) |
 | `pricing` | 초기 단가 시드용 `OfficialProviderModelPriceCatalog`(공식 URL·as-of 메타와 금액 스냅샷) |
 | `api` | REST `ExpenditureController` 및 DTO |
@@ -46,6 +46,7 @@
 - **토큰 정규화**: prompt/completion이 비어 있고 total만 있으면 절반씩 나누어 추정(`normalizeTokens`).
 - **집계**: `BillingAggregationJdbc`로 `daily_expenditure_agg`, `monthly_expenditure_agg` upsert, `billing_user_api_key_seen`에 API Key 노출 정보 반영.
 - **멱등**: `billing_processed_event`로 `eventId` 단위 중복 처리 방지.
+- **비용 확정 발행(선택)**: `billing.rabbit.cost-out.enabled=true`(기본)일 때, 과금 가능 경로에서 집계·멱등 저장 **커밋 후** `UsageCostFinalizedEvent`를 `billing.events` / `usage.cost.finalized`로 발행하고, `cost_event_published_at`을 기록한다. 비과금·스킵 경로는 `cost_event_applicable=false`로 끝난다.
 
 ### 4.2 지출 조회 HTTP API
 
@@ -55,6 +56,7 @@
   - `GET /daily` — 일별 비용 시계열
   - `GET /monthly` — 월별 비용 시계열(확정 여부 포함)
   - `GET /api-keys` — 사용자가 본 API Key 목록(공급사 필터 선택)
+  - `POST /team/month-rollup` — 팀(또는 관리) 뷰: 여러 플랫폼 `userId`에 대해 지정 월의 `monthly_expenditure_agg` 합산(본문: `TeamMonthRollupRequest`). 호출자는 **노출 가능한 userId만** 넘기도록 BFF/Gateway에서 제한하는 것을 전제로 한다.
 - **인증**: Gateway가 넘기는 `X-User-Id` 필수; `billing.gateway.shared-secret`이 설정된 경우 `X-Gateway-Auth` 일치 필요.
 
 ### 4.3 월 집계 확정
@@ -64,6 +66,7 @@
 ### 4.4 웹(BFF)
 
 - `billing-service/web`은 지출 대시보드 UI 및 BFF 패턴으로 Gateway의 billing API를 호출하는 구성을 따른다(세부는 해당 `web` 디렉터리 및 팀 문서 참고).
+- **제품 범위(로드맵 대비)**: 개인·팀 모드 지출 UX(예산 게이지, 일별/인당 차트, 비결제 시뮬레이션 고지)는 구현·검증 대상에 포함한다. **조직 단위 집계 UI**는 동일 로드맵에서 범위 밖(취소)으로 두었다.
 
 ### 4.5 이벤트 처리 파이프라인 상세 (`BillingRecordedService`)
 
@@ -80,7 +83,8 @@
 | 단가 조회 | `ProviderModelPriceRepository.findActivePrices(provider, model, occurredAt, PageRequest(0,1))` — `validFrom <= occurredAt`이고 `validTo`가 null이거나 `> occurredAt`인 행 중 **가장 최근 `validFrom`**. 없으면 비용 **0**. |
 | 비용·토큰 | `ExpenditureCostCalculator.compute` 및 `normalizeTokens` 결과로 일·월 upsert. |
 | API Key 시드 | `billing_user_api_key_seen`에 `(userId, apiKeyId, provider)`별 **최초 관측 시각** 유지(`LEAST`로 더 이른 시각 보존). |
-| 완료 | `billing_processed_event`에 `eventId` 저장. |
+| 완료 | `billing_processed_event`에 `eventId`·`cost_event_applicable` 등 저장. |
+| 비용 확정(선택) | `cost-out`이 켜져 있고 과금 가능이면 트랜잭션 **커밋 후** `UsageCostFinalizedEvent` 발행·`cost_event_published_at` 갱신(발행 실패 시 재시도는 `handleAlreadyProcessed` 경로에서 미발행 행 보정). |
 
 ### 4.6 비용 계산 상세 (`ExpenditureCostCalculator`)
 
@@ -99,6 +103,7 @@
 | `GET /api/v1/expenditure/daily` | 동일 | 일자별 `totalCostUsd` 시계열(`DailyExpenditurePoint`). |
 | `GET /api/v1/expenditure/monthly` | `apiKeyId`, `from`, `to` (**provider 없음**) | 월 시작일(`month_start_date`)별 누적 비용 + `isFinalized` 플래그(`MonthlyExpenditurePoint`). |
 | `GET /api/v1/expenditure/api-keys` | `provider` 선택 | `billing_user_api_key_seen`에서 해당 사용자의 API Key·provider·`firstSeenAt` 목록. provider 생략 시 전체. |
+| `POST /api/v1/expenditure/team/month-rollup` | JSON 본문 `userIds`, `monthStartDate`(해당 월의 **1일** 필수, 최대 500명) | `monthly_expenditure_agg`에서 해당 월·user 집합에 대한 합계 및 사용자별 비용(`TeamMonthRollupResponse`). |
 
 **기간 제한**: `from`~`to` 포함 일수가 `billing.analytics.max-range-days`(기본 400)를 넘으면 `IllegalArgumentException` → HTTP 400.
 
@@ -176,6 +181,8 @@
 |------|------|
 | `event_id` (PK, UUID) | `UsageRecordedEvent.eventId` — 멱등 키 |
 | `processed_at` | 처리 완료 시각 |
+| `cost_event_applicable` | 과금·비용 확정 이벤트 대상 여부(스킵·비과금이면 `false`) |
+| `cost_event_published_at` | `UsageCostFinalizedEvent` 발행 성공 시각(null이면 미발행 또는 발행 전) |
 
 ### 5.5 `billing_user_api_key_seen`
 
@@ -200,7 +207,7 @@
 ### 6.2 RabbitMQ
 
 - **소비**: Topic 교환기 `usage.events`, 라우팅 키 `usage.recorded`, 큐 `billing-service.queue`에 바인딩 (`BillingRabbitConfiguration`, `billing.rabbit.*` 설정).
-- **발행**: 현재 구현에서는 **billing-service가 RabbitMQ로 메시지를 발행하지 않는다**(부록 A 참고).
+- **발행(비용 확정 스트림)**: Topic 교환기 `billing.events`(기본값, `UsageCostEventAmqp.TOPIC_EXCHANGE_NAME`와 동일), 라우팅 키 `usage.cost.finalized`. `billing.rabbit.cost-out.enabled`로 끌 수 있으며, `billing.rabbit.cost-out.exchange` / `routing-key`로 오버라이드 가능(`application.yml` 참고). 소비 스트림 `usage.recorded`와 **분리**되어 있어 동일 큐에 이중 바인딩하지 않는다.
 
 ### 6.3 기타
 
@@ -263,8 +270,8 @@ X-Gateway-Auth: local-dev-gateway-shared-secret-do-not-use-in-prod
 | 항목 | 내용 |
 |------|------|
 | **공통 이벤트** | 동일 `UsageRecordedEvent` 스트림을 usage 쪽에서도 구독해 **원천 로그** 등을 적재할 수 있다(usage 리스너·큐는 usage 모듈 설정에 따름). |
-| **DB** | `usage_db`는 billing이 **접근하지 않는다**. 비용 숫자를 usage 로그와 맞추려면 부록 A의 **비용 확정 이벤트** 같은 별도 계약이 필요하다. |
-| **직접 연결** | 기본 구현에서 billing → usage **동기 HTTP 호출은 없음**. |
+| **DB** | `usage_db`는 billing이 **접근하지 않는다**. **`UsageCostFinalizedEvent`** 를 소비해 `usage_recorded_log.estimated_cost`를 갱신하면(부록 A) 대시보드가 usage DB만으로 비용을 표시할 수 있다. |
+| **직접 연결** | billing → usage **동기 HTTP 호출은 없음**. 비용 보정은 **AMQP** 로만 전달된다. |
 
 ### 7.3 `api-gateway-service` (지출 HTTP 진입점)
 
@@ -294,7 +301,7 @@ X-Gateway-Auth: local-dev-gateway-shared-secret-do-not-use-in-prod
 
 | 항목 | 내용 |
 |------|------|
-| **계약** | `UsageRecordedEvent`, `TokenUsage`, `AiProvider` 등이 **프록시·billing·usage** 간 JSON 직렬화 호환을 위해 공유된다. |
+| **계약** | `UsageRecordedEvent`, `UsageCostFinalizedEvent`(스키마 버전 필드 포함), `TokenUsage`, `AiProvider` 등이 **프록시·billing·usage** 간 JSON 직렬화 호환을 위해 공유된다. |
 | **버전** | 필드 추가 시 모든 발행·소비자의 Jackson 설정이 호환되는지 확인해야 한다(`fail-on-unknown-properties: false`는 billing 측 `application.yml`에 있음). |
 
 ---
@@ -306,7 +313,7 @@ X-Gateway-Auth: local-dev-gateway-shared-secret-do-not-use-in-prod
 | **인바운드 (비동기)** | **AMQP 구독** | `UsageRecordedEvent` JSON → 비용·집계 처리 |
 | **인바운드 (동기)** | **HTTP** | 지출 조회 REST; 클라이언트는 보통 **API Gateway** 경유 |
 | **아웃바운드 (동기, 선택)** | **HTTP** | `BILLING_IDENTITY_ENABLED=true`일 때 Identity에서 월 예산 USD 조회 |
-| **아웃바운드 (비동기)** | — | **미구현**(비용 확정 이벤트 발행은 요구사항 문서상 계획, 부록 A 참고) |
+| **아웃바운드 (비동기)** | **AMQP 발행** | `UsageCostFinalizedEvent` — `billing.events` / `usage.cost.finalized` (usage-service가 소비해 `usage_recorded_log.estimated_cost` 갱신). 상세: 부록 A, `docs/billing-pricing-catalog-ops.md`, `docs/billing-identity-budget.md`. |
 
 ### 8.1 API Gateway·헤더
 
@@ -315,8 +322,9 @@ X-Gateway-Auth: local-dev-gateway-shared-secret-do-not-use-in-prod
 
 ### 8.2 이벤트 페이로드
 
-- 소비 메시지 타입: `libs/usage-events`의 `UsageRecordedEvent`.
-- Proxy는 `estimatedCost`를 `0`으로 보내는 현행 정책이며, **실제 USD 비용은 billing 측에서 단가 적용 후 집계**된다.
+- **소비** 메시지 타입: `libs/usage-events`의 `UsageRecordedEvent`.
+- **발행** 메시지 타입: `UsageCostFinalizedEvent`(JSON, `schemaVersion` 포함) — `billing.events` / `usage.cost.finalized`.
+- Proxy는 `estimatedCost`를 `0`으로 보내는 현행 정책이며, **실제 USD 비용은 billing 측에서 단가 적용 후 집계**되고, usage 로그 금액은 비용 확정 이벤트로 맞춘다.
 
 ---
 
@@ -330,8 +338,8 @@ X-Gateway-Auth: local-dev-gateway-shared-secret-do-not-use-in-prod
 
 ## 부록 A) `usage-service-cost-dashboard-billing-proxy-requirements-20260412.md`와 RabbitMQ **비용 이벤트 발행**
 
-아래는 **`private-docs/architecture-report/usage-service-cost-dashboard-billing-proxy-requirements-20260412.md`** 의 §4(정본 아키텍처)를 기준으로, **billing-service가 앞으로 RabbitMQ에 발행해야 할 비용 이벤트**를 정리한 것이다.  
-**현재 코드베이스에서는 해당 발행자가 아직 구현되어 있지 않으며**, 큐 이름·교환기·스키마는 요구사항 문서에 따라 구현 단계에서 확정한다.
+아래는 **`private-docs/architecture-report/usage-service-cost-dashboard-billing-proxy-requirements-20260412.md`** 의 §4(정본 아키텍처)를 기준으로 한 **비용 확정 이벤트** 요약이다.  
+**구현 상태**: `UsageCostFinalizedEvent` 발행·소비 및 usage DB 갱신이 저장소에 반영되어 있다(교환기·라우팅 키·큐 이름은 §A.2·코드 `UsageCostEventAmqp` 참고).
 
 ### A.1 요구사항이 말하는 흐름
 
@@ -346,7 +354,7 @@ X-Gateway-Auth: local-dev-gateway-shared-secret-do-not-use-in-prod
 
 **목적**: “이 `eventId`(또는 동일한 멱등 키)에 대해 billing이 산출한 **최종 추정 비용(USD)** 이 무엇인지”를 usage-service에 전달한다.
 
-권장으로 포함할 **최소·권장 필드**(이름은 구현 시 `libs/` 이벤트 모듈에 record/DTO로 고정):
+권장으로 포함할 **최소·권장 필드**(실제 타입은 `libs/usage-events`의 **`UsageCostFinalizedEvent` record**):
 
 | 구분 | 필드(개념) | 설명 |
 |------|-------------|------|
@@ -356,19 +364,19 @@ X-Gateway-Auth: local-dev-gateway-shared-secret-do-not-use-in-prod
 | **권장** | **사유/버전** | 단가 스냅샷·규칙 버전(재처리·백필 시 디버깅). |
 | **선택** | **토큰·모델** | 이미 usage에 있으면 중복일 수 있으나, 재처리 검증용으로 선택적 포함 가능. |
 
-**라우팅(개념)**:
+**라우팅(구현과 합치)**:
 
-- 별도 **교환기/라우팅 키/큐**를 둔다(예: `billing.cost.confirmed` 등).  
-- `usage.events` / `usage.recorded` 와 **분리**하는 것이 일반적이다(소비자 혼동·재처리 루프 방지).
+- 교환기 **`billing.events`**, 라우팅 키 **`usage.cost.finalized`**, usage 측 권장 큐명 예: `usage-service.usage-cost-finalized.queue` (`UsageCostEventAmqp`).  
+- `usage.events` / `usage.recorded` 와 **분리**되어 있다(소비자 혼동·재처리 루프 방지).
 
-### A.3 현재 구현과의 차이
+### A.3 요구사항 §4와의 정합
 
-| 항목 | 현재 구현 | 요구사항 §4 |
-|------|-----------|-------------|
-| RabbitMQ | **소비만** (`UsageRecordedEvent`) | 소비 + **비용 확정 이벤트 발행** |
-| Usage DB `estimated_cost` | billing이 직접 갱신하지 않음 | usage-service가 **소비 후 업데이트** |
+| 항목 | 저장소 구현 | 요구사항 §4 |
+|------|-------------|-------------|
+| RabbitMQ | 소비(`UsageRecordedEvent`) + **발행**(`UsageCostFinalizedEvent` → `billing.events` / `usage.cost.finalized`) | 일치 |
+| Usage DB `estimated_cost` | usage-service 리스너가 **소비 후 업데이트** | 일치 |
 
-따라서 요구사항을 충족하려면: **`libs/usage-events`(또는 별도 계약 모듈)에 비용 확정 이벤트 타입 추가**, **billing에서 `BillingRecordedService` 처리 성공 후 발행**, **usage-service에 리스너 및 로그 업데이트**가 이어져야 한다.
+구현 세부: `libs/usage-events`의 `UsageCostFinalizedEvent`, billing `UsageCostFinalizedEventPublisher`, usage `UsageCostFinalizedEventListener` / `UsageCostFinalizedService`.
 
 ---
 

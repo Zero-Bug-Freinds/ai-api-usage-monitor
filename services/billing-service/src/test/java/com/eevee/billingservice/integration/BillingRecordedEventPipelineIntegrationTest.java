@@ -1,14 +1,24 @@
 package com.eevee.billingservice.integration;
 
+import com.eevee.billingservice.config.BillingRabbitProperties;
+import com.eevee.billingservice.repository.BillingProcessedEventRepository;
 import com.eevee.usage.events.AiProvider;
 import com.eevee.usage.events.TokenUsage;
+import com.eevee.usage.events.UsageCostFinalizedEvent;
 import com.eevee.usage.events.UsageRecordedEvent;
-import com.eevee.billingservice.repository.BillingProcessedEventRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.springframework.amqp.core.Binding;
+import org.springframework.amqp.core.BindingBuilder;
+import org.springframework.amqp.core.Queue;
+import org.springframework.amqp.core.TopicExchange;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -31,6 +41,7 @@ import static org.awaitility.Awaitility.await;
  */
 @SuppressWarnings("resource")
 @SpringBootTest
+@Import(BillingRecordedEventPipelineIntegrationTest.CostFinalizedAmqpTestConfig.class)
 @Testcontainers
 class BillingRecordedEventPipelineIntegrationTest {
 
@@ -65,6 +76,28 @@ class BillingRecordedEventPipelineIntegrationTest {
     @Autowired
     private BillingProcessedEventRepository processedEventRepository;
 
+    static final String IT_COST_QUEUE = "it.usage.cost.finalized";
+
+    @TestConfiguration
+    static class CostFinalizedAmqpTestConfig {
+
+        @Bean
+        Queue integrationCostTestQueue() {
+            return new Queue(IT_COST_QUEUE, true);
+        }
+
+        @Bean
+        Binding integrationCostTestBinding(
+                Queue integrationCostTestQueue,
+                @Qualifier("billingCostEventsExchange") TopicExchange billingCostEventsExchange,
+                BillingRabbitProperties props
+        ) {
+            return BindingBuilder.bind(integrationCostTestQueue)
+                    .to(billingCostEventsExchange)
+                    .with(props.getCostOut().getRoutingKey());
+        }
+    }
+
     @Test
     void jsonPublishedLikeProxy_isConsumedAndMarkedProcessed() throws Exception {
         UUID eventId = UUID.randomUUID();
@@ -96,5 +129,17 @@ class BillingRecordedEventPipelineIntegrationTest {
                 .until(() -> processedEventRepository.existsById(eventId));
 
         assertThat(processedEventRepository.findById(eventId)).isPresent();
+
+        await().atMost(15, SECONDS).pollInterval(100, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .until(() -> processedEventRepository.findById(eventId)
+                        .map(r -> r.getCostEventPublishedAt() != null)
+                        .orElse(false));
+
+        var costMsg = rabbitTemplate.receive(IT_COST_QUEUE, 5000);
+        assertThat(costMsg).isNotNull();
+        UsageCostFinalizedEvent costEvent = objectMapper.readValue(costMsg.getBody(), UsageCostFinalizedEvent.class);
+        assertThat(costEvent.eventId()).isEqualTo(eventId);
+        assertThat(costEvent.estimatedCostUsd()).isNotNull();
+        assertThat(costEvent.schemaVersion()).isEqualTo(UsageCostFinalizedEvent.CURRENT_SCHEMA_VERSION);
     }
 }

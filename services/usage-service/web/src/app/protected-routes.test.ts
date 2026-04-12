@@ -14,9 +14,4 @@ describe("protected app routes (Usage dashboard)", () => {
     const mod = await import("@/app/(shell)/[...path]/page")
     expect(mod.default).toBeTypeOf("function")
   })
-
-  it("(shell)/usagelog page loads", async () => {
-    const mod = await import("@/app/(shell)/usagelog/page")
-    expect(mod.default).toBeTypeOf("function")
-  })
 })

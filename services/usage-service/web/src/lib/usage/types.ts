@@ -30,16 +30,11 @@ export type ModelUsageAggregate = {
   inputTokens: number
 }
 
-export type UsageLogApiKeyItem = {
-  apiKeyId: string
-}
-
 export type UsageLogEntryResponse = {
   eventId: string
   occurredAt: string
   correlationId: string | null
   provider: string
-  apiKeyId: string | null
   model: string
   promptTokens: number | null
   completionTokens: number | null
@@ -61,19 +56,3 @@ export type PagedLogsResponse = {
 }
 
 export type UsageProviderFilter = "OPENAI" | "ANTHROPIC" | "GOOGLE"
-
-export type UsageCostIntradayKpiResponse = {
-  kstDate: string
-  comparisonWindowEnd: string
-  todayEstimatedCost: number | string
-  yesterdaySameWindowEstimatedCost: number | string
-  changeRatePercent: number | string | null
-}
-
-export type HourlyUsagePoint = {
-  hour: number
-  requestCount: number
-  estimatedCost: number | string
-}
-
-export type PeriodMode = "today" | "7d" | "30d" | "custom"
