@@ -1,5 +1,5 @@
 # Next.js standalone — docs/architecture.md §10.1 (패턴 B: 프론트 전용 이미지)
-# `packages/ui` workspace 포함. 빌드(저장소 루트에서):
+# `packages/ui`, `packages/shell` workspace 포함. 빌드(저장소 루트에서):
 #   docker build -f services/identity-service/web/Dockerfile -t identity-web:local .
 
 FROM node:22-alpine AS builder
@@ -8,10 +8,12 @@ RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY packages/ui/package.json ./packages/ui/
+COPY packages/shell/package.json ./packages/shell/
 COPY services/identity-service/web/package.json ./services/identity-service/web/
 RUN pnpm install --frozen-lockfile
 
 COPY packages/ui ./packages/ui
+COPY packages/shell ./packages/shell
 COPY services/identity-service/web ./services/identity-service/web
 
 WORKDIR /repo/services/identity-service/web

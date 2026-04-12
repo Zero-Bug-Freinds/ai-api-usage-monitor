@@ -11,6 +11,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@ai-usage/shell": "workspace:*",
     "@ai-usage/ui": "workspace:*",
     "@hookform/resolvers": "^5.2.2",
     "lucide-react": "^1.6.0",

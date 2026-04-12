@@ -3,9 +3,10 @@
 import * as React from "react"
 import Link from "next/link"
 
+import { usageEntryPublicPath } from "@ai-usage/shell"
+
 import { LogoutButton } from "@/components/auth/logout-button"
 import type { ApiResponse, SessionResponse } from "@/lib/api/identity/types"
-import { usageAppHref } from "@/lib/auth/cross-app-navigation"
 
 function parseSessionPayload(json: unknown): SessionResponse | null {
   if (!json || typeof json !== "object") return null
@@ -46,7 +47,7 @@ export function LandingHomeWithSession() {
     }
   }, [])
 
-  const dashboardHref = usageAppHref("/dashboard")
+  const dashboardHref = usageEntryPublicPath()
   const authenticated = Boolean(session)
 
   return (

@@ -5,12 +5,15 @@ FROM node:22-alpine AS builder
 WORKDIR /repo
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 
+# usage-web 과 동일: 루트에 .npmrc 가 없으면 COPY 실패하므로 lock/workspace/package 만 복사.
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY packages/ui/package.json ./packages/ui/
+COPY packages/shell/package.json ./packages/shell/
 COPY services/billing-service/web/package.json ./services/billing-service/web/
 RUN pnpm install --frozen-lockfile
 
 COPY packages/ui ./packages/ui
+COPY packages/shell ./packages/shell
 COPY services/billing-service/web ./services/billing-service/web
 
 WORKDIR /repo/services/billing-service/web

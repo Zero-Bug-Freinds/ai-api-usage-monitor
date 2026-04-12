@@ -34,6 +34,12 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
+/**
+ * Testcontainers implement {@link AutoCloseable}; JUnit 5 + {@link org.testcontainers.junit.jupiter.Container}
+ * close them after the suite. {@code @SuppressWarnings("resource")} avoids false-positive “unassigned Closeable”
+ * on fluent configuration chains.
+ */
+@SuppressWarnings("resource")
 @SpringBootTest
 @Import(BillingRecordedEventPipelineIntegrationTest.CostFinalizedAmqpTestConfig.class)
 @Testcontainers

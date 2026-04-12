@@ -211,7 +211,6 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Lint / test / build (Next apps)
         run: |
-          set -e
           pnpm --filter identity-web run lint
           pnpm --filter usage-web run lint
           pnpm --filter billing-web run lint
