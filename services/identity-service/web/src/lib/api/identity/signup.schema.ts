@@ -1,7 +1,5 @@
 import { z } from "zod"
 
-export const roleSchema = z.enum(["USER", "ADMIN"])
-
 /** Identity `SignupRequest` `@Pattern` 메시지와 동일 (services/identity-service) */
 export const signupPasswordPolicyMessage =
   "비밀번호는 소문자/숫자/특수문자를 각각 1개 이상 포함하고 대문자 없이 8~100자여야 합니다"
@@ -16,7 +14,6 @@ export const signupRequestSchema = z
     password: z.string().regex(SIGNUP_PASSWORD_REGEX, signupPasswordPolicyMessage),
     passwordConfirm: z.string().min(1, "비밀번호 확인을 입력해주세요"),
     name: z.string().min(1, "이름은 필수입니다").max(100, "이름은 100자 이하여야 합니다"),
-    role: roleSchema,
   })
   .refine((data) => data.password === data.passwordConfirm, {
     message: "비밀번호가 일치하지 않습니다",

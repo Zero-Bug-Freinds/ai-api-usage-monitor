@@ -3,19 +3,11 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import * as React from "react"
+import { Eye, EyeOff } from "lucide-react"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useForm, Controller } from "react-hook-form"
+import { useForm } from "react-hook-form"
 
-import {
-  Button,
-  Input,
-  Label,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@ai-usage/ui"
+import { Button, Input, Label } from "@ai-usage/ui"
 import { apiFetch } from "@/lib/api/client-fetch"
 import {
   signupPasswordPolicyMessage,
@@ -36,6 +28,8 @@ function safeMessage(err: unknown, fallback: string) {
 export function SignupForm() {
   const router = useRouter()
   const [state, setState] = React.useState<FormState>({ status: "idle" })
+  const [showPassword, setShowPassword] = React.useState(false)
+  const [showPasswordConfirm, setShowPasswordConfirm] = React.useState(false)
 
   const form = useForm<SignupRequestInput>({
     resolver: zodResolver(signupRequestSchema),
@@ -44,7 +38,6 @@ export function SignupForm() {
       password: "",
       passwordConfirm: "",
       name: "",
-      role: "USER",
     },
     mode: "onSubmit",
   })
@@ -115,14 +108,26 @@ export function SignupForm() {
 
         <div className="space-y-2">
           <Label htmlFor="password">비밀번호</Label>
-          <Input
-            id="password"
-            type="password"
-            autoComplete="new-password"
-            placeholder="예: abc123!@"
-            aria-invalid={!!form.formState.errors.password}
-            {...form.register("password")}
-          />
+          <div className="flex gap-1">
+            <Input
+              id="password"
+              className="min-w-0 flex-1"
+              type={showPassword ? "text" : "password"}
+              autoComplete="new-password"
+              placeholder="예: abc123!@"
+              aria-invalid={!!form.formState.errors.password}
+              {...form.register("password")}
+            />
+            <button
+              type="button"
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-input bg-background text-muted-foreground hover:bg-muted disabled:opacity-50"
+              aria-label={showPassword ? "비밀번호 숨기기" : "비밀번호 보기"}
+              disabled={isSubmitting}
+              onClick={() => setShowPassword((v) => !v)}
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
           {form.formState.errors.password?.message ? (
             <p className="text-sm text-destructive">
               {form.formState.errors.password.message}
@@ -134,14 +139,26 @@ export function SignupForm() {
 
         <div className="space-y-2">
           <Label htmlFor="passwordConfirm">비밀번호 확인</Label>
-          <Input
-            id="passwordConfirm"
-            type="password"
-            autoComplete="new-password"
-            placeholder="비밀번호를 다시 입력하세요"
-            aria-invalid={!!form.formState.errors.passwordConfirm}
-            {...form.register("passwordConfirm")}
-          />
+          <div className="flex gap-1">
+            <Input
+              id="passwordConfirm"
+              className="min-w-0 flex-1"
+              type={showPasswordConfirm ? "text" : "password"}
+              autoComplete="new-password"
+              placeholder="비밀번호를 다시 입력하세요"
+              aria-invalid={!!form.formState.errors.passwordConfirm}
+              {...form.register("passwordConfirm")}
+            />
+            <button
+              type="button"
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-input bg-background text-muted-foreground hover:bg-muted disabled:opacity-50"
+              aria-label={showPasswordConfirm ? "비밀번호 확인 숨기기" : "비밀번호 확인 보기"}
+              disabled={isSubmitting}
+              onClick={() => setShowPasswordConfirm((v) => !v)}
+            >
+              {showPasswordConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
           {form.formState.errors.passwordConfirm?.message ? (
             <p className="text-sm text-destructive">
               {form.formState.errors.passwordConfirm.message}
@@ -162,30 +179,6 @@ export function SignupForm() {
           {form.formState.errors.name?.message ? (
             <p className="text-sm text-destructive">{form.formState.errors.name.message}</p>
           ) : null}
-        </div>
-
-        <div className="space-y-2">
-          <Label>역할</Label>
-          <Controller
-            control={form.control}
-            name="role"
-            render={({ field }) => (
-              <Select value={field.value} onValueChange={field.onChange}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="역할 선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="USER">USER</SelectItem>
-                  <SelectItem value="ADMIN">ADMIN</SelectItem>
-                </SelectContent>
-              </Select>
-            )}
-          />
-          {form.formState.errors.role?.message ? (
-            <p className="text-sm text-destructive">{form.formState.errors.role.message}</p>
-          ) : (
-            <p className="text-xs text-muted-foreground">기본값은 USER 입니다.</p>
-          )}
         </div>
 
         {state.status === "error" ? (

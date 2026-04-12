@@ -1,6 +1,6 @@
 # Web(Next.js) ↔ Identity 인증 BFF 계약
 
-버전: 1.17  
+버전: 1.19  
 관련: [docs/architecture.md](../architecture.md) §1.3, §3.3, §10.2, §13, [Identity 인증 API 계약](../identity-auth-api-contract.md), [Web·Gateway Usage BFF](./web-gateway-bff.md)(Usage BFF·`basePath` 호출 맵), [Web·Team BFF](./web-team-bff.md), [저장소 구조](../repository-structure.md) §6, [웹 경계](./web-split-boundary.md)(§2.4 로컬 `web-edge` Nginx)
 
 **소스 트리:** BFF·화면의 **정본**은 `services/identity-service/web/` 이다. **공용 UI(Shadcn 래퍼·`cn`)** 는 루트 pnpm workspace **`@ai-usage/ui`**(`packages/ui`)를 참조한다([web-split-boundary.md §1.1](./web-split-boundary.md)). Identity vs Usage 라우트·미들웨어 매처는 [web-split-boundary.md](./web-split-boundary.md) §2·§3.
@@ -107,6 +107,7 @@
 
 ## 3. 회원가입 계약 (정합성)
 
+- 브라우저→BFF 본문에는 **`role`을 넣지 않는다.** BFF(`POST /api/auth/signup` Route Handler)가 Identity로 보낼 때 **`role: "USER"`를 합쳐서** 전달한다(일반 가입자 고정).
 - `passwordConfirm`은 필수이며, `password`와 일치해야 한다.
 - 비밀번호 정책은 Identity와 동일하게 유지한다.
   - 소문자/숫자/특수문자 각각 1개 이상
@@ -244,7 +245,7 @@ curl -sS -i -X POST "http://localhost:3000/api/auth/signup" \
 - 앱 루트 **`/`** (`services/identity-service/web/src/app/page.tsx`)는 서버 컴포넌트로 메타데이터만 두고, 헤더·히어로 CTA는 클라이언트 컴포넌트 **`LandingHomeWithSession`** (`services/identity-service/web/src/components/landing/landing-header.tsx`)가 담당한다.
 - 마운트 시 브라우저가 동일 오리진으로 **`GET /api/auth/session`** 을 호출할 때 **`fetch(..., { credentials: "include", cache: "no-store" })`** 를 쓴다. 응답은 공통 **`ApiResponse<SessionResponse>`** 로 파싱하고, **`data.authenticated === true`** 이면 로그인된 것으로 본다.
 - **비로그인:** 내비·CTA는 **`/login`**, **`/signup`** 과 동일한 안내다.
-- **로그인됨:** **대시보드** 링크는 Usage `web` 경로 **`/dashboard`** 를 가리키되, 로컬 등에서 Identity와 Usage 호스트가 다르면 **`NEXT_PUBLIC_USAGE_WEB_ORIGIN`**(트레일링 슬래시 없음)을 앞에 붙인 절대 URL이 된다. 구현 헬퍼: **`usageAppHref(path)`** (`services/identity-service/web/src/lib/auth/cross-app-navigation.ts`). **설정** 등 Identity 앱 내부 링크는 **`/settings`** 등 상대 경로로 둔다.
+- **로그인됨:** **대시보드** 링크는 Usage `web` 경로 **`/dashboard`** 를 가리키되, 로컬 등에서 Identity와 Usage 호스트가 다르면 **`NEXT_PUBLIC_USAGE_WEB_ORIGIN`**(트레일링 슬래시 없음)을 앞에 붙인 절대 URL이 된다. 구현 헬퍼: **`usageAppHref(path)`** (`services/identity-service/web/src/lib/auth/cross-app-navigation.ts`). **설정** 등 Identity 앱 내부 링크는 **`/settings`** 등 상대 경로로 둔다. 헤더에는 **`로그아웃`** 버튼도 두며, 구현은 **`LogoutButton`** (`services/identity-service/web/src/components/auth/logout-button.tsx`) — 브라우저가 **`POST /api/auth/logout`**(§2 표·§7)을 호출한 뒤 **`/login`** 으로 이동한다.
 - 로그인 후 리다이렉트(`navigateAfterLogin`)도 동일한 오리진 규칙을 쓴다.
 - **크로스 오리진:** 쿠키는 설정한 오리진에만 붙는다. Identity 랜딩에서 세션을 보여 주는 것과 별개로, Usage `web` 쪽 인증·401 처리는 기존 [web-gateway-bff.md](./web-gateway-bff.md)·[web-split-boundary.md §4](./web-split-boundary.md)를 따른다.
 

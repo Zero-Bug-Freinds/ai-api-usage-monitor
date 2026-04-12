@@ -1,6 +1,6 @@
 # Identity vs Usage vs Team 웹 경계 (라우트·BFF·소스)
 
-버전: 1.4  
+버전: 1.5  
 관련: [저장소 구조](../repository-structure.md) §6, [architecture.md](../architecture.md) §10.2, [`docker/web-edge/nginx.conf`](../../docker/web-edge/nginx.conf), [web-identity-bff.md](./web-identity-bff.md), [web-gateway-bff.md](./web-gateway-bff.md), [web-team-bff.md](./web-team-bff.md)
 
 단일 도메인·경로 기반 엣지 프록시 뒤에서는 브라우저 오리진이 하나이므로 아래 **브라우저 경로**가 그대로 유지된다. **소스 트리**는 서비스 소유권에 맞게 `services/<svc>/web/`에 나뉜다.
@@ -37,7 +37,7 @@
 | `/api/auth/*` | 세션·로그인·외부 키 BFF → Identity HTTP |
 | `/api/identity/*` | Identity 관리 API 프록시 (`/api/v1/...` 업스트림) |
 
-랜딩 **`/`** 는 [web-identity-bff.md §10.1](./web-identity-bff.md)에 따라 클라이언트에서 **`GET /api/auth/session`** 으로 세션을 읽어 헤더·CTA를 바꾼다. Usage 대시보드로 가는 링크는 **`usageAppHref("/dashboard")`** 로 조립하며, 분리 호스트 개발 시 **`NEXT_PUBLIC_USAGE_WEB_ORIGIN`** 을 설정한다([§4](#4-로컬-개발쿠키-httponly-access_token)).
+랜딩 **`/`** 는 [web-identity-bff.md §10.1](./web-identity-bff.md)에 따라 클라이언트에서 **`GET /api/auth/session`** 으로 세션을 읽어 헤더·CTA를 바꾼다. 로그인 상태에서는 헤더에 **대시보드·설정·로그아웃**(`POST /api/auth/logout` → 로그인 페이지)을 둔다. Usage 대시보드로 가는 링크는 **`usageAppHref("/dashboard")`** 로 조립하며, 분리 호스트 개발 시 **`NEXT_PUBLIC_USAGE_WEB_ORIGIN`** 을 설정한다([§4](#4-로컬-개발쿠키-httponly-access_token)).
 
 ### 2.2 Usage `web/` (대시보드·Usage BFF)
 

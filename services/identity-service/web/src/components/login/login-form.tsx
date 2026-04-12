@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import * as React from "react"
+import { Eye, EyeOff } from "lucide-react"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 
@@ -29,6 +30,7 @@ export function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [state, setState] = React.useState<FormState>({ status: "idle" })
+  const [showPassword, setShowPassword] = React.useState(false)
 
   const form = useForm<LoginRequestInput>({
     resolver: zodResolver(loginRequestSchema),
@@ -99,14 +101,26 @@ export function LoginForm() {
 
         <div className="space-y-2">
           <Label htmlFor="password">비밀번호</Label>
-          <Input
-            id="password"
-            type="password"
-            autoComplete="current-password"
-            placeholder="비밀번호를 입력하세요"
-            aria-invalid={!!form.formState.errors.password}
-            {...form.register("password")}
-          />
+          <div className="flex gap-1">
+            <Input
+              id="password"
+              className="min-w-0 flex-1"
+              type={showPassword ? "text" : "password"}
+              autoComplete="current-password"
+              placeholder="비밀번호를 입력하세요"
+              aria-invalid={!!form.formState.errors.password}
+              {...form.register("password")}
+            />
+            <button
+              type="button"
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-input bg-background text-muted-foreground hover:bg-muted disabled:opacity-50"
+              aria-label={showPassword ? "비밀번호 숨기기" : "비밀번호 보기"}
+              disabled={isSubmitting}
+              onClick={() => setShowPassword((v) => !v)}
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
           {form.formState.errors.password?.message ? (
             <p className="text-sm text-destructive">{form.formState.errors.password.message}</p>
           ) : null}

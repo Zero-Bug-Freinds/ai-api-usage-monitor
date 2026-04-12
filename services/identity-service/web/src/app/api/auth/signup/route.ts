@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     upstream = await fetch(`${identityBaseUrl}/api/auth/signup`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(parsed.data),
+      body: JSON.stringify({ ...parsed.data, role: "USER" }),
     })
   } catch {
     return json(502, { success: false, message: "인증 서비스에 연결할 수 없습니다", data: null })

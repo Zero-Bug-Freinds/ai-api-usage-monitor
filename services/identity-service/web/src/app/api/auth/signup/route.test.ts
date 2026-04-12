@@ -47,7 +47,6 @@ describe("POST /api/auth/signup (route handler)", () => {
         password: "123",
         passwordConfirm: "123",
         name: "",
-        role: "USER",
       })
     )
     expect(res.status).toBe(400)
@@ -73,7 +72,6 @@ describe("POST /api/auth/signup (route handler)", () => {
       password: validPassword,
       passwordConfirm: validPassword,
       name: "testDemo",
-      role: "USER",
     }
 
     const res = await POST(jsonRequest(body))
@@ -88,7 +86,7 @@ describe("POST /api/auth/signup (route handler)", () => {
       expect.objectContaining({
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ ...body, role: "USER" }),
       })
     )
   })
@@ -112,7 +110,6 @@ describe("POST /api/auth/signup (route handler)", () => {
         password: validPassword,
         passwordConfirm: validPassword,
         name: "testDemo",
-        role: "USER",
       })
     )
 

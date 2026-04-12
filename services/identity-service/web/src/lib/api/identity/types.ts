@@ -6,12 +6,12 @@ export type ApiResponse<T> = {
 
 export type Role = "USER" | "ADMIN"
 
+/** 브라우저→BFF `POST /api/auth/signup` 본문. `role`은 BFF가 `USER`로 고정해 Identity에 전달한다. */
 export type SignupRequest = {
   email: string
   password: string
   passwordConfirm: string
   name: string
-  role: Role
 }
 
 export type SignupResponse = {
