@@ -20,11 +20,13 @@
 - 외부 요청 진입: `API Gateway`
 - 핵심 도메인: `Proxy Service`(AI 호출 중계 + usage 이벤트 발행)
 - 비동기 처리: `RabbitMQ` 이벤트 기반 연계(usage-recorded)
-- 도메인 서비스 분리(현재 `services/`에 Gradle 프로젝트로 있는 것: Gateway·Proxy·Identity·Usage·Team):
+- 도메인 서비스 분리(현재 `services/`에 있는 실행 단위 예시: Gateway·Proxy·Identity·Usage·Team·Billing 등):
   - `Identity Service`(인증·사용자·조직·RBAC; 공급사 외부 API 키 등은 이 경계에서 구현될 수 있음)
   - `Team Service`(팀·팀원·팀 API Key 등 팀 도메인; Identity와 HTTP API로 연동)
   - `Usage Service`(usage 이벤트 소비·저장 및 사용량 대시보드)
-  - `Billing Service` / `Quota Service` / `Notification Service`(목표 아키텍처·로드맵; 현재 저장소에는 해당 이름의 서비스 디렉터리 없음)
+  - `Billing Service`(지출 집계·API Key 노출 목록·비용 확정 이벤트 발행 등; 상세는 `docs/billing-service-overview-20260412.md`)
+  - `Notification Service`(알림 백엔드 스캐폴드: `services/notification-service`, NestJS·Prisma 등 — `docs/architecture.md` §12)
+  - `Quota Service` 등은 목표 아키텍처·로드맵에 따라 추가 가능
 
 ## 기술 스택(결정)
 - **백엔드(Proxy 등)**: **Spring Boot + Spring WebFlux** — 비동기 I/O·스트리밍·Provider 중계에 사용. **FastAPI(Python)는 사용하지 않습니다.**
@@ -63,13 +65,15 @@
 - `services/usage-service` — `UsageRecordedEvent` 소비·PostgreSQL 원장 저장(Spring AMQP + JPA)
 - `services/identity-service` — 계정·조직·API Key 등(Identity; 목표 Next는 `services/identity-service/web/`)
 - `services/team-service` — 팀·팀원·팀 API Key 등(Team; Next는 `services/team-service/web/`)
-- `libs/usage-events` — 공유 이벤트(`UsageRecordedEvent` 등)
+- `services/billing-service` — 지출·집계·비용 확정 AMQP 발행 등(Spring; Next·BFF는 `services/billing-service/web/`)
+- `services/notification-service` — 알림 백엔드(팀 스택에 맞는 Node/Nest 등; `docs/repository-structure.md` §2)
+- `libs/usage-events` — 공유 이벤트(`UsageRecordedEvent`, `UsageCostFinalizedEvent` 등)
 - `apps/web` — **이행 완료** 안내(`README.md`만). UI+BFF 소스는 `services/identity-service/web`, `services/usage-service/web`, `services/team-service/web`.
 
 ## 문서
 - **로컬 실행·테스트(Gateway / Proxy / usage·이벤트·DB)**: `docs/architecture.md` §3.3·§6·§10, `docs/contracts/gateway-proxy.md`
 - Gateway ↔ Proxy 계약: `docs/contracts/gateway-proxy.md`
-- **이벤트·usage·Billing·대시보드 책임 구분**: `docs/architecture.md` §2·§6·§11·§12
+- **이벤트·usage·Billing·대시보드 책임 구분**: `docs/architecture.md` §2·§6·§11·§12 · Billing 구현 개요: `docs/billing-service-overview-20260412.md`
 - C4 다이어그램(코드 기준): `docs/c4-architecture-diagrams.md`
   - Mermaid Live Editor에서 렌더링/검증 가능: https://mermaid.live/
 - 아키텍처 문서: `docs/architecture.md`
