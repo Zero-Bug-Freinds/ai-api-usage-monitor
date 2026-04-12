@@ -37,9 +37,16 @@ public class EncryptionUtil {
 	 */
 	public String sha256HexForUniqueness(String providerName, String normalizedPlainKey) {
 		String payload = providerName + "\0" + normalizedPlainKey;
+		return sha256HexUtf8(payload);
+	}
+
+	/**
+	 * 임의 문자열(UTF-8)에 대한 SHA-256 16진 문자열. 비밀번호 재설정 토큰 해시 등에 사용한다.
+	 */
+	public String sha256HexUtf8(String utf8Text) {
 		try {
 			MessageDigest digest = MessageDigest.getInstance("SHA-256");
-			byte[] hash = digest.digest(payload.getBytes(StandardCharsets.UTF_8));
+			byte[] hash = digest.digest(utf8Text.getBytes(StandardCharsets.UTF_8));
 			return HexFormat.of().formatHex(hash);
 		} catch (NoSuchAlgorithmException e) {
 			throw new IllegalStateException("SHA-256 not available", e);

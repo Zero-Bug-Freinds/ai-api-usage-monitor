@@ -11,6 +11,7 @@ import com.zerobugfreinds.identity_service.exception.ExternalApiKeyNotFoundExcep
 import com.zerobugfreinds.identity_service.exception.ExternalApiKeyNotPendingDeletionException;
 import com.zerobugfreinds.identity_service.exception.ExternalApiKeyPendingDeletionException;
 import com.zerobugfreinds.identity_service.exception.InvalidCredentialsException;
+import com.zerobugfreinds.identity_service.exception.InvalidPasswordResetTokenException;
 import com.zerobugfreinds.identity_service.exception.InvalidSignupRequestException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -43,6 +44,12 @@ public class GlobalExceptionHandler {
 		return ApiResponse.fail(ex.getMessage());
 	}
 
+	@ExceptionHandler(InvalidPasswordResetTokenException.class)
+	@ResponseStatus(HttpStatus.BAD_REQUEST)
+	public ApiResponse<Void> handleInvalidPasswordResetToken(InvalidPasswordResetTokenException ex) {
+		return ApiResponse.fail(ex.getMessage());
+	}
+
 	@ExceptionHandler(AuthContractViolationException.class)
 	@ResponseStatus(HttpStatus.BAD_GATEWAY)
 	public ApiResponse<Void> handleAuthContractViolation(AuthContractViolationException ex) {
@@ -52,6 +59,12 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(ApiKeyLimitExceededException.class)
 	@ResponseStatus(HttpStatus.BAD_REQUEST)
 	public ApiResponse<Void> handleApiKeyLimitExceeded(ApiKeyLimitExceededException ex) {
+		return ApiResponse.fail(ex.getMessage());
+	}
+
+	@ExceptionHandler(IllegalArgumentException.class)
+	@ResponseStatus(HttpStatus.BAD_REQUEST)
+	public ApiResponse<Void> handleIllegalArgument(IllegalArgumentException ex) {
 		return ApiResponse.fail(ex.getMessage());
 	}
 

@@ -38,6 +38,8 @@ public class SecurityConfig {
 				.exceptionHandling(exception -> exception.authenticationEntryPoint(restAuthenticationEntryPoint))
 				.authorizeHttpRequests(auth -> auth
 						.requestMatchers("/api/auth/signup").permitAll()
+						.requestMatchers("/api/auth/forgot-password").permitAll()
+						.requestMatchers("/api/auth/reset-password").permitAll()
 						.requestMatchers("/api/auth/login").permitAll()
 						.requestMatchers("/api/auth/logout").permitAll()
 						.requestMatchers("/internal/api-keys/**").permitAll()

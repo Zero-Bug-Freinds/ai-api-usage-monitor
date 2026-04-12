@@ -1,13 +1,13 @@
 package com.zerobugfreinds.identity_service.domain;
 
-import java.time.Duration;
-
 /**
- * 삭제 요청 후 완전 삭제까지 유예 기간. 운영에서 바꾸려면 설정 프로퍼티로 승격한다.
+ * 외부 API 키 삭제 예정 유예 기간(일). 기본값과 허용 범위.
  */
 public final class ExternalApiKeyDeletionPolicy {
 
-	public static final Duration PENDING_RETENTION = Duration.ofDays(7);
+	public static final int DEFAULT_GRACE_DAYS = 7;
+	public static final int MIN_GRACE_DAYS = 1;
+	public static final int MAX_GRACE_DAYS = 365;
 
 	private ExternalApiKeyDeletionPolicy() {
 	}

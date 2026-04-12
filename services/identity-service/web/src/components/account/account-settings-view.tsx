@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { Eye, EyeOff } from "lucide-react"
 
 import { apiFetch } from "@/lib/api/client-fetch"
 import type {
@@ -59,6 +60,10 @@ function formatBudgetUsd(value: number | null | undefined) {
   }).format(value)
 }
 
+const DEFAULT_DELETION_GRACE_DAYS = 7
+const MIN_DELETION_GRACE_DAYS = 1
+const MAX_DELETION_GRACE_DAYS = 365
+
 function sanitizeBudgetInput(value: string) {
   const normalized = value.replace(/,/g, ".")
   const filtered = normalized.replace(/[^\d.]/g, "")
@@ -96,6 +101,7 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
   const [editAliasValue, setEditAliasValue] = React.useState("")
   const [editMonthlyBudgetUsdInput, setEditMonthlyBudgetUsdInput] = React.useState("")
   const [saveEditLoadingId, setSaveEditLoadingId] = React.useState<number | null>(null)
+  const [revealExternalKey, setRevealExternalKey] = React.useState(false)
 
   const loadExternalKeys = React.useCallback(async (signal?: AbortSignal) => {
     setKeysLoading(true)
@@ -219,6 +225,7 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
         setSubmitMessage({ kind: "success", text: apiResponse.message || "등록되었습니다" })
         setAliasTouched(false)
         setAlias(defaultAlias(provider))
+        setRevealExternalKey(false)
         void loadExternalKeys()
       } else {
         setSubmitMessage({ kind: "error", text: apiResponse?.message || "등록에 실패했습니다" })
@@ -234,13 +241,31 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
 
   async function requestKeyDeletion(id: number) {
     const ok = window.confirm(
-      "이 API 키를 삭제 예약합니다.\n\n일주일 동안 취소할 수 있으며, 일주일이 지나면 DB에서 키가 영구 삭제됩니다. 과거 사용량 로그는 usage 쪽 기록에 남을 수 있습니다."
+      `이 API 키를 삭제 예약합니다.\n\n유예 기간이 지나면 DB에서 키가 영구 삭제됩니다. 유예 중에는 취소할 수 있습니다.\n과거 사용량 로그는 usage 쪽 기록에 남을 수 있습니다.\n\n다음 단계에서 유예 기간(일)을 입력합니다. (기본 ${DEFAULT_DELETION_GRACE_DAYS}일)`,
     )
     if (!ok) return
+    const raw = window.prompt(
+      `유예 기간(일) (${MIN_DELETION_GRACE_DAYS}~${MAX_DELETION_GRACE_DAYS}, 비우면 ${DEFAULT_DELETION_GRACE_DAYS}일)`,
+      String(DEFAULT_DELETION_GRACE_DAYS),
+    )
+    if (raw === null) return
+    const trimmed = raw.trim()
+    let graceDays = DEFAULT_DELETION_GRACE_DAYS
+    if (trimmed !== "") {
+      const n = Number.parseInt(trimmed, 10)
+      if (!Number.isFinite(n) || n < MIN_DELETION_GRACE_DAYS || n > MAX_DELETION_GRACE_DAYS) {
+        setKeysError(
+          `유예 기간은 ${MIN_DELETION_GRACE_DAYS}~${MAX_DELETION_GRACE_DAYS}일 사이의 정수로 입력해 주세요`,
+        )
+        return
+      }
+      graceDays = n
+    }
     setKeyActionId(id)
     try {
+      const q = new URLSearchParams({ gracePeriodDays: String(graceDays) })
       const { response, json } = await apiFetch<unknown>(
-        `/api/auth/external-keys/${id}`,
+        `/api/auth/external-keys/${id}?${q.toString()}`,
         { method: "DELETE", credentials: "include", cache: "no-store", headers: { Accept: "application/json" } },
         { authRequired: true }
       )
@@ -386,7 +411,7 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
           <div className="space-y-1">
             <h2 className="text-sm font-semibold tracking-tight">등록된 외부 API Key</h2>
             <p className="text-sm text-muted-foreground">
-              Provider·별칭·등록일만 표시됩니다. 삭제 예정인 키는 별칭 옆에 표시되며, 일주일 이내 취소할 수 있습니다.
+              Provider·별칭·등록일만 표시됩니다. 삭제 예정인 키는 별칭 옆에 표시되며, 유예 기간 안에 삭제 예약을 취소할 수 있습니다.
             </p>
           </div>
 
@@ -440,8 +465,9 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
                       ) : null}
                     </div>
                     {isPendingDeletion(row) && row.permanentDeletionAt ? (
-                      <p className="text-xs text-muted-foreground">
-                        영구 삭제 예정: {formatDeadline(row.permanentDeletionAt)}까지 취소 가능
+                      <p className="text-xs text-amber-800 dark:text-amber-300">
+                        영구 삭제 예정: {formatDeadline(row.permanentDeletionAt)}
+                        {typeof row.deletionGraceDays === "number" ? ` (${row.deletionGraceDays}일 유예)` : ""}
                       </p>
                     ) : null}
                     {row.monthlyBudgetUsd !== null && row.monthlyBudgetUsd !== undefined ? (
@@ -559,17 +585,28 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
             <label className="text-sm font-medium" htmlFor="external-key-value">
               외부 API Key
             </label>
-            <input
-              id="external-key-value"
-              className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-              type="password"
-              value={externalKey}
-              onChange={(e) => setExternalKey(e.target.value)}
-              placeholder="키를 입력하세요"
-              autoComplete="off"
-              disabled={submitLoading}
-              required
-            />
+            <div className="flex gap-1">
+              <input
+                id="external-key-value"
+                className="h-10 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm"
+                type={revealExternalKey ? "text" : "password"}
+                value={externalKey}
+                onChange={(e) => setExternalKey(e.target.value)}
+                placeholder="키를 입력하세요"
+                autoComplete="new-password"
+                disabled={submitLoading}
+                required
+              />
+              <button
+                type="button"
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-input bg-background text-muted-foreground hover:bg-muted disabled:opacity-50"
+                aria-label={revealExternalKey ? "API Key 숨기기" : "API Key 보기"}
+                disabled={submitLoading}
+                onClick={() => setRevealExternalKey((v) => !v)}
+              >
+                {revealExternalKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
           </div>
 
           <div className="grid gap-1.5">

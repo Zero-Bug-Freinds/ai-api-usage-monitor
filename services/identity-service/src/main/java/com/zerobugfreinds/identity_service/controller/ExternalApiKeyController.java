@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -78,14 +79,15 @@ public class ExternalApiKeyController {
 	}
 
 	/**
-	 * 삭제 요청: 7일 유예 후 스케줄러가 행을 제거한다. 유예 중에는 취소 가능.
+	 * 삭제 요청: 유예 기간(기본 7일, 쿼리 {@code gracePeriodDays}) 후 스케줄러가 행을 제거한다. 유예 중에는 취소 가능.
 	 */
 	@DeleteMapping("/external-keys/{id}")
 	public ResponseEntity<ApiResponse<ExternalApiKeyRegisterResponse>> requestDeletion(
 			@AuthenticationPrincipal IdentityUserPrincipal principal,
-			@PathVariable("id") Long id
+			@PathVariable("id") Long id,
+			@RequestParam(name = "gracePeriodDays", required = false) Integer gracePeriodDays
 	) {
-		ExternalApiKeyEntity saved = externalApiKeyService.requestDeletion(principal.userId(), id);
+		ExternalApiKeyEntity saved = externalApiKeyService.requestDeletion(principal.userId(), id, gracePeriodDays);
 		return ResponseEntity.ok(ApiResponse.ok(
 				"삭제가 예약되었습니다. 일주일 이내에 취소할 수 있으며, 이후에는 키가 영구 삭제됩니다.",
 				toResponse(saved)
@@ -109,7 +111,8 @@ public class ExternalApiKeyController {
 				key.getCreatedAt(),
 				key.getMonthlyBudgetUsd(),
 				key.getDeletionRequestedAt(),
-				key.getPermanentDeletionAt()
+				key.getPermanentDeletionAt(),
+				key.getDeletionGraceDays()
 		);
 	}
 }
