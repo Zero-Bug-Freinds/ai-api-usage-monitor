@@ -18,9 +18,10 @@ public record ExternalApiKeyRegisterResponse(
 		Instant createdAt,
 		@JsonProperty("monthlyBudgetUsd") BigDecimal monthlyBudgetUsd,
 		Instant deletionRequestedAt,
-		Instant permanentDeletionAt
+		Instant permanentDeletionAt,
+		Integer deletionGraceDays
 ) {
 	public ExternalApiKeyRegisterResponse(Long id, String provider, String alias, Instant createdAt) {
-		this(id, provider, alias, createdAt, null, null, null);
+		this(id, provider, alias, createdAt, null, null, null, null);
 	}
 }

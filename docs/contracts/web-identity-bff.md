@@ -1,6 +1,6 @@
 # Web(Next.js) ↔ Identity 인증 BFF 계약
 
-버전: 1.16  
+버전: 1.17  
 관련: [docs/architecture.md](../architecture.md) §1.3, §3.3, §10.2, §13, [Identity 인증 API 계약](../identity-auth-api-contract.md), [Web·Gateway Usage BFF](./web-gateway-bff.md)(Usage BFF·`basePath` 호출 맵), [Web·Team BFF](./web-team-bff.md), [저장소 구조](../repository-structure.md) §6, [웹 경계](./web-split-boundary.md)(§2.4 로컬 `web-edge` Nginx)
 
 **소스 트리:** BFF·화면의 **정본**은 `services/identity-service/web/` 이다. **공용 UI(Shadcn 래퍼·`cn`)** 는 루트 pnpm workspace **`@ai-usage/ui`**(`packages/ui`)를 참조한다([web-split-boundary.md §1.1](./web-split-boundary.md)). Identity vs Usage 라우트·미들웨어 매처는 [web-split-boundary.md](./web-split-boundary.md) §2·§3.
@@ -23,7 +23,7 @@
 | 외부 API 키 조회(개인) | `GET /api/auth/external-keys` | `GET /api/auth/external-keys` |
 | 외부 API 키 등록(개인) | `POST /api/auth/external-keys` | `POST /api/auth/external-keys` |
 | 외부 API 키 수정(개인) | `PUT /api/auth/external-keys/{id}` | `PUT /api/auth/external-keys/{id}` |
-| 외부 API 키 삭제 예약(개인) | `DELETE /api/auth/external-keys/{id}` | `DELETE /api/auth/external-keys/{id}` |
+| 외부 API 키 삭제 예약(개인) | `DELETE /api/auth/external-keys/{id}` (선택 쿼리 `gracePeriodDays`) | `DELETE /api/auth/external-keys/{id}` (동일) |
 | 외부 API 키 삭제 취소(개인) | `POST /api/auth/external-keys/{id}/deletion-cancel` | `POST /api/auth/external-keys/{id}/deletion-cancel` |
 | 세션(로그인 여부 단일 기준) | `GET /api/auth/session` | `GET /api/auth/session` (BFF가 쿠키 JWT를 Bearer로 전달해 프록시) |
 | 로그아웃 | `POST /api/auth/logout` | `POST /api/auth/logout` (선택 프록시; stateless이며 실질 로그아웃은 BFF의 쿠키 삭제) |
@@ -58,8 +58,9 @@
    - `Authorization: Bearer {access_token}`
    - `Accept: application/json`
 4. **성공 시** Identity의 상태 코드/본문(`ApiResponse`)을 가능한 그대로 전달한다. 응답에는 `Cache-Control: no-store`를 적용한다.
-5. **Identity가 `401` 등으로 거절**하면 상태 코드와 JSON 본문을 **그대로** 프론트에 전달한다(§6).
-6. `IDENTITY_SERVICE_URL` 미설정, 업스트림 연결 실패, 업스트림 응답이 계약과 맞지 않는 경우 등은 BFF가 `500`/`502` 등으로 처리할 수 있다.
+5. 목록 항목은 [Identity 인증 API 계약 §6](../identity-auth-api-contract.md)과 동일하며, **삭제 예정** 행에는 `deletionRequestedAt`, `permanentDeletionAt`, `deletionGraceDays`(선택) 등이 포함될 수 있다.
+6. **Identity가 `401` 등으로 거절**하면 상태 코드와 JSON 본문을 **그대로** 프론트에 전달한다(§6).
+7. `IDENTITY_SERVICE_URL` 미설정, 업스트림 연결 실패, 업스트림 응답이 계약과 맞지 않는 경우 등은 BFF가 `500`/`502` 등으로 처리할 수 있다.
 
 ### 2.3 `POST /api/auth/external-keys` 동작
 
@@ -70,7 +71,7 @@
    - `Authorization: Bearer {access_token}`
    - `Content-Type: application/json`, `Accept: application/json`
 5. **성공 시** Identity의 상태 코드/본문(`ApiResponse`)을 가능한 그대로 전달한다. 응답에는 `Cache-Control: no-store`를 적용한다.
-6. **Identity가 `400`/`401`/`409` 등으로 거절**하면 상태 코드와 JSON 본문을 **그대로** 프론트에 전달한다(§6).
+6. **Identity가 `400`/`401`/`409` 등으로 거절**하면 상태 코드와 JSON 본문을 **그대로** 프론트에 전달한다(§6). 동일 provider·동일 키 값에 대해 **활성 행이 이미 있으면** `409` 메시지 예: `이미 등록된 API 키입니다`. **삭제 예정인 행과만 해시가 겹치면** `409` 메시지 예: `삭제예정키와 중복된 키`([identity-auth-api-contract §7](../identity-auth-api-contract.md)).
 7. `IDENTITY_SERVICE_URL` 미설정, 업스트림 연결 실패, 업스트림 응답이 계약과 맞지 않는 경우 등은 BFF가 `500`/`502` 등으로 처리할 수 있다. 단, **외부 API 키 평문(`externalKey`)은 로그/에러 메시지에 포함하지 않는다.**
 
 ### 2.4 `PUT /api/auth/external-keys/{id}` 동작
@@ -85,13 +86,15 @@
    - `Authorization: Bearer {access_token}`
    - `Content-Type: application/json`, `Accept: application/json`
 5. 성공/오류 모두 Identity의 상태 코드/JSON 본문을 가능한 그대로 전달하고, 응답에 `Cache-Control: no-store`를 적용한다.
+6. 키 값을 바꿀 때 다른 행과의 중복·삭제 예정 충돌 메시지는 [identity-auth-api-contract §9](../identity-auth-api-contract.md)와 동일하다.
 
 ### 2.5 `DELETE /api/auth/external-keys/{id}` 동작 (삭제 예약)
 
-1. 브라우저 → BFF: `DELETE /api/auth/external-keys/{id}`
+1. 브라우저 → BFF: `DELETE /api/auth/external-keys/{id}`  
+   - 선택 **쿼리** `gracePeriodDays`(정수): 생략 시 Identity 기본 **7일**, 허용 범위는 Identity 구현(현재 **1~365일**). 잘못된 값은 업스트림이 `400`으로 거절할 수 있다.
 2. **`access_token` 쿠키가 없거나 값이 비어 있으면** BFF는 Identity를 호출하지 않고 `401`로 응답한다.
-3. BFF → Identity: `DELETE {IDENTITY_SERVICE_URL}/api/auth/external-keys/{id}`
-4. 성공 시 Identity 응답(`deletionRequestedAt`, `permanentDeletionAt` 포함 가능)을 그대로 전달한다.
+3. BFF → Identity: 브라우저 요청 URL의 **쿼리 문자열을 그대로 이어 붙여** `DELETE {IDENTITY_SERVICE_URL}/api/auth/external-keys/{id}{?gracePeriodDays=…}` 로 프록시한다(구현: `services/identity-service/web/src/app/api/auth/external-keys/[id]/route.ts`).
+4. 성공 시 Identity 응답(`deletionRequestedAt`, `permanentDeletionAt`, `deletionGraceDays` 등)을 그대로 전달한다. 유예 종료 후 물리 삭제는 스케줄러가 담당한다([identity-auth-api-contract §10.1](../identity-auth-api-contract.md)).
 
 ### 2.6 `POST /api/auth/external-keys/{id}/deletion-cancel` 동작
 
@@ -251,6 +254,7 @@ curl -sS -i -X POST "http://localhost:3000/api/auth/signup" \
   - `.../src/app/api/auth/session/route.test.ts`
   - `.../src/app/api/auth/logout/route.test.ts`
   - `.../src/app/api/auth/external-keys/route.test.ts`
+  - `.../src/app/api/auth/external-keys/[id]/route.test.ts` — `PUT` 및 **`DELETE` 쿼리 전달(`gracePeriodDays`)** 회귀
   - `login`·`signup` Route Handler도 동일 패턴의 `route.test.ts`로 회귀 검증
   - `.../src/app/api/identity/[[...path]]/route.test.ts` — §5.2 관리 API BFF
 - 미들웨어·보호 경로: `middleware.test.ts`, `protected-routes.test.ts` (§6.2).

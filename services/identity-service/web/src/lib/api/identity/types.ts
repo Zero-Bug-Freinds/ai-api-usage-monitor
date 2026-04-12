@@ -68,6 +68,8 @@ export type ExternalKeySummary = {
   deletionRequestedAt?: string | null
   /** ISO-8601, 영구 삭제 예정 시각(유예 종료) */
   permanentDeletionAt?: string | null
+  /** 삭제 요청 시 선택한 유예 기간(일), 삭제 예정일 때만 */
+  deletionGraceDays?: number | null
 }
 
 /** Identity `GET /api/auth/external-keys`의 `data` 본문과 동기화 */

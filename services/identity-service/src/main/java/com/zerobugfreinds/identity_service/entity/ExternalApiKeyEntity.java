@@ -66,6 +66,10 @@ public class ExternalApiKeyEntity {
 	@Column(name = "permanent_deletion_at")
 	private Instant permanentDeletionAt;
 
+	/** 삭제 요청 시 선택한 유예 기간(일). 삭제 예정이 아니면 null. */
+	@Column(name = "deletion_grace_days")
+	private Integer deletionGraceDays;
+
 	protected ExternalApiKeyEntity() {
 	}
 
@@ -108,15 +112,17 @@ public class ExternalApiKeyEntity {
 	}
 
 	/** 삭제 예정으로 표시한다(서비스에서 중복 여부를 검증한다). */
-	public void markPendingDeletion(Instant now, Duration retention) {
+	public void markPendingDeletion(Instant now, int gracePeriodDays) {
 		this.deletionRequestedAt = now;
-		this.permanentDeletionAt = now.plus(retention);
+		this.deletionGraceDays = gracePeriodDays;
+		this.permanentDeletionAt = now.plus(Duration.ofDays(gracePeriodDays));
 	}
 
 	/** 삭제 예정을 취소한다. */
 	public void clearPendingDeletion() {
 		this.deletionRequestedAt = null;
 		this.permanentDeletionAt = null;
+		this.deletionGraceDays = null;
 	}
 
 	public boolean isPendingDeletion() {
@@ -161,5 +167,9 @@ public class ExternalApiKeyEntity {
 
 	public Instant getPermanentDeletionAt() {
 		return permanentDeletionAt;
+	}
+
+	public Integer getDeletionGraceDays() {
+		return deletionGraceDays;
 	}
 }

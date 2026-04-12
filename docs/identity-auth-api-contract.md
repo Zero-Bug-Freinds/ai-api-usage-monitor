@@ -1,6 +1,6 @@
 # Identity 인증 API 계약 (백엔드)
 
-버전: 1.4  
+버전: 1.5  
 관련: [architecture.md](./architecture.md) §1.3, [contracts/web-identity-bff.md](./contracts/web-identity-bff.md)
 
 ---
@@ -37,10 +37,10 @@
 | `POST` | `/api/auth/signup`  | 불필요 | 회원가입                     |
 | `POST` | `/api/auth/login`   | 불필요 | 로그인 및 액세스 토큰 발급          |
 | `GET`  | `/api/auth/session` | 필요  | 세션(인증 상태) 확인             |
-| `GET`  | `/api/auth/external-keys` | 필요  | 내 외부 AI API 키 목록 조회 (`id`, `provider`, `alias`, `monthlyBudgetUsd`, `createdAt`) |
+| `GET`  | `/api/auth/external-keys` | 필요  | 내 외부 AI API 키 목록 조회 (`id`, `provider`, `alias`, `monthlyBudgetUsd`, `createdAt`, 삭제 예정 시 `deletionRequestedAt`·`permanentDeletionAt`·`deletionGraceDays` 등) |
 | `POST` | `/api/auth/external-keys` | 필요  | 외부 AI API 키 등록 (`provider`, `externalKey`, `alias`, `monthlyBudgetUsd`) |
 | `PUT`  | `/api/auth/external-keys/{id}` | 필요  | 외부 AI API 키 수정 (`alias`, `monthlyBudgetUsd` 필수, `externalKey`는 선택) |
-| `DELETE` | `/api/auth/external-keys/{id}` | 필요  | 외부 AI API 키 삭제 예약(7일 유예) |
+| `DELETE` | `/api/auth/external-keys/{id}` | 필요  | 외부 AI API 키 삭제 예약(선택 쿼리 `gracePeriodDays`, 기본 7일·범위 1~365일) |
 | `POST` | `/api/auth/external-keys/{id}/deletion-cancel` | 필요  | 외부 AI API 키 삭제 예약 취소 |
 | `POST` | `/api/auth/logout`  | 불필요 | 로그아웃 신호 응답(BFF 쿠키 삭제 유도) |
 
@@ -128,10 +128,22 @@
       "alias": "데모용 제미나이 키",
       "monthlyBudgetUsd": 20.5,
       "createdAt": "2026-03-29T08:05:19.296098200Z"
+    },
+    {
+      "id": 2,
+      "provider": "OPENAI",
+      "alias": "예시 삭제 예정 키",
+      "monthlyBudgetUsd": 10,
+      "createdAt": "2026-03-30T08:00:00Z",
+      "deletionRequestedAt": "2026-04-01T08:00:00Z",
+      "permanentDeletionAt": "2026-04-08T08:00:00Z",
+      "deletionGraceDays": 7
     }
   ]
 }
 ```
+
+삭제 예정 행이 아니면 `deletionRequestedAt`·`permanentDeletionAt`·`deletionGraceDays`는 응답에서 생략되거나 `null`일 수 있다(JSON 직렬화 정책에 따름).
 
 오류 응답 예시 (`success=false`, `data=null`):
 
@@ -147,7 +159,7 @@
 
 ## 7. 외부 API 키 등록 계약
 
-클라이언트가 Gemini 등 **제3자에서 발급받은 API 키 평문**과 **제공자(`provider`)**, **별칭(`alias`)**, **월 예산(`monthlyBudgetUsd`)**을 전달하면, 서버는 키 평문을 **AES-256-GCM으로 암호화해 DB에 저장**하고, 응답 본문에는 **평문·암호문을 포함하지 않는다**. 동일 사용자가 동일 `provider`에 대해 동일 키 평문을 중복 등록하면 `409`를 반환한다.
+클라이언트가 Gemini 등 **제3자에서 발급받은 API 키 평문**과 **제공자(`provider`)**, **별칭(`alias`)**, **월 예산(`monthlyBudgetUsd`)**을 전달하면, 서버는 키 평문을 **AES-256-GCM으로 암호화해 DB에 저장**하고, 응답 본문에는 **평문·암호문을 포함하지 않는다**. 동일 사용자·동일 `provider`·동일 키 값(해시)에 대해 **이미 활성 행이 있으면** `409`, **삭제 예정 행만 존재하면** `409`(메시지: `삭제예정키와 중복된 키`)를 반환한다.
 
 ### 7.1 요청
 
@@ -219,7 +231,8 @@
 | `alias` 누락 | `400` | `{"success":false,"message":"alias는 필수입니다","data":null}` |
 | `monthlyBudgetUsd` 누락 | `400` | `{"success":false,"message":"monthlyBudgetUsd는 필수입니다","data":null}` |
 | `provider` 값 불가 | `400` | `{"success":false,"message":"provider 값이 올바르지 않습니다. 허용: GEMINI, OPENAI, ANTHROPIC","data":null}` (또는 본문 형식 오류 메시지) |
-| 동일 provider·동일 키 재등록 | `409` | `{"success":false,"message":"이미 등록된 API 키입니다","data":null}` |
+| 동일 provider·동일 키 재등록(활성 행 존재) | `409` | `{"success":false,"message":"이미 등록된 API 키입니다","data":null}` |
+| 동일 provider·동일 키, 삭제 예정 행과만 충돌 | `409` | `{"success":false,"message":"삭제예정키와 중복된 키","data":null}` |
 
 ### 7.3 캐시 정책
 
@@ -295,7 +308,8 @@
 | `monthlyBudgetUsd` 누락 | `400` | `{"success":false,"message":"monthlyBudgetUsd는 필수입니다","data":null}` |
 | 삭제 예정 키 수정 시도 | `409` | `{"success":false,"message":"삭제 예정인 키는 수정할 수 없습니다. 취소 후 다시 시도하세요.","data":null}` |
 | 별칭 중복 | `409` | `{"success":false,"message":"이미 사용 중인 별칭입니다","data":null}` |
-| 동일 provider·동일 키 중복 | `409` | `{"success":false,"message":"이미 등록된 API 키입니다","data":null}` |
+| 동일 provider·동일 키 중복(활성 다른 행) | `409` | `{"success":false,"message":"이미 등록된 API 키입니다","data":null}` |
+| 동일 provider·동일 키, 삭제 예정 행과만 충돌 | `409` | `{"success":false,"message":"삭제예정키와 중복된 키","data":null}` |
 
 ### 9.3 캐시 정책
 
@@ -316,13 +330,19 @@
 
 ## 10.1 외부 API 키 삭제 예약/취소 계약
 
-삭제는 즉시 물리 삭제가 아니라 **7일 유예(soft delete)** 로 처리한다. 유예 중에는 삭제 취소가 가능하며, 유예 종료 후 스케줄러가 물리 삭제한다.
+삭제는 즉시 물리 삭제가 아니라 **유예 기간(soft delete)** 후 물리 삭제로 처리한다. **기본 유예는 7일**이며, 요청 시 **쿼리 `gracePeriodDays`** 로 **1~365일** 범위에서 바꿀 수 있다(생략 시 7일). 유예 중에는 삭제 취소가 가능하며, 유예 종료 후 스케줄러가 물리 삭제한다.
 
 ### 삭제 예약: `DELETE /api/auth/external-keys/{id}`
 
+| 항목 | 설명 |
+| --- | --- |
+| 쿼리 | 선택 `gracePeriodDays`(정수). 생략 시 기본 7일. 범위 위반 시 `400`. |
+| 동작 | `deletionRequestedAt`·`permanentDeletionAt`·`deletionGraceDays` 설정 |
+
 | 상황 | 상태 코드 | 예시 JSON |
 | --- | --- | --- |
-| 삭제 예약 성공 | `200` | `{"success":true,"message":"삭제가 예약되었습니다. 일주일 이내에 취소할 수 있으며, 이후에는 키가 영구 삭제됩니다.","data":{"id":1,"provider":"GEMINI","alias":"데모 키","createdAt":"...","deletionRequestedAt":"...","permanentDeletionAt":"..."}}` |
+| 삭제 예약 성공 | `200` | `{"success":true,"message":"삭제가 예약되었습니다. 일주일 이내에 취소할 수 있으며, 이후에는 키가 영구 삭제됩니다.","data":{"id":1,"provider":"GEMINI","alias":"데모 키","createdAt":"...","monthlyBudgetUsd":10,"deletionRequestedAt":"...","permanentDeletionAt":"...","deletionGraceDays":7}}` |
+| `gracePeriodDays` 범위 밖 | `400` | `{"success":false,"message":"유예 기간은 1일 이상 365일 이하로 설정할 수 있습니다","data":null}` |
 | 대상 키 없음 | `404` | `{"success":false,"message":"등록된 API 키를 찾을 수 없습니다","data":null}` |
 | 이미 삭제 예정 | `409` | `{"success":false,"message":"이미 삭제 예정인 키입니다","data":null}` |
 
@@ -330,7 +350,7 @@
 
 | 상황 | 상태 코드 | 예시 JSON |
 | --- | --- | --- |
-| 삭제 취소 성공 | `200` | `{"success":true,"message":"삭제 예약이 취소되었습니다","data":{"id":1,"provider":"GEMINI","alias":"데모 키","createdAt":"...","deletionRequestedAt":null,"permanentDeletionAt":null}}` |
+| 삭제 취소 성공 | `200` | `{"success":true,"message":"삭제 예약이 취소되었습니다","data":{"id":1,"provider":"GEMINI","alias":"데모 키","createdAt":"...","monthlyBudgetUsd":10,"deletionRequestedAt":null,"permanentDeletionAt":null,"deletionGraceDays":null}}` |
 | 대상 키 없음 | `404` | `{"success":false,"message":"등록된 API 키를 찾을 수 없습니다","data":null}` |
 | 삭제 예정 상태 아님 | `409` | `{"success":false,"message":"삭제 예정 상태가 아닙니다","data":null}` |
 
@@ -341,11 +361,11 @@
 
 | 상황        | 상태 코드 | 설명                           |
 | --------- | ----- | ---------------------------- |
-| 입력 검증 실패  | `400` | 필드 유효성/정책 위반 (`provider`·`externalKey`·`alias` 등) |
+| 입력 검증 실패  | `400` | 필드 유효성/정책 위반 (`provider`·`externalKey`·`alias` 등), 삭제 예약 시 `gracePeriodDays` 범위(1~365) 위반 등 |
 | 로그인 인증 실패 | `401` | 이메일/비밀번호 불일치                 |
 | 보호 API 미인증 | `401` | 액세스 토큰 없음/무효 (`GET/POST/PUT/DELETE /api/auth/external-keys` 등) |
 | 외부 API 키 별칭 중복 | `409` | 동일 사용자 기준 별칭 재사용              |
-| 외부 API 키 중복 등록 | `409` | 동일 사용자·동일 provider·동일 키 평문 재등록 |
+| 외부 API 키 중복 등록 | `409` | 동일 사용자·동일 provider·동일 키 값 — 활성 행 존재 시 `이미 등록된 API 키입니다`, 삭제 예정 행과만 충돌 시 `삭제예정키와 중복된 키` |
 | 외부 API 키 삭제 예정 충돌 | `409` | 이미 삭제 예정이거나, 삭제 예정 상태가 아닌 키 취소 등 상태 충돌 |
 | 외부 API 키 미존재 | `404` | 수정/조회 대상 외부 API 키를 찾을 수 없음    |
 | 이메일 중복    | `409` | 회원가입 중복                      |

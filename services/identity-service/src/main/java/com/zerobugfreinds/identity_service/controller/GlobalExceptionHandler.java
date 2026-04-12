@@ -55,6 +55,12 @@ public class GlobalExceptionHandler {
 		return ApiResponse.fail(ex.getMessage());
 	}
 
+	@ExceptionHandler(IllegalArgumentException.class)
+	@ResponseStatus(HttpStatus.BAD_REQUEST)
+	public ApiResponse<Void> handleIllegalArgument(IllegalArgumentException ex) {
+		return ApiResponse.fail(ex.getMessage());
+	}
+
 	@ExceptionHandler(DuplicateExternalApiKeyException.class)
 	@ResponseStatus(HttpStatus.CONFLICT)
 	public ApiResponse<Void> handleDuplicateExternalApiKey(DuplicateExternalApiKeyException ex) {
