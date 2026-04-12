@@ -7,6 +7,7 @@ import {
   Building2,
   ChevronLeft,
   LayoutDashboard,
+  ScrollText,
   Settings,
   UsersRound,
   Wallet,
@@ -20,6 +21,7 @@ import { isConsoleNavActive, resolveConsoleNavLink } from "./console-nav-resolve
 
 const ICONS: Record<ConsoleNavId, ReactNode> = {
   usageHome: <LayoutDashboard className="size-[1.125rem] shrink-0" aria-hidden />,
+  usageLog: <ScrollText className="size-[1.125rem] shrink-0" aria-hidden />,
   billingHome: <Wallet className="size-[1.125rem] shrink-0" aria-hidden />,
   settings: <Settings className="size-[1.125rem] shrink-0" aria-hidden />,
   organizations: <Building2 className="size-[1.125rem] shrink-0" aria-hidden />,
