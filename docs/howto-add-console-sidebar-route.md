@@ -68,6 +68,7 @@
 
 - 각 `services/*/web`의 `package.json`에 **`"@ai-usage/shell": "workspace:*"`** 가 있어야 합니다.
 - `next.config`의 **`transpilePackages`** 에 `"@ai-usage/shell"` 이 포함되어야 합니다.
+- **Tailwind v4:** `src/app/globals.css` 에 **`@source`** 로 `packages/ui/src`·`packages/shell/src` 를 등록해 두면, 공유 패키지에 적은 유틸 클래스가 빌드 산출물에 포함된다(스타일이 비어 보이면 여기부터 확인).
 - Docker 빌드 시 **`packages/shell`** 소스가 context에 포함되는지 Dockerfile을 확인합니다.
 
 ---

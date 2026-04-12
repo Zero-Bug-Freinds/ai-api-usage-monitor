@@ -19,12 +19,12 @@ import { CONSOLE_MAIN_NAV_ORDER, CONSOLE_NAV } from "./console-nav-model"
 import { isConsoleNavActive, resolveConsoleNavLink } from "./console-nav-resolve"
 
 const ICONS: Record<ConsoleNavId, ReactNode> = {
-  usageHome: <LayoutDashboard className="size-4" aria-hidden />,
-  billingHome: <Wallet className="size-4" aria-hidden />,
-  settings: <Settings className="size-4" aria-hidden />,
-  organizations: <Building2 className="size-4" aria-hidden />,
-  teams: <UsersRound className="size-4" aria-hidden />,
-  identityLanding: <ChevronLeft className="size-4 shrink-0" aria-hidden />,
+  usageHome: <LayoutDashboard className="size-[1.125rem] shrink-0" aria-hidden />,
+  billingHome: <Wallet className="size-[1.125rem] shrink-0" aria-hidden />,
+  settings: <Settings className="size-[1.125rem] shrink-0" aria-hidden />,
+  organizations: <Building2 className="size-[1.125rem] shrink-0" aria-hidden />,
+  teams: <UsersRound className="size-[1.125rem] shrink-0" aria-hidden />,
+  identityLanding: <ChevronLeft className="size-[1.125rem] shrink-0" aria-hidden />,
 }
 
 function NavRow({
@@ -43,12 +43,14 @@ function NavRow({
   const isBack = id === "identityLanding"
   const className = isBack
     ? cn(
-        "flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
-        active && "bg-muted text-foreground"
+        "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent/80 hover:text-sidebar-foreground",
+        active && "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
       )
     : cn(
-        "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors",
-        active ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/80 hover:text-foreground"
+        "flex min-h-10 items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium leading-snug transition-colors",
+        active
+          ? "bg-sidebar-accent font-semibold text-sidebar-accent-foreground shadow-sm"
+          : "text-sidebar-foreground/85 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
       )
 
   if (spec.kind === "next") {
@@ -78,23 +80,25 @@ export function ConsoleSidebar({ profile, footer }: ConsoleSidebarProps) {
   const pathname = usePathname() ?? ""
 
   return (
-    <aside className="flex h-full min-h-0 w-56 shrink-0 flex-col border-r border-border bg-muted/25">
-      <div className="border-b border-border px-3 py-4">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">콘솔</p>
-        <p className="mt-0.5 text-sm font-semibold tracking-tight">사용량 모니터</p>
+    <aside className="flex h-full min-h-0 w-64 min-w-[240px] max-w-[280px] shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
+      <div className="border-b border-sidebar-border px-4 py-4">
+        <p className="text-xs font-medium uppercase tracking-wide text-sidebar-foreground/60">콘솔</p>
+        <p className="mt-1 text-sm font-semibold leading-tight tracking-tight text-sidebar-foreground">
+          사용량 모니터
+        </p>
       </div>
 
-      <div className="px-2 py-2">
+      <div className="px-3 pt-3 pb-1">
         <NavRow profile={profile} id="identityLanding" pathname={pathname} />
       </div>
 
-      <nav className="flex flex-1 flex-col gap-0.5 px-2 pb-2" aria-label="앱 메뉴">
+      <nav className="flex flex-1 flex-col gap-1 px-3 pb-3" aria-label="앱 메뉴">
         {CONSOLE_MAIN_NAV_ORDER.map((id) => (
           <NavRow key={id} profile={profile} id={id} pathname={pathname} />
         ))}
       </nav>
 
-      <div className="mt-auto border-t border-border px-2 py-3">{footer}</div>
+      <div className="mt-auto border-t border-sidebar-border px-3 py-4">{footer}</div>
     </aside>
   )
 }

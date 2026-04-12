@@ -5,6 +5,7 @@ globs:
   - "apps/web/**/*"
   - "services/*/web/**/*"
   - "packages/ui/**/*"
+  - "packages/shell/**/*"
   - "dashboard/**/*"
 alwaysApply: false
 ---
