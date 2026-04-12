@@ -30,12 +30,31 @@ export type ModelUsageAggregate = {
   inputTokens: number
 }
 
+export type UsageCostIntradayKpiResponse = {
+  todayEstimatedCostUsd: number | string
+  yesterdaySameWindowEstimatedCostUsd: number | string
+  changeRatePercent: number | string | null
+  comparisonWindowEnd: string
+  kstDateToday: string
+}
+
+export type HourlyUsagePoint = {
+  hour: number
+  requestCount: number
+  estimatedCostUsd: number | string
+}
+
+export type UsageLogApiKeyItemResponse = {
+  apiKeyId: string
+}
+
 export type UsageLogEntryResponse = {
   eventId: string
   occurredAt: string
   correlationId: string | null
   provider: string
   model: string
+  apiKeyId: string | null
   promptTokens: number | null
   completionTokens: number | null
   totalTokens: number | null
