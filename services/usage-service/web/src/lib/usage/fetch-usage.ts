@@ -7,12 +7,20 @@ function usageBffPrefix(): string {
   return (process.env.NEXT_PUBLIC_BASE_PATH ?? "").replace(/\/+$/, "")
 }
 
-export async function fetchUsageJson<T>(pathAndQuery: string): Promise<T> {
+export type FetchUsageJsonOptions = {
+  signal?: AbortSignal
+}
+
+export async function fetchUsageJson<T>(
+  pathAndQuery: string,
+  options?: FetchUsageJsonOptions
+): Promise<T> {
   const prefix = usageBffPrefix()
   const res = await fetch(`${prefix}/api/usage/${pathAndQuery}`, {
     credentials: "include",
     headers: { Accept: "application/json" },
     cache: "no-store",
+    signal: options?.signal,
   })
 
   if (res.status === 401) {

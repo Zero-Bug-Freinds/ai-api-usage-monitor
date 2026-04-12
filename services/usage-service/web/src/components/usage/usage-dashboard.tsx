@@ -178,6 +178,13 @@ function labelForProviderCode(code: string): string {
   return PROVIDER_LABEL[code] ?? code
 }
 
+function isAbortError(e: unknown): boolean {
+  return (
+    (typeof DOMException !== "undefined" && e instanceof DOMException && e.name === "AbortError") ||
+    (e instanceof Error && e.name === "AbortError")
+  )
+}
+
 const H_BAR_MARGIN = { left: 8, right: 16 }
 /** 출력 토큰 차트: 왼쪽 차트와 모델 라벨 중복을 줄이기 위해 Y축만 좁힘 */
 const H_BAR_MARGIN_NO_Y_LABEL = { left: 4, right: 16 }
@@ -215,6 +222,8 @@ export function UsageDashboard() {
 
   React.useEffect(() => {
     if (!clientReady) return
+    const ac = new AbortController()
+    const { signal } = ac
     let cancelled = false
     setMainLoading(true)
     setMainError(null)
@@ -223,9 +232,6 @@ export function UsageDashboard() {
         const t = formatKstIsoDate()
         const { from: rf, to: rt } = rangeForPeriod(periodMode, t, customFrom, customTo)
         const { prevFrom: pf, prevTo: pt } = previousPeriodBounds(rf, rt)
-        if (!cancelled) {
-          setLoadedRange({ from: rf, to: rt })
-        }
 
         const fy = addKstDays(t, -MONTHLY_LOOKBACK_DAYS)
         const pq = buildUsageQuery({ provider: providerParam(dashProvider) })
@@ -240,19 +246,22 @@ export function UsageDashboard() {
           provider: providerParam(dashProvider),
         })
 
-        const summaryP = fetchUsageJson<UsageSummaryResponse>(`dashboard/summary${qRange}`)
-        const summaryPrevP = fetchUsageJson<UsageSummaryResponse>(`dashboard/summary${qPrev}`)
-        const dailyP = fetchUsageJson<DailyUsagePoint[]>(`dashboard/series/daily${qRange}`)
+        const opt = { signal }
+        const summaryP = fetchUsageJson<UsageSummaryResponse>(`dashboard/summary${qRange}`, opt)
+        const summaryPrevP = fetchUsageJson<UsageSummaryResponse>(`dashboard/summary${qPrev}`, opt)
+        const dailyP = fetchUsageJson<DailyUsagePoint[]>(`dashboard/series/daily${qRange}`, opt)
         const monthlyP = fetchUsageJson<MonthlyUsagePoint[]>(
-          `dashboard/series/monthly${buildUsageQuery({ from: fy, to: rt, provider: providerParam(dashProvider) })}`
+          `dashboard/series/monthly${buildUsageQuery({ from: fy, to: rt, provider: providerParam(dashProvider) })}`,
+          opt
         )
-        const byModelP = fetchUsageJson<ModelUsageAggregate[]>(`dashboard/by-model${qRange}`)
+        const byModelP = fetchUsageJson<ModelUsageAggregate[]>(`dashboard/by-model${qRange}`, opt)
 
         if (periodMode === "today") {
           const [kpi, h, cur, prev, d, m, bm] = await Promise.all([
-            fetchUsageJson<UsageCostIntradayKpiResponse>(`dashboard/kpi/cost-intraday${pq}`),
+            fetchUsageJson<UsageCostIntradayKpiResponse>(`dashboard/kpi/cost-intraday${pq}`, opt),
             fetchUsageJson<HourlyUsagePoint[]>(
-              `dashboard/series/hourly${buildUsageQuery({ date: t, provider: providerParam(dashProvider) })}`
+              `dashboard/series/hourly${buildUsageQuery({ date: t, provider: providerParam(dashProvider) })}`,
+              opt
             ),
             summaryP,
             summaryPrevP,
@@ -261,6 +270,7 @@ export function UsageDashboard() {
             byModelP,
           ])
           if (!cancelled) {
+            setLoadedRange({ from: rf, to: rt })
             setCostKpi(kpi)
             setHourly(Array.isArray(h) ? h : [])
             setKpiSummary(cur)
@@ -278,6 +288,7 @@ export function UsageDashboard() {
             byModelP,
           ])
           if (!cancelled) {
+            setLoadedRange({ from: rf, to: rt })
             setCostKpi(null)
             setHourly(null)
             setKpiSummary(cur)
@@ -288,6 +299,7 @@ export function UsageDashboard() {
           }
         }
       } catch (e) {
+        if (isAbortError(e)) return
         if (!cancelled) {
           setMainError(e instanceof Error ? e.message : "데이터를 불러오지 못했습니다")
         }
@@ -297,6 +309,7 @@ export function UsageDashboard() {
     })()
     return () => {
       cancelled = true
+      ac.abort()
     }
   }, [clientReady, mainRefresh, periodMode, customFrom, customTo, dashProvider])
 
