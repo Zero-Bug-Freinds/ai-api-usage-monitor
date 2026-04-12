@@ -178,7 +178,8 @@ public class UsageAnalyticsJdbcRepository {
                 SELECT COALESCE(NULLIF(trim(model), ''), '_unknown') AS m,
                        provider,
                        COUNT(*)::bigint,
-                       COALESCE(SUM(prompt_tokens), 0)::bigint
+                       COALESCE(SUM(prompt_tokens), 0)::bigint,
+                       COALESCE(SUM(completion_tokens), 0)::bigint
                 FROM usage_recorded_log
                 WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ?%s
                 GROUP BY COALESCE(NULLIF(trim(model), ''), '_unknown'), provider
@@ -191,7 +192,8 @@ public class UsageAnalyticsJdbcRepository {
                         rs.getString("m"),
                         rs.getString("provider"),
                         rs.getLong(3),
-                        rs.getLong(4)
+                        rs.getLong(4),
+                        rs.getLong(5)
                 ),
                 userId,
                 Timestamp.from(from),

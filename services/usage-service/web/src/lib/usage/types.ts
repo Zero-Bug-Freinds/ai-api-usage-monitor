@@ -28,6 +28,7 @@ export type ModelUsageAggregate = {
   provider: string
   requestCount: number
   inputTokens: number
+  outputTokens: number
 }
 
 export type UsageCostIntradayKpiResponse = {
