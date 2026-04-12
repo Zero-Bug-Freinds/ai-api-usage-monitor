@@ -19,7 +19,9 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@ai-usage/ui": ["../../../packages/ui/src/index.ts"],
+      "@ai-usage/shell": ["../../../packages/shell/src/index.ts"]
     }
   },
   "include": [

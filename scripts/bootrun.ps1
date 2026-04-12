@@ -34,6 +34,7 @@ Import-DotEnv -Path $EnvPath
 # Per-service defaults only (SERVER_PORT would override server.port for every Spring app).
 switch ($Service) {
     'identity-service' { if (-not $env:SERVER_PORT) { $env:SERVER_PORT = '8090' } }
+    'usage-service' { if (-not $env:USAGE_SERVICE_PORT) { $env:USAGE_SERVICE_PORT = '8092' } }
     'team-service' { if (-not $env:TEAM_SERVICE_PORT) { $env:TEAM_SERVICE_PORT = '8094' } }
     'billing-service' { if (-not $env:BILLING_SERVICE_PORT) { $env:BILLING_SERVICE_PORT = '8095' } }
     Default { }

@@ -44,8 +44,11 @@ export function resolveConsoleNavLink(profile: ConsoleProfile, id: ConsoleNavId)
   }
 
   if (profile === "usage") {
-    if (owner === "usage") {
+    if (id === "usageHome") {
       return { kind: "next", href: "/" }
+    }
+    if (id === "usageLog") {
+      return { kind: "next", href: "/usagelog" }
     }
     return { kind: "anchor", href: anchorHrefForPublicPath(publicPath) }
   }
@@ -87,14 +90,21 @@ export function isConsoleNavActive(profile: ConsoleProfile, pathname: string, id
   const { publicPath } = meta
 
   if (profile === "identity") {
+    if (id === "usageLog") {
+      return p === "/dashboard/usagelog" || p.startsWith("/dashboard/usagelog/")
+    }
     if (publicPath === "/") return p === "/"
-    if (publicPath === "/dashboard") return p === "/dashboard" || p.startsWith("/dashboard/")
+    if (publicPath === "/dashboard") {
+      const onUsageLog = p === "/dashboard/usagelog" || p.startsWith("/dashboard/usagelog/")
+      return (p === "/dashboard" || p.startsWith("/dashboard/")) && !onUsageLog
+    }
     if (publicPath === "/billing") return p === "/billing" || p.startsWith("/billing/")
     return p === publicPath || p.startsWith(`${publicPath}/`)
   }
 
   if (profile === "usage") {
     if (id === "usageHome") return p === "/" || p === ""
+    if (id === "usageLog") return p === "/usagelog" || p.startsWith("/usagelog/")
     return false
   }
 
