@@ -39,6 +39,11 @@ import type {
   UsageProviderFilter,
   UsageSummaryResponse,
 } from "@/lib/usage/types"
+import {
+  loadDashboardFilters,
+  saveDashboardFilters,
+  type DashboardFilterSnapshot,
+} from "@/lib/usage/dashboard-filter-storage"
 import { addKstDays, formatKstIsoDate } from "@/lib/usage/kst-dates"
 
 const CHART_COLORS = [
@@ -51,6 +56,28 @@ const CHART_COLORS = [
 
 const MONTHLY_LOOKBACK_DAYS = 365
 const DASHBOARD_PROVIDER_ALL = "__all__"
+/** 초기 진입 시 기본 공급사: Gemini (저장·API 값은 GOOGLE) */
+const DASHBOARD_DEFAULT_PROVIDER: UsageProviderFilter = "GOOGLE"
+
+function emptyDailySeriesForRange(
+  fromIso: string,
+  toIso: string
+): { date: string; requestCount: number; cost: number }[] {
+  const out: { date: string; requestCount: number; cost: number }[] = []
+  let d = fromIso
+  for (let i = 0; i < 400 && d <= toIso; i++) {
+    out.push({ date: d, requestCount: 0, cost: 0 })
+    if (d === toIso) break
+    d = addKstDays(d, 1)
+  }
+  return out
+}
+
+const EMPTY_HOURLY_CHART = Array.from({ length: 24 }, (_, h) => ({
+  label: `${h}시`,
+  requestCount: 0,
+  cost: 0,
+}))
 
 function tooltipNumericValue(value: unknown): number {
   if (typeof value === "number") return value
@@ -89,8 +116,9 @@ function providerQueryParam(v: string): UsageProviderFilter | undefined {
 }
 
 export function UsageDashboard() {
+  const [filtersHydrated, setFiltersHydrated] = React.useState(false)
   const [periodMode, setPeriodMode] = React.useState<PeriodMode>("today")
-  const [dashboardProvider, setDashboardProvider] = React.useState<string>(DASHBOARD_PROVIDER_ALL)
+  const [dashboardProvider, setDashboardProvider] = React.useState<string>(DASHBOARD_DEFAULT_PROVIDER)
   const [customFrom, setCustomFrom] = React.useState(() => addKstDays(formatKstIsoDate(), -7))
   const [customTo, setCustomTo] = React.useState(() => formatKstIsoDate())
 
@@ -107,6 +135,31 @@ export function UsageDashboard() {
   const [mainRefresh, setMainRefresh] = React.useState(0)
 
   React.useEffect(() => {
+    const saved = loadDashboardFilters()
+    if (saved) {
+      setDashboardProvider(saved.provider)
+      setPeriodMode(saved.periodMode)
+      setCustomFrom(saved.customFrom)
+      setCustomTo(saved.customTo)
+    }
+    setFiltersHydrated(true)
+  }, [])
+
+  React.useEffect(() => {
+    if (!filtersHydrated) return
+
+    const snapshot: DashboardFilterSnapshot = {
+      provider: dashboardProvider,
+      periodMode,
+      customFrom,
+      customTo,
+    }
+    saveDashboardFilters(snapshot)
+  }, [filtersHydrated, dashboardProvider, periodMode, customFrom, customTo])
+
+  React.useEffect(() => {
+    if (!filtersHydrated) return
+
     let cancelled = false
     setMainLoading(true)
     setMainError(null)
@@ -174,7 +227,7 @@ export function UsageDashboard() {
     return () => {
       cancelled = true
     }
-  }, [mainRefresh, periodMode, customFrom, customTo, dashboardProvider])
+  }, [filtersHydrated, mainRefresh, periodMode, customFrom, customTo, dashboardProvider])
 
   const hourlyChart = React.useMemo(
     () =>
@@ -186,6 +239,16 @@ export function UsageDashboard() {
     [hourly]
   )
 
+  const rangeForDisplay = React.useMemo(
+    () => computeRange(formatKstIsoDate(), periodMode, customFrom, customTo),
+    [periodMode, customFrom, customTo]
+  )
+
+  const displayHourlyChart = React.useMemo(
+    () => (hourlyChart.length > 0 ? hourlyChart : EMPTY_HOURLY_CHART),
+    [hourlyChart]
+  )
+
   const dailyChart = React.useMemo(
     () =>
       dailyMain.map((row) => ({
@@ -195,6 +258,15 @@ export function UsageDashboard() {
       })),
     [dailyMain]
   )
+
+  const displayDailyChart = React.useMemo(() => {
+    if (dailyChart.length > 0) return dailyChart
+    if (periodMode === "today") return []
+    return emptyDailySeriesForRange(rangeForDisplay.from, rangeForDisplay.to)
+  }, [dailyChart, periodMode, rangeForDisplay.from, rangeForDisplay.to])
+
+  /** API에 해당 기간·공급사 행이 없을 때 (플레이스홀더 0 시리즈와 구분) */
+  const dailyChartHasRows = dailyChart.length > 0
 
   const dailyAuxChart = React.useMemo(
     () =>
@@ -248,9 +320,6 @@ export function UsageDashboard() {
   const windowEndLabel = kpi?.comparisonWindowEnd
     ? new Date(kpi.comparisonWindowEnd).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })
     : null
-
-  const hasMainData =
-    totalReq > 0 || dailyMain.length > 0 || hourly.length > 0 || byModel.some((m) => m.requestCount > 0)
 
   const periodLabel =
     periodMode === "today"
@@ -341,7 +410,7 @@ export function UsageDashboard() {
               <SelectItem value={DASHBOARD_PROVIDER_ALL}>전체</SelectItem>
               <SelectItem value="OPENAI">OpenAI</SelectItem>
               <SelectItem value="ANTHROPIC">Anthropic</SelectItem>
-              <SelectItem value="GOOGLE">Google</SelectItem>
+              <SelectItem value="GOOGLE">Gemini (Google)</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -417,21 +486,15 @@ export function UsageDashboard() {
             </div>
           </section>
 
-          {!hasMainData ? (
-            <p className="mb-10 text-center text-sm text-muted-foreground">사용 데이터가 없습니다</p>
-          ) : null}
-
           <section className="mb-10 rounded-lg border border-border p-4 shadow-sm">
             <h2 className="mb-4 text-lg font-medium">
               {periodMode === "today" ? "시간별 요청·비용 (오늘)" : "일별 요청·비용 (선택 기간)"}
             </h2>
             {periodMode === "today" ? (
-              hourlyChart.length === 0 ? (
-                <p className="text-sm text-muted-foreground">사용 데이터가 없습니다</p>
-              ) : (
+              <>
                 <div className="h-[400px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={hourlyChart}>
+                    <ComposedChart data={displayHourlyChart}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                       <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                       <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
@@ -457,13 +520,18 @@ export function UsageDashboard() {
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>
-              )
-            ) : dailyChart.length === 0 ? (
-              <p className="text-sm text-muted-foreground">사용 데이터가 없습니다</p>
+                {totalReq === 0 ? (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    선택한 공급사·기간에 집계된 사용량이 없습니다. 해당 공급사로 API를 호출한 뒤 새로고침하면 반영됩니다.
+                  </p>
+                ) : null}
+              </>
+            ) : displayDailyChart.length === 0 ? (
+              <p className="text-sm text-muted-foreground">기간을 선택해 주세요</p>
             ) : (
               <div className="h-[400px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={dailyChart}>
+                  <ComposedChart data={displayDailyChart}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                     <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                     <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
@@ -490,13 +558,20 @@ export function UsageDashboard() {
                 </ResponsiveContainer>
               </div>
             )}
+            {periodMode !== "today" && !dailyChartHasRows && displayDailyChart.length > 0 ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                선택한 공급사·기간에 집계된 사용량이 없습니다. 해당 공급사로 API를 호출한 뒤 새로고침하면 반영됩니다.
+              </p>
+            ) : null}
           </section>
 
           <div className="mb-10 grid gap-8 lg:grid-cols-2">
             <section className="rounded-lg border border-border p-4 shadow-sm">
               <h2 className="mb-4 text-lg font-medium">모델별 요청 비중</h2>
               {pieData.length === 0 ? (
-                <p className="text-sm text-muted-foreground">사용 데이터가 없습니다</p>
+                <div className="flex h-[320px] items-center justify-center rounded-md border border-dashed border-border bg-muted/15 text-sm text-muted-foreground">
+                  집계 데이터 없음
+                </div>
               ) : (
                 <div className="h-[320px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
@@ -527,7 +602,9 @@ export function UsageDashboard() {
             <section className="rounded-lg border border-border p-4 shadow-sm">
               <h2 className="mb-4 text-lg font-medium">모델별 요청 수 (가로)</h2>
               {modelBarRows.length === 0 ? (
-                <p className="text-sm text-muted-foreground">사용 데이터가 없습니다</p>
+                <div className="flex h-[320px] items-center justify-center rounded-md border border-dashed border-border bg-muted/15 text-sm text-muted-foreground">
+                  집계 데이터 없음
+                </div>
               ) : (
                 <div className="h-[320px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
@@ -547,7 +624,9 @@ export function UsageDashboard() {
           <section className="mb-10 rounded-lg border border-border p-4 shadow-sm">
             <h2 className="mb-4 text-lg font-medium">모델별 입력 토큰 (가로)</h2>
             {modelBarRows.length === 0 ? (
-              <p className="text-sm text-muted-foreground">사용 데이터가 없습니다</p>
+              <div className="flex h-[320px] items-center justify-center rounded-md border border-dashed border-border bg-muted/15 text-sm text-muted-foreground">
+                집계 데이터 없음
+              </div>
             ) : (
               <div className="h-[320px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
@@ -600,7 +679,9 @@ export function UsageDashboard() {
           <section className="mb-10 rounded-lg border border-border p-4 shadow-sm">
             <h2 className="mb-4 text-lg font-medium">월별 요청·비용</h2>
             {monthlyChart.length === 0 || !monthlyHasActivity ? (
-              <p className="text-sm text-muted-foreground">사용 데이터가 없습니다</p>
+              <div className="flex h-[360px] items-center justify-center rounded-md border border-dashed border-border bg-muted/15 text-sm text-muted-foreground">
+                집계 데이터 없음
+              </div>
             ) : (
               <div className="h-[360px] w-full">
                 <ResponsiveContainer width="100%" height="100%">

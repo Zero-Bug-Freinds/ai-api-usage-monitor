@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 
 import { Button } from "@ai-usage/ui"
 import { apiFetch } from "@/lib/api/client-fetch"
+import { clearDashboardFilters } from "@/lib/usage/dashboard-filter-storage"
 
 type LogoutButtonProps = {
   className?: string
@@ -29,6 +30,7 @@ export function LogoutButton({ className, variant = "outline" }: LogoutButtonPro
     } finally {
       setPending(false)
     }
+    clearDashboardFilters()
     router.replace(`${idOrigin}/login`)
   }
 
