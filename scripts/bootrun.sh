@@ -26,6 +26,7 @@ import_dotenv "$ENV_FILE"
 
 case "$svc" in
   identity-service) export SERVER_PORT="${SERVER_PORT:-8090}" ;;
+  usage-service) export USAGE_SERVICE_PORT="${USAGE_SERVICE_PORT:-8092}" ;;
   team-service) export TEAM_SERVICE_PORT="${TEAM_SERVICE_PORT:-8094}" ;;
   billing-service) export BILLING_SERVICE_PORT="${BILLING_SERVICE_PORT:-8095}" ;;
 esac
