@@ -4,8 +4,11 @@ import com.eevee.billingservice.api.dto.ApiKeySeenResponse;
 import com.eevee.billingservice.api.dto.DailyExpenditurePoint;
 import com.eevee.billingservice.api.dto.ExpenditureSummaryResponse;
 import com.eevee.billingservice.api.dto.MonthlyExpenditurePoint;
+import com.eevee.billingservice.api.dto.TeamMonthRollupRequest;
+import com.eevee.billingservice.api.dto.TeamMonthRollupResponse;
 import com.eevee.billingservice.security.BillingGatewayTrustFilter;
 import com.eevee.billingservice.service.ExpenditureQueryService;
+import com.eevee.billingservice.service.ExpenditureTeamRollupService;
 import com.eevee.usage.events.AiProvider;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -13,6 +16,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -26,9 +31,14 @@ import java.util.List;
 public class ExpenditureController {
 
     private final ExpenditureQueryService expenditureQueryService;
+    private final ExpenditureTeamRollupService expenditureTeamRollupService;
 
-    public ExpenditureController(ExpenditureQueryService expenditureQueryService) {
+    public ExpenditureController(
+            ExpenditureQueryService expenditureQueryService,
+            ExpenditureTeamRollupService expenditureTeamRollupService
+    ) {
         this.expenditureQueryService = expenditureQueryService;
+        this.expenditureTeamRollupService = expenditureTeamRollupService;
     }
 
     @GetMapping("/summary")
@@ -73,6 +83,16 @@ public class ExpenditureController {
     ) {
         String userId = currentUser(request);
         return expenditureQueryService.listApiKeys(userId, provider);
+    }
+
+    /**
+     * Team (or admin) view: sum {@code monthly_expenditure_agg} for many platform user ids for one calendar month.
+     * Caller must only pass ids the user is allowed to see (enforced at BFF/Gateway in production).
+     */
+    @PostMapping("/team/month-rollup")
+    public TeamMonthRollupResponse teamMonthRollup(HttpServletRequest request, @RequestBody TeamMonthRollupRequest body) {
+        currentUser(request);
+        return expenditureTeamRollupService.rollup(body);
     }
 
     private static String currentUser(HttpServletRequest request) {

@@ -15,6 +15,14 @@ public class BillingRabbitConfiguration {
         return new TopicExchange(props.getExchange(), true, false);
     }
 
+    /**
+     * Outbound exchange for {@link com.eevee.usage.events.UsageCostFinalizedEvent} (separate from inbound {@code usage.events}).
+     */
+    @Bean
+    public TopicExchange billingCostEventsExchange(BillingRabbitProperties props) {
+        return new TopicExchange(props.getCostOut().getExchange(), true, false);
+    }
+
     @Bean
     public Queue billingQueue(BillingRabbitProperties props) {
         return new Queue(props.getQueue(), true);

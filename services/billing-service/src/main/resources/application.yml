@@ -45,6 +45,10 @@ billing:
     exchange: usage.events
     routing-key: usage.recorded
     queue: billing-service.queue
+    cost-out:
+      enabled: ${BILLING_RABBIT_COST_OUT_ENABLED:true}
+      exchange: ${BILLING_RABBIT_COST_OUT_EXCHANGE:billing.events}
+      routing-key: ${BILLING_RABBIT_COST_OUT_ROUTING_KEY:usage.cost.finalized}
   gateway:
     shared-secret: ${GATEWAY_SHARED_SECRET:local-dev-gateway-shared-secret-do-not-use-in-prod}
   identity:

@@ -39,6 +39,11 @@ usage:
     exchange: usage.events
     routing-key: usage.recorded
     queue: usage-service.queue
+    cost-finalized:
+      enabled: ${USAGE_RABBIT_COST_FINALIZED_ENABLED:true}
+      exchange: ${USAGE_RABBIT_COST_FINALIZED_EXCHANGE:billing.events}
+      routing-key: ${USAGE_RABBIT_COST_FINALIZED_ROUTING_KEY:usage.cost.finalized}
+      queue: ${USAGE_RABBIT_COST_FINALIZED_QUEUE:usage-service.usage-cost-finalized.queue}
   analytics:
     max-range-days: ${USAGE_ANALYTICS_MAX_RANGE_DAYS:400}
   gateway:

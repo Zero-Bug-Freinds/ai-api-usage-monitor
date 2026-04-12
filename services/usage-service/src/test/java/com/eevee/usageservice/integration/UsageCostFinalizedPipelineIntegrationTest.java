@@ -1,24 +1,16 @@
-package com.eevee.billingservice.integration;
+package com.eevee.usageservice.integration;
 
-import com.eevee.billingservice.config.BillingRabbitProperties;
-import com.eevee.billingservice.repository.BillingProcessedEventRepository;
+import com.eevee.usage.events.UsageCostEventAmqp;
+import com.eevee.usage.events.UsageCostFinalizedEvent;
 import com.eevee.usage.events.AiProvider;
 import com.eevee.usage.events.TokenUsage;
-import com.eevee.usage.events.UsageCostFinalizedEvent;
 import com.eevee.usage.events.UsageRecordedEvent;
+import com.eevee.usageservice.repository.UsageRecordedLogRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
-import org.springframework.amqp.core.Binding;
-import org.springframework.amqp.core.BindingBuilder;
-import org.springframework.amqp.core.Queue;
-import org.springframework.amqp.core.TopicExchange;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -35,9 +27,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 @SpringBootTest
-@Import(BillingRecordedEventPipelineIntegrationTest.CostFinalizedAmqpTestConfig.class)
 @Testcontainers
-class BillingRecordedEventPipelineIntegrationTest {
+class UsageCostFinalizedPipelineIntegrationTest {
 
     @Container
     static RabbitMQContainer rabbit = new RabbitMQContainer("rabbitmq:3.13-alpine");
@@ -58,7 +49,7 @@ class BillingRecordedEventPipelineIntegrationTest {
         r.add("spring.datasource.username", postgres::getUsername);
         r.add("spring.datasource.password", postgres::getPassword);
         r.add("spring.jpa.hibernate.ddl-auto", () -> "create-drop");
-        r.add("billing.gateway.shared-secret", () -> "test-secret");
+        r.add("usage.gateway.shared-secret", () -> "test-secret");
     }
 
     @Autowired
@@ -68,41 +59,19 @@ class BillingRecordedEventPipelineIntegrationTest {
     private ObjectMapper objectMapper;
 
     @Autowired
-    private BillingProcessedEventRepository processedEventRepository;
-
-    static final String IT_COST_QUEUE = "it.usage.cost.finalized";
-
-    @TestConfiguration
-    static class CostFinalizedAmqpTestConfig {
-
-        @Bean
-        Queue integrationCostTestQueue() {
-            return new Queue(IT_COST_QUEUE, true);
-        }
-
-        @Bean
-        Binding integrationCostTestBinding(
-                Queue integrationCostTestQueue,
-                @Qualifier("billingCostEventsExchange") TopicExchange billingCostEventsExchange,
-                BillingRabbitProperties props
-        ) {
-            return BindingBuilder.bind(integrationCostTestQueue)
-                    .to(billingCostEventsExchange)
-                    .with(props.getCostOut().getRoutingKey());
-        }
-    }
+    private UsageRecordedLogRepository repository;
 
     @Test
-    void jsonPublishedLikeProxy_isConsumedAndMarkedProcessed() throws Exception {
+    void usageRowThenCostFinalizedEvent_updatesEstimatedCost() throws Exception {
         UUID eventId = UUID.randomUUID();
-        UsageRecordedEvent event = new UsageRecordedEvent(
+        UsageRecordedEvent recorded = new UsageRecordedEvent(
                 eventId,
                 Instant.parse("2025-06-01T12:00:00Z"),
-                "corr-it",
-                "user-it",
+                "corr-cost",
+                "user-cost",
                 null,
                 null,
-                "key-it",
+                "key-cost",
                 "cafebabedeadbeef",
                 "managed",
                 AiProvider.OPENAI,
@@ -116,24 +85,22 @@ class BillingRecordedEventPipelineIntegrationTest {
                 200
         );
 
-        String json = objectMapper.writeValueAsString(event);
-        rabbitTemplate.convertAndSend("usage.events", "usage.recorded", json);
+        rabbitTemplate.convertAndSend("usage.events", "usage.recorded", objectMapper.writeValueAsString(recorded));
 
         await().atMost(15, SECONDS).pollInterval(100, java.util.concurrent.TimeUnit.MILLISECONDS)
-                .until(() -> processedEventRepository.existsById(eventId));
+                .until(() -> repository.existsByEventId(eventId));
 
-        assertThat(processedEventRepository.findById(eventId)).isPresent();
+        assertThat(repository.findById(eventId)).isPresent();
+        assertThat(repository.findById(eventId).orElseThrow().getEstimatedCost()).isEqualByComparingTo(BigDecimal.ZERO);
+
+        UsageCostFinalizedEvent finalized = UsageCostFinalizedEvent.v1(eventId, new BigDecimal("0.042"));
+        rabbitTemplate.convertAndSend(
+                UsageCostEventAmqp.TOPIC_EXCHANGE_NAME,
+                UsageCostEventAmqp.ROUTING_KEY_COST_FINALIZED,
+                objectMapper.writeValueAsString(finalized));
 
         await().atMost(15, SECONDS).pollInterval(100, java.util.concurrent.TimeUnit.MILLISECONDS)
-                .until(() -> processedEventRepository.findById(eventId)
-                        .map(r -> r.getCostEventPublishedAt() != null)
-                        .orElse(false));
-
-        var costMsg = rabbitTemplate.receive(IT_COST_QUEUE, 5000);
-        assertThat(costMsg).isNotNull();
-        UsageCostFinalizedEvent costEvent = objectMapper.readValue(costMsg.getBody(), UsageCostFinalizedEvent.class);
-        assertThat(costEvent.eventId()).isEqualTo(eventId);
-        assertThat(costEvent.estimatedCostUsd()).isNotNull();
-        assertThat(costEvent.schemaVersion()).isEqualTo(UsageCostFinalizedEvent.CURRENT_SCHEMA_VERSION);
+                .untilAsserted(() -> assertThat(repository.findById(eventId).orElseThrow().getEstimatedCost())
+                        .isEqualByComparingTo("0.042"));
     }
 }
