@@ -15,6 +15,13 @@ import {
 import { LogoutButton } from "@/components/auth/logout-button"
 import { cn } from "@/lib/utils"
 
+/** Identity `web/`가 다른 오리진일 때(로컬 분리 포트). 단일 도메인 엣지에서는 빈 문자열. basePath=/billing 이면 상대 `/dashboard` 가 `/billing/dashboard` 로 잘못 붙으므로 오리진을 붙인다. */
+function identityHref(path: string): string {
+  const base = (process.env.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN ?? "").replace(/\/$/, "")
+  if (!base) return path
+  return `${base}${path.startsWith("/") ? path : `/${path}`}`
+}
+
 type NavItem = {
   href: string
   label: string
@@ -49,7 +56,7 @@ export function DashboardSidebar() {
 
       <div className="px-2 py-2">
         <Link
-          href="/"
+          href={identityHref("/")}
           className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <ChevronLeft className="size-4 shrink-0" aria-hidden />
@@ -59,11 +66,12 @@ export function DashboardSidebar() {
 
       <nav className="flex flex-1 flex-col gap-0.5 px-2 pb-2" aria-label="앱 메뉴">
         {NAV_ITEMS.map((item) => {
+          const href = identityHref(item.href)
           const active = navActive(pathname, item.href)
           return (
             <Link
               key={item.href}
-              href={item.href}
+              href={href}
               className={cn(
                 "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors",
                 active

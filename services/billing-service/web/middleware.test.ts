@@ -4,7 +4,7 @@ import { NextRequest } from "next/server";
 import { config, middleware } from "./middleware";
 
 function makeRequest(pathname: string, cookieHeader?: string) {
-  const url = `http://localhost:3003${pathname}`;
+  const url = `http://localhost:3000${pathname}`;
   return new NextRequest(url, {
     headers: cookieHeader ? { cookie: cookieHeader } : {},
   });
