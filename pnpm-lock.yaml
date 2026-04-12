@@ -18,6 +18,34 @@ importers:
         specifier: ^4.1.1
         version: 4.1.2(@types/node@22.19.17)(jsdom@29.0.1(@noble/hashes@1.8.0))(msw@2.12.14(@types/node@22.19.17)(typescript@5.9.3))(vite@8.0.3(@emnapi/core@1.9.2)(@emnapi/runtime@1.9.2)(@types/node@22.19.17)(jiti@2.6.1)(terser@5.46.1))
 
+  packages/shell:
+    dependencies:
+      '@ai-usage/ui':
+        specifier: workspace:*
+        version: link:../ui
+      lucide-react:
+        specifier: ^1.6.0
+        version: 1.7.0(react@19.2.4)
+    devDependencies:
+      '@types/react':
+        specifier: ^19
+        version: 19.2.14
+      '@types/react-dom':
+        specifier: ^19
+        version: 19.2.3(@types/react@19.2.14)
+      next:
+        specifier: 16.2.1
+        version: 16.2.1(@babel/core@7.29.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      react:
+        specifier: 19.2.4
+        version: 19.2.4
+      react-dom:
+        specifier: 19.2.4
+        version: 19.2.4(react@19.2.4)
+      typescript:
+        specifier: ^5
+        version: 5.9.3
+
   packages/ui:
     dependencies:
       class-variance-authority:
@@ -54,6 +82,9 @@ importers:
 
   services/billing-service/web:
     dependencies:
+      '@ai-usage/shell':
+        specifier: workspace:*
+        version: link:../../../packages/shell
       '@ai-usage/ui':
         specifier: workspace:*
         version: link:../../../packages/ui
@@ -112,6 +143,9 @@ importers:
 
   services/identity-service/web:
     dependencies:
+      '@ai-usage/shell':
+        specifier: workspace:*
+        version: link:../../../packages/shell
       '@ai-usage/ui':
         specifier: workspace:*
         version: link:../../../packages/ui
@@ -289,6 +323,9 @@ importers:
 
   services/usage-service/web:
     dependencies:
+      '@ai-usage/shell':
+        specifier: workspace:*
+        version: link:../../../packages/shell
       '@ai-usage/ui':
         specifier: workspace:*
         version: link:../../../packages/ui

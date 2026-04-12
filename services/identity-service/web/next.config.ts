@@ -30,7 +30,7 @@ const nextConfig: NextConfig = {
   output: "standalone",
   /* 모노레포: standalone 루트에 server.js (Dockerfile CMD node server.js) */
   outputFileTracingRoot: path.join(__dirname, "../../.."),
-  transpilePackages: ["@ai-usage/ui"],
+  transpilePackages: ["@ai-usage/ui", "@ai-usage/shell"],
   async rewrites() {
     const origin = usageOrigin();
     const team = teamOrigin();

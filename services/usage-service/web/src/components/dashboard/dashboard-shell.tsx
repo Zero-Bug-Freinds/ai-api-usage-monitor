@@ -2,6 +2,8 @@
 
 import type { ReactNode } from "react"
 
+import { ConsoleShell } from "@ai-usage/shell"
+
 import { DashboardSidebar } from "@/components/dashboard/dashboard-sidebar"
 
 type DashboardShellProps = {
@@ -13,11 +15,6 @@ type DashboardShellProps = {
  */
 export function DashboardShell({ children }: DashboardShellProps) {
   return (
-    <div className="flex min-h-screen w-full bg-background">
-      <DashboardSidebar />
-      <main className="min-h-screen min-w-0 flex-1 overflow-x-auto">
-        <div className="mx-auto min-h-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8">{children}</div>
-      </main>
-    </div>
+    <ConsoleShell sidebar={<DashboardSidebar />}>{children}</ConsoleShell>
   )
 }
