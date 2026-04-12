@@ -54,7 +54,6 @@ const PROVIDER_LABEL: Record<string, string> = {
   ANTHROPIC: "Anthropic",
 }
 
-const RANGE_DAYS = 30
 const MONTHLY_LOOKBACK_DAYS = 365
 
 const DASHBOARD_PROVIDER_ALL = "__ALL__"
@@ -92,6 +91,66 @@ function rangeForPeriod(mode: PeriodMode, todayKst: string, customFrom: string, 
   }
 }
 
+/** KST 날짜 문자열 구간의 포함 일수 (시작·종료 당일 포함). */
+function kstDaysInclusive(fromIso: string, toIso: string): number {
+  const a = Date.parse(`${fromIso}T12:00:00+09:00`)
+  const b = Date.parse(`${toIso}T12:00:00+09:00`)
+  if (Number.isNaN(a) || Number.isNaN(b) || b < a) return 1
+  return Math.floor((b - a) / 86_400_000) + 1
+}
+
+/** 동일 길이의 직전 기간 [prevFrom, prevTo] (포함 일수 = 선택 구간과 동일). */
+function previousPeriodBounds(fromIso: string, toIso: string): { prevFrom: string; prevTo: string } {
+  const n = kstDaysInclusive(fromIso, toIso)
+  const prevTo = addKstDays(fromIso, -1)
+  const prevFrom = addKstDays(fromIso, -n)
+  return { prevFrom, prevTo }
+}
+
+function kpiPeriodPrefix(mode: PeriodMode, fromIso: string, toIso: string): string {
+  switch (mode) {
+    case "today":
+      return "오늘의"
+    case "7d":
+      return "7일간"
+    case "30d":
+      return "30일간"
+    case "custom": {
+      const n = kstDaysInclusive(fromIso, toIso)
+      return `${n}일간`
+    }
+    default:
+      return "선택 기간"
+  }
+}
+
+function costCompareLabel(mode: PeriodMode, fromIso: string, toIso: string): string {
+  switch (mode) {
+    case "today":
+      return "전일 동기 대비"
+    case "7d":
+      return "이전 7일 대비"
+    case "30d":
+      return "이전 30일 대비"
+    case "custom": {
+      const n = kstDaysInclusive(fromIso, toIso)
+      return `이전 ${n}일 대비`
+    }
+    default:
+      return "이전 동일 기간 대비"
+  }
+}
+
+/**
+ * 이전 기간 대비 비용 증감률(%). 기준 비용 ≤ 0이면 0%로 표시해 '비교 불가' 문구를 쓰지 않음.
+ */
+function percentCostChangeVsPrevious(current: number, previous: number): number {
+  if (previous > 0) {
+    return ((current - previous) / previous) * 100
+  }
+  return 0
+}
+
 function hashToUint(str: string): number {
   let h = 2166136261
   for (let i = 0; i < str.length; i++) {
@@ -120,6 +179,8 @@ function labelForProviderCode(code: string): string {
 }
 
 const H_BAR_MARGIN = { left: 8, right: 16 }
+/** 출력 토큰 차트: 왼쪽 차트와 모델 라벨 중복을 줄이기 위해 Y축만 좁힘 */
+const H_BAR_MARGIN_NO_Y_LABEL = { left: 4, right: 16 }
 const H_BAR_HEIGHT = 320
 
 export function UsageDashboard() {
@@ -134,77 +195,93 @@ export function UsageDashboard() {
 
   const [costKpi, setCostKpi] = React.useState<UsageCostIntradayKpiResponse | null>(null)
   const [hourly, setHourly] = React.useState<HourlyUsagePoint[] | null>(null)
-  const [summaryRange, setSummaryRange] = React.useState<UsageSummaryResponse | null>(null)
-  const [summaryToday, setSummaryToday] = React.useState<UsageSummaryResponse | null>(null)
+  const [kpiSummary, setKpiSummary] = React.useState<UsageSummaryResponse | null>(null)
+  const [prevPeriodSummary, setPrevPeriodSummary] = React.useState<UsageSummaryResponse | null>(null)
   const [daily, setDaily] = React.useState<DailyUsagePoint[]>([])
   const [monthly, setMonthly] = React.useState<MonthlyUsagePoint[]>([])
   const [byModel, setByModel] = React.useState<ModelUsageAggregate[]>([])
 
-  const todayKst = formatKstIsoDate()
-  const { from: rangeFrom, to: rangeTo } = rangeForPeriod(periodMode, todayKst, customFrom, customTo)
+  /** API·KPI 라벨에 쓰는 구간(마지막으로 로드한 기준). effect 안에서만 갱신해 요청 간 날짜 불일치를 막는다. */
+  const [loadedRange, setLoadedRange] = React.useState<{ from: string; to: string } | null>(null)
+
+  const [clientReady, setClientReady] = React.useState(false)
+  React.useLayoutEffect(() => {
+    setClientReady(true)
+  }, [])
+
+  const kstTodayFallback = formatKstIsoDate()
+  const rangeFrom = loadedRange?.from ?? kstTodayFallback
+  const rangeTo = loadedRange?.to ?? kstTodayFallback
 
   React.useEffect(() => {
+    if (!clientReady) return
     let cancelled = false
     setMainLoading(true)
     setMainError(null)
     ;(async () => {
       try {
         const t = formatKstIsoDate()
-        const f30 = addKstDays(t, -(RANGE_DAYS - 1))
+        const { from: rf, to: rt } = rangeForPeriod(periodMode, t, customFrom, customTo)
+        const { prevFrom: pf, prevTo: pt } = previousPeriodBounds(rf, rt)
+        if (!cancelled) {
+          setLoadedRange({ from: rf, to: rt })
+        }
+
         const fy = addKstDays(t, -MONTHLY_LOOKBACK_DAYS)
         const pq = buildUsageQuery({ provider: providerParam(dashProvider) })
+        const qRange = buildUsageQuery({
+          from: rf,
+          to: rt,
+          provider: providerParam(dashProvider),
+        })
+        const qPrev = buildUsageQuery({
+          from: pf,
+          to: pt,
+          provider: providerParam(dashProvider),
+        })
+
+        const summaryP = fetchUsageJson<UsageSummaryResponse>(`dashboard/summary${qRange}`)
+        const summaryPrevP = fetchUsageJson<UsageSummaryResponse>(`dashboard/summary${qPrev}`)
+        const dailyP = fetchUsageJson<DailyUsagePoint[]>(`dashboard/series/daily${qRange}`)
+        const monthlyP = fetchUsageJson<MonthlyUsagePoint[]>(
+          `dashboard/series/monthly${buildUsageQuery({ from: fy, to: rt, provider: providerParam(dashProvider) })}`
+        )
+        const byModelP = fetchUsageJson<ModelUsageAggregate[]>(`dashboard/by-model${qRange}`)
 
         if (periodMode === "today") {
-          const [kpi, h, st, s30, d, m, bm] = await Promise.all([
+          const [kpi, h, cur, prev, d, m, bm] = await Promise.all([
             fetchUsageJson<UsageCostIntradayKpiResponse>(`dashboard/kpi/cost-intraday${pq}`),
             fetchUsageJson<HourlyUsagePoint[]>(
               `dashboard/series/hourly${buildUsageQuery({ date: t, provider: providerParam(dashProvider) })}`
             ),
-            fetchUsageJson<UsageSummaryResponse>(
-              `dashboard/summary${buildUsageQuery({ from: t, to: t, provider: providerParam(dashProvider) })}`
-            ),
-            fetchUsageJson<UsageSummaryResponse>(
-              `dashboard/summary${buildUsageQuery({ from: f30, to: t, provider: providerParam(dashProvider) })}`
-            ),
-            fetchUsageJson<DailyUsagePoint[]>(
-              `dashboard/series/daily${buildUsageQuery({ from: f30, to: t, provider: providerParam(dashProvider) })}`
-            ),
-            fetchUsageJson<MonthlyUsagePoint[]>(
-              `dashboard/series/monthly${buildUsageQuery({ from: fy, to: t, provider: providerParam(dashProvider) })}`
-            ),
-            fetchUsageJson<ModelUsageAggregate[]>(
-              `dashboard/by-model${buildUsageQuery({ from: f30, to: t, provider: providerParam(dashProvider) })}`
-            ),
+            summaryP,
+            summaryPrevP,
+            dailyP,
+            monthlyP,
+            byModelP,
           ])
           if (!cancelled) {
             setCostKpi(kpi)
             setHourly(Array.isArray(h) ? h : [])
-            setSummaryToday(st)
-            setSummaryRange(s30)
+            setKpiSummary(cur)
+            setPrevPeriodSummary(prev)
             setDaily(Array.isArray(d) ? d : [])
             setMonthly(Array.isArray(m) ? m : [])
             setByModel(Array.isArray(bm) ? bm : [])
           }
         } else {
-          const [sr, d, m, bm] = await Promise.all([
-            fetchUsageJson<UsageSummaryResponse>(
-              `dashboard/summary${buildUsageQuery({ from: rangeFrom, to: rangeTo, provider: providerParam(dashProvider) })}`
-            ),
-            fetchUsageJson<DailyUsagePoint[]>(
-              `dashboard/series/daily${buildUsageQuery({ from: rangeFrom, to: rangeTo, provider: providerParam(dashProvider) })}`
-            ),
-            fetchUsageJson<MonthlyUsagePoint[]>(
-              `dashboard/series/monthly${buildUsageQuery({ from: fy, to: rangeTo, provider: providerParam(dashProvider) })}`
-            ),
-            fetchUsageJson<ModelUsageAggregate[]>(
-              `dashboard/by-model${buildUsageQuery({ from: rangeFrom, to: rangeTo, provider: providerParam(dashProvider) })}`
-            ),
+          const [cur, prev, d, m, bm] = await Promise.all([
+            summaryP,
+            summaryPrevP,
+            dailyP,
+            monthlyP,
+            byModelP,
           ])
           if (!cancelled) {
             setCostKpi(null)
             setHourly(null)
-            setSummaryToday(null)
-            setSummaryRange(sr)
+            setKpiSummary(cur)
+            setPrevPeriodSummary(prev)
             setDaily(Array.isArray(d) ? d : [])
             setMonthly(Array.isArray(m) ? m : [])
             setByModel(Array.isArray(bm) ? bm : [])
@@ -221,7 +298,7 @@ export function UsageDashboard() {
     return () => {
       cancelled = true
     }
-  }, [mainRefresh, periodMode, rangeFrom, rangeTo, dashProvider])
+  }, [clientReady, mainRefresh, periodMode, customFrom, customTo, dashProvider])
 
   const dailyChart = React.useMemo(
     () =>
@@ -295,23 +372,34 @@ export function UsageDashboard() {
   }, [byModel])
 
   const hasMainData =
-    (summaryRange && summaryRange.totalRequests > 0) ||
+    (kpiSummary && kpiSummary.totalRequests > 0) ||
     daily.length > 0 ||
     monthly.length > 0 ||
     byModel.some((m) => m.requestCount > 0) ||
     (hourly && hourly.some((h) => h.requestCount > 0 || toNumber(h.estimatedCostUsd) > 0))
 
-  const rangeCost = summaryRange ? toNumber(summaryRange.totalEstimatedCost) : 0
-  const rangeRequests = summaryRange?.totalRequests ?? 0
-  const rangeTokens = summaryRange?.totalInputTokens ?? 0
-  const rangeErrors = summaryRange?.totalErrors ?? 0
+  const periodPrefix = kpiPeriodPrefix(periodMode, rangeFrom, rangeTo)
+  const compareCostLabel = costCompareLabel(periodMode, rangeFrom, rangeTo)
+
+  const rangeCost = kpiSummary ? toNumber(kpiSummary.totalEstimatedCost) : 0
+  const rangeRequests = kpiSummary?.totalRequests ?? 0
+  const rangeTokens = kpiSummary?.totalInputTokens ?? 0
+  const rangeErrors = kpiSummary?.totalErrors ?? 0
   const rangeSuccess =
     rangeRequests > 0 ? Math.max(0, rangeRequests - rangeErrors) : 0
   const successRatePercent =
-    rangeRequests > 0 ? (100 * rangeSuccess) / rangeRequests : null
+    rangeRequests > 0 ? (100 * rangeSuccess) / rangeRequests : 0
 
-  const todayCostFromKpi = costKpi ? toNumber(costKpi.todayEstimatedCostUsd) : 0
-  const todayRequests = summaryToday?.totalRequests ?? 0
+  const prevCostForCompare = prevPeriodSummary ? toNumber(prevPeriodSummary.totalEstimatedCost) : 0
+
+  const costChangePercent = React.useMemo(() => {
+    if (periodMode === "today") {
+      if (costKpi?.changeRatePercent == null) return 0
+      return toNumber(costKpi.changeRatePercent)
+    }
+    return percentCostChangeVsPrevious(rangeCost, prevCostForCompare)
+  }, [periodMode, costKpi, rangeCost, prevCostForCompare])
+
   const monthlyHasActivity = monthlyChart.some((r) => r.requestCount > 0)
 
   const mainChartTitle =
@@ -411,76 +499,48 @@ export function UsageDashboard() {
         </p>
       ) : null}
 
-      {mainLoading ? (
+      {!clientReady || mainLoading ? (
         <p className="mb-8 text-sm text-muted-foreground">불러오는 중…</p>
       ) : (
         <>
           <section className="mb-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {periodMode === "today" && costKpi ? (
-              <>
-                <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
-                  <p className="text-xs font-medium text-muted-foreground">오늘 예상 지출 (USD)</p>
-                  <p className="mt-1 text-2xl font-semibold tabular-nums">{formatUsd(todayCostFromKpi)}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    오늘 요청 {todayRequests.toLocaleString("en-US")}건
-                  </p>
-                </div>
-                <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
-                  <p className="text-xs font-medium text-muted-foreground">전일 동기 대비</p>
-                  {costKpi.changeRatePercent == null ? (
-                    <p className="mt-1 text-sm text-muted-foreground">비교 불가 (전일 동일 구간 비용 없음)</p>
-                  ) : (
-                    <p className="mt-1 text-2xl font-semibold tabular-nums">
-                      {toNumber(costKpi.changeRatePercent).toFixed(1)}%
-                    </p>
-                  )}
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    기준 시각 {formatOccurredAtKst(costKpi.comparisonWindowEnd)} (KST)
-                  </p>
-                </div>
-                <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
-                  <p className="text-xs font-medium text-muted-foreground">최근 {RANGE_DAYS}일 총 비용</p>
-                  <p className="mt-1 text-2xl font-semibold tabular-nums">
-                    {formatUsd(summaryRange ? toNumber(summaryRange.totalEstimatedCost) : 0)}
-                  </p>
-                </div>
-                <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
-                  <p className="text-xs font-medium text-muted-foreground">최근 {RANGE_DAYS}일 요청</p>
-                  <p className="mt-1 text-2xl font-semibold tabular-nums">
-                    {formatRequestCount(summaryRange?.totalRequests ?? 0)}
-                  </p>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
-                  <p className="text-xs font-medium text-muted-foreground">기간 총 비용 (USD)</p>
-                  <p className="mt-1 text-2xl font-semibold tabular-nums">{formatUsd(rangeCost)}</p>
-                </div>
-                <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
-                  <p className="text-xs font-medium text-muted-foreground">기간 총 요청</p>
-                  <p className="mt-1 text-2xl font-semibold tabular-nums">{formatRequestCount(rangeRequests)}</p>
-                </div>
-                <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
-                  <p className="text-xs font-medium text-muted-foreground">기간 입력 토큰</p>
-                  <p className="mt-1 text-2xl font-semibold tabular-nums">{formatTokenCount(rangeTokens)}</p>
-                </div>
-                <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
-                  <p className="text-xs font-medium text-muted-foreground">성공률</p>
-                  <p className="mt-1 text-2xl font-semibold tabular-nums">
-                    {successRatePercent == null ? "—" : `${successRatePercent.toFixed(1)}%`}
-                  </p>
-                  <p className={`mt-1 text-xs tabular-nums ${errorSubStyle}`}>
-                    오류 {rangeErrors.toLocaleString("en-US")}건 / 총 요청{" "}
-                    {rangeRequests.toLocaleString("en-US")}건
-                  </p>
-                  <p className="mt-1 text-[11px] text-muted-foreground leading-snug">
-                    성공률 = (총 요청 − 오류 건수) ÷ 총 요청 × 100. 오류는 요청 실패 또는 HTTP 4xx 이상으로
-                    집계됩니다.
-                  </p>
-                </div>
-              </>
-            )}
+            <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
+              <p className="text-xs font-medium text-muted-foreground">
+                {periodPrefix} 총 비용 (USD)
+              </p>
+              <p className="mt-1 text-2xl font-semibold tabular-nums">{formatUsd(rangeCost)}</p>
+              <p className="mt-2 text-xs text-muted-foreground">
+                {compareCostLabel}{" "}
+                <span className="font-medium text-foreground tabular-nums">
+                  {costChangePercent >= 0 ? "+" : ""}
+                  {costChangePercent.toFixed(1)}%
+                </span>
+              </p>
+              {periodMode === "today" && costKpi ? (
+                <p className="mt-1 text-[11px] text-muted-foreground leading-snug">
+                  기준 {formatOccurredAtKst(costKpi.comparisonWindowEnd)} (KST)
+                </p>
+              ) : null}
+            </div>
+            <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
+              <p className="text-xs font-medium text-muted-foreground">{periodPrefix} 총 요청 수</p>
+              <p className="mt-1 text-2xl font-semibold tabular-nums">
+                {formatRequestCount(rangeRequests)}
+              </p>
+            </div>
+            <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
+              <p className="text-xs font-medium text-muted-foreground">{periodPrefix} 총 입력 토큰</p>
+              <p className="mt-1 text-2xl font-semibold tabular-nums">{formatTokenCount(rangeTokens)}</p>
+            </div>
+            <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
+              <p className="text-xs font-medium text-muted-foreground">{periodPrefix} 성공률</p>
+              <p className="mt-1 text-2xl font-semibold tabular-nums">
+                {successRatePercent.toFixed(1)}%
+              </p>
+              <p className={`mt-2 text-xs tabular-nums ${errorSubStyle}`}>
+                오류 {rangeErrors.toLocaleString("en-US")}건 / 총 {rangeRequests.toLocaleString("en-US")}건
+              </p>
+            </div>
           </section>
 
           {!hasMainData ? (
@@ -492,7 +552,7 @@ export function UsageDashboard() {
           <section className="mb-10 rounded-lg border border-border p-4 shadow-sm">
             <h2 className="mb-4 text-lg font-medium">{mainChartTitle}</h2>
             {periodMode === "today" && hourlyChart.length > 0 ? (
-              <div className="h-[380px] w-full">
+              <div className="h-[380px] min-h-[380px] w-full min-w-0">
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={hourlyChart}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -527,7 +587,7 @@ export function UsageDashboard() {
                 </ResponsiveContainer>
               </div>
             ) : periodMode !== "today" && dailyChart.length > 0 ? (
-              <div className="h-[380px] w-full">
+              <div className="h-[380px] min-h-[380px] w-full min-w-0">
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={dailyChart}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -572,7 +632,7 @@ export function UsageDashboard() {
               {pieData.length === 0 ? (
                 <p className="text-sm text-muted-foreground">집계 데이터 없음</p>
               ) : (
-                <div className="h-[320px] w-full">
+                <div className="h-[320px] min-h-[320px] w-full min-w-0">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
@@ -606,7 +666,7 @@ export function UsageDashboard() {
               {providerPieData.length === 0 ? (
                 <p className="text-sm text-muted-foreground">집계 데이터 없음</p>
               ) : (
-                <div className="h-[320px] w-full">
+                <div className="h-[320px] min-h-[320px] w-full min-w-0">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
@@ -640,7 +700,7 @@ export function UsageDashboard() {
               {modelBarRows.length === 0 ? (
                 <p className="text-sm text-muted-foreground">집계 데이터 없음</p>
               ) : (
-                <div className="h-[320px] w-full max-w-full">
+                <div className="h-[320px] min-h-[320px] w-full max-w-full min-w-0">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart layout="vertical" data={modelBarRows} margin={H_BAR_MARGIN}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -659,58 +719,72 @@ export function UsageDashboard() {
             </section>
           </div>
 
-          <section className="mb-10 rounded-lg border border-border p-4 shadow-sm">
-            <h2 className="mb-4 text-lg font-medium">모델별 입력 토큰 (가로)</h2>
+          <div className="mb-10 grid gap-6 lg:grid-cols-2 lg:gap-8">
             {modelBarRows.length === 0 ? (
-              <p className="text-sm text-muted-foreground">집계 데이터 없음</p>
+              <section className="rounded-lg border border-border bg-card p-4 shadow-sm lg:col-span-2">
+                <h2 className="mb-4 text-lg font-medium">모델별 입력·출력 토큰 (가로)</h2>
+                <p className="text-sm text-muted-foreground">집계 데이터 없음</p>
+              </section>
             ) : (
-              <div className="h-[320px] w-full max-w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart layout="vertical" data={modelBarRows} margin={H_BAR_MARGIN}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis type="number" />
-                    <YAxis type="category" dataKey="label" width={128} tick={{ fontSize: 11 }} />
-                    <Tooltip formatter={(v) => formatTokenCount(tooltipNumericValue(v))} />
-                    <Bar dataKey="tokens" name="입력 토큰" radius={[0, 4, 4, 0]}>
-                      {modelBarRows.map((row) => (
-                        <Cell key={`in-${row.model}`} fill={colorForModel(row.model, row.provider)} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+              <>
+                <section className="rounded-lg border border-border bg-card p-4 shadow-sm min-w-0">
+                  <h2 className="mb-4 text-lg font-medium">모델별 입력 토큰 (가로)</h2>
+                  <div
+                    className="w-full max-w-full min-w-0"
+                    style={{ height: H_BAR_HEIGHT, minHeight: H_BAR_HEIGHT }}
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart layout="vertical" data={modelBarRows} margin={H_BAR_MARGIN}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                        <XAxis type="number" tick={{ fontSize: 11 }} />
+                        <YAxis type="category" dataKey="label" width={128} tick={{ fontSize: 11 }} />
+                        <Tooltip
+                          formatter={(v) => formatTokenCount(tooltipNumericValue(v))}
+                          labelFormatter={(label) => String(label)}
+                        />
+                        <Bar dataKey="tokens" name="입력 토큰" radius={[0, 4, 4, 0]}>
+                          {modelBarRows.map((row) => (
+                            <Cell key={`in-${row.model}`} fill={colorForModel(row.model, row.provider)} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </section>
+                <section className="rounded-lg border border-border bg-card p-4 shadow-sm min-w-0">
+                  <h2 className="mb-4 text-lg font-medium">모델별 출력 토큰 (가로)</h2>
+                  <div
+                    className="w-full max-w-full min-w-0"
+                    style={{ height: H_BAR_HEIGHT, minHeight: H_BAR_HEIGHT }}
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart layout="vertical" data={modelBarRows} margin={H_BAR_MARGIN_NO_Y_LABEL}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                        <XAxis type="number" tick={{ fontSize: 11 }} />
+                        <YAxis type="category" dataKey="label" hide />
+                        <Tooltip
+                          formatter={(v) => formatTokenCount(tooltipNumericValue(v))}
+                          labelFormatter={(label) => String(label)}
+                        />
+                        <Bar dataKey="outTokens" name="출력 토큰" radius={[0, 4, 4, 0]}>
+                          {modelBarRows.map((row) => (
+                            <Cell key={`out-${row.model}`} fill={colorForModel(row.model, row.provider)} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </section>
+              </>
             )}
-          </section>
-
-          <section className="mb-10 rounded-lg border border-border p-4 shadow-sm">
-            <h2 className="mb-4 text-lg font-medium">모델별 출력 토큰 (가로)</h2>
-            {modelBarRows.length === 0 ? (
-              <p className="text-sm text-muted-foreground">집계 데이터 없음</p>
-            ) : (
-              <div className="h-[320px] w-full max-w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart layout="vertical" data={modelBarRows} margin={H_BAR_MARGIN}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis type="number" />
-                    <YAxis type="category" dataKey="label" width={128} tick={{ fontSize: 11 }} />
-                    <Tooltip formatter={(v) => formatTokenCount(tooltipNumericValue(v))} />
-                    <Bar dataKey="outTokens" name="출력 토큰" radius={[0, 4, 4, 0]}>
-                      {modelBarRows.map((row) => (
-                        <Cell key={`out-${row.model}`} fill={colorForModel(row.model, row.provider)} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </section>
+          </div>
 
           <section className="mb-10 rounded-lg border border-border p-4 shadow-sm">
             <h2 className="mb-4 text-lg font-medium">월별 요청 수 (누적 추이)</h2>
             {monthlyChart.length === 0 || !monthlyHasActivity ? (
               <p className="text-sm text-muted-foreground">집계 데이터 없음</p>
             ) : (
-              <div className="h-[360px] w-full">
+              <div className="h-[360px] min-h-[360px] w-full min-w-0">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={monthlyChart}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
