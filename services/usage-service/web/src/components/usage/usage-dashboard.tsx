@@ -214,13 +214,15 @@ type TokenStackRow = {
 
 type TokenStackTooltipProps = {
   active?: boolean
-  label?: string
-  payload?: Array<{ payload?: TokenStackRow }>
+  /** Recharts Tooltip passes `string | number` for category axis labels */
+  label?: string | number
+  /** Recharts passes `readonly TooltipPayload[]`, not a mutable array */
+  payload?: readonly unknown[]
 }
 
 function TokenStackTooltip({ active, payload, label }: TokenStackTooltipProps) {
   if (!active || !payload?.length) return null
-  const row = payload[0]?.payload
+  const row = (payload[0] as { payload?: TokenStackRow }).payload
   if (!row) return null
   return (
     <div className="rounded-md border border-border bg-card px-3 py-2 text-xs shadow-md">
