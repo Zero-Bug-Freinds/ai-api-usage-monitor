@@ -9,7 +9,6 @@ public record TeamApiKeySummaryResponse(
         Long id,
         String provider,
         String alias,
-        String keyPreview,
         @JsonProperty("monthlyBudgetUsd") BigDecimal monthlyBudgetUsd,
         Instant createdAt
 ) {

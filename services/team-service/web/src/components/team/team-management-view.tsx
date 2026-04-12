@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Eye, EyeOff } from "lucide-react"
+import { ChevronDown, ChevronRight, Eye, EyeOff } from "lucide-react"
 
 type ApiResponse<T> = {
   success: boolean
@@ -23,7 +23,6 @@ type TeamApiKeySummary = {
   id: number
   provider: string
   alias: string
-  keyPreview: string
   monthlyBudgetUsd: number | null
   createdAt: string
 }
@@ -50,7 +49,6 @@ function normalizeTeamApiKeySummary(item: unknown): TeamApiKeySummary | null {
   if (typeof v.id !== "number") return null
   if (typeof v.provider !== "string") return null
   if (typeof v.alias !== "string") return null
-  if (typeof v.keyPreview !== "string") return null
   if (typeof v.createdAt !== "string") return null
   const b = v.monthlyBudgetUsd
   let monthlyBudgetUsd: number | null = null
@@ -64,7 +62,6 @@ function normalizeTeamApiKeySummary(item: unknown): TeamApiKeySummary | null {
     id: v.id,
     provider: v.provider,
     alias: v.alias,
-    keyPreview: v.keyPreview,
     monthlyBudgetUsd,
     createdAt: v.createdAt,
   }
@@ -112,6 +109,7 @@ export function TeamManagementView() {
   const [editTeamApiKeyAlias, setEditTeamApiKeyAlias] = React.useState("")
   const [editTeamApiKeyBudget, setEditTeamApiKeyBudget] = React.useState("")
   const [teamApiKeyUpdateLoading, setTeamApiKeyUpdateLoading] = React.useState<string | null>(null)
+  const [openTeamId, setOpenTeamId] = React.useState<string | null>(null)
 
   const loadTeams = React.useCallback(async () => {
     setLoading(true)
@@ -176,12 +174,21 @@ export function TeamManagementView() {
   React.useEffect(() => {
     if (teams.length === 0) {
       setTeamApiKeysByTeamId({})
-      return
+      setOpenTeamId(null)
     }
-    for (const team of teams) {
-      void loadTeamApiKeys(team.id)
+  }, [teams.length])
+
+  React.useEffect(() => {
+    if (openTeamId && !teams.some((t) => t.id === openTeamId)) {
+      setOpenTeamId(null)
     }
-  }, [teams, loadTeamApiKeys])
+  }, [teams, openTeamId])
+
+  React.useEffect(() => {
+    if (!openTeamId) return
+    if (!teams.some((t) => t.id === openTeamId)) return
+    void loadTeamApiKeys(openTeamId)
+  }, [openTeamId, teams, loadTeamApiKeys])
 
   async function createTeam(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -426,9 +433,35 @@ export function TeamManagementView() {
 
       {!loading && teams.length > 0 ? (
         <ul className="divide-y divide-zinc-200 rounded-lg border border-zinc-200 bg-white">
-          {teams.map((team) => (
-            <li key={team.id} className="space-y-2 px-4 py-3">
-              <p className="font-medium">{team.name}</p>
+          {teams.map((team) => {
+            const isOpen = openTeamId === team.id
+            return (
+            <li key={team.id} className="overflow-hidden">
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-zinc-50"
+                aria-expanded={isOpen}
+                onClick={() => {
+                  setOpenTeamId((prev) => {
+                    if (prev === team.id) {
+                      cancelEditTeamApiKey()
+                      return null
+                    }
+                    cancelEditTeamApiKey()
+                    return team.id
+                  })
+                }}
+              >
+                {isOpen ? (
+                  <ChevronDown className="h-4 w-4 shrink-0 text-zinc-500" aria-hidden />
+                ) : (
+                  <ChevronRight className="h-4 w-4 shrink-0 text-zinc-500" aria-hidden />
+                )}
+                <span className="min-w-0 flex-1 font-medium">{team.name}</span>
+              </button>
+
+              {isOpen ? (
+              <div className="space-y-2 border-t border-zinc-200 bg-zinc-50/50 px-4 pb-4 pt-2">
               <p className="text-xs text-zinc-500">id: {team.id}</p>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <input
@@ -552,7 +585,7 @@ export function TeamManagementView() {
                             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                               <div>
                                 <p>
-                                  {apiKey.provider} / {apiKey.alias} / {apiKey.keyPreview}
+                                  {apiKey.provider} · {apiKey.alias}
                                 </p>
                                 <p className="text-[11px] text-zinc-500">
                                   월 예산:{" "}
@@ -629,8 +662,11 @@ export function TeamManagementView() {
                   <p className="text-xs text-zinc-500">등록된 팀 API Key가 없습니다.</p>
                 )}
               </div>
+              </div>
+              ) : null}
             </li>
-          ))}
+            )
+          })}
         </ul>
       ) : null}
     </main>

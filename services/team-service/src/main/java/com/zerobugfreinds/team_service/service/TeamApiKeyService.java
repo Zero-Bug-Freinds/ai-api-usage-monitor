@@ -178,14 +178,8 @@ public class TeamApiKeyService {
                 entity.getId(),
                 entity.getProvider().name(),
                 entity.getKeyAlias(),
-                maskedKeyPreview(entity.getProvider().name(), entity.getKeyHash()),
                 entity.getMonthlyBudgetUsd(),
                 entity.getCreatedAt()
         );
-    }
-
-    private static String maskedKeyPreview(String provider, String keyHash) {
-        String last4 = keyHash.length() >= 4 ? keyHash.substring(keyHash.length() - 4) : keyHash;
-        return provider + "-****" + last4;
     }
 }

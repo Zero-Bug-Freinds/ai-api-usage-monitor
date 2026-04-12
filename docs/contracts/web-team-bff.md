@@ -1,7 +1,7 @@
 # Web(Next.js) ↔ Team Service BFF 계약
 
-버전: 0.1  
-관련: [web-split-boundary.md](./web-split-boundary.md), [web-identity-bff.md](./web-identity-bff.md)
+버전: 0.2  
+관련: [web-split-boundary.md](./web-split-boundary.md), [web-identity-bff.md](./web-identity-bff.md) — `/teams` UI 소유·경로: §2.3
 
 ---
 
@@ -45,7 +45,7 @@
 - 팀원 초대 시 Team Service는 Identity 내부 API(`GET /internal/users/exists?email=...`)로
   사용자 존재 여부를 확인한 뒤, **실제로 존재하는 아이디(이메일)만** 초대를 허용한다.
 - 팀 API Key는 Team Service DB에 **평문 저장하지 않고 암호화 저장**한다.
-- 팀 API Key 조회 응답에는 `keyPreview`(마스킹된 미리보기)만 제공하고, 원문 키는 반환하지 않는다.
+- 팀 API Key 조회·등록·수정 응답에는 **원문 키를 포함하지 않는다**(미리보기 필드 없음). 저장은 DB에 암호화된다.
 
 ---
 
@@ -66,7 +66,7 @@
 
 - `POST /api/team/v1/teams/{id}/api-keys`
   - 요청 본문: `provider` (`OPENAI`/`GEMINI`/`CLAUDE`), `alias`, `externalKey`, `monthlyBudgetUsd` (0 이상, USD 월 예산 한도 — identity-service 외부 키와 동일 개념)
-  - 성공: `201`, `data`에 등록된 키 요약(`id`, `provider`, `alias`, `keyPreview`, `monthlyBudgetUsd`, `createdAt`)
+  - 성공: `201`, `data`에 등록된 키 요약(`id`, `provider`, `alias`, `monthlyBudgetUsd`, `createdAt`)
   - 실패:
     - `400` (`success=false`): 필수값 누락, alias 중복, 동일 provider+key 중복
     - `403` (`success=false`): 팀 멤버가 아닌 사용자의 등록 시도
@@ -86,3 +86,36 @@
   - 실패:
     - `403` (`success=false`): 팀 멤버가 아닌 사용자의 조회 시도
     - `404` (`success=false`): 대상 팀이 존재하지 않는 경우
+
+---
+
+## 6. Identity `web` `/teams` 화면·데모 순서 (현행 구현)
+
+구현 정본: `services/identity-service/web/src/components/account/teams-view.tsx`, `services/identity-service/web/src/app/teams/[[...path]]/page.tsx`. 팀 백엔드: `services/team-service/` (`TeamService.createTeam` 등).
+
+### 6.1 내비게이션
+
+- 좌측 대시보드 셸에서 **`팀`** → 브라우저 경로 **`/teams`** (Identity `web`이 페이지를 소유한다).
+- **`조직`** (`/organizations`)과는 **별도** 상위 메뉴이며, **「조직 설정 > 팀 관리」** 같은 중첩 메뉴는 없다.
+- 조직 맥락 뱃지·우측 상단 **「+ 새 팀 추가」** 전용 버튼·중앙 **데이터 테이블** 형태의 팀 그리드는 **본 저장소 UI에 없다** (데모 시나리오 작성 시 혼동하지 말 것).
+
+### 6.2 팀 만들기
+
+1. **`팀 만들기`**를 누르면 같은 카드 영역에 **인라인 폼**이 열린다(별도 중앙 모달 전용 컴포넌트가 아니다).
+2. **팀 이름 (필수)** 입력.
+3. **팀원 초대 (선택)** — 이메일(아이디) 입력란을 여러 개 둘 수 있다. 비우면 생성자만 멤버가 된다.
+4. **`생성`** — `POST /api/team/v1/teams` 본문은 **`{ "name": "…" }` 만** 보낸다. 생성이 성공한 뒤, 초대 이메일이 있으면 **팀별로** `POST /api/team/v1/teams/{id}/members` 를 연속 호출한다.
+5. **`취소`** — 폼을 닫는다.
+
+**팀 리더 지정 UI는 없다.** Team Service는 팀 생성 요청을 보낸 사용자를 멤버로 넣고 **OWNER** 역할을 부여한다.
+
+### 6.3 팀 목록 표시
+
+- 목록은 **데이터 테이블(컬럼: 리더·인원·생성일 등)** 이 아니라, **접이식(아코디언) 목록**이다.
+- 접힌 행에는 **팀 이름**만 보인다.
+- 행을 눌러 펼치면 팀 `id`, 멤버 수·이메일 목록, 초대 입력, 팀 API Key 등록·목록·수정·삭제 영역이 나온다. 펼친 팀에 대해서만 멤버/API Key 목록 API를 호출한다.
+- `GET /api/team/v1/me/teams` 응답의 팀 요약은 **`id`, `name`** 수준이며, **리더·인원 수·생성일**을 한 줄로 주지 않는다. 검증은 **이름이 목록에 나타나는지**, 펼쳤을 때 **멤버·초대·키** 동작이 보이는지로 맞춘다.
+
+### 6.4 Team `web` (`services/team-service/web/`)
+
+- 동일 도메인 로직을 **Team 전용 Next**에서도 볼 수 있다. UI 패턴(팀 만들기·접이식 목록 등)은 `team-management-view.tsx`가 대응한다. 브라우저 진입점으로는 보통 Identity의 **`/teams`** 를 쓴다([web-split-boundary.md](./web-split-boundary.md) §2.3).
