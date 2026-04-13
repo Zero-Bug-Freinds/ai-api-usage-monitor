@@ -42,6 +42,9 @@ import type {
 } from "@/lib/usage/types"
 import { addKstDays, formatKstIsoDate } from "@/lib/usage/kst-dates"
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const AnyLegend = Legend as any
+
 /** 공급사별 기본 색 — 모든 차트에서 동일 키에 동일 색 */
 const PROVIDER_COLOR: Record<string, string> = {
   GOOGLE: "#F97316",
@@ -921,7 +924,7 @@ export function UsageDashboard() {
                       label={{ value: "성공/오류율 (%)", angle: 90, position: "insideRight", offset: 2 }}
                     />
                     <Tooltip content={MainStabilityTooltip} />
-                    <Legend />
+                    <AnyLegend />
                     <Bar
                       yAxisId="left"
                       dataKey="requestCount"
@@ -970,7 +973,7 @@ export function UsageDashboard() {
                       label={{ value: "성공/오류율 (%)", angle: 90, position: "insideRight", offset: 2 }}
                     />
                     <Tooltip content={MainStabilityTooltip} />
-                    <Legend />
+                    <AnyLegend />
                     <Bar
                       yAxisId="left"
                       dataKey="requestCount"
@@ -1033,8 +1036,7 @@ export function UsageDashboard() {
                         ))}
                       </Pie>
                       <Tooltip content={ModelDonutTooltip} />
-                      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                      <Legend payload={modelPieLegendPayload as any} />
+                      <AnyLegend payload={modelPieLegendPayload} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
@@ -1069,8 +1071,7 @@ export function UsageDashboard() {
                         ))}
                       </Pie>
                       <Tooltip content={ProviderDonutTooltip} />
-                      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                      <Legend payload={providerPieLegendPayload as any} />
+                      <AnyLegend payload={providerPieLegendPayload} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
@@ -1146,8 +1147,7 @@ export function UsageDashboard() {
                     <XAxis type="number" tick={{ fontSize: 11 }} tickCount={8} />
                     <YAxis type="category" dataKey="label" width={128} tick={{ fontSize: 11 }} />
                     <Tooltip content={TokenStackTooltip} cursor={{ fill: "var(--muted)", fillOpacity: 0.12 }} />
-                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                    <Legend payload={tokenStackLegendPayload as any} />
+                    <AnyLegend payload={tokenStackLegendPayload} />
                     <Bar stackId="tokens" dataKey="inputTokens" name="입력 토큰" radius={[4, 0, 0, 4]}>
                       {tokenStackRows.map((row) => (
                         <Cell key={`stk-in-${row.model}`} fill={row.fillInput} />
@@ -1182,7 +1182,7 @@ export function UsageDashboard() {
                     <XAxis dataKey="yearMonth" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} />
                     <Tooltip formatter={(value) => formatRequestCount(tooltipNumericValue(value))} />
-                    <Legend />
+                    <AnyLegend />
                     <Bar
                       dataKey="requestCount"
                       name="요청 수"
