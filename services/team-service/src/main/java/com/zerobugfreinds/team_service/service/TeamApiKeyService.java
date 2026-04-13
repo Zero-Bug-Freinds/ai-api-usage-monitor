@@ -1,10 +1,13 @@
 package com.zerobugfreinds.team_service.service;
 
 import com.zerobugfreinds.team_service.domain.TeamApiKeyProvider;
+import com.zerobugfreinds.team_service.domain.TeamMemberRole;
 import com.zerobugfreinds.team_service.dto.TeamApiKeySummaryResponse;
 import com.zerobugfreinds.team_service.entity.TeamApiKeyEntity;
 import com.zerobugfreinds.team_service.entity.TeamEntity;
+import com.zerobugfreinds.team_service.entity.TeamMemberEntity;
 import com.zerobugfreinds.team_service.exception.ForbiddenTeamAccessException;
+import com.zerobugfreinds.team_service.exception.OwnerPermissionRequiredException;
 import com.zerobugfreinds.team_service.exception.TeamNotFoundException;
 import com.zerobugfreinds.team_service.repository.TeamApiKeyRepository;
 import com.zerobugfreinds.team_service.repository.TeamMemberRepository;
@@ -23,7 +26,7 @@ import java.util.Optional;
 public class TeamApiKeyService {
     /** 삭제 예정 등록 시 유예 기간 기본값(일). */
     public static final int DEFAULT_DELETION_GRACE_DAYS = 7;
-    private static final int MIN_DELETION_GRACE_DAYS = 1;
+    private static final int MIN_DELETION_GRACE_DAYS = 0;
     private static final int MAX_DELETION_GRACE_DAYS = 365;
 
     private final TeamRepository teamRepository;
@@ -52,7 +55,7 @@ public class TeamApiKeyService {
             String externalKey,
             BigDecimal monthlyBudgetUsd
     ) {
-        validateTeamAccess(actorUserId, teamId);
+        validateOwnerAccess(actorUserId, teamId);
         if (provider == null) {
             throw new IllegalArgumentException("provider는 필수입니다");
         }
@@ -141,7 +144,7 @@ public class TeamApiKeyService {
 
     @Transactional
     public TeamApiKeySummaryResponse delete(String actorUserId, Long teamId, Long apiKeyId, Integer gracePeriodDays) {
-        validateTeamAccess(actorUserId, teamId);
+        validateOwnerAccess(actorUserId, teamId);
         if (apiKeyId == null) {
             throw new IllegalArgumentException("apiKeyId는 필수입니다");
         }
@@ -151,6 +154,10 @@ public class TeamApiKeyService {
             throw new IllegalArgumentException("이미 삭제 예정인 키입니다");
         }
         int days = resolveGracePeriodDays(gracePeriodDays);
+        if (days == 0) {
+            teamApiKeyRepository.delete(entity);
+            return toSummary(entity);
+        }
         entity.markDeletionRequested(Instant.now(), days);
         teamApiKeyRepository.save(entity);
         return toSummary(entity);
@@ -188,6 +195,19 @@ public class TeamApiKeyService {
                 .orElseThrow(() -> new TeamNotFoundException("팀을 찾을 수 없습니다"));
         if (!teamMemberRepository.existsByTeamIdAndUserId(team.getId(), actorUserId)) {
             throw new ForbiddenTeamAccessException("팀 멤버만 접근할 수 있습니다");
+        }
+    }
+
+    private void validateOwnerAccess(String actorUserId, Long teamId) {
+        if (!StringUtils.hasText(actorUserId)) {
+            throw new IllegalArgumentException("userId는 필수입니다");
+        }
+        teamRepository.findById(teamId)
+                .orElseThrow(() -> new TeamNotFoundException("팀을 찾을 수 없습니다"));
+        TeamMemberEntity membership = teamMemberRepository.findByTeamIdAndUserId(teamId, actorUserId)
+                .orElseThrow(() -> new ForbiddenTeamAccessException("팀 멤버만 접근할 수 있습니다"));
+        if (membership.getRole() != TeamMemberRole.OWNER) {
+            throw new OwnerPermissionRequiredException("팀장만 API 키를 등록/삭제할 수 있습니다");
         }
     }
 

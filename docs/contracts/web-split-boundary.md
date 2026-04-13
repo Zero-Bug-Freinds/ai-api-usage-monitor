@@ -1,7 +1,7 @@
 # Identity vs Usage vs Team 웹 경계 (라우트·BFF·소스)
 
 버전: 1.6  
-관련: [저장소 구조](../repository-structure.md) §6, [architecture.md](../architecture.md) §10.2, [`docker/web-edge/nginx.conf`](../../docker/web-edge/nginx.conf), [web-identity-bff.md](./web-identity-bff.md), [web-gateway-bff.md](./web-gateway-bff.md), [web-team-bff.md](./web-team-bff.md), [web-notification-bff.md](./web-notification-bff.md)
+관련: [저장소 구조](../repository-structure.md) §6, [architecture.md](../architecture.md) §10.2, [`docker/web-edge/nginx.conf`](../../docker/web-edge/nginx.conf), [web-identity-bff.md](./web-identity-bff.md), [web-gateway-bff.md](./web-gateway-bff.md), [web-team-bff.md](./web-team-bff.md)
 
 단일 도메인·경로 기반 엣지 프록시 뒤에서는 브라우저 오리진이 하나이므로 아래 **브라우저 경로**가 그대로 유지된다. **소스 트리**는 서비스 소유권에 맞게 `services/<svc>/web/`에 나뉜다.
 
