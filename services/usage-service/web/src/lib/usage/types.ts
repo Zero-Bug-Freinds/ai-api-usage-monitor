@@ -42,6 +42,7 @@ export type UsageCostIntradayKpiResponse = {
 export type HourlyUsagePoint = {
   hour: number
   requestCount: number
+  errorCount: number
   estimatedCostUsd: number | string
 }
 

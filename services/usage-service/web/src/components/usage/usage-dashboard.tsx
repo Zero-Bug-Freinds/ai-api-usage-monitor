@@ -279,6 +279,51 @@ function TokenAvgLabelList(props: TokenAvgLabelProps) {
   )
 }
 
+type MainStabilityRow = {
+  label: string
+  requestCount: number
+  successCount: number
+  errorCount: number
+  successRate: number
+  errorRate: number
+}
+
+type MainStabilityTooltipProps = {
+  active?: boolean
+  label?: string | number
+  payload?: readonly unknown[]
+}
+
+function MainStabilityTooltip({ active, label, payload }: MainStabilityTooltipProps) {
+  if (!active || !payload?.length) return null
+  const row = (payload[0] as { payload?: MainStabilityRow }).payload
+  if (!row) return null
+  return (
+    <div className="rounded-md border border-border bg-card px-3 py-2 text-xs shadow-md">
+      <p className="font-medium text-foreground">{String(label)}</p>
+      <p className="mt-1 text-muted-foreground">총 요청 수: {formatRequestCount(row.requestCount)}</p>
+      <p className="text-muted-foreground">성공 건수: {row.successCount.toLocaleString("en-US")}건</p>
+      <p className="text-muted-foreground">오류 건수: {row.errorCount.toLocaleString("en-US")}건</p>
+      <p className="mt-1 text-foreground tabular-nums">성공률: {row.successRate.toFixed(1)}%</p>
+    </div>
+  )
+}
+
+function stabilityRateDomain(rows: MainStabilityRow[]): [number, number] {
+  if (rows.length === 0) return [90, 100]
+  const rates = rows
+    .filter((r) => r.requestCount > 0)
+    .flatMap((r) => [r.successRate, r.errorRate])
+  if (rates.length === 0) return [90, 100]
+  const min = Math.min(...rates)
+  const max = Math.max(...rates)
+  const paddedMin = Math.floor((min - 0.5) * 10) / 10
+  const paddedMax = Math.ceil((max + 0.5) * 10) / 10
+  const lower = min >= 90 ? Math.max(90, paddedMin) : Math.max(0, paddedMin)
+  const upper = Math.min(100, Math.max(lower + 1, paddedMax))
+  return [lower, upper]
+}
+
 function isAbortError(e: unknown): boolean {
   return (
     (typeof DOMException !== "undefined" && e instanceof DOMException && e.name === "AbortError") ||
@@ -416,22 +461,32 @@ export function UsageDashboard() {
   }, [clientReady, mainRefresh, periodMode, customFrom, customTo, dashProvider])
 
   const dailyChart = React.useMemo(
-    () =>
-      daily.map((row) => ({
-        date: row.date,
-        requestCount: row.requestCount,
-        cost: toNumber(row.estimatedCost),
-      })),
+    (): MainStabilityRow[] =>
+      daily.map((row) => {
+        const successCount = Math.max(0, row.requestCount - row.errorCount)
+        const successRate = row.requestCount > 0 ? (100 * successCount) / row.requestCount : 0
+        const errorRate = row.requestCount > 0 ? (100 * row.errorCount) / row.requestCount : 0
+        return {
+          label: row.date,
+          requestCount: row.requestCount,
+          successCount,
+          errorCount: row.errorCount,
+          successRate,
+          errorRate,
+        }
+      }),
     [daily]
   )
 
   const hourlyChart = React.useMemo(
-    () =>
+    (): MainStabilityRow[] =>
       (hourly ?? []).map((row) => ({
-        hour: row.hour,
         label: `${row.hour}시`,
         requestCount: row.requestCount,
-        cost: toNumber(row.estimatedCostUsd),
+        successCount: Math.max(0, row.requestCount - row.errorCount),
+        errorCount: row.errorCount,
+        successRate: row.requestCount > 0 ? (100 * (row.requestCount - row.errorCount)) / row.requestCount : 0,
+        errorRate: row.requestCount > 0 ? (100 * row.errorCount) / row.requestCount : 0,
       })),
     [hourly]
   )
@@ -531,7 +586,7 @@ export function UsageDashboard() {
     daily.length > 0 ||
     monthly.length > 0 ||
     byModel.some((m) => m.requestCount > 0) ||
-    (hourly && hourly.some((h) => h.requestCount > 0 || toNumber(h.estimatedCostUsd) > 0))
+    (hourly && hourly.some((h) => h.requestCount > 0))
 
   const periodPrefix = kpiPeriodPrefix(periodMode, rangeFrom, rangeTo)
   const compareCostLabel = costCompareLabel(periodMode, rangeFrom, rangeTo)
@@ -558,7 +613,12 @@ export function UsageDashboard() {
   const monthlyHasActivity = monthlyChart.some((r) => r.requestCount > 0)
 
   const mainChartTitle =
-    periodMode === "today" ? "시간별 요청·비용 (오늘 KST)" : "일별 요청·비용 (선택 기간)"
+    periodMode === "today" ? "시간별 요청·성공률·오류율 (오늘 KST)" : "일별 요청·성공률·오류율 (선택 기간)"
+
+  const rateAxisDomain = React.useMemo(
+    () => stabilityRateDomain(periodMode === "today" ? hourlyChart : dailyChart),
+    [periodMode, hourlyChart, dailyChart]
+  )
 
   const errorSubStyle =
     rangeErrors >= 1 ? "text-red-500" : "text-foreground"
@@ -712,29 +772,43 @@ export function UsageDashboard() {
                   <ComposedChart data={hourlyChart}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                     <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                    <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
-                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
-                    <Tooltip
-                      formatter={(value, name) =>
-                        name === "비용 (USD)"
-                          ? formatUsd(tooltipNumericValue(value))
-                          : tooltipNumericValue(value)
-                      }
+                    <YAxis
+                      yAxisId="left"
+                      tick={{ fontSize: 11 }}
+                      label={{ value: "요청 수 (건)", angle: -90, position: "insideLeft", offset: 2 }}
                     />
+                    <YAxis
+                      yAxisId="right"
+                      orientation="right"
+                      domain={rateAxisDomain}
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v) => `${Number(v).toFixed(1)}%`}
+                      label={{ value: "성공/오류율 (%)", angle: 90, position: "insideRight", offset: 2 }}
+                    />
+                    <Tooltip content={MainStabilityTooltip} />
                     <Legend />
                     <Bar
                       yAxisId="left"
                       dataKey="requestCount"
-                      name="요청 수"
+                      name="총 요청 수"
                       fill="#a3a3a3"
                       radius={[4, 4, 0, 0]}
                     />
                     <Line
                       yAxisId="right"
                       type="monotone"
-                      dataKey="cost"
-                      name="비용 (USD)"
-                      stroke="#0a0a0a"
+                      dataKey="successRate"
+                      name="성공률"
+                      stroke="#10b981"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                    <Line
+                      yAxisId="right"
+                      type="monotone"
+                      dataKey="errorRate"
+                      name="오류율"
+                      stroke="#f43f5e"
                       strokeWidth={2}
                       dot={false}
                     />
@@ -746,30 +820,44 @@ export function UsageDashboard() {
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={dailyChart}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                    <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
-                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
-                    <Tooltip
-                      formatter={(value, name) =>
-                        name === "비용 (USD)"
-                          ? formatUsd(tooltipNumericValue(value))
-                          : tooltipNumericValue(value)
-                      }
+                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                    <YAxis
+                      yAxisId="left"
+                      tick={{ fontSize: 11 }}
+                      label={{ value: "요청 수 (건)", angle: -90, position: "insideLeft", offset: 2 }}
                     />
+                    <YAxis
+                      yAxisId="right"
+                      orientation="right"
+                      domain={rateAxisDomain}
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v) => `${Number(v).toFixed(1)}%`}
+                      label={{ value: "성공/오류율 (%)", angle: 90, position: "insideRight", offset: 2 }}
+                    />
+                    <Tooltip content={MainStabilityTooltip} />
                     <Legend />
                     <Bar
                       yAxisId="left"
                       dataKey="requestCount"
-                      name="요청 수"
+                      name="총 요청 수"
                       fill="#a3a3a3"
                       radius={[4, 4, 0, 0]}
                     />
                     <Line
                       yAxisId="right"
                       type="monotone"
-                      dataKey="cost"
-                      name="비용 (USD)"
-                      stroke="#0a0a0a"
+                      dataKey="successRate"
+                      name="성공률"
+                      stroke="#10b981"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                    <Line
+                      yAxisId="right"
+                      type="monotone"
+                      dataKey="errorRate"
+                      name="오류율"
+                      stroke="#f43f5e"
                       strokeWidth={2}
                       dot={false}
                     />
