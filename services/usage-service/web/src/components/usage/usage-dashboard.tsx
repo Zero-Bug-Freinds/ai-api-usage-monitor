@@ -61,6 +61,13 @@ const DASHBOARD_PROVIDER_ALL = "__ALL__"
 const MODEL_REQUESTS_TOP_N = 10
 const OTHERS_LABEL = "기타 (Others)"
 const OTHERS_BAR_COLOR = "#94a3b8"
+const MODEL_COLOR_CACHE = new Map<string, string>()
+
+const PROVIDER_MODEL_PALETTES: Record<string, string[]> = {
+  GOOGLE: ["#9a3412", "#c2410c", "#ea580c", "#F97316", "#fb923c", "#fdba74"],
+  OPENAI: ["#1e3a8a", "#1d4ed8", "#2563eb", "#3b82f6", "#60a5fa", "#93c5fd"],
+  ANTHROPIC: ["#78350f", "#92400e", "#b45309", "#d97706", "#f59e0b", "#fbbf24"],
+}
 
 type PeriodMode = "today" | "7d" | "30d" | "custom"
 
@@ -168,14 +175,14 @@ function hashToUint(str: string): number {
  * 동일 모델·공급사 조합은 항상 같은 색(공급사 팔레트 기반 변형).
  */
 function colorForModel(model: string, provider: string): string {
-  const variants: Record<string, string[]> = {
-    GOOGLE: ["#9a3412", "#c2410c", "#ea580c", "#F97316", "#fb923c", "#fdba74"],
-    OPENAI: ["#0a0a0a", "#171717", "#262626", "#404040", "#525252", "#737373"],
-    ANTHROPIC: ["#7c2d12", "#9a3412", "#c2410c", "#ea580c", "#fb923c", "#fdba74"],
-  }
-  const list = variants[provider] ?? ["#525252", "#737373", "#a3a3a3", "#d4d4d4"]
-  const idx = hashToUint(`${provider}::${model}`) % list.length
-  return list[idx] ?? "#737373"
+  const key = `${provider}::${model}`
+  const cached = MODEL_COLOR_CACHE.get(key)
+  if (cached) return cached
+  const list = PROVIDER_MODEL_PALETTES[provider] ?? ["#64748b", "#94a3b8", "#cbd5e1", "#e2e8f0"]
+  const idx = hashToUint(key) % list.length
+  const picked = list[idx] ?? "#94a3b8"
+  MODEL_COLOR_CACHE.set(key, picked)
+  return picked
 }
 
 function labelForProviderCode(code: string): string {
@@ -317,6 +324,49 @@ function MainStabilityTooltip({ active, label, payload }: MainStabilityTooltipPr
       <p className="text-muted-foreground">성공 건수: {row.successCount.toLocaleString("en-US")}건</p>
       <p className="text-muted-foreground">오류 건수: {row.errorCount.toLocaleString("en-US")}건</p>
       <p className="mt-1 text-foreground tabular-nums">성공률: {row.successRate.toFixed(1)}%</p>
+    </div>
+  )
+}
+
+type DonutTooltipPayload = {
+  name?: string
+  value?: number
+  payload?: { fullName?: string; value?: number; percent?: number; provider?: string }
+}
+
+type SimpleDonutTooltipProps = {
+  active?: boolean
+  payload?: readonly unknown[]
+}
+
+function ModelDonutTooltip({ active, payload }: SimpleDonutTooltipProps) {
+  if (!active || !payload?.length) return null
+  const first = payload[0] as DonutTooltipPayload
+  const raw = first.payload
+  if (!raw) return null
+  const name = raw.fullName ?? first.name ?? "-"
+  const pct = raw.percent ?? 0
+  return (
+    <div className="rounded-md border border-border bg-card px-3 py-2 text-xs shadow-md">
+      <p className="font-medium text-foreground">{name}</p>
+      <p className="mt-1 text-muted-foreground tabular-nums">전체 대비 비중: {(pct * 100).toFixed(1)}%</p>
+    </div>
+  )
+}
+
+function ProviderDonutTooltip({ active, payload }: SimpleDonutTooltipProps) {
+  if (!active || !payload?.length) return null
+  const first = payload[0] as DonutTooltipPayload
+  const raw = first.payload
+  if (!raw) return null
+  const name = first.name ?? raw.provider ?? "-"
+  const count = raw.value ?? first.value ?? 0
+  const pct = raw.percent ?? 0
+  return (
+    <div className="rounded-md border border-border bg-card px-3 py-2 text-xs shadow-md">
+      <p className="font-medium text-foreground">{name}</p>
+      <p className="mt-1 text-muted-foreground">총 요청 수: {formatRequestCount(count)}</p>
+      <p className="text-muted-foreground tabular-nums">전체 대비 비중: {(pct * 100).toFixed(1)}%</p>
     </div>
   )
 }
@@ -523,6 +573,7 @@ export function UsageDashboard() {
         fullName: m.model,
         provider: m.provider,
         value: m.requestCount,
+        percent: m.requestCount / totalReq,
       }))
   }, [byModel])
 
@@ -534,12 +585,34 @@ export function UsageDashboard() {
       if (m.requestCount <= 0) continue
       acc.set(m.provider, (acc.get(m.provider) ?? 0) + m.requestCount)
     }
+    const total = [...acc.values()].reduce((s, v) => s + v, 0)
     return [...acc.entries()].map(([provider, value]) => ({
       name: labelForProviderCode(provider),
       provider,
       value,
+      percent: total > 0 ? value / total : 0,
     }))
   }, [byModel])
+
+  const modelPieLegendPayload = React.useMemo(
+    () =>
+      pieData.map((entry) => ({
+        value: entry.name,
+        type: "square" as const,
+        color: colorForModel(entry.fullName, entry.provider),
+      })),
+    [pieData]
+  )
+
+  const providerPieLegendPayload = React.useMemo(
+    () =>
+      providerPieData.map((entry) => ({
+        value: entry.name,
+        type: "square" as const,
+        color: PROVIDER_COLOR[entry.provider] ?? "#737373",
+      })),
+    [providerPieData]
+  )
 
   const modelBarRows = React.useMemo((): ModelRequestRow[] => {
     const sorted = [...byModel]
@@ -626,6 +699,22 @@ export function UsageDashboard() {
     const n = tokenStackRows.length
     return Math.min(TOKEN_CHART_MAX_H, Math.max(TOKEN_CHART_MIN_H, n * TOKEN_ROW_HEIGHT_PX))
   }, [tokenStackRows.length])
+
+  const tokenStackLegendPayload = React.useMemo(() => {
+    const first = tokenStackRows[0]
+    return [
+      {
+        value: "입력 토큰",
+        type: "square" as const,
+        color: first?.fillInput ?? "rgba(148, 163, 184, 0.3)",
+      },
+      {
+        value: "출력 토큰",
+        type: "square" as const,
+        color: first?.fillOutput ?? "#94a3b8",
+      },
+    ]
+  }, [tokenStackRows])
 
   const hasMainData =
     (kpiSummary && kpiSummary.totalRequests > 0) ||
@@ -939,11 +1028,12 @@ export function UsageDashboard() {
                           <Cell
                             key={`m-${entry.fullName}-${i}`}
                             fill={colorForModel(entry.fullName, entry.provider)}
+                            style={{ cursor: "default" }}
                           />
                         ))}
                       </Pie>
-                      <Tooltip formatter={(value) => formatRequestCount(tooltipNumericValue(value))} />
-                      <Legend />
+                      <Tooltip content={ModelDonutTooltip} />
+                      <Legend payload={modelPieLegendPayload} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
@@ -973,11 +1063,12 @@ export function UsageDashboard() {
                           <Cell
                             key={`p-${entry.provider}-${i}`}
                             fill={PROVIDER_COLOR[entry.provider] ?? "#737373"}
+                            style={{ cursor: "default" }}
                           />
                         ))}
                       </Pie>
-                      <Tooltip formatter={(value) => formatRequestCount(tooltipNumericValue(value))} />
-                      <Legend />
+                      <Tooltip content={ProviderDonutTooltip} />
+                      <Legend payload={providerPieLegendPayload} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
@@ -1053,7 +1144,7 @@ export function UsageDashboard() {
                     <XAxis type="number" tick={{ fontSize: 11 }} tickCount={8} />
                     <YAxis type="category" dataKey="label" width={128} tick={{ fontSize: 11 }} />
                     <Tooltip content={TokenStackTooltip} cursor={{ fill: "var(--muted)", fillOpacity: 0.12 }} />
-                    <Legend />
+                    <Legend payload={tokenStackLegendPayload} />
                     <Bar stackId="tokens" dataKey="inputTokens" name="입력 토큰" radius={[4, 0, 0, 4]}>
                       {tokenStackRows.map((row) => (
                         <Cell key={`stk-in-${row.model}`} fill={row.fillInput} />
