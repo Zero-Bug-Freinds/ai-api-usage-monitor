@@ -15,9 +15,12 @@ import com.zerobugfreinds.team_service.exception.DuplicateTeamMemberException;
 import com.zerobugfreinds.team_service.exception.DuplicateTeamInvitationException;
 import com.zerobugfreinds.team_service.exception.ForbiddenTeamAccessException;
 import com.zerobugfreinds.team_service.exception.InvalidTeamInvitationStateException;
+import com.zerobugfreinds.team_service.exception.OwnerPermissionRequiredException;
+import com.zerobugfreinds.team_service.exception.TeamDeletionBlockedException;
 import com.zerobugfreinds.team_service.exception.TeamNotFoundException;
 import com.zerobugfreinds.team_service.exception.TeamInvitationNotFoundException;
 import com.zerobugfreinds.team_service.event.TeamMemberInvitedEvent;
+import com.zerobugfreinds.team_service.repository.TeamApiKeyRepository;
 import com.zerobugfreinds.team_service.repository.TeamInvitationRepository;
 import com.zerobugfreinds.team_service.repository.TeamMemberRepository;
 import com.zerobugfreinds.team_service.repository.TeamRepository;
@@ -39,6 +42,7 @@ public class TeamService {
 	private final TeamRepository teamRepository;
 	private final TeamMemberRepository teamMemberRepository;
 	private final TeamInvitationRepository teamInvitationRepository;
+	private final TeamApiKeyRepository teamApiKeyRepository;
 	private final IdentityUserLookupClient identityUserLookupClient;
 	private final TeamInvitationEventPublisher teamInvitationEventPublisher;
 	private final TeamMemberAddedEventPublisher teamMemberAddedEventPublisher;
@@ -47,6 +51,7 @@ public class TeamService {
 			TeamRepository teamRepository,
 			TeamMemberRepository teamMemberRepository,
 			TeamInvitationRepository teamInvitationRepository,
+			TeamApiKeyRepository teamApiKeyRepository,
 			IdentityUserLookupClient identityUserLookupClient,
 			TeamInvitationEventPublisher teamInvitationEventPublisher,
 			TeamMemberAddedEventPublisher teamMemberAddedEventPublisher
@@ -54,6 +59,7 @@ public class TeamService {
 		this.teamRepository = teamRepository;
 		this.teamMemberRepository = teamMemberRepository;
 		this.teamInvitationRepository = teamInvitationRepository;
+		this.teamApiKeyRepository = teamApiKeyRepository;
 		this.identityUserLookupClient = identityUserLookupClient;
 		this.teamInvitationEventPublisher = teamInvitationEventPublisher;
 		this.teamMemberAddedEventPublisher = teamMemberAddedEventPublisher;
@@ -252,6 +258,41 @@ public class TeamService {
 				invitation.getStatus().name(),
 				invitation.getRespondedAt()
 		);
+	}
+
+	@Transactional
+	public TeamSummaryResponse removeMember(String actorUserId, Long teamId, String targetUserId) {
+		TeamEntity team = teamRepository.findById(teamId)
+				.orElseThrow(() -> new TeamNotFoundException("팀을 찾을 수 없습니다"));
+		TeamMemberEntity actorMembership = teamMemberRepository.findByTeamIdAndUserId(teamId, actorUserId)
+				.orElseThrow(() -> new ForbiddenTeamAccessException("팀 멤버만 삭제할 수 있습니다"));
+		if (actorMembership.getRole() != TeamMemberRole.OWNER) {
+			throw new OwnerPermissionRequiredException("팀장만 팀원을 삭제할 수 있습니다");
+		}
+		TeamMemberEntity targetMembership = teamMemberRepository.findByTeamIdAndUserId(teamId, targetUserId)
+				.orElseThrow(() -> new IllegalArgumentException("삭제할 팀원을 찾을 수 없습니다"));
+		if (targetMembership.getRole() == TeamMemberRole.OWNER) {
+			throw new IllegalArgumentException("팀장은 삭제할 수 없습니다");
+		}
+		teamMemberRepository.delete(targetMembership);
+		return new TeamSummaryResponse(String.valueOf(team.getId()), team.getName());
+	}
+
+	@Transactional
+	public void deleteTeam(String actorUserId, Long teamId) {
+		TeamEntity team = teamRepository.findById(teamId)
+				.orElseThrow(() -> new TeamNotFoundException("팀을 찾을 수 없습니다"));
+		TeamMemberEntity actorMembership = teamMemberRepository.findByTeamIdAndUserId(teamId, actorUserId)
+				.orElseThrow(() -> new ForbiddenTeamAccessException("팀 멤버만 팀을 삭제할 수 있습니다"));
+		if (actorMembership.getRole() != TeamMemberRole.OWNER) {
+			throw new OwnerPermissionRequiredException("팀장만 팀을 삭제할 수 있습니다");
+		}
+		if (teamApiKeyRepository.existsByTeamId(teamId)) {
+			throw new TeamDeletionBlockedException("팀 API 키를 모두 삭제한 뒤 팀을 삭제할 수 있습니다");
+		}
+		teamInvitationRepository.deleteAllByTeamId(teamId);
+		teamMemberRepository.deleteAllByTeamId(teamId);
+		teamRepository.delete(team);
 	}
 
 	private TeamInvitationEntity findInvitationForInvitee(String actorUserId, Long invitationId) {

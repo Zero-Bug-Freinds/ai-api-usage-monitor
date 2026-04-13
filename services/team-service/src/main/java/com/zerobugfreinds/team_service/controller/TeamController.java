@@ -101,6 +101,25 @@ public class TeamController {
 		return ResponseEntity.ok(ApiResponse.ok("팀 멤버 조회에 성공했습니다", members));
 	}
 
+	@DeleteMapping("/teams/{teamId}/members/{userId}")
+	public ResponseEntity<ApiResponse<TeamSummaryResponse>> removeTeamMember(
+			@AuthenticationPrincipal TeamUserPrincipal principal,
+			@PathVariable("teamId") Long teamId,
+			@PathVariable("userId") String userId
+	) {
+		TeamSummaryResponse team = teamService.removeMember(principal.userId(), teamId, userId.trim());
+		return ResponseEntity.ok(ApiResponse.ok("팀원이 삭제되었습니다", team));
+	}
+
+	@DeleteMapping("/teams/{teamId}")
+	public ResponseEntity<ApiResponse<Void>> deleteTeam(
+			@AuthenticationPrincipal TeamUserPrincipal principal,
+			@PathVariable("teamId") Long teamId
+	) {
+		teamService.deleteTeam(principal.userId(), teamId);
+		return ResponseEntity.ok(ApiResponse.ok("팀이 삭제되었습니다", null));
+	}
+
 	@PostMapping("/teams/{id}/api-keys")
 	public ResponseEntity<ApiResponse<TeamApiKeySummaryResponse>> registerTeamApiKey(
 			@AuthenticationPrincipal TeamUserPrincipal principal,
