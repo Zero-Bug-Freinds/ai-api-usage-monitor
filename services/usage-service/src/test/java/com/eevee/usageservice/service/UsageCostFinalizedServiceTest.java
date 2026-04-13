@@ -1,7 +1,6 @@
 package com.eevee.usageservice.service;
 
 import com.eevee.usage.events.UsageCostFinalizedEvent;
-import com.eevee.usageservice.repository.UsageRecordedLogRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -13,6 +12,7 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -20,7 +20,7 @@ import static org.mockito.Mockito.when;
 class UsageCostFinalizedServiceTest {
 
     @Mock
-    private UsageRecordedLogRepository repository;
+    private UsageRecordedCostTransactionalWrites costWrites;
 
     @InjectMocks
     private UsageCostFinalizedService service;
@@ -30,10 +30,23 @@ class UsageCostFinalizedServiceTest {
         UUID id = UUID.randomUUID();
         BigDecimal cost = new BigDecimal("1.00");
         UsageCostFinalizedEvent ev = UsageCostFinalizedEvent.v1(id, cost);
-        when(repository.updateEstimatedCostByEventId(eq(id), argThat(c -> c.compareTo(cost) == 0))).thenReturn(1);
+        when(costWrites.updateEstimatedCostByEventId(eq(id), argThat(c -> c.compareTo(cost) == 0))).thenReturn(1);
 
         service.applyCost(ev);
 
-        verify(repository).updateEstimatedCostByEventId(eq(id), argThat(c -> c.compareTo(cost) == 0));
+        verify(costWrites).updateEstimatedCostByEventId(eq(id), argThat(c -> c.compareTo(cost) == 0));
+    }
+
+    @Test
+    void applyCost_retriesUntilRowVisible() {
+        UUID id = UUID.randomUUID();
+        BigDecimal cost = new BigDecimal("0.01");
+        UsageCostFinalizedEvent ev = UsageCostFinalizedEvent.v1(id, cost);
+        when(costWrites.updateEstimatedCostByEventId(eq(id), argThat(c -> c.compareTo(cost) == 0)))
+                .thenReturn(0, 0, 1);
+
+        service.applyCost(ev);
+
+        verify(costWrites, times(3)).updateEstimatedCostByEventId(eq(id), argThat(c -> c.compareTo(cost) == 0));
     }
 }
