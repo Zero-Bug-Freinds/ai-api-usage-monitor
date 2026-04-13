@@ -87,6 +87,21 @@ services:
       - postgres_billing_data:/var/lib/postgresql/data
       - ./docker/postgres/init/03-create-billing-db.sh:/docker-entrypoint-initdb.d/03-create-billing-db.sh:ro
 
+  postgres-notification:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+      NOTIFICATION_POSTGRES_DB: ${NOTIFICATION_POSTGRES_DB:-notification_db}
+      NOTIFICATION_POSTGRES_USER: ${NOTIFICATION_POSTGRES_USER:-notification_app}
+      NOTIFICATION_POSTGRES_PASSWORD: ${NOTIFICATION_POSTGRES_PASSWORD:-notification_app}
+    ports:
+      - "${NOTIFICATION_POSTGRES_PORT:-5436}:5432"
+    volumes:
+      - postgres_notification_data:/var/lib/postgresql/data
+      - ./docker/postgres/init/04-create-notification-db.sh:/docker-entrypoint-initdb.d/04-create-notification-db.sh:ro
+
   rabbitmq:
     image: rabbitmq:3-management-alpine
     ports:
@@ -255,3 +270,4 @@ volumes:
   postgres_team_data:
   postgres_usage_data:
   postgres_billing_data:
+  postgres_notification_data:

@@ -20,3 +20,19 @@ model NotificationDelivery {
 
   @@map("notification_deliveries")
 }
+
+/// 인앱 알림 (수신자별 목록·읽음 상태; 진실 공급원은 notification DB)
+model InAppNotification {
+  id        String    @id @default(uuid()) @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// 수신자 — Identity 등에서 쓰는 내부 사용자 ID(문자열)
+  userId    String    @map("user_id")
+  title     String
+  body      String    @db.Text
+  readAt    DateTime? @map("read_at") @db.Timestamptz(6)
+  /// 선택적 분류(예: billing-warning, test)
+  type      String?
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("in_app_notifications")
+}

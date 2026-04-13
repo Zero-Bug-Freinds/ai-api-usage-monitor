@@ -29,5 +29,5 @@ COPY --from=builder /repo/services/notification-service ./services/notification-
 
 USER nestjs
 WORKDIR /repo/services/notification-service
-EXPOSE 8095
+EXPOSE 8096
 CMD ["node", "dist/main.js"]
