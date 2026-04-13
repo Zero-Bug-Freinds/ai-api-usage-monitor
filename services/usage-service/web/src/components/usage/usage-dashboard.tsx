@@ -371,13 +371,6 @@ function ProviderDonutTooltip({ active, payload }: SimpleDonutTooltipProps) {
   )
 }
 
-type LegendPayloadItem = {
-  value: string
-  type: "square"
-  color: string
-  id?: string
-}
-
 function stabilityRateDomain(rows: MainStabilityRow[]): [number, number] {
   if (rows.length === 0) return [90, 100]
   const rates = rows
@@ -601,7 +594,7 @@ export function UsageDashboard() {
     }))
   }, [byModel])
 
-  const modelPieLegendPayload = React.useMemo<LegendPayloadItem[]>(
+  const modelPieLegendPayload = React.useMemo(
     () =>
       pieData.map((entry) => ({
         value: entry.name,
@@ -611,7 +604,7 @@ export function UsageDashboard() {
     [pieData]
   )
 
-  const providerPieLegendPayload = React.useMemo<LegendPayloadItem[]>(
+  const providerPieLegendPayload = React.useMemo(
     () =>
       providerPieData.map((entry) => ({
         value: entry.name,
@@ -707,7 +700,7 @@ export function UsageDashboard() {
     return Math.min(TOKEN_CHART_MAX_H, Math.max(TOKEN_CHART_MIN_H, n * TOKEN_ROW_HEIGHT_PX))
   }, [tokenStackRows.length])
 
-  const tokenStackLegendPayload = React.useMemo<LegendPayloadItem[]>(() => {
+  const tokenStackLegendPayload = React.useMemo(() => {
     const first = tokenStackRows[0]
     return [
       {
@@ -1040,7 +1033,8 @@ export function UsageDashboard() {
                         ))}
                       </Pie>
                       <Tooltip content={ModelDonutTooltip} />
-                      <Legend payload={modelPieLegendPayload} />
+                      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                      <Legend payload={modelPieLegendPayload as any} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
@@ -1075,7 +1069,8 @@ export function UsageDashboard() {
                         ))}
                       </Pie>
                       <Tooltip content={ProviderDonutTooltip} />
-                      <Legend payload={providerPieLegendPayload} />
+                      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                      <Legend payload={providerPieLegendPayload as any} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
@@ -1151,7 +1146,8 @@ export function UsageDashboard() {
                     <XAxis type="number" tick={{ fontSize: 11 }} tickCount={8} />
                     <YAxis type="category" dataKey="label" width={128} tick={{ fontSize: 11 }} />
                     <Tooltip content={TokenStackTooltip} cursor={{ fill: "var(--muted)", fillOpacity: 0.12 }} />
-                    <Legend payload={tokenStackLegendPayload} />
+                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                    <Legend payload={tokenStackLegendPayload as any} />
                     <Bar stackId="tokens" dataKey="inputTokens" name="입력 토큰" radius={[4, 0, 0, 4]}>
                       {tokenStackRows.map((row) => (
                         <Cell key={`stk-in-${row.model}`} fill={row.fillInput} />
