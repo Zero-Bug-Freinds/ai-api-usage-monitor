@@ -64,3 +64,19 @@ WebFlux 프록시에서 블로킹 AMQP 호출은 §6.2 주의사항과 동일하
 ## PR에서 Actions 확인
 
 변경을 푸시한 뒤 GitHub 저장소의 **Actions** 탭에서 워크플로 실행 결과를 확인한다. 첫 `gitleaks` 실행에서 과거 커밋의 민감 문자열이 잡히면, 팀 정책에 따라 히스토리 정리·규칙 예외를 검토한다.
+
+## 빌드 및 린트 트러블슈팅 (Troubleshooting)
+
+### 1. 외부 라이브러리 타입 충돌 (예: Recharts Legend)
+
+- **현상**: `next build` 시 라이브러리 내부 타입 정의 문제로 `Property 'payload' does not exist` 등의 에러 발생.
+- **해결 원칙**: 라이브러리 타입을 강제로 맞추려 하기보다, **컴포넌트 수준의 타입 우회**를 권장한다. 단, 이는 빌드 블로커가 발생한 특정 컴포넌트에만 국한하여 적용한다.
+
+```tsx
+// 추천하는 해결 방식 (필요한 경우에만)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const AnyLegend = Legend as any
+
+// 사용 시
+<AnyLegend payload={customData} />
+```

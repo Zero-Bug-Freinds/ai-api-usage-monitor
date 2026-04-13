@@ -1,0 +1,23 @@
+---
+description: Web(Next.js) 관련 로직 수정 시 CI 빌드 및 린트 안정성 확보 규칙
+globs:
+  - "services/*/web/**/*"
+alwaysApply: false
+---
+
+# CI 안정성 규칙 (Web)
+
+이 규칙은 `services/*/web/**/*` 경로 수정 시 적용한다.
+
+## 원칙
+
+1. **[선별적 적용]** 외부 라이브러리(예: Recharts) 사용 시 타입 정의 파일과 실제 Props 주입 간 충돌로 **빌드가 실패하는 경우에만**, 컴포넌트 자체를 `any`로 캐스팅하여 사용한다. 정상 동작하는 기존 코드는 건드리지 않는다.
+2. `as any`를 사용할 경우, 반드시 바로 윗줄에 ESLint 무시 주석을 추가한다. (`{/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}`)
+3. 모든 React Hook 작성 시 `exhaustive-deps` 규칙을 엄격히 준수하여 린트 에러를 방지한다.
+4. 빌드 파이프라인(`.github/workflows/ci.yml`)은 수정 금지 대상이므로, 코드 레벨에서 해결하되 타 서비스 빌드 환경에 간섭하지 않도록 파일 단위로 격리 적용한다.
+5. 타입 우회는 최후의 수단이며, 해당 수정이 다른 서비스와의 공통 모듈(`packages/ui` 등)에 영향을 줄 경우 반드시 기존 타입 호환성을 유지한다.
+
+## 타 서비스 영향 방지
+
+- 이 우회 전략은 특정 서비스의 라이브러리 타입 결함으로 인해 Next.js build가 물리적으로 불가능한 경우에만 선택적으로 적용한다.
+- 이미 CI를 통과 중인 다른 서비스(Identity, Billing, Team 등)의 타입 정의나 로직을 이 규칙을 근거로 강제 변경하지 않는다.
