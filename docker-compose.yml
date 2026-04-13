@@ -206,6 +206,10 @@ services:
       TEAM_POSTGRES_DB: ${TEAM_POSTGRES_DB:-team_db}
       TEAM_POSTGRES_USER: ${TEAM_POSTGRES_USER:-team_app}
       TEAM_POSTGRES_PASSWORD: ${TEAM_POSTGRES_PASSWORD:-team_app}
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
       IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://host.docker.internal:8090}
       SECURITY_JWT_SECRET: ${JWT_SECRET:-change-this-secret-key-to-at-least-32-bytes}
       TEAM_API_KEY_ENCRYPTION_SECRET: ${TEAM_API_KEY_ENCRYPTION_SECRET:-change-this-team-api-key-encryption-secret-min-32-chars}
@@ -213,6 +217,8 @@ services:
     depends_on:
       postgres-team:
         condition: service_healthy
+      rabbitmq:
+        condition: service_started
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # Published host port: TEAM_SERVICE_HOST_PORT (not TEAM_SERVICE_PORT — see .env.example).
