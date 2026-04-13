@@ -7,7 +7,7 @@
 1. 루트에서 `pnpm install` (워크스페이스에 포함됨).
 2. PostgreSQL에 DB·유저 준비 후 `.env`에 `DATABASE_URL` 설정 (`.env.example` 참고).
 3. `pnpm prisma:migrate:dev` 로 마이그레이션 적용.
-4. `pnpm start:dev` (기본 포트 `8095`).
+4. `pnpm start:dev` (기본 포트 `8096`, billing과 구분).
 
 - Health: `GET /health`
 - OpenAPI: `GET /api/docs`

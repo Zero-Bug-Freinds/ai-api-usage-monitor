@@ -40,7 +40,10 @@ export function resolveConsoleNavLink(profile: ConsoleProfile, id: ConsoleNavId)
   const { owner, publicPath } = meta
 
   if (profile === "identity") {
-    return { kind: "next", href: publicPath }
+    if (owner === "identity") {
+      return { kind: "next", href: publicPath }
+    }
+    return { kind: "anchor", href: anchorHrefForPublicPath(publicPath) }
   }
 
   if (profile === "usage") {
@@ -55,6 +58,13 @@ export function resolveConsoleNavLink(profile: ConsoleProfile, id: ConsoleNavId)
 
   if (profile === "billing") {
     if (owner === "billing") {
+      return { kind: "next", href: "/" }
+    }
+    return { kind: "anchor", href: anchorHrefForPublicPath(publicPath) }
+  }
+
+  if (profile === "notification") {
+    if (owner === "notification") {
       return { kind: "next", href: "/" }
     }
     return { kind: "anchor", href: anchorHrefForPublicPath(publicPath) }
@@ -99,6 +109,7 @@ export function isConsoleNavActive(profile: ConsoleProfile, pathname: string, id
       return (p === "/dashboard" || p.startsWith("/dashboard/")) && !onUsageLog
     }
     if (publicPath === "/billing") return p === "/billing" || p.startsWith("/billing/")
+    if (publicPath === "/notifications") return p === "/notifications" || p.startsWith("/notifications/")
     return p === publicPath || p.startsWith(`${publicPath}/`)
   }
 
@@ -110,6 +121,11 @@ export function isConsoleNavActive(profile: ConsoleProfile, pathname: string, id
 
   if (profile === "billing") {
     if (id === "billingHome") return p === "/" || p === ""
+    return false
+  }
+
+  if (profile === "notification") {
+    if (id === "notifications") return p === "/" || p === ""
     return false
   }
 
