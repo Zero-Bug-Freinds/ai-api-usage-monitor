@@ -2,8 +2,10 @@ package com.zerobugfreinds.team_service.service;
 
 import com.zerobugfreinds.team_service.domain.TeamMemberRole;
 import com.zerobugfreinds.team_service.dto.TeamSummaryResponse;
+import com.zerobugfreinds.team_service.dto.InternalTeamDetailResponse;
 import com.zerobugfreinds.team_service.entity.TeamEntity;
 import com.zerobugfreinds.team_service.entity.TeamMemberEntity;
+import com.zerobugfreinds.team_service.event.TeamMemberAddedEvent;
 import com.zerobugfreinds.team_service.exception.DuplicateTeamMemberException;
 import com.zerobugfreinds.team_service.exception.ForbiddenTeamAccessException;
 import com.zerobugfreinds.team_service.exception.TeamNotFoundException;
@@ -15,6 +17,7 @@ import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -24,15 +27,18 @@ public class TeamService {
 	private final TeamRepository teamRepository;
 	private final TeamMemberRepository teamMemberRepository;
 	private final IdentityUserLookupClient identityUserLookupClient;
+	private final TeamMemberAddedEventPublisher teamMemberAddedEventPublisher;
 
 	public TeamService(
 			TeamRepository teamRepository,
 			TeamMemberRepository teamMemberRepository,
-			IdentityUserLookupClient identityUserLookupClient
+			IdentityUserLookupClient identityUserLookupClient,
+			TeamMemberAddedEventPublisher teamMemberAddedEventPublisher
 	) {
 		this.teamRepository = teamRepository;
 		this.teamMemberRepository = teamMemberRepository;
 		this.identityUserLookupClient = identityUserLookupClient;
+		this.teamMemberAddedEventPublisher = teamMemberAddedEventPublisher;
 	}
 
 	@Transactional
@@ -91,7 +97,28 @@ public class TeamService {
 			throw new DuplicateTeamMemberException("이미 팀에 참여 중인 사용자입니다");
 		}
 		teamMemberRepository.save(TeamMemberEntity.of(teamId, invitee, TeamMemberRole.MEMBER));
+		teamMemberAddedEventPublisher.publish(
+				new TeamMemberAddedEvent(
+						invitee,
+						actorUserId.trim(),
+						String.valueOf(team.getId()),
+						team.getName(),
+						Instant.now()
+				)
+		);
 		return new TeamSummaryResponse(String.valueOf(team.getId()), team.getName());
+	}
+
+	@Transactional(readOnly = true)
+	public InternalTeamDetailResponse getTeamDetailInternal(Long teamId) {
+		TeamEntity team = teamRepository.findById(teamId)
+				.orElseThrow(() -> new TeamNotFoundException("팀을 찾을 수 없습니다"));
+		return new InternalTeamDetailResponse(
+				String.valueOf(team.getId()),
+				team.getName(),
+				team.getCreatedBy(),
+				team.getCreatedAt()
+		);
 	}
 
 	@Transactional(readOnly = true)
