@@ -5,6 +5,14 @@ import { useEffect, useMemo, useRef } from "react"
 import { useToast } from "@/components/toast/toast-provider"
 import type { InAppNotification, InAppNotificationListResponse } from "@/components/notifications/notification-types"
 
+const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "/notifications"
+
+function apiPath(path: string): string {
+  const base = BASE_PATH.replace(/\/+$/, "")
+  const p = path.startsWith("/") ? path : `/${path}`
+  return `${base}${p}`
+}
+
 function isInAppNotificationListResponse(v: unknown): v is InAppNotificationListResponse {
   if (typeof v !== "object" || v === null) return false
   if (!("items" in v)) return false
@@ -23,7 +31,7 @@ function dedupeNewestFirst(items: InAppNotification[]): InAppNotification[] {
 }
 
 async function fetchLatest(): Promise<InAppNotification[]> {
-  const res = await fetch("/api/notification/api/in-app-notifications?limit=10", {
+  const res = await fetch(apiPath("/api/notification/api/in-app-notifications?limit=10"), {
     method: "GET",
     cache: "no-store",
   })

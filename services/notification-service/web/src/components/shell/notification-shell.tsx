@@ -14,7 +14,7 @@ export function NotificationShell({ children }: { children: ReactNode }) {
       <ConsoleShell
         sidebar={
           <ConsoleSidebar
-            profile="usage"
+            profile="notification"
             footer={
               <form action="/api/auth/logout" method="post">
                 <Button type="submit" variant="secondary" className="w-full">

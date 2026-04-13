@@ -36,7 +36,7 @@
 - `ConsoleNavId` 유니온에 **새 키**를 추가합니다 (예: `"usageLog"`).
 - `CONSOLE_NAV`에 항목을 추가합니다.
   - **`label`**: 사이드바에 보일 이름.
-  - **`owner`**: `'identity' | 'usage' | 'billing'` — **어느 앱이 그 URL을 “담당”하는지**.
+  - **`owner`**: `'identity' | 'usage' | 'billing' | 'notification'` — **어느 앱이 그 URL을 “담당”하는지**.
   - **`publicPath`**: **단일 오리진·엣지 기준 브라우저 절대 경로** (항상 `/` 로 시작).
 - **메인 메뉴 순서**에 넣으려면 `CONSOLE_MAIN_NAV_ORDER` 배열에 같은 키를 끼워 넣습니다.  
   (`identityLanding`(「홈으로」)은 별도 영역이라 이 배열에 넣지 않습니다.)
@@ -50,7 +50,7 @@
 여기서 **basePath 함정**을 피합니다.
 
 - **`resolveConsoleNavLink`**
-  - **Identity 프로필**: 보통 `{ kind: 'next', href: publicPath }` 로 충분합니다.
+  - **Identity 프로필**: 이제 “Identity가 소유한 라우트”만 `{ kind: 'next', href: publicPath }` 로 두고, 그 외(예: `/notifications`)는 `{ kind: 'anchor', href: anchorHrefForPublicPath(publicPath) }` 로 처리하는 패턴을 권장합니다.
   - **Usage / Billing 프로필**  
     - **그 앱이 소유한 경로**: `next/link`용 **`href`는 basePath 기준 “앱 내부 경로”** 여야 합니다.  
       현재 구현은 **각 앱당 “홈” 한 칸**만 `owner === usage|billing` 일 때 `href: '/'` 로 두는 패턴이 있습니다. **홈이 아닌 같은 앱 내 다른 탭**(예: `/dashboard/usagelog`)을 추가하려면, `publicPath`에서 `basePath`를 뺀 상대 경로(예: `/usagelog`)를 `next` 링크에 넣도록 **분기**를 추가해야 합니다.
@@ -124,3 +124,4 @@
 | 날짜 | 내용 |
 |------|------|
 | 2026-04-12 | 최초 작성 (`@ai-usage/shell` 기준). |
+| 2026-04-13 | Notification(인앱 알림함) 라우트 추가를 반영(새 `owner`, identity 프로필 anchor 처리). |

@@ -7,6 +7,14 @@ import { Button, cn } from "@ai-usage/ui"
 
 import type { InAppNotification, InAppNotificationListResponse } from "./notification-types"
 
+const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "/notifications"
+
+function apiPath(path: string): string {
+  const base = BASE_PATH.replace(/\/+$/, "")
+  const p = path.startsWith("/") ? path : `/${path}`
+  return `${base}${p}`
+}
+
 function extractMessage(body: unknown): string | null {
   if (typeof body !== "object" || body === null) return null
   if (!("message" in body)) return null
@@ -15,7 +23,7 @@ function extractMessage(body: unknown): string | null {
 }
 
 async function fetchNotifications(limit: number, cursor?: string | null): Promise<InAppNotificationListResponse> {
-  const url = new URL("/api/notification/api/in-app-notifications", window.location.origin)
+  const url = new URL(apiPath("/api/notification/api/in-app-notifications"), window.location.origin)
   url.searchParams.set("limit", String(limit))
   if (cursor) url.searchParams.set("cursor", cursor)
 
@@ -29,7 +37,7 @@ async function fetchNotifications(limit: number, cursor?: string | null): Promis
 }
 
 async function markRead(id: string): Promise<void> {
-  const res = await fetch(`/api/notification/api/in-app-notifications/${encodeURIComponent(id)}/read`, {
+  const res = await fetch(apiPath(`/api/notification/api/in-app-notifications/${encodeURIComponent(id)}/read`), {
     method: "PATCH",
     cache: "no-store",
   })
@@ -41,7 +49,7 @@ async function markRead(id: string): Promise<void> {
 }
 
 async function markAllRead(): Promise<void> {
-  const res = await fetch("/api/notification/api/in-app-notifications/read-all", {
+  const res = await fetch(apiPath("/api/notification/api/in-app-notifications/read-all"), {
     method: "POST",
     cache: "no-store",
   })

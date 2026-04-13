@@ -4,6 +4,7 @@ import type { ReactNode } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
+  Bell,
   Building2,
   ChevronLeft,
   LayoutDashboard,
@@ -23,6 +24,7 @@ const ICONS: Record<ConsoleNavId, ReactNode> = {
   usageHome: <LayoutDashboard className="size-[1.125rem] shrink-0" aria-hidden />,
   usageLog: <ScrollText className="size-[1.125rem] shrink-0" aria-hidden />,
   billingHome: <Wallet className="size-[1.125rem] shrink-0" aria-hidden />,
+  notifications: <Bell className="size-[1.125rem] shrink-0" aria-hidden />,
   settings: <Settings className="size-[1.125rem] shrink-0" aria-hidden />,
   organizations: <Building2 className="size-[1.125rem] shrink-0" aria-hidden />,
   teams: <UsersRound className="size-[1.125rem] shrink-0" aria-hidden />,
