@@ -116,6 +116,21 @@ services:
     ports:
       - "${REDIS_PORT:-6379}:6379"
 
+  notification-service:
+    profiles:
+      - web
+    build:
+      context: .
+      dockerfile: services/notification-service/Dockerfile
+    depends_on:
+      - postgres-notification
+    environment:
+      DATABASE_URL: postgresql://${NOTIFICATION_POSTGRES_USER:-notification_app}:${NOTIFICATION_POSTGRES_PASSWORD:-notification_app}@postgres-notification:5432/${NOTIFICATION_POSTGRES_DB:-notification_db}
+      PORT: 8096
+      NOTIFICATION_INTERNAL_SECRET: ${NOTIFICATION_INTERNAL_SECRET:-}
+    ports:
+      - "${NOTIFICATION_SERVICE_PORT:-8096}:8096"
+
   proxy-service:
     build:
       context: ./services/proxy-service
@@ -209,6 +224,27 @@ services:
     ports:
       - "${BILLING_WEB_PORT:-3003}:3000"
 
+  notification-web:
+    profiles:
+      - web
+    build:
+      context: .
+      dockerfile: services/notification-service/web/Dockerfile
+      args:
+        NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_NOTIFICATION_BASE_PATH:-/notifications}
+    depends_on:
+      - api-gateway-service
+      - notification-service
+    environment:
+      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://host.docker.internal:8090}
+      NOTIFICATION_SERVICE_URL: ${WEB_NOTIFICATION_SERVICE_URL:-http://notification-service:8096}
+      NOTIFICATION_INTERNAL_SECRET: ${NOTIFICATION_INTERNAL_SECRET:-}
+      NEXT_PUBLIC_NOTIFICATION_POLL_MS: ${NEXT_PUBLIC_NOTIFICATION_POLL_MS:-10000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${NOTIFICATION_WEB_PORT:-3004}:3000"
+
   team-service:
     profiles:
       - web
@@ -259,6 +295,7 @@ services:
       - usage-web
       - billing-web
       - team-web
+      - notification-web
       - api-gateway-service
     ports:
       - "${WEB_EDGE_PORT:-8888}:80"
