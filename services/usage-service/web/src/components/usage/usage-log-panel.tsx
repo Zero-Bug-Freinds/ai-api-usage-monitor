@@ -59,7 +59,7 @@ export function UsageLogPanel() {
     return () => {
       cancelled = true
     }
-  }, [logProvider, logRefresh])
+  }, [logProvider, providerParam, logRefresh])
 
   React.useEffect(() => {
     let cancelled = false
@@ -92,7 +92,7 @@ export function UsageLogPanel() {
     return () => {
       cancelled = true
     }
-  }, [logsPage, appliedModelMask, logProvider, apiKeyFilter, logRefresh])
+  }, [logsPage, appliedModelMask, logProvider, providerParam, apiKeyFilter, logRefresh])
 
   return (
     <div className="rounded-lg border border-border p-4 shadow-sm">

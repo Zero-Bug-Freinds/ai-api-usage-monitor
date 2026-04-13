@@ -42,6 +42,9 @@ import type {
 } from "@/lib/usage/types"
 import { addKstDays, formatKstIsoDate } from "@/lib/usage/kst-dates"
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const AnyLegend = Legend as any
+
 /** 공급사별 기본 색 — 모든 차트에서 동일 키에 동일 색 */
 const PROVIDER_COLOR: Record<string, string> = {
   GOOGLE: "#F97316",
@@ -58,6 +61,16 @@ const PROVIDER_LABEL: Record<string, string> = {
 const MONTHLY_LOOKBACK_DAYS = 365
 
 const DASHBOARD_PROVIDER_ALL = "__ALL__"
+const MODEL_REQUESTS_TOP_N = 10
+const OTHERS_LABEL = "기타 (Others)"
+const OTHERS_BAR_COLOR = "#94a3b8"
+const MODEL_COLOR_CACHE = new Map<string, string>()
+
+const PROVIDER_MODEL_PALETTES: Record<string, string[]> = {
+  GOOGLE: ["#9a3412", "#c2410c", "#ea580c", "#F97316", "#fb923c", "#fdba74"],
+  OPENAI: ["#1e3a8a", "#1d4ed8", "#2563eb", "#3b82f6", "#60a5fa", "#93c5fd"],
+  ANTHROPIC: ["#78350f", "#92400e", "#b45309", "#d97706", "#f59e0b", "#fbbf24"],
+}
 
 type PeriodMode = "today" | "7d" | "30d" | "custom"
 
@@ -165,14 +178,14 @@ function hashToUint(str: string): number {
  * 동일 모델·공급사 조합은 항상 같은 색(공급사 팔레트 기반 변형).
  */
 function colorForModel(model: string, provider: string): string {
-  const variants: Record<string, string[]> = {
-    GOOGLE: ["#9a3412", "#c2410c", "#ea580c", "#F97316", "#fb923c", "#fdba74"],
-    OPENAI: ["#0a0a0a", "#171717", "#262626", "#404040", "#525252", "#737373"],
-    ANTHROPIC: ["#7c2d12", "#9a3412", "#c2410c", "#ea580c", "#fb923c", "#fdba74"],
-  }
-  const list = variants[provider] ?? ["#525252", "#737373", "#a3a3a3", "#d4d4d4"]
-  const idx = hashToUint(`${provider}::${model}`) % list.length
-  return list[idx] ?? "#737373"
+  const key = `${provider}::${model}`
+  const cached = MODEL_COLOR_CACHE.get(key)
+  if (cached) return cached
+  const list = PROVIDER_MODEL_PALETTES[provider] ?? ["#64748b", "#94a3b8", "#cbd5e1", "#e2e8f0"]
+  const idx = hashToUint(key) % list.length
+  const picked = list[idx] ?? "#94a3b8"
+  MODEL_COLOR_CACHE.set(key, picked)
+  return picked
 }
 
 function labelForProviderCode(code: string): string {
@@ -210,6 +223,15 @@ type TokenStackRow = {
   pctOutputOfGrand: number
   fillInput: string
   fillOutput: string
+}
+
+type ModelRequestRow = {
+  label: string
+  model: string
+  provider: string
+  requests: number
+  isOthers: boolean
+  members?: Array<{ model: string; provider: string; requests: number }>
 }
 
 type TokenStackTooltipProps = {
@@ -279,6 +301,94 @@ function TokenAvgLabelList(props: TokenAvgLabelProps) {
   )
 }
 
+type MainStabilityRow = {
+  label: string
+  requestCount: number
+  successCount: number
+  errorCount: number
+  successRate: number
+  errorRate: number
+}
+
+type MainStabilityTooltipProps = {
+  active?: boolean
+  label?: string | number
+  payload?: readonly unknown[]
+}
+
+function MainStabilityTooltip({ active, label, payload }: MainStabilityTooltipProps) {
+  if (!active || !payload?.length) return null
+  const row = (payload[0] as { payload?: MainStabilityRow }).payload
+  if (!row) return null
+  return (
+    <div className="rounded-md border border-border bg-card px-3 py-2 text-xs shadow-md">
+      <p className="font-medium text-foreground">{String(label)}</p>
+      <p className="mt-1 text-muted-foreground">총 요청 수: {formatRequestCount(row.requestCount)}</p>
+      <p className="text-muted-foreground">성공 건수: {row.successCount.toLocaleString("en-US")}건</p>
+      <p className="text-muted-foreground">오류 건수: {row.errorCount.toLocaleString("en-US")}건</p>
+      <p className="mt-1 text-foreground tabular-nums">성공률: {row.successRate.toFixed(1)}%</p>
+    </div>
+  )
+}
+
+type DonutTooltipPayload = {
+  name?: string
+  value?: number
+  payload?: { fullName?: string; value?: number; percent?: number; provider?: string }
+}
+
+type SimpleDonutTooltipProps = {
+  active?: boolean
+  payload?: readonly unknown[]
+}
+
+function ModelDonutTooltip({ active, payload }: SimpleDonutTooltipProps) {
+  if (!active || !payload?.length) return null
+  const first = payload[0] as DonutTooltipPayload
+  const raw = first.payload
+  if (!raw) return null
+  const name = raw.fullName ?? first.name ?? "-"
+  const pct = raw.percent ?? 0
+  return (
+    <div className="rounded-md border border-border bg-card px-3 py-2 text-xs shadow-md">
+      <p className="font-medium text-foreground">{name}</p>
+      <p className="mt-1 text-muted-foreground tabular-nums">전체 대비 비중: {(pct * 100).toFixed(1)}%</p>
+    </div>
+  )
+}
+
+function ProviderDonutTooltip({ active, payload }: SimpleDonutTooltipProps) {
+  if (!active || !payload?.length) return null
+  const first = payload[0] as DonutTooltipPayload
+  const raw = first.payload
+  if (!raw) return null
+  const name = first.name ?? raw.provider ?? "-"
+  const count = raw.value ?? first.value ?? 0
+  const pct = raw.percent ?? 0
+  return (
+    <div className="rounded-md border border-border bg-card px-3 py-2 text-xs shadow-md">
+      <p className="font-medium text-foreground">{name}</p>
+      <p className="mt-1 text-muted-foreground">총 요청 수: {formatRequestCount(count)}</p>
+      <p className="text-muted-foreground tabular-nums">전체 대비 비중: {(pct * 100).toFixed(1)}%</p>
+    </div>
+  )
+}
+
+function stabilityRateDomain(rows: MainStabilityRow[]): [number, number] {
+  if (rows.length === 0) return [90, 100]
+  const rates = rows
+    .filter((r) => r.requestCount > 0)
+    .flatMap((r) => [r.successRate, r.errorRate])
+  if (rates.length === 0) return [90, 100]
+  const min = Math.min(...rates)
+  const max = Math.max(...rates)
+  const paddedMin = Math.floor((min - 0.5) * 10) / 10
+  const paddedMax = Math.ceil((max + 0.5) * 10) / 10
+  const lower = min >= 90 ? Math.max(90, paddedMin) : Math.max(0, paddedMin)
+  const upper = Math.min(100, Math.max(lower + 1, paddedMax))
+  return [lower, upper]
+}
+
 function isAbortError(e: unknown): boolean {
   return (
     (typeof DOMException !== "undefined" && e instanceof DOMException && e.name === "AbortError") ||
@@ -309,6 +419,7 @@ export function UsageDashboard() {
   const [daily, setDaily] = React.useState<DailyUsagePoint[]>([])
   const [monthly, setMonthly] = React.useState<MonthlyUsagePoint[]>([])
   const [byModel, setByModel] = React.useState<ModelUsageAggregate[]>([])
+  const [isOthersModalOpen, setIsOthersModalOpen] = React.useState(false)
 
   /** API·KPI 라벨에 쓰는 구간(마지막으로 로드한 기준). effect 안에서만 갱신해 요청 간 날짜 불일치를 막는다. */
   const [loadedRange, setLoadedRange] = React.useState<{ from: string; to: string } | null>(null)
@@ -416,22 +527,32 @@ export function UsageDashboard() {
   }, [clientReady, mainRefresh, periodMode, customFrom, customTo, dashProvider])
 
   const dailyChart = React.useMemo(
-    () =>
-      daily.map((row) => ({
-        date: row.date,
-        requestCount: row.requestCount,
-        cost: toNumber(row.estimatedCost),
-      })),
+    (): MainStabilityRow[] =>
+      daily.map((row) => {
+        const successCount = Math.max(0, row.requestCount - row.errorCount)
+        const successRate = row.requestCount > 0 ? (100 * successCount) / row.requestCount : 0
+        const errorRate = row.requestCount > 0 ? (100 * row.errorCount) / row.requestCount : 0
+        return {
+          label: row.date,
+          requestCount: row.requestCount,
+          successCount,
+          errorCount: row.errorCount,
+          successRate,
+          errorRate,
+        }
+      }),
     [daily]
   )
 
   const hourlyChart = React.useMemo(
-    () =>
+    (): MainStabilityRow[] =>
       (hourly ?? []).map((row) => ({
-        hour: row.hour,
         label: `${row.hour}시`,
         requestCount: row.requestCount,
-        cost: toNumber(row.estimatedCostUsd),
+        successCount: Math.max(0, row.requestCount - row.errorCount),
+        errorCount: row.errorCount,
+        successRate: row.requestCount > 0 ? (100 * (row.requestCount - row.errorCount)) / row.requestCount : 0,
+        errorRate: row.requestCount > 0 ? (100 * row.errorCount) / row.requestCount : 0,
       })),
     [hourly]
   )
@@ -455,6 +576,7 @@ export function UsageDashboard() {
         fullName: m.model,
         provider: m.provider,
         value: m.requestCount,
+        percent: m.requestCount / totalReq,
       }))
   }, [byModel])
 
@@ -466,25 +588,80 @@ export function UsageDashboard() {
       if (m.requestCount <= 0) continue
       acc.set(m.provider, (acc.get(m.provider) ?? 0) + m.requestCount)
     }
+    const total = [...acc.values()].reduce((s, v) => s + v, 0)
     return [...acc.entries()].map(([provider, value]) => ({
       name: labelForProviderCode(provider),
       provider,
       value,
+      percent: total > 0 ? value / total : 0,
     }))
   }, [byModel])
 
-  const modelBarRows = React.useMemo(() => {
-    return [...byModel]
+  const modelPieLegendPayload = React.useMemo(
+    () =>
+      pieData.map((entry) => ({
+        value: entry.name,
+        type: "square" as const,
+        color: colorForModel(entry.fullName, entry.provider),
+      })),
+    [pieData]
+  )
+
+  const providerPieLegendPayload = React.useMemo(
+    () =>
+      providerPieData.map((entry) => ({
+        value: entry.name,
+        type: "square" as const,
+        color: PROVIDER_COLOR[entry.provider] ?? "#737373",
+      })),
+    [providerPieData]
+  )
+
+  const modelBarRows = React.useMemo((): ModelRequestRow[] => {
+    const sorted = [...byModel]
+      .filter((m) => m.requestCount > 0)
       .sort((a, b) => b.requestCount - a.requestCount)
-      .map((m) => ({
-        label: truncateModelLabel(m.model),
-        model: m.model,
-        provider: m.provider,
-        requests: m.requestCount,
-        tokens: m.inputTokens,
-        outTokens: m.outputTokens,
-      }))
+    const top = sorted.slice(0, MODEL_REQUESTS_TOP_N).map((m) => ({
+      label: truncateModelLabel(m.model),
+      model: m.model,
+      provider: m.provider,
+      requests: m.requestCount,
+      isOthers: false,
+    }))
+    const othersMembers = sorted.slice(MODEL_REQUESTS_TOP_N)
+    if (othersMembers.length === 0) return top
+    const othersRequests = othersMembers.reduce((sum, m) => sum + m.requestCount, 0)
+    return [
+      ...top,
+      {
+        label: OTHERS_LABEL,
+        model: "__OTHERS__",
+        provider: "OTHERS",
+        requests: othersRequests,
+        isOthers: true,
+        members: othersMembers.map((m) => ({
+          model: m.model,
+          provider: m.provider,
+          requests: m.requestCount,
+        })),
+      },
+    ]
   }, [byModel])
+
+  const othersRows = React.useMemo(
+    () =>
+      (modelBarRows.find((r) => r.isOthers)?.members ?? []).slice().sort((a, b) => b.requests - a.requests),
+    [modelBarRows]
+  )
+
+  React.useEffect(() => {
+    if (!isOthersModalOpen) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+    return () => {
+      document.body.style.overflow = prev
+    }
+  }, [isOthersModalOpen])
 
   const tokenStackRows = React.useMemo((): TokenStackRow[] => {
     const sorted = [...byModel].sort((a, b) => b.requestCount - a.requestCount)
@@ -526,12 +703,28 @@ export function UsageDashboard() {
     return Math.min(TOKEN_CHART_MAX_H, Math.max(TOKEN_CHART_MIN_H, n * TOKEN_ROW_HEIGHT_PX))
   }, [tokenStackRows.length])
 
+  const tokenStackLegendPayload = React.useMemo(() => {
+    const first = tokenStackRows[0]
+    return [
+      {
+        value: "입력 토큰",
+        type: "square" as const,
+        color: first?.fillInput ?? "rgba(148, 163, 184, 0.3)",
+      },
+      {
+        value: "출력 토큰",
+        type: "square" as const,
+        color: first?.fillOutput ?? "#94a3b8",
+      },
+    ]
+  }, [tokenStackRows])
+
   const hasMainData =
     (kpiSummary && kpiSummary.totalRequests > 0) ||
     daily.length > 0 ||
     monthly.length > 0 ||
     byModel.some((m) => m.requestCount > 0) ||
-    (hourly && hourly.some((h) => h.requestCount > 0 || toNumber(h.estimatedCostUsd) > 0))
+    (hourly && hourly.some((h) => h.requestCount > 0))
 
   const periodPrefix = kpiPeriodPrefix(periodMode, rangeFrom, rangeTo)
   const compareCostLabel = costCompareLabel(periodMode, rangeFrom, rangeTo)
@@ -558,7 +751,12 @@ export function UsageDashboard() {
   const monthlyHasActivity = monthlyChart.some((r) => r.requestCount > 0)
 
   const mainChartTitle =
-    periodMode === "today" ? "시간별 요청·비용 (오늘 KST)" : "일별 요청·비용 (선택 기간)"
+    periodMode === "today" ? "시간별 요청·성공률·오류율 (오늘 KST)" : "일별 요청·성공률·오류율 (선택 기간)"
+
+  const rateAxisDomain = React.useMemo(
+    () => stabilityRateDomain(periodMode === "today" ? hourlyChart : dailyChart),
+    [periodMode, hourlyChart, dailyChart]
+  )
 
   const errorSubStyle =
     rangeErrors >= 1 ? "text-red-500" : "text-foreground"
@@ -712,29 +910,43 @@ export function UsageDashboard() {
                   <ComposedChart data={hourlyChart}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                     <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                    <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
-                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
-                    <Tooltip
-                      formatter={(value, name) =>
-                        name === "비용 (USD)"
-                          ? formatUsd(tooltipNumericValue(value))
-                          : tooltipNumericValue(value)
-                      }
+                    <YAxis
+                      yAxisId="left"
+                      tick={{ fontSize: 11 }}
+                      label={{ value: "요청 수 (건)", angle: -90, position: "insideLeft", offset: 2 }}
                     />
-                    <Legend />
+                    <YAxis
+                      yAxisId="right"
+                      orientation="right"
+                      domain={rateAxisDomain}
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v) => `${Number(v).toFixed(1)}%`}
+                      label={{ value: "성공/오류율 (%)", angle: 90, position: "insideRight", offset: 2 }}
+                    />
+                    <Tooltip content={MainStabilityTooltip} />
+                    <AnyLegend />
                     <Bar
                       yAxisId="left"
                       dataKey="requestCount"
-                      name="요청 수"
+                      name="총 요청 수"
                       fill="#a3a3a3"
                       radius={[4, 4, 0, 0]}
                     />
                     <Line
                       yAxisId="right"
                       type="monotone"
-                      dataKey="cost"
-                      name="비용 (USD)"
-                      stroke="#0a0a0a"
+                      dataKey="successRate"
+                      name="성공률"
+                      stroke="#10b981"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                    <Line
+                      yAxisId="right"
+                      type="monotone"
+                      dataKey="errorRate"
+                      name="오류율"
+                      stroke="#f43f5e"
                       strokeWidth={2}
                       dot={false}
                     />
@@ -746,30 +958,44 @@ export function UsageDashboard() {
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={dailyChart}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                    <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
-                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
-                    <Tooltip
-                      formatter={(value, name) =>
-                        name === "비용 (USD)"
-                          ? formatUsd(tooltipNumericValue(value))
-                          : tooltipNumericValue(value)
-                      }
+                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                    <YAxis
+                      yAxisId="left"
+                      tick={{ fontSize: 11 }}
+                      label={{ value: "요청 수 (건)", angle: -90, position: "insideLeft", offset: 2 }}
                     />
-                    <Legend />
+                    <YAxis
+                      yAxisId="right"
+                      orientation="right"
+                      domain={rateAxisDomain}
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v) => `${Number(v).toFixed(1)}%`}
+                      label={{ value: "성공/오류율 (%)", angle: 90, position: "insideRight", offset: 2 }}
+                    />
+                    <Tooltip content={MainStabilityTooltip} />
+                    <AnyLegend />
                     <Bar
                       yAxisId="left"
                       dataKey="requestCount"
-                      name="요청 수"
+                      name="총 요청 수"
                       fill="#a3a3a3"
                       radius={[4, 4, 0, 0]}
                     />
                     <Line
                       yAxisId="right"
                       type="monotone"
-                      dataKey="cost"
-                      name="비용 (USD)"
-                      stroke="#0a0a0a"
+                      dataKey="successRate"
+                      name="성공률"
+                      stroke="#10b981"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                    <Line
+                      yAxisId="right"
+                      type="monotone"
+                      dataKey="errorRate"
+                      name="오류율"
+                      stroke="#f43f5e"
                       strokeWidth={2}
                       dot={false}
                     />
@@ -805,11 +1031,12 @@ export function UsageDashboard() {
                           <Cell
                             key={`m-${entry.fullName}-${i}`}
                             fill={colorForModel(entry.fullName, entry.provider)}
+                            style={{ cursor: "default" }}
                           />
                         ))}
                       </Pie>
-                      <Tooltip formatter={(value) => formatRequestCount(tooltipNumericValue(value))} />
-                      <Legend />
+                      <Tooltip content={ModelDonutTooltip} />
+                      <AnyLegend payload={modelPieLegendPayload} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
@@ -839,11 +1066,12 @@ export function UsageDashboard() {
                           <Cell
                             key={`p-${entry.provider}-${i}`}
                             fill={PROVIDER_COLOR[entry.provider] ?? "#737373"}
+                            style={{ cursor: "default" }}
                           />
                         ))}
                       </Pie>
-                      <Tooltip formatter={(value) => formatRequestCount(tooltipNumericValue(value))} />
-                      <Legend />
+                      <Tooltip content={ProviderDonutTooltip} />
+                      <AnyLegend payload={providerPieLegendPayload} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
@@ -861,16 +1089,38 @@ export function UsageDashboard() {
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                       <XAxis type="number" />
                       <YAxis type="category" dataKey="label" width={128} tick={{ fontSize: 11 }} />
-                      <Tooltip />
-                      <Bar dataKey="requests" name="요청 수" radius={[0, 4, 4, 0]}>
+                      <Tooltip formatter={(v) => formatRequestCount(tooltipNumericValue(v))} />
+                      <Bar
+                        dataKey="requests"
+                        name="요청 수"
+                        radius={[0, 4, 4, 0]}
+                        isAnimationActive={false}
+                        onClick={(_, index) => {
+                          const row = modelBarRows[index]
+                          if (row?.isOthers) setIsOthersModalOpen(true)
+                        }}
+                      >
                         {modelBarRows.map((row) => (
-                          <Cell key={`req-${row.model}`} fill={colorForModel(row.model, row.provider)} />
+                          <Cell
+                            key={`req-${row.model}`}
+                            fill={row.isOthers ? OTHERS_BAR_COLOR : colorForModel(row.model, row.provider)}
+                            style={{ cursor: row.isOthers ? "pointer" : "default" }}
+                          />
                         ))}
+                        <LabelList
+                          dataKey="requests"
+                          position="right"
+                          formatter={(value: unknown) => formatRequestCount(tooltipNumericValue(value))}
+                          style={{ fill: "var(--muted-foreground)", fontSize: 11 }}
+                        />
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               )}
+              <p className="mt-3 text-xs text-muted-foreground">
+                기타 막대를 클릭하여 전체 상세 내역을 확인하세요.
+              </p>
             </section>
           </div>
 
@@ -897,7 +1147,7 @@ export function UsageDashboard() {
                     <XAxis type="number" tick={{ fontSize: 11 }} tickCount={8} />
                     <YAxis type="category" dataKey="label" width={128} tick={{ fontSize: 11 }} />
                     <Tooltip content={TokenStackTooltip} cursor={{ fill: "var(--muted)", fillOpacity: 0.12 }} />
-                    <Legend />
+                    <AnyLegend payload={tokenStackLegendPayload} />
                     <Bar stackId="tokens" dataKey="inputTokens" name="입력 토큰" radius={[4, 0, 0, 4]}>
                       {tokenStackRows.map((row) => (
                         <Cell key={`stk-in-${row.model}`} fill={row.fillInput} />
@@ -932,7 +1182,7 @@ export function UsageDashboard() {
                     <XAxis dataKey="yearMonth" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} />
                     <Tooltip formatter={(value) => formatRequestCount(tooltipNumericValue(value))} />
-                    <Legend />
+                    <AnyLegend />
                     <Bar
                       dataKey="requestCount"
                       name="요청 수"
@@ -946,6 +1196,48 @@ export function UsageDashboard() {
           </section>
         </>
       )}
+      {isOthersModalOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          onClick={() => setIsOthersModalOpen(false)}
+          role="presentation"
+        >
+          <div
+            className="w-full max-w-2xl rounded-lg border border-border bg-card shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-label="기타 모델 상세 내역"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <h3 className="text-sm font-semibold">기타 모델 상세 내역</h3>
+              <Button type="button" variant="outline" size="sm" onClick={() => setIsOthersModalOpen(false)}>
+                닫기
+              </Button>
+            </div>
+            <div className="max-h-[60vh] overflow-y-auto px-4 py-3">
+              {othersRows.length === 0 ? (
+                <p className="text-sm text-muted-foreground">표시할 상세 항목이 없습니다.</p>
+              ) : (
+                <div className="space-y-2">
+                  {othersRows.map((row) => (
+                    <div
+                      key={`${row.provider}:${row.model}`}
+                      className="flex items-center justify-between rounded-md border border-border/70 px-3 py-2 text-sm"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">{row.model}</p>
+                        <p className="text-xs text-muted-foreground">{labelForProviderCode(row.provider)}</p>
+                      </div>
+                      <p className="tabular-nums text-muted-foreground">{formatRequestCount(row.requests)}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

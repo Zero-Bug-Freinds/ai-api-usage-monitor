@@ -103,4 +103,46 @@ class UsageCostFinalizedPipelineIntegrationTest {
                 .untilAsserted(() -> assertThat(repository.findById(eventId).orElseThrow().getEstimatedCost())
                         .isEqualByComparingTo("0.042"));
     }
+
+    /**
+     * Cost-finalized can be delivered before {@code usage.recorded} finishes inserting the row
+     * (parallel consumers). Retries must still apply the cost after the row appears.
+     */
+    @Test
+    void costFinalizedBeforeUsageRow_stillUpdatesEstimatedCost() throws Exception {
+        UUID eventId = UUID.randomUUID();
+        UsageCostFinalizedEvent finalized = UsageCostFinalizedEvent.v1(eventId, new BigDecimal("0.099"));
+        rabbitTemplate.convertAndSend(
+                UsageCostEventAmqp.TOPIC_EXCHANGE_NAME,
+                UsageCostEventAmqp.ROUTING_KEY_COST_FINALIZED,
+                objectMapper.writeValueAsString(finalized));
+
+        Thread.sleep(200);
+
+        UsageRecordedEvent recorded = new UsageRecordedEvent(
+                eventId,
+                Instant.parse("2025-06-01T12:00:00Z"),
+                "corr-late",
+                "user-cost",
+                null,
+                null,
+                "key-cost",
+                "cafebabedeadbeef",
+                "managed",
+                AiProvider.OPENAI,
+                "gpt-4o-mini",
+                new TokenUsage("gpt-4o-mini", 1L, 2L, 3L),
+                BigDecimal.ZERO,
+                "/proxy/openai/v1/chat/completions",
+                "api.openai.com",
+                false,
+                true,
+                200
+        );
+        rabbitTemplate.convertAndSend("usage.events", "usage.recorded", objectMapper.writeValueAsString(recorded));
+
+        await().atMost(20, SECONDS).pollInterval(100, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .untilAsserted(() -> assertThat(repository.findById(eventId).orElseThrow().getEstimatedCost())
+                        .isEqualByComparingTo("0.099"));
+    }
 }
