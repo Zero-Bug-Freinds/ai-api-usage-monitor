@@ -215,19 +215,21 @@ public class UsageAnalyticsJdbcRepository {
         String sql = """
                 SELECT (EXTRACT(HOUR FROM (occurred_at AT TIME ZONE '%s')))::int AS h,
                        COUNT(*)::bigint,
+                       COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0)::bigint,
                        COALESCE(SUM(estimated_cost), 0)
                 FROM usage_recorded_log
                 WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ?%s
                 GROUP BY 1
                 ORDER BY 1
-                """.formatted(BUCKET_ZONE, PROVIDER_FILTER);
+                """.formatted(BUCKET_ZONE, ERR_PRED, PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         List<HourlyUsagePoint> rows = jdbc.query(
                 sql,
                 (rs, rowNum) -> new HourlyUsagePoint(
                         rs.getInt("h"),
                         rs.getLong(2),
-                        rs.getBigDecimal(3) != null ? rs.getBigDecimal(3) : BigDecimal.ZERO
+                        rs.getLong(3),
+                        rs.getBigDecimal(4) != null ? rs.getBigDecimal(4) : BigDecimal.ZERO
                 ),
                 userId,
                 Timestamp.from(kstDayStartUtc),
@@ -245,7 +247,7 @@ public class UsageAnalyticsJdbcRepository {
             if (existing != null) {
                 out.add(existing);
             } else {
-                out.add(new HourlyUsagePoint(h, 0L, BigDecimal.ZERO));
+                out.add(new HourlyUsagePoint(h, 0L, 0L, BigDecimal.ZERO));
             }
         }
         return out;
