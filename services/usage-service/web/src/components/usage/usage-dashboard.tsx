@@ -1033,7 +1033,7 @@ export function UsageDashboard() {
                         ))}
                       </Pie>
                       <Tooltip content={ModelDonutTooltip} />
-                      <Legend payload={modelPieLegendPayload} />
+                      <Legend payload={modelPieLegendPayload as any} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
@@ -1068,7 +1068,7 @@ export function UsageDashboard() {
                         ))}
                       </Pie>
                       <Tooltip content={ProviderDonutTooltip} />
-                      <Legend payload={providerPieLegendPayload} />
+                      <Legend payload={providerPieLegendPayload as any} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
@@ -1144,7 +1144,7 @@ export function UsageDashboard() {
                     <XAxis type="number" tick={{ fontSize: 11 }} tickCount={8} />
                     <YAxis type="category" dataKey="label" width={128} tick={{ fontSize: 11 }} />
                     <Tooltip content={TokenStackTooltip} cursor={{ fill: "var(--muted)", fillOpacity: 0.12 }} />
-                    <Legend payload={tokenStackLegendPayload} />
+                    <Legend payload={tokenStackLegendPayload as any} />
                     <Bar stackId="tokens" dataKey="inputTokens" name="입력 토큰" radius={[4, 0, 0, 4]}>
                       {tokenStackRows.map((row) => (
                         <Cell key={`stk-in-${row.model}`} fill={row.fillInput} />
