@@ -48,8 +48,7 @@ public class TeamService {
 			TeamMemberRepository teamMemberRepository,
 			TeamInvitationRepository teamInvitationRepository,
 			IdentityUserLookupClient identityUserLookupClient,
-			TeamInvitationEventPublisher teamInvitationEventPublisher
-			IdentityUserLookupClient identityUserLookupClient,
+			TeamInvitationEventPublisher teamInvitationEventPublisher,
 			TeamMemberAddedEventPublisher teamMemberAddedEventPublisher
 	) {
 		this.teamRepository = teamRepository;
@@ -252,18 +251,6 @@ public class TeamService {
 				team.getName(),
 				invitation.getStatus().name(),
 				invitation.getRespondedAt()
-		);
-	}
-
-	@Transactional(readOnly = true)
-	public InternalTeamDetailResponse getTeamDetailInternal(Long teamId) {
-		TeamEntity team = teamRepository.findById(teamId)
-				.orElseThrow(() -> new TeamNotFoundException("팀을 찾을 수 없습니다"));
-		return new InternalTeamDetailResponse(
-				String.valueOf(team.getId()),
-				team.getName(),
-				team.getCreatedBy(),
-				team.getCreatedAt()
 		);
 	}
 
