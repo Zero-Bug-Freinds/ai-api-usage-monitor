@@ -101,6 +101,15 @@ public class TeamController {
 		return ResponseEntity.ok(ApiResponse.ok("팀 멤버 조회에 성공했습니다", members));
 	}
 
+	@GetMapping("/teams/{id}/owner")
+	public ResponseEntity<ApiResponse<Boolean>> getIsTeamOwner(
+			@AuthenticationPrincipal TeamUserPrincipal principal,
+			@PathVariable("id") Long teamId
+	) {
+		boolean owner = teamService.isTeamOwner(principal.userId(), teamId);
+		return ResponseEntity.ok(ApiResponse.ok("팀장 여부 조회에 성공했습니다", owner));
+	}
+
 	@DeleteMapping("/teams/{teamId}/members/{userId}")
 	public ResponseEntity<ApiResponse<TeamSummaryResponse>> removeTeamMember(
 			@AuthenticationPrincipal TeamUserPrincipal principal,
@@ -165,7 +174,7 @@ public class TeamController {
 	) {
 		TeamApiKeySummaryResponse updated =
 				teamApiKeyService.delete(principal.userId(), teamId, keyId, gracePeriodDays);
-		return ResponseEntity.ok(ApiResponse.ok("팀 API 키가 삭제 예정으로 등록되었습니다", updated));
+		return ResponseEntity.ok(ApiResponse.ok("팀 API 키 삭제 요청이 처리되었습니다", updated));
 	}
 
 	@PostMapping("/teams/{teamId}/api-keys/{keyId}/deletion/cancel")

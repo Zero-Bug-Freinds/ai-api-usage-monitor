@@ -178,6 +178,18 @@ public class TeamService {
 	}
 
 	@Transactional(readOnly = true)
+	public boolean isTeamOwner(String actorUserId, Long teamId) {
+		if (!StringUtils.hasText(actorUserId)) {
+			throw new IllegalArgumentException("userId는 필수입니다");
+		}
+		teamRepository.findById(teamId)
+				.orElseThrow(() -> new TeamNotFoundException("팀을 찾을 수 없습니다"));
+		TeamMemberEntity membership = teamMemberRepository.findByTeamIdAndUserId(teamId, actorUserId)
+				.orElseThrow(() -> new ForbiddenTeamAccessException("팀 멤버만 조회할 수 있습니다"));
+		return membership.getRole() == TeamMemberRole.OWNER;
+	}
+
+	@Transactional(readOnly = true)
 	public List<TeamInvitationResponse> getMyPendingInvitations(String actorUserId) {
 		if (!StringUtils.hasText(actorUserId)) {
 			throw new IllegalArgumentException("userId는 필수입니다");

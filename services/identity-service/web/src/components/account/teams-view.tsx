@@ -109,7 +109,7 @@ function formatBudgetUsd(value: number | null | undefined) {
 const BUDGET_STEP = 0.01
 
 const DEFAULT_DELETION_GRACE_DAYS = 7
-const MIN_DELETION_GRACE_DAYS = 1
+const MIN_DELETION_GRACE_DAYS = 0
 const MAX_DELETION_GRACE_DAYS = 365
 
 /** blur 또는 스피너 조정 후 소수 둘째 자리·0.01 단위로 맞춤 */
@@ -127,6 +127,7 @@ export function TeamsView() {
   const [error, setError] = React.useState<string | null>(null)
   const [teams, setTeams] = React.useState<TeamSummary[]>([])
   const [teamMemberIdsByTeamId, setTeamMemberIdsByTeamId] = React.useState<Record<string, string[]>>({})
+  const [isTeamOwnerByTeamId, setIsTeamOwnerByTeamId] = React.useState<Record<string, boolean>>({})
   const [showCreateForm, setShowCreateForm] = React.useState(false)
   const [teamName, setTeamName] = React.useState("")
   const [inviteUserIds, setInviteUserIds] = React.useState<string[]>([""])
@@ -156,6 +157,8 @@ export function TeamsView() {
   const [saveEditLoading, setSaveEditLoading] = React.useState(false)
   const [deleteLoadingKey, setDeleteLoadingKey] = React.useState<string | null>(null)
   const [cancelDeleteLoadingKey, setCancelDeleteLoadingKey] = React.useState<string | null>(null)
+  const [removeMemberLoadingKey, setRemoveMemberLoadingKey] = React.useState<string | null>(null)
+  const [deleteTeamLoadingId, setDeleteTeamLoadingId] = React.useState<string | null>(null)
   /** 목록에서는 이름만 보이고, 펼친 팀만 상세·API 조회 */
   const [openTeamId, setOpenTeamId] = React.useState<string | null>(null)
 
@@ -262,6 +265,25 @@ export function TeamsView() {
     }
   }, [])
 
+  const loadTeamOwnerFlag = React.useCallback(async (teamId: string) => {
+    try {
+      const { response, json } = await apiFetch<unknown>(
+        `/api/team/v1/teams/${encodeURIComponent(teamId)}/owner`,
+        { method: "GET", credentials: "include", headers: { Accept: "application/json" }, cache: "no-store" },
+        { authRequired: true }
+      )
+      const body = asApiResponse(json)
+      if (!response.ok || !body?.success || typeof body.data !== "boolean") {
+        setIsTeamOwnerByTeamId((prev) => ({ ...prev, [teamId]: false }))
+        return
+      }
+      const owner = body.data
+      setIsTeamOwnerByTeamId((prev) => ({ ...prev, [teamId]: owner }))
+    } catch {
+      setIsTeamOwnerByTeamId((prev) => ({ ...prev, [teamId]: false }))
+    }
+  }, [])
+
   React.useEffect(() => {
     void loadTeams()
   }, [loadTeams])
@@ -269,6 +291,7 @@ export function TeamsView() {
   React.useEffect(() => {
     if (teams.length === 0) {
       setTeamMemberIdsByTeamId({})
+      setIsTeamOwnerByTeamId({})
       setTeamApiKeysByTeamId({})
       setApiKeysListErrorByTeamId({})
       setOpenTeamId(null)
@@ -284,9 +307,10 @@ export function TeamsView() {
   React.useEffect(() => {
     if (!openTeamId) return
     if (!teams.some((t) => t.id === openTeamId)) return
+    void loadTeamOwnerFlag(openTeamId)
     void loadTeamMembers(openTeamId)
     void loadTeamApiKeys(openTeamId)
-  }, [openTeamId, teams, loadTeamMembers, loadTeamApiKeys])
+  }, [openTeamId, teams, loadTeamOwnerFlag, loadTeamMembers, loadTeamApiKeys])
 
   React.useEffect(() => {
     setApiKeyAliasByTeamId((prev) => {
@@ -527,11 +551,11 @@ export function TeamsView() {
 
   async function deleteTeamKey(teamId: string, keyId: number) {
     const ok = window.confirm(
-      `이 팀 API 키를 삭제 예정으로 등록합니다.\n\n유예 기간이 지나면 영구 삭제되며, 유예 중에는 언제든 삭제를 취소할 수 있습니다.\n유예 중에는 동일 키 값으로 재등록할 수 없습니다.\n\n다음 단계에서 유예 기간(일)을 입력합니다. (기본 ${DEFAULT_DELETION_GRACE_DAYS}일)`,
+      `이 팀 API 키 삭제를 진행합니다.\n\n0일을 입력하면 즉시 영구 삭제되고, 1일 이상을 입력하면 삭제 예정으로 등록됩니다.\n삭제 예정 상태에서는 언제든 삭제를 취소할 수 있습니다.\n\n다음 단계에서 유예 기간(일)을 입력합니다. (기본 ${DEFAULT_DELETION_GRACE_DAYS}일)`,
     )
     if (!ok) return
     const raw = window.prompt(
-      `유예 기간(일) (${MIN_DELETION_GRACE_DAYS}~${MAX_DELETION_GRACE_DAYS}, 비우면 ${DEFAULT_DELETION_GRACE_DAYS}일)`,
+      `유예 기간(일) (${MIN_DELETION_GRACE_DAYS}~${MAX_DELETION_GRACE_DAYS}, 0은 즉시 삭제, 비우면 ${DEFAULT_DELETION_GRACE_DAYS}일)`,
       String(DEFAULT_DELETION_GRACE_DAYS),
     )
     if (raw === null) return
@@ -682,6 +706,60 @@ export function TeamsView() {
     }
   }
 
+  async function removeTeamMember(teamId: string, memberId: string) {
+    const ok = window.confirm(`팀원 "${memberId}"를 팀에서 삭제하시겠습니까?`)
+    if (!ok) return
+    const loadingKey = `${teamId}:${memberId}`
+    setRemoveMemberLoadingKey(loadingKey)
+    setMessage(null)
+    try {
+      const { response, json } = await apiFetch<unknown>(
+        `/api/team/v1/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(memberId)}`,
+        { method: "DELETE", credentials: "include", headers: { Accept: "application/json" }, cache: "no-store" },
+        { authRequired: true }
+      )
+      const body = asApiResponse(json)
+      if (!response.ok || !body?.success) {
+        setMessage({ kind: "error", text: body?.message ?? "팀원 삭제에 실패했습니다" })
+        return
+      }
+      setMessage({ kind: "success", text: "팀원을 삭제했습니다" })
+      await loadTeamMembers(teamId)
+    } catch {
+      setMessage({ kind: "error", text: "팀원 삭제에 실패했습니다" })
+    } finally {
+      setRemoveMemberLoadingKey(null)
+    }
+  }
+
+  async function deleteTeam(teamId: string, teamName: string) {
+    const ok = window.confirm(
+      `"${teamName}" 팀을 삭제하시겠습니까?\n\n팀 API Key가 모두 삭제된 상태여야 삭제할 수 있습니다.`
+    )
+    if (!ok) return
+    setDeleteTeamLoadingId(teamId)
+    setMessage(null)
+    try {
+      const { response, json } = await apiFetch<unknown>(
+        `/api/team/v1/teams/${encodeURIComponent(teamId)}`,
+        { method: "DELETE", credentials: "include", headers: { Accept: "application/json" }, cache: "no-store" },
+        { authRequired: true }
+      )
+      const body = asApiResponse(json)
+      if (!response.ok || !body?.success) {
+        setMessage({ kind: "error", text: body?.message ?? "팀 삭제에 실패했습니다" })
+        return
+      }
+      setMessage({ kind: "success", text: "팀을 삭제했습니다" })
+      cancelEditKey()
+      await loadTeams()
+    } catch {
+      setMessage({ kind: "error", text: "팀 삭제에 실패했습니다" })
+    } finally {
+      setDeleteTeamLoadingId(null)
+    }
+  }
+
   return (
     <div className="flex min-h-[40vh] flex-col gap-8 py-4">
       <header className="space-y-2">
@@ -789,6 +867,7 @@ export function TeamsView() {
         <ul className="max-w-lg divide-y divide-border rounded-lg border border-border bg-card shadow-sm">
           {teams.map((team) => {
             const isOpen = openTeamId === team.id
+            const isOwner = isTeamOwnerByTeamId[team.id] === true
             return (
             <li key={team.id} className="overflow-hidden">
               <button
@@ -822,14 +901,29 @@ export function TeamsView() {
                   멤버 {(teamMemberIdsByTeamId[team.id] ?? []).length}명
                 </p>
                 {(teamMemberIdsByTeamId[team.id] ?? []).length > 0 ? (
-                  <ul className="mt-1 list-disc pl-5 text-xs text-muted-foreground">
+                  <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
                     {(teamMemberIdsByTeamId[team.id] ?? []).map((memberId) => (
-                      <li key={`${team.id}-${memberId}`}>{memberId}</li>
+                      <li key={`${team.id}-${memberId}`} className="flex items-center justify-between gap-2">
+                        <span className="truncate">{memberId}</span>
+                        {isOwner ? (
+                          <button
+                            type="button"
+                            className="shrink-0 rounded-md border border-destructive/40 bg-background px-2 py-1 text-[11px] font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                            disabled={removeMemberLoadingKey === `${team.id}:${memberId}`}
+                            onClick={() => void removeTeamMember(team.id, memberId)}
+                          >
+                            {removeMemberLoadingKey === `${team.id}:${memberId}` ? "삭제 중…" : "팀원 삭제"}
+                          </button>
+                        ) : null}
+                      </li>
                     ))}
                   </ul>
                 ) : (
                   <p className="mt-1 text-xs text-muted-foreground">초대된 멤버가 없습니다.</p>
                 )}
+                {!isOwner ? (
+                  <p className="mt-2 text-xs text-muted-foreground">팀장만 팀원 삭제를 할 수 있습니다.</p>
+                ) : null}
                 <div className="mt-2 flex flex-col gap-2 sm:flex-row">
                   <input
                     className="h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm"
@@ -968,23 +1062,27 @@ export function TeamsView() {
                               )}
                               {!isEditing ? (
                                 keyPendingDeletion ? (
-                                  <button
-                                    type="button"
-                                    className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
-                                    disabled={canceling || deleting}
-                                    onClick={() => void cancelTeamKeyDeletion(team.id, apiKey.id)}
-                                  >
-                                    {canceling ? "처리 중…" : "삭제 취소"}
-                                  </button>
+                                  isOwner ? (
+                                    <button
+                                      type="button"
+                                      className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
+                                      disabled={canceling || deleting}
+                                      onClick={() => void cancelTeamKeyDeletion(team.id, apiKey.id)}
+                                    >
+                                      {canceling ? "처리 중…" : "삭제 취소"}
+                                    </button>
+                                  ) : null
                                 ) : (
-                                  <button
-                                    type="button"
-                                    className="rounded-md border border-destructive/40 bg-background px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
-                                    disabled={deleting}
-                                    onClick={() => void deleteTeamKey(team.id, apiKey.id)}
-                                  >
-                                    {deleting ? "처리 중…" : "삭제"}
-                                  </button>
+                                  isOwner ? (
+                                    <button
+                                      type="button"
+                                      className="rounded-md border border-destructive/40 bg-background px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                                      disabled={deleting}
+                                      onClick={() => void deleteTeamKey(team.id, apiKey.id)}
+                                    >
+                                      {deleting ? "처리 중…" : "삭제"}
+                                    </button>
+                                  ) : null
                                 )
                               ) : null}
                             </div>
@@ -1000,6 +1098,7 @@ export function TeamsView() {
                 )}
               </div>
 
+              {isOwner ? (
               <div className="space-y-3 rounded-md border border-border bg-muted/10 p-3">
                 <div className="space-y-1">
                   <p className="text-sm font-semibold">팀 API Key 등록</p>
@@ -1110,6 +1209,24 @@ export function TeamsView() {
                   </button>
                 </div>
               </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">팀장만 팀 API Key 등록/삭제를 할 수 있습니다.</p>
+              )}
+              {isOwner ? (
+              <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3">
+                <p className="text-xs text-muted-foreground">
+                  팀 삭제는 팀장만 가능하며, 팀 API Key를 모두 삭제한 뒤에만 진행됩니다.
+                </p>
+                <button
+                  type="button"
+                  className="mt-2 inline-flex h-9 items-center rounded-md border border-destructive/40 bg-background px-3 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                  disabled={deleteTeamLoadingId === team.id}
+                  onClick={() => void deleteTeam(team.id, team.name)}
+                >
+                  {deleteTeamLoadingId === team.id ? "팀 삭제 중…" : "팀 삭제"}
+                </button>
+              </div>
+              ) : null}
               </div>
               ) : null}
             </li>
