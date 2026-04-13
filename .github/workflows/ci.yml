@@ -30,6 +30,7 @@ jobs:
       usage: ${{ steps.filter.outputs.usage }}
       billing: ${{ steps.filter.outputs.billing }}
       team: ${{ steps.filter.outputs.team }}
+      notification: ${{ steps.filter.outputs.notification }}
       web: ${{ steps.filter.outputs.web }}
       workflows: ${{ steps.filter.outputs.workflows }}
     steps:
@@ -52,11 +53,14 @@ jobs:
               - 'libs/usage-events/**'
             team:
               - 'services/team-service/**'
+            notification:
+              - 'services/notification-service/**'
             web:
               - 'services/identity-service/web/**'
               - 'services/usage-service/web/**'
               - 'services/billing-service/web/**'
               - 'services/team-service/web/**'
+              - 'services/notification-service/web/**'
               - 'packages/ui/**'
               - 'pnpm-workspace.yaml'
               - 'package.json'
@@ -194,6 +198,24 @@ jobs:
       - name: Build and test
         run: ./gradlew build --no-daemon
 
+  notification-service:
+    name: Build notification-service
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.notification == 'true' || needs.changes.outputs.workflows == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install workspace
+        run: pnpm install --frozen-lockfile
+      - name: Build (Nest)
+        run: pnpm --filter notification-service run build
+
   web:
     name: Build web (identity + usage + billing + team)
     runs-on: ubuntu-latest
@@ -215,10 +237,13 @@ jobs:
           pnpm --filter usage-web run lint
           pnpm --filter billing-web run lint
           pnpm --filter team-web run lint
+          pnpm --filter notification-web run lint
           pnpm --filter identity-web test
           pnpm --filter usage-web test
           pnpm --filter billing-web test
           pnpm --filter team-web test
+          pnpm --filter notification-web test
+          pnpm --filter notification-web run build
           pnpm run build:web
       - name: Docker image (identity-web, standalone)
         run: docker build -f services/identity-service/web/Dockerfile -t identity-web:ci .
@@ -228,6 +253,8 @@ jobs:
         run: docker build -f services/billing-service/web/Dockerfile -t billing-web:ci .
       - name: Docker image (team-web, standalone)
         run: docker build -f services/team-service/web/Dockerfile -t team-web:ci .
+      - name: Docker image (notification-web, standalone)
+        run: docker build -f services/notification-service/web/Dockerfile -t notification-web:ci .
 
   # Single required check for branch protection.
   # Skipped Java/Compose jobs (path filter) do not fail the workflow.
@@ -243,6 +270,7 @@ jobs:
       - usage-service
       - billing-service
       - team-service
+      - notification-service
       - web
     if: always()
     steps:
@@ -260,13 +288,14 @@ jobs:
             echo "compose-validate did not succeed: ${{ needs.compose-validate.result }}"
             exit 1
           fi
-          for name in identity-service proxy-gateway-service usage-service billing-service team-service web; do
+          for name in identity-service proxy-gateway-service usage-service billing-service team-service notification-service web; do
             case "$name" in
               identity-service) v="${{ needs.identity-service.result }}" ;;
               proxy-gateway-service) v="${{ needs.proxy-gateway-service.result }}" ;;
               usage-service) v="${{ needs.usage-service.result }}" ;;
               billing-service) v="${{ needs.billing-service.result }}" ;;
               team-service) v="${{ needs.team-service.result }}" ;;
+              notification-service) v="${{ needs.notification-service.result }}" ;;
               web) v="${{ needs.web.result }}" ;;
             esac
             if [[ "$v" == "failure" || "$v" == "cancelled" ]]; then

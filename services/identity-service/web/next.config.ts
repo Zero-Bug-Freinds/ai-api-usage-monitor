@@ -25,6 +25,14 @@ function billingOrigin(): string {
   ).replace(/\/+$/, "");
 }
 
+function notificationOrigin(): string {
+  return (
+    process.env.NOTIFICATION_WEB_INTERNAL_ORIGIN ??
+    process.env.NEXT_PUBLIC_NOTIFICATION_WEB_ORIGIN ??
+    "http://host.docker.internal:3004"
+  ).replace(/\/+$/, "");
+}
+
 const nextConfig: NextConfig = {
   /* Docker(패턴 B): 루트 컨텍스트 빌드, `packages/ui` 트랜스파일 */
   output: "standalone",
@@ -35,6 +43,7 @@ const nextConfig: NextConfig = {
     const origin = usageOrigin();
     const team = teamOrigin();
     const billing = billingOrigin();
+    const notification = notificationOrigin();
     return [
       {
         source: "/dashboard",
@@ -51,6 +60,14 @@ const nextConfig: NextConfig = {
       {
         source: "/billing/:path*",
         destination: `${billing}/billing/:path*`,
+      },
+      {
+        source: "/notifications",
+        destination: `${notification}/notifications`,
+      },
+      {
+        source: "/notifications/:path*",
+        destination: `${notification}/notifications/:path*`,
       },
       {
         source: "/api/team/v1/:path*",

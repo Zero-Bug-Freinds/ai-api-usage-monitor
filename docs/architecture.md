@@ -179,9 +179,13 @@
 ### 4.9 Notification Service
 - 역할
   - Slack/Email/앱 알림 발송
+  - **인앱 알림(In-App Notification) 저장·조회**(1차 범위)
 - 책임 범위
-  - Quota/비용 임계치 도달 이벤트를 받아 “알림만” 수행한다.
-  - 알림 중복 방지 및 발송 이력 관리(최소 구현 포함)
+  - (계획) Quota/비용 임계치 도달 이벤트를 받아 “발송만” 수행한다(§6).
+  - **(1차) 인앱 알림의 진실 공급원(Source of truth)** 을 **notification-service의 PostgreSQL(`notification_db`)** 로 둔다.
+    - 알림 목록·읽음 처리·테스트 발송(설정 화면에서 호출) 등은 **notification-service API**가 담당한다.
+    - 사용자 세션/식별은 Identity `web`의 쿠키 기반 인증을 유지하고, **Notification `web` BFF가 서버에서 세션을 확인**한 뒤 내부 호출로 전달한다(§10.2, §13).
+  - 외부 채널(Slack/Email)·이벤트 기반 알림은 **발행 측(Billing/Quota 등) 코드가 생긴 뒤** 연결한다(“타 서비스 코드 변경 금지” 전제에서는 후속 스프린트로 둔다).
 
 ### 4.10 Team Service
 - 역할
@@ -336,6 +340,7 @@
 - **엣지:** Nginx·Traefik 등 **리버스 프록시** 한 계층에서 `location`(또는 동등 규칙)으로 upstream을 고정한다.
 - **로컬 Compose(`profile: web`):** **`web-edge`** 서비스(이미지 `nginx`, 설정 **`docker/web-edge/nginx.conf`**)가 기본 **`${WEB_EDGE_PORT:-8888}:80`** 으로 호스트에 노출된다. 현재 저장소 규칙(정본은 설정 파일): **`/dashboard`** 는 **`308`** 으로 **`/dashboard/`** 로 보내고, **`/dashboard/`** 로 시작하는 경로만 **usage `web`** 으로 프록시한다(`/dashboard2` 등은 매칭되지 않아 **identity `web`**). **`/api/v1`** 은 **`/api/v1/`** 로 **`308`** 리다이렉트 후, **`/api/v1/*`** 는 **API Gateway**로 프록시한다(스트리밍 대비 **`proxy_buffering off`**·긴 read timeout). **그 외**는 **identity `web`**. (운영 엣지는 팀이 동일한 의미로 맞춘다.)
 - 동일 `web-edge` 설정에서 **`/teams`** 는 **`308`** 으로 **`/teams/`** 로 보내고, **`/teams/`** 로 시작하는 경로는 **team `web`** 으로 프록시한다(Next **`basePath=/teams`**).
+- 동일 `web-edge` 설정에서 **`/notifications`** 는 **`308`** 으로 **`/notifications/`** 로 보내고, **`/notifications/`** 로 시작하는 경로는 **notification `web`** 으로 프록시한다(Next **`basePath=/notifications`**).
 - **Usage Next `basePath`:** 단일 도메인에서 `/_next` 등 충돌을 피하기 위해 Usage 쪽 기본값은 **`/dashboard`**(`NEXT_PUBLIC_BASE_PATH`, Compose 빌드 args). 브라우저의 Usage BFF는 **`/dashboard/api/usage/...`** 형태가 된다(`docs/contracts/web-split-boundary.md`, `web-gateway-bff.md`).
 - Team `web`은 단일 도메인에서 **`/teams`** 접두를 **`basePath`** 로 쓸 수 있다(구현: `services/team-service/web`).
 - **쿠키·세션:** 동일 **`Site`/도메인**에서 경로만 나뉘면 `httpOnly` 세션 쿠키는 대부분 유지 가능하지만, **`Path`·`SameSite`** 는 분리 후 반드시 재검증한다(BFF 계약: `docs/contracts/web-identity-bff.md`).
@@ -362,7 +367,7 @@
 - Billing Service: “usage 기반 **비용 산출·정산·billing_record** 및 **비용 대시보드**; **예산 한도 대비 지출** 판단 후 **(계획)** Notification용 이벤트 발행(§6).”
 - Analytics & Reporting Service: “추가 **집계·리포트** 파이프라인(팀이 별도 서비스로 둘 때 §12와 연계); 사용량 **요약·차트**의 일부는 현재 Usage 경계에서 노출될 수 있다.”
 - Quota Service: “예산/제한 정책 소유 및 초과 기준 제공(§7).”
-- Notification Service: “Slack/Email 등 알림 발송; **(계획)** Billing이 발행하는 **예산·임계** 알림 이벤트 소비(§6).”
+- Notification Service: “Slack/Email 등 외부 알림 발송 + **(1차) 인앱 알림 저장·조회**(전용 DB). **(계획)** Billing이 발행하는 **예산·임계** 알림 이벤트 소비(§6).”
 - Identity Service: “인증·사용자·**조직**·멤버십·RBAC; 팀 도메인은 **Team Service**와 HTTP API로 연동(§4.3·§4.10).”
 - Team Service: “팀·팀원·팀 API Key 등 **팀 도메인** 데이터 소유·API(§4.10).”
 - API Key Service: “(논리 경계) 공급사 API Key 암호화 저장/조회; 구현 위치는 **identity-service** 등 팀 합의 경계(§4.4).”
@@ -416,6 +421,7 @@
 - **Identity 계열**: `services/identity-service` + `services/identity-service/web/` — 랜딩·인증·조직/팀 설정 UI, `/api/auth/**`·`/api/identity/**` BFF 등. 계약: `docs/contracts/web-identity-bff.md`.
 - **Usage·대시보드 계열**: `services/usage-service` + `services/usage-service/web/` — 사용량 대시보드, `/api/usage/**` BFF → 게이트웨이. 계약: `docs/contracts/web-gateway-bff.md`, `docs/contracts/gateway-proxy.md`.
 - **Team 계열**: `services/team-service` + `services/team-service/web/` — 팀 도메인 REST·Team BFF. 팀 API Key·월 예산(USD)은 **Identity `web`의 `/teams`** 에서도 계정 설정의 개인 외부 키와 유사한 UX로 제공할 수 있으며, 동일 API는 **team `web`**(`basePath=/teams`)에서도 사용 가능하다. 브라우저 → `/api/team/v1/**` → Team BFF → `team-service`. 계약: `docs/contracts/web-team-bff.md`.
+- **Notification 계열**: `services/notification-service` + `services/notification-service/web/` — 인앱 알림 UI(`/notifications/*`) + Notification BFF(`/notifications/api/notification/*`) → notification-service(Nest) 내부 호출. 계약: `docs/contracts/web-notification-bff.md`.
 - **`/teams` 진입 방식:** **단일 도메인 `web-edge`** 를 쓰면 `/teams/*` 를 **team `web`** 으로 넘길 수 있다. **Identity `web`만** 띄울 때는 `/teams` 페이지에서 팀·키·예산을 다루고 Next rewrite로 `/api/team/v1/**` 를 team `web` BFF(및 `team-service`)로 넘긴다.
 - **웹 경계**: `docs/contracts/web-split-boundary.md` — 경로·BFF·미들웨어 변경 시 **본 문서·계약 문서**를 코드와 같이 갱신한다.
 - **Proxy·API Gateway**: 공개 AI·Usage HTTP 진입·신뢰 헤더 — 게이트웨이·프록시 구현 팀과 **HTTP 계약**만 맞춘다.

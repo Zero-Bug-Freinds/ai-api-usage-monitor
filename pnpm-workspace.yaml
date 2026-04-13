@@ -4,4 +4,5 @@ packages:
   - "services/usage-service/web"
   - "services/billing-service/web"
   - "services/team-service/web"
+  - "services/notification-service/web"
   - "services/notification-service"
