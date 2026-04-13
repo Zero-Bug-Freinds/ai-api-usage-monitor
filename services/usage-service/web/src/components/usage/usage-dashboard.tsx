@@ -58,6 +58,9 @@ const PROVIDER_LABEL: Record<string, string> = {
 const MONTHLY_LOOKBACK_DAYS = 365
 
 const DASHBOARD_PROVIDER_ALL = "__ALL__"
+const MODEL_REQUESTS_TOP_N = 10
+const OTHERS_LABEL = "기타 (Others)"
+const OTHERS_BAR_COLOR = "#94a3b8"
 
 type PeriodMode = "today" | "7d" | "30d" | "custom"
 
@@ -212,6 +215,15 @@ type TokenStackRow = {
   fillOutput: string
 }
 
+type ModelRequestRow = {
+  label: string
+  model: string
+  provider: string
+  requests: number
+  isOthers: boolean
+  members?: Array<{ model: string; provider: string; requests: number }>
+}
+
 type TokenStackTooltipProps = {
   active?: boolean
   /** Recharts Tooltip passes `string | number` for category axis labels */
@@ -354,6 +366,7 @@ export function UsageDashboard() {
   const [daily, setDaily] = React.useState<DailyUsagePoint[]>([])
   const [monthly, setMonthly] = React.useState<MonthlyUsagePoint[]>([])
   const [byModel, setByModel] = React.useState<ModelUsageAggregate[]>([])
+  const [isOthersModalOpen, setIsOthersModalOpen] = React.useState(false)
 
   /** API·KPI 라벨에 쓰는 구간(마지막으로 로드한 기준). effect 안에서만 갱신해 요청 간 날짜 불일치를 막는다. */
   const [loadedRange, setLoadedRange] = React.useState<{ from: string; to: string } | null>(null)
@@ -528,18 +541,51 @@ export function UsageDashboard() {
     }))
   }, [byModel])
 
-  const modelBarRows = React.useMemo(() => {
-    return [...byModel]
+  const modelBarRows = React.useMemo((): ModelRequestRow[] => {
+    const sorted = [...byModel]
+      .filter((m) => m.requestCount > 0)
       .sort((a, b) => b.requestCount - a.requestCount)
-      .map((m) => ({
-        label: truncateModelLabel(m.model),
-        model: m.model,
-        provider: m.provider,
-        requests: m.requestCount,
-        tokens: m.inputTokens,
-        outTokens: m.outputTokens,
-      }))
+    const top = sorted.slice(0, MODEL_REQUESTS_TOP_N).map((m) => ({
+      label: truncateModelLabel(m.model),
+      model: m.model,
+      provider: m.provider,
+      requests: m.requestCount,
+      isOthers: false,
+    }))
+    const othersMembers = sorted.slice(MODEL_REQUESTS_TOP_N)
+    if (othersMembers.length === 0) return top
+    const othersRequests = othersMembers.reduce((sum, m) => sum + m.requestCount, 0)
+    return [
+      ...top,
+      {
+        label: OTHERS_LABEL,
+        model: "__OTHERS__",
+        provider: "OTHERS",
+        requests: othersRequests,
+        isOthers: true,
+        members: othersMembers.map((m) => ({
+          model: m.model,
+          provider: m.provider,
+          requests: m.requestCount,
+        })),
+      },
+    ]
   }, [byModel])
+
+  const othersRows = React.useMemo(
+    () =>
+      (modelBarRows.find((r) => r.isOthers)?.members ?? []).slice().sort((a, b) => b.requests - a.requests),
+    [modelBarRows]
+  )
+
+  React.useEffect(() => {
+    if (!isOthersModalOpen) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+    return () => {
+      document.body.style.overflow = prev
+    }
+  }, [isOthersModalOpen])
 
   const tokenStackRows = React.useMemo((): TokenStackRow[] => {
     const sorted = [...byModel].sort((a, b) => b.requestCount - a.requestCount)
@@ -949,16 +995,38 @@ export function UsageDashboard() {
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                       <XAxis type="number" />
                       <YAxis type="category" dataKey="label" width={128} tick={{ fontSize: 11 }} />
-                      <Tooltip />
-                      <Bar dataKey="requests" name="요청 수" radius={[0, 4, 4, 0]}>
+                      <Tooltip formatter={(v) => formatRequestCount(tooltipNumericValue(v))} />
+                      <Bar
+                        dataKey="requests"
+                        name="요청 수"
+                        radius={[0, 4, 4, 0]}
+                        isAnimationActive={false}
+                        onClick={(_, index) => {
+                          const row = modelBarRows[index]
+                          if (row?.isOthers) setIsOthersModalOpen(true)
+                        }}
+                      >
                         {modelBarRows.map((row) => (
-                          <Cell key={`req-${row.model}`} fill={colorForModel(row.model, row.provider)} />
+                          <Cell
+                            key={`req-${row.model}`}
+                            fill={row.isOthers ? OTHERS_BAR_COLOR : colorForModel(row.model, row.provider)}
+                            style={{ cursor: row.isOthers ? "pointer" : "default" }}
+                          />
                         ))}
+                        <LabelList
+                          dataKey="requests"
+                          position="right"
+                          formatter={(value: unknown) => formatRequestCount(tooltipNumericValue(value))}
+                          style={{ fill: "var(--muted-foreground)", fontSize: 11 }}
+                        />
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               )}
+              <p className="mt-3 text-xs text-muted-foreground">
+                기타 막대를 클릭하여 전체 상세 내역을 확인하세요.
+              </p>
             </section>
           </div>
 
@@ -1034,6 +1102,48 @@ export function UsageDashboard() {
           </section>
         </>
       )}
+      {isOthersModalOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          onClick={() => setIsOthersModalOpen(false)}
+          role="presentation"
+        >
+          <div
+            className="w-full max-w-2xl rounded-lg border border-border bg-card shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-label="기타 모델 상세 내역"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <h3 className="text-sm font-semibold">기타 모델 상세 내역</h3>
+              <Button type="button" variant="outline" size="sm" onClick={() => setIsOthersModalOpen(false)}>
+                닫기
+              </Button>
+            </div>
+            <div className="max-h-[60vh] overflow-y-auto px-4 py-3">
+              {othersRows.length === 0 ? (
+                <p className="text-sm text-muted-foreground">표시할 상세 항목이 없습니다.</p>
+              ) : (
+                <div className="space-y-2">
+                  {othersRows.map((row) => (
+                    <div
+                      key={`${row.provider}:${row.model}`}
+                      className="flex items-center justify-between rounded-md border border-border/70 px-3 py-2 text-sm"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">{row.model}</p>
+                        <p className="text-xs text-muted-foreground">{labelForProviderCode(row.provider)}</p>
+                      </div>
+                      <p className="tabular-nums text-muted-foreground">{formatRequestCount(row.requests)}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
