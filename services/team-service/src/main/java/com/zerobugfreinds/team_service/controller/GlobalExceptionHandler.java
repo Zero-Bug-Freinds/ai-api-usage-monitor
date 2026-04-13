@@ -2,8 +2,11 @@ package com.zerobugfreinds.team_service.controller;
 
 import com.zerobugfreinds.team_service.common.ApiResponse;
 import com.zerobugfreinds.team_service.exception.DuplicateTeamMemberException;
+import com.zerobugfreinds.team_service.exception.DuplicateTeamInvitationException;
 import com.zerobugfreinds.team_service.exception.ForbiddenTeamAccessException;
+import com.zerobugfreinds.team_service.exception.InvalidTeamInvitationStateException;
 import com.zerobugfreinds.team_service.exception.TeamNotFoundException;
+import com.zerobugfreinds.team_service.exception.TeamInvitationNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -44,6 +47,24 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(DuplicateTeamMemberException.class)
 	@ResponseStatus(HttpStatus.CONFLICT)
 	public ApiResponse<Void> handleDuplicateTeamMember(DuplicateTeamMemberException ex) {
+		return ApiResponse.fail(ex.getMessage());
+	}
+
+	@ExceptionHandler(DuplicateTeamInvitationException.class)
+	@ResponseStatus(HttpStatus.CONFLICT)
+	public ApiResponse<Void> handleDuplicateTeamInvitation(DuplicateTeamInvitationException ex) {
+		return ApiResponse.fail(ex.getMessage());
+	}
+
+	@ExceptionHandler(TeamInvitationNotFoundException.class)
+	@ResponseStatus(HttpStatus.NOT_FOUND)
+	public ApiResponse<Void> handleTeamInvitationNotFound(TeamInvitationNotFoundException ex) {
+		return ApiResponse.fail(ex.getMessage());
+	}
+
+	@ExceptionHandler(InvalidTeamInvitationStateException.class)
+	@ResponseStatus(HttpStatus.BAD_REQUEST)
+	public ApiResponse<Void> handleInvalidInvitationState(InvalidTeamInvitationStateException ex) {
 		return ApiResponse.fail(ex.getMessage());
 	}
 
