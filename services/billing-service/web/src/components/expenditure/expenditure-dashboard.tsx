@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { currentMonthStartKst, rangeLastDays } from "@/lib/expenditure/dates";
+import { formatUsd, formatUsdTooltip } from "@/lib/expenditure/money";
 import type {
   AiProviderCode,
   ApiKeySeen,
@@ -47,18 +48,6 @@ async function fetchJsonPost<T>(path: string, body: unknown): Promise<T> {
     throw new Error(text || `HTTP ${res.status}`);
   }
   return (await res.json()) as T;
-}
-
-function formatUsdTooltip(value: unknown): [string, string] {
-  if (value == null) {
-    return ["—", "USD"];
-  }
-  const raw = Array.isArray(value) ? value[0] : value;
-  const n = typeof raw === "number" ? raw : Number(raw);
-  if (Number.isNaN(n)) {
-    return ["—", "USD"];
-  }
-  return [`$${n.toFixed(4)}`, "USD"];
 }
 
 async function fetchTeamMemberUserIds(teamId: string): Promise<string[]> {
@@ -309,7 +298,7 @@ export function ExpenditureDashboard() {
               <h2 className="text-sm font-medium text-muted-foreground">월 예산 대비</h2>
               {budgetUi.monthlyBudgetUsd != null ? (
                 <p className="text-xs text-muted-foreground">
-                  이번 달 지출 ${budgetUi.totalCostUsd.toFixed(4)} / 월 예산 ${budgetUi.monthlyBudgetUsd.toFixed(2)} (잔여 $
+                  이번 달 지출 {formatUsd(budgetUi.totalCostUsd)} / 월 예산 ${budgetUi.monthlyBudgetUsd.toFixed(2)} (잔여 $
                   {(budgetUi.remainingUsd ?? 0).toFixed(2)})
                 </p>
               ) : (
@@ -437,7 +426,7 @@ export function ExpenditureDashboard() {
           {teamRollup ? (
             <div className="space-y-3">
               <p className="text-lg font-semibold tabular-nums">
-                팀 당월 합계: ${teamRollup.totalCostUsd.toFixed(4)} USD
+                팀 당월 합계: {formatUsd(teamRollup.totalCostUsd)} USD
               </p>
               {teamMemberChart.length > 0 ? (
                 <div className="h-72 w-full rounded-xl border border-border bg-card p-2">
@@ -510,7 +499,7 @@ export function ExpenditureDashboard() {
               <div className="flex flex-wrap items-baseline gap-6">
                 <div>
                   <p className="text-xs text-muted-foreground">총 지출 (USD)</p>
-                  <p className="text-2xl font-semibold tabular-nums">${summary.totalCostUsd.toFixed(4)}</p>
+                  <p className="text-2xl font-semibold tabular-nums">{formatUsd(summary.totalCostUsd)}</p>
                 </div>
                 {summary.monthlyBudgetUsd != null ? (
                   <div>
