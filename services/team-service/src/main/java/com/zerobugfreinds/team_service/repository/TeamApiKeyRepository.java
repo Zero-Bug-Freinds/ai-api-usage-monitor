@@ -9,6 +9,7 @@ import java.util.Optional;
 
 public interface TeamApiKeyRepository extends JpaRepository<TeamApiKeyEntity, Long> {
     List<TeamApiKeyEntity> findAllByTeamIdOrderByCreatedAtDesc(Long teamId);
+    List<TeamApiKeyEntity> findAllByTeamIdInOrderByTeamIdAscCreatedAtDesc(List<Long> teamIds);
 
     Optional<TeamApiKeyEntity> findByIdAndTeamId(Long id, Long teamId);
 

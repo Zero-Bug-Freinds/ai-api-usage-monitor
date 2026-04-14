@@ -15,5 +15,7 @@ public interface TeamInvitationRepository extends JpaRepository<TeamInvitationEn
 
 	Optional<TeamInvitationEntity> findByIdAndInviteeId(Long id, String inviteeId);
 
+	long deleteByInviteeIdOrInviterId(String inviteeId, String inviterId);
+
 	void deleteAllByTeamId(Long teamId);
 }

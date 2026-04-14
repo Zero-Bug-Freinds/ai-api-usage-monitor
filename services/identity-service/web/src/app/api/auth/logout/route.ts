@@ -7,8 +7,21 @@ function noStoreHeaders() {
   return { "Cache-Control": "no-store" }
 }
 
-function isSecureCookie(): boolean {
-  return process.env.NODE_ENV === "production"
+function isSecureCookie(request: Request): boolean {
+  const configured = process.env.IDENTITY_WEB_SECURE_COOKIE?.trim().toLowerCase()
+  if (configured === "true") return true
+  if (configured === "false") return false
+
+  const forwardedProto = request.headers.get("x-forwarded-proto")
+  if (forwardedProto) {
+    return forwardedProto.split(",")[0]?.trim().toLowerCase() === "https"
+  }
+
+  try {
+    return new URL(request.url).protocol === "https:"
+  } catch {
+    return process.env.NODE_ENV === "production"
+  }
 }
 
 function json<T>(status: number, body: ApiResponse<T>) {
@@ -34,12 +47,12 @@ function getCookieValue(cookieHeader: string | null, name: string): string | nul
   return null
 }
 
-function clearAccessTokenCookie(res: NextResponse) {
+function clearAccessTokenCookie(request: Request, res: NextResponse) {
   res.cookies.set({
     name: ACCESS_TOKEN_COOKIE,
     value: "",
     httpOnly: true,
-    secure: isSecureCookie(),
+    secure: isSecureCookie(request),
     sameSite: "lax",
     path: "/",
     maxAge: 0,
@@ -74,6 +87,6 @@ export async function POST(request: Request) {
     message: "로그아웃되었습니다",
     data: null,
   })
-  clearAccessTokenCookie(response)
+  clearAccessTokenCookie(request, response)
   return response
 }
