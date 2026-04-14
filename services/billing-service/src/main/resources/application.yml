@@ -55,3 +55,7 @@ billing:
     enabled: ${BILLING_IDENTITY_ENABLED:false}
     base-url: ${BILLING_IDENTITY_BASE_URL:}
     budget-path-template: ${BILLING_IDENTITY_BUDGET_PATH:}
+  pricing:
+    # 기본(false): provider_model_price 테이블이 "완전히 비어있을 때만" seed 수행
+    # 옵션(true): 테이블이 비어있지 않아도 카탈로그에 없는 row만 추가 삽입(idempotent)
+    seed-missing: ${BILLING_PRICING_SEED_MISSING:false}
