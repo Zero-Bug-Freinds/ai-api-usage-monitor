@@ -1,0 +1,28 @@
+plugins {
+    id 'java-library'
+}
+
+group = 'com.zerobugfreinds'
+version = '0.0.1-SNAPSHOT'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = "UTF-8"
+}
+
+dependencies {
+    implementation 'com.fasterxml.jackson.core:jackson-annotations:2.18.2'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}

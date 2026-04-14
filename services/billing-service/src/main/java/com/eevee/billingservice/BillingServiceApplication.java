@@ -10,7 +10,11 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
 @EnableScheduling
-@EnableConfigurationProperties({BillingRabbitProperties.class, BillingProperties.class, IdentityProperties.class})
+@EnableConfigurationProperties({
+        BillingRabbitProperties.class,
+        BillingProperties.class,
+        IdentityProperties.class
+})
 public class BillingServiceApplication {
 
     public static void main(String[] args) {

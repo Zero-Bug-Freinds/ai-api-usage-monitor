@@ -82,15 +82,6 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
 
-  const [testNotificationTargetUserId, setTestNotificationTargetUserId] = React.useState("")
-  const [testNotificationTitle, setTestNotificationTitle] = React.useState("테스트 알림")
-  const [testNotificationBody, setTestNotificationBody] = React.useState("알림 테스트입니다.")
-  const [testNotificationLoading, setTestNotificationLoading] = React.useState(false)
-  const [testNotificationMessage, setTestNotificationMessage] = React.useState<{
-    kind: "success" | "error"
-    text: string
-  } | null>(null)
-
   const [provider, setProvider] = React.useState<ExternalKeyProvider>("OPENAI")
   const [alias, setAlias] = React.useState(() => defaultAlias("OPENAI"))
   const [externalKey, setExternalKey] = React.useState("")
@@ -111,6 +102,10 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
   const [editMonthlyBudgetUsdInput, setEditMonthlyBudgetUsdInput] = React.useState("")
   const [saveEditLoadingId, setSaveEditLoadingId] = React.useState<number | null>(null)
   const [revealExternalKey, setRevealExternalKey] = React.useState(false)
+
+  const [deletePassword, setDeletePassword] = React.useState("")
+  const [deleteLoading, setDeleteLoading] = React.useState(false)
+  const [deleteError, setDeleteError] = React.useState<string | null>(null)
 
   const loadExternalKeys = React.useCallback(async (signal?: AbortSignal) => {
     setKeysLoading(true)
@@ -178,50 +173,6 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
   }, [provider])
 
   const subpath = pathSegments?.length ? pathSegments.join(" / ") : null
-
-  async function onSubmitTestNotification(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-    if (testNotificationLoading) return
-    setTestNotificationLoading(true)
-    setTestNotificationMessage(null)
-    try {
-      const targetUserId = testNotificationTargetUserId.trim()
-      const title = testNotificationTitle.trim()
-      const body = testNotificationBody.trim()
-
-      if (!targetUserId) {
-        setTestNotificationMessage({ kind: "error", text: "대상 사용자 ID는 필수입니다" })
-        return
-      }
-      if (!title) {
-        setTestNotificationMessage({ kind: "error", text: "제목은 필수입니다" })
-        return
-      }
-      if (!body) {
-        setTestNotificationMessage({ kind: "error", text: "본문은 필수입니다" })
-        return
-      }
-
-      const res = await fetch("/notifications/api/notification/api/in-app-notifications/test-send", {
-        method: "POST",
-        credentials: "include",
-        cache: "no-store",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ targetUserId, title, body, type: "settings-test" }),
-      })
-
-      const json: unknown = await res.json().catch(() => null)
-      if (res.ok) {
-        setTestNotificationMessage({ kind: "success", text: "테스트 알림을 생성했습니다" })
-      } else {
-        const msg =
-          json && typeof json === "object" && "message" in json ? String((json as { message: unknown }).message) : null
-        setTestNotificationMessage({ kind: "error", text: msg && msg.length > 0 ? msg : "테스트 알림 생성에 실패했습니다" })
-      }
-    } finally {
-      setTestNotificationLoading(false)
-    }
-  }
 
   async function onSubmitExternalKey(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -423,6 +374,42 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
     }
   }
 
+  async function onDeleteAccount() {
+    setDeleteError(null)
+    if (!deletePassword.trim()) {
+      setDeleteError("Password is required")
+      return
+    }
+    const ok = window.confirm("Delete your account permanently? This cannot be undone.")
+    if (!ok) {
+      return
+    }
+    setDeleteLoading(true)
+    try {
+      const { response, json } = await apiFetch<unknown>(
+        "/api/auth/delete-account",
+        {
+          method: "POST",
+          credentials: "include",
+          cache: "no-store",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ password: deletePassword }),
+        },
+        { authRequired: true }
+      )
+      const apiResponse = asApiResponse(json)
+      if (response.ok && apiResponse?.success) {
+        window.location.assign("/login")
+        return
+      }
+      setDeleteError(apiResponse?.message ?? "Account deletion failed")
+    } catch {
+      setDeleteError("Account deletion failed")
+    } finally {
+      setDeleteLoading(false)
+    }
+  }
+
   return (
     <div className="flex min-h-[40vh] flex-col gap-8 py-4">
       <div className="space-y-2">
@@ -457,76 +444,6 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
             </div>
           </dl>
         ) : null}
-      </section>
-
-      <section className="max-w-lg space-y-3 rounded-lg border border-border bg-card p-5 shadow-sm">
-        <div className="space-y-1">
-          <h2 className="text-sm font-semibold tracking-tight">알림 테스트</h2>
-          <p className="text-sm text-muted-foreground">
-            인앱 알림(우측 하단 토스트·알림함)을 확인하기 위한 테스트용 알림을 생성합니다.
-          </p>
-        </div>
-
-        <form className="space-y-3" onSubmit={onSubmitTestNotification}>
-          <div className="grid gap-1.5">
-            <label className="text-sm font-medium" htmlFor="test-notification-target-user-id">
-              대상 사용자 ID
-            </label>
-            <input
-              id="test-notification-target-user-id"
-              className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-              value={testNotificationTargetUserId}
-              onChange={(e) => setTestNotificationTargetUserId(e.target.value)}
-              placeholder="예: user@example.com"
-              autoComplete="off"
-              disabled={testNotificationLoading}
-              required
-            />
-          </div>
-
-          <div className="grid gap-1.5">
-            <label className="text-sm font-medium" htmlFor="test-notification-title">
-              제목
-            </label>
-            <input
-              id="test-notification-title"
-              className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-              value={testNotificationTitle}
-              onChange={(e) => setTestNotificationTitle(e.target.value)}
-              autoComplete="off"
-              disabled={testNotificationLoading}
-              required
-            />
-          </div>
-
-          <div className="grid gap-1.5">
-            <label className="text-sm font-medium" htmlFor="test-notification-body">
-              본문
-            </label>
-            <textarea
-              id="test-notification-body"
-              className="min-h-24 rounded-md border border-input bg-background px-3 py-2 text-sm"
-              value={testNotificationBody}
-              onChange={(e) => setTestNotificationBody(e.target.value)}
-              disabled={testNotificationLoading}
-              required
-            />
-          </div>
-
-          {testNotificationMessage ? (
-            <p className={testNotificationMessage.kind === "success" ? "text-sm text-emerald-700 dark:text-emerald-400" : "text-sm text-destructive"}>
-              {testNotificationMessage.text}
-            </p>
-          ) : null}
-
-          <button
-            type="submit"
-            className="h-10 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50"
-            disabled={testNotificationLoading}
-          >
-            {testNotificationLoading ? "생성 중…" : "테스트 알림 생성"}
-          </button>
-        </form>
       </section>
 
       {session ? (
