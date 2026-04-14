@@ -7,12 +7,20 @@
     "next": "16.2.1",
     "vitest": "^4.1.1"
   },
+  "pnpm": {
+    "overrides": {
+      "webpack": "5.97.1",
+      "webpack-sources": "3.2.3"
+    }
+  },
   "scripts": {
+    "dev:web-host": "pnpm --filter web-host dev",
+    "build:web-host": "pnpm --filter web-host build",
     "build:identity-web": "pnpm --filter identity-web build",
     "build:usage-web": "pnpm --filter usage-web build",
     "build:billing-web": "pnpm --filter billing-web build",
     "build:team-web": "pnpm --filter team-web build",
     "build:notification-service": "pnpm --filter notification-service build",
-    "build:web": "pnpm build:identity-web && pnpm build:usage-web && pnpm build:billing-web && pnpm build:team-web"
+    "build:web": "pnpm build:web-host && pnpm build:identity-web && pnpm build:usage-web && pnpm build:billing-web && pnpm build:team-web"
   }
 }
