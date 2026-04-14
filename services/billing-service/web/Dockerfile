@@ -18,6 +18,7 @@ COPY services/billing-service/web ./services/billing-service/web
 
 WORKDIR /repo/services/billing-service/web
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_PRIVATE_LOCAL_WEBPACK=true
 ARG NEXT_PUBLIC_IDENTITY_WEB_ORIGIN=
 ENV NEXT_PUBLIC_IDENTITY_WEB_ORIGIN=$NEXT_PUBLIC_IDENTITY_WEB_ORIGIN
 RUN pnpm run build
