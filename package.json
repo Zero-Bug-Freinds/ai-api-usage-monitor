@@ -8,6 +8,8 @@
     "vitest": "^4.1.1"
   },
   "scripts": {
+    "dev:web-host": "pnpm --filter web-host dev",
+    "build:web-host": "pnpm --filter web-host build",
     "build:identity-web": "pnpm --filter identity-web build",
     "build:usage-web": "pnpm --filter usage-web build",
     "build:billing-web": "pnpm --filter billing-web build",

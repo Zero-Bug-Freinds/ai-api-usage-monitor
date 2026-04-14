@@ -35,13 +35,22 @@ function NavRow({
   profile,
   id,
   pathname,
+  publicPathOverrides,
 }: {
   profile: ConsoleProfile
   id: ConsoleNavId
   pathname: string
+  publicPathOverrides?: Partial<Record<ConsoleNavId, string>>
 }) {
-  const spec = resolveConsoleNavLink(profile, id)
-  const active = isConsoleNavActive(profile, pathname, id)
+  const override = publicPathOverrides?.[id]
+  const spec = override
+    ? ({ kind: "next" as const, href: override })
+    : resolveConsoleNavLink(profile, id)
+  let active = isConsoleNavActive(profile, pathname, id)
+  if (override) {
+    const o = override.startsWith("/") ? override : `/${override}`
+    active = pathname === o || pathname.startsWith(`${o}/`)
+  }
   const label = CONSOLE_NAV[id].label
   const icon = ICONS[id]
   const isBack = id === "identityLanding"
@@ -78,9 +87,14 @@ export type ConsoleSidebarProps = {
   profile: ConsoleProfile
   /** Logout button or other footer actions from the host app. */
   footer: ReactNode
+  /**
+   * When set, replaces the resolved href for that nav id (host-only cases, e.g. map `teams` → `/team`).
+   * Does not change global `CONSOLE_NAV` defaults used by other apps.
+   */
+  publicPathOverrides?: Partial<Record<ConsoleNavId, string>>
 }
 
-export function ConsoleSidebar({ profile, footer }: ConsoleSidebarProps) {
+export function ConsoleSidebar({ profile, footer, publicPathOverrides }: ConsoleSidebarProps) {
   const pathname = usePathname() ?? ""
 
   return (
@@ -93,12 +107,23 @@ export function ConsoleSidebar({ profile, footer }: ConsoleSidebarProps) {
       </div>
 
       <div className="px-3 pt-3 pb-1">
-        <NavRow profile={profile} id="identityLanding" pathname={pathname} />
+        <NavRow
+          profile={profile}
+          id="identityLanding"
+          pathname={pathname}
+          publicPathOverrides={publicPathOverrides}
+        />
       </div>
 
       <nav className="flex flex-1 flex-col gap-1 px-3 pb-3" aria-label="앱 메뉴">
         {CONSOLE_MAIN_NAV_ORDER.map((id) => (
-          <NavRow key={id} profile={profile} id={id} pathname={pathname} />
+          <NavRow
+            key={id}
+            profile={profile}
+            id={id}
+            pathname={pathname}
+            publicPathOverrides={publicPathOverrides}
+          />
         ))}
       </nav>
 

@@ -1,6 +1,6 @@
 # Web(Next.js) ↔ Team Service BFF 계약
 
-버전: 0.5  
+버전: 0.6  
 관련: [web-split-boundary.md](./web-split-boundary.md), [web-identity-bff.md](./web-identity-bff.md) — `/teams` UI 소유·경로: §2.3
 
 ---
@@ -19,6 +19,8 @@
 | `GET /api/team/v1/me/teams` | Team BFF `GET /api/team/v1/me/teams` → Team Service `GET /api/v1/me/teams` |
 | `POST /api/team/v1/teams` | Team BFF `POST /api/team/v1/teams` → Team Service `POST /api/v1/teams` |
 | `POST /api/team/v1/teams/{id}/members` | Team BFF `POST /api/team/v1/teams/{id}/members` → Team Service `POST /api/v1/teams/{id}/members` |
+| `GET /api/team/v1/teams/{id}/members` | Team BFF `GET ...` → Team Service `GET /api/v1/teams/{id}/members` |
+| `GET /api/team/v1/teams/{id}/owner` | Team BFF `GET ...` → Team Service `GET /api/v1/teams/{id}/owner` (`data`: 팀장 여부 `boolean`) |
 | `DELETE /api/team/v1/teams/{teamId}/members/{userId}` | Team BFF `DELETE ...` → Team Service `DELETE /api/v1/teams/{teamId}/members/{userId}` |
 | `DELETE /api/team/v1/teams/{teamId}` | Team BFF `DELETE ...` → Team Service `DELETE /api/v1/teams/{teamId}` |
 | `GET /api/team/v1/me/team-invitations` | Team BFF `GET ...` → Team Service `GET /api/v1/me/team-invitations` |
@@ -46,13 +48,24 @@
 
 ## 4. 보안/권한
 
-- 팀 생성/조회/초대/초대 수락·거절/팀원 삭제/팀 삭제/팀 API Key 등록·조회·수정·삭제 예정 등록·삭제 예정 해제는 모두 인증 필요다.
-- 권한 검증(팀 멤버만 초대 가능, 팀장만 팀원 삭제/팀 삭제 가능 등)은 Team Service가 최종 책임을 가진다.
+- 아래는 모두 **Bearer 인증**이 필요하다. 권한은 Team Service가 최종 판단한다.
+- **팀장(OWNER) 전용**
+  - `DELETE /api/v1/teams/{teamId}/members/{userId}` (팀원 삭제; 팀장 본인 삭제는 불가)
+  - `DELETE /api/v1/teams/{teamId}` (팀 삭제; 팀 API Key 행이 하나라도 남아 있으면 `409`)
+  - `POST /api/v1/teams/{id}/api-keys` (팀 API Key 등록)
+  - `DELETE /api/v1/teams/{teamId}/api-keys/{keyId}` (삭제 예정 등록 또는 `gracePeriodDays=0` 즉시 삭제)
+- **팀 멤버면 가능**(팀장 아님 포함)
+  - `GET /api/v1/me/teams`, `GET /api/v1/teams/{id}/members`, `GET /api/v1/teams/{id}/api-keys`, `GET /api/v1/teams/{id}/owner`
+  - `POST /api/v1/teams/{id}/members` (초대)
+  - `GET /api/v1/me/team-invitations`, 초대 수락/거절
+  - `PUT /api/v1/teams/{teamId}/api-keys/{keyId}` (별칭·예산 등 수정)
+  - `POST /api/v1/teams/{teamId}/api-keys/{keyId}/deletion/cancel` (삭제 예정 해제)
 - 팀원 초대 시 Team Service는 Identity 내부 API(`GET /internal/users/exists?email=...`)로
   사용자 존재 여부를 확인한 뒤, **실제로 존재하는 아이디(이메일)만** 초대를 허용한다.
 - 팀 API Key는 Team Service DB에 **평문 저장하지 않고 암호화 저장**한다.
 - 팀 API Key 조회·등록·수정 응답에는 **원문 키를 포함하지 않는다**(미리보기 필드 없음). 저장은 DB에 암호화된다.
 - 팀 삭제(`DELETE /teams/{teamId}`)는 팀 API Key가 하나라도 남아 있으면 `409`으로 거절된다.
+- Identity `web`의 `TeamsView`는 펼친 팀에 대해 `GET /api/team/v1/teams/{id}/owner`로 팀장 여부를 조회하고, **팀장일 때만** 팀원 삭제·팀 삭제·팀 API Key 등록·삭제(및 삭제 취소) UI를 노출한다.
 
 ---
 
@@ -66,7 +79,7 @@
 
 - `POST /api/team/v1/teams/{id}/members`
   - `400` (`success=false`): 존재하지 않는 사용자 아이디(이메일)로 초대 요청한 경우
-  - `403` (`success=false`): 요청자가 해당 팀의 초대 권한이 없는 경우
+  - `403` (`success=false`): 요청자가 팀 멤버가 아닌 경우
   - `404` (`success=false`): 대상 팀이 존재하지 않는 경우
 
 - `DELETE /api/team/v1/teams/{teamId}/members/{userId}`
@@ -79,11 +92,11 @@
   - `409` (`success=false`): 팀 API Key가 남아 있어 삭제 선행조건 미충족
   - `404` (`success=false`): 대상 팀이 존재하지 않는 경우
 
-### 5.2 팀 초대(PENDING)·수락/거절
+### 5.2 팀 초대·수락/거절 (현행 구현)
 
-- `POST /api/team/v1/teams/{id}/members` 는 멤버를 즉시 추가하지 않고 **PENDING 초대**를 생성한다.
-- `GET /api/team/v1/me/team-invitations` 로 내 대기 초대 목록을 조회한다.
-- `POST /api/team/v1/me/team-invitations/{invitationId}/accept` 성공 시 멤버로 추가되고 초대 상태가 `ACCEPTED`가 된다.
+- `POST /api/team/v1/teams/{id}/members` 호출 시 Team Service는 **PENDING 초대 행**을 만들고 RabbitMQ로 초대 이벤트를 발행한 뒤, **초대 대상 사용자를 곧바로 팀 멤버(MEMBER)로 추가**하고 `team-member-added` 성격의 이벤트도 발행한다(초대 알림과 멤버십 반영을 분리해 쓰는 흐름).
+- `GET /api/team/v1/me/team-invitations` 로 내 **대기(PENDING)** 초대 목록을 조회한다.
+- `POST /api/team/v1/me/team-invitations/{invitationId}/accept` 는 아직 멤버가 아니면 멤버로 추가하고 초대를 수락 처리한다. 이미 위 초대 API로 멤버가 된 경우에도 초대 레코드만 `ACCEPTED`로 마무리할 수 있다.
 - `POST /api/team/v1/me/team-invitations/{invitationId}/reject` 성공 시 초대 상태가 `REJECTED`가 된다.
 - 이미 처리된 초대를 다시 수락/거절하면 `400`을 반환한다.
 
@@ -107,22 +120,27 @@
   - 성공: `201`, `data`에 등록된 키 요약(위 표의 활성 키에 해당하는 필드)
   - 실패:
     - `400` (`success=false`): 필수값 누락, alias 중복, 동일 provider+키 값(해시)이 **이미 활성**인 경우 `이미 등록된 API Key입니다`, 동일 해시가 **삭제 예정** 행에 있으면 `삭제 예정키와 중복입니다`
-    - `403` (`success=false`): 팀 멤버가 아닌 사용자의 등록 시도
+    - `403` (`success=false`): 팀장이 아닌 경우(팀 멤버만인 경우 등)
     - `404` (`success=false`): 대상 팀이 존재하지 않는 경우
 
 - `PUT /api/team/v1/teams/{teamId}/api-keys/{keyId}`
   - 요청 본문: `alias`, `monthlyBudgetUsd` (필수). Identity `/teams`·team `web` UI는 별칭·예산만 보낸다. 서버는 `externalKey`가 비어 있지 않을 때에만 키 값·provider 갱신을 허용한다(내부·다른 클라이언트용).
+  - 권한: **팀 멤버**(팀장 아님 포함).
   - 성공: `200`, 수정된 키 요약
   - 실패: `400` (검증/중복/대상 없음, **삭제 예정인 키는 수정 불가**), `403`, `404`
 
 - `DELETE /api/team/v1/teams/{teamId}/api-keys/{keyId}`
-  - 선택 쿼리: `gracePeriodDays` (정수, 생략 시 **기본 7일**). `deletionRequestedAt`을 현재 시각으로, `permanentDeletionAt`을 그 시각 + `gracePeriodDays`일 후로 둔다. 허용 범위는 Team Service 구현상 **1~365일**.
-  - 동작: **소프트 삭제(삭제 예정)**. 유예 기간이 끝난 뒤 DB에서 행을 제거하는 **배치/스케줄러는 별도 구현**일 수 있다(계약만으로 보장하지 않음).
-  - 성공: `200`, `message` 예: `팀 API 키가 삭제 예정으로 등록되었습니다`, `data`에 해당 키 요약(삭제 예정 필드 포함)
+  - 선택 쿼리: `gracePeriodDays` (정수, 생략 시 **기본 7일**). 허용 범위는 **0~365일**.
+    - **`0`**: 삭제 예정 없이 **즉시 DB에서 행을 삭제**(물리 삭제).
+    - **`1` 이상**: `deletionRequestedAt`을 현재 시각으로, `permanentDeletionAt`을 그 시각 + `gracePeriodDays`일 후로 두는 **삭제 예정(소프트)**.
+  - 권한: **팀장만** 호출 가능.
+  - 유예 종료 후 배치로 행을 지우는 **스케줄러는 별도 구현**일 수 있다(계약만으로 보장하지 않음).
+  - 성공: `200`, `message` 예: `팀 API 키 삭제 요청이 처리되었습니다`, `data`에 해당 키 요약(즉시 삭제 직전 스냅샷 또는 삭제 예정 필드 포함)
   - 실패: `400` (대상 없음·유예 일수 범위 밖·이미 삭제 예정 등), `403`, `404`
 
 - `POST /api/team/v1/teams/{teamId}/api-keys/{keyId}/deletion/cancel`
   - 본문 없음. 삭제 예정이었던 키를 다시 활성 상태로 되돌린다(`deletionRequestedAt` / `permanentDeletionAt` / `deletionGraceDays` 해제).
+  - 권한: **팀 멤버**(팀장 아님 포함).
   - 성공: `200`, `message` 예: `삭제 예정이 해제되었습니다`, `data`에 활성 키 요약
   - 실패: `400` (삭제 예정이 아님 등), `403`, `404`
 
@@ -141,17 +159,19 @@
 - Team Service는 내부 호출용으로 `GET /internal/teams/{id}`를 제공한다.
 - 응답 `data`는 `teamId`, `teamName`, `createdBy`, `createdAt`를 포함한다.
 
-### 6.2 팀 초대 이벤트 (RabbitMQ)
+### 6.2 RabbitMQ 이벤트 (`team.events`)
 
-- 팀 초대 생성 시 Team Service는 `team.events` 토픽 익스체인지로 초대 이벤트를 발행한다.
-- 이벤트 payload 필드: `invitationId`, `receiverId`, `inviterId`, `teamId`, `teamName`, `createdAt`
-- 목적: notification 서비스가 초대 알림/후속 UX를 비동기로 처리할 수 있도록 전달
+- 설정 정본: `services/team-service/src/main/resources/application.properties` — `team.member-added-event.exchange`, `team.member-added-event.routing-key`(기본값 `team-member-added`), `spring.rabbitmq.*`.
+- **동일 익스체인지·라우팅 키**로 두 종류의 JSON 메시지가 발행될 수 있다. 구독자는 본문 필드로 구분한다(예: `invitationId` 유무).
+  - **초대 생성 시** (`TeamMemberInvitedEvent`): `invitationId`, `receiverId`, `inviterId`, `teamId`, `teamName`, `createdAt`
+  - **멤버 추가 시** (`TeamMemberAddedEvent`): `receiverId`, `inviterId`, `teamId`, `teamName`, `createdAt` (`invitationId` 없음)
+- 목적: notification 등이 알림·감사 로그를 비동기로 처리할 수 있도록 전달
 
 ---
 
 ## 7. Identity `web` `/teams` 화면·데모 순서 (현행 구현)
 
-구현 정본: `services/identity-service/web/src/components/account/teams-view.tsx`, `services/identity-service/web/src/app/teams/[[...path]]/page.tsx`. 팀 백엔드: `services/team-service/` (`TeamService.createTeam` 등).
+구현 정본: `services/identity-service/web/src/components/account/teams-view.tsx`, `services/identity-service/web/src/app/teams/[[...path]]/page.tsx`(브라우저 경로 **`/teams`**). 팀 백엔드: `services/team-service/`.
 
 ### 7.1 내비게이션
 
@@ -178,9 +198,9 @@
 
 ### 7.4 팀 API Key 삭제 예정·유예·취소 (Identity `/teams`)
 
-구현: `teams-view.tsx`. 서버 기본 유예 **7일**, 요청 시 **1~365일**(`gracePeriodDays`).
+구현: `teams-view.tsx`. 팀장만 **`삭제`/`삭제 취소`/등록 폼**이 보인다(`GET /api/team/v1/teams/{id}/owner`). 서버 기본 유예 **7일**, `gracePeriodDays` 허용 범위 **0~365일**(`0` = 즉시 삭제).
 
-1. **삭제 예정 등록** — 활성 키 행에서 **`삭제`** → 확인 대화상자 → 브라우저 **`prompt`로 유예 기간(일)** 입력(비우면 7일). `DELETE .../api-keys/{keyId}?gracePeriodDays=...` 호출.
+1. **삭제** — 활성 키 행에서 **`삭제`** → 확인 대화상자 → 브라우저 **`prompt`로 유예 기간(일)** 입력(비우면 7일, **0이면 즉시 삭제**). `DELETE .../api-keys/{keyId}?gracePeriodDays=...` 호출.
 2. **삭제 예정 표시** — 해당 행에 `(삭제 예정)` 안내, **영구 삭제 예정 시각**·유예 일수 표시, **`수정` 비활성**.
 3. **삭제 취소** — **`삭제 취소`** → 확인 후 `POST .../api-keys/{keyId}/deletion/cancel`. 성공 시 다시 활성 키로 표시.
 4. **동일 키 재등록** — 삭제 예정 중인 키와 같은 provider+키 값으로 등록 시 서버 메시지 `삭제 예정키와 중복입니다`.
