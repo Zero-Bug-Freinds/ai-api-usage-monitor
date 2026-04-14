@@ -188,3 +188,22 @@ ORDER BY first_seen_at ASC;
 - `provider_model_price`는 Seed가 존재하더라도, **테이블이 이미 일부라도 채워져 있으면** 환경에 따라 신규 모델 가격이 자동으로 들어오지 않을 수 있습니다.
 - 집계에 등장한 provider/model인데 `provider_model_price`에 row가 없으면, DB에 가격 row를 추가한 뒤 다시 집계가 누적되는지 확인하세요.
 
+### 7) `provider_model_price` Seed 모드(누락 row 보강 옵션)
+
+기본 동작은 “테이블이 완전히 비어 있을 때만” Seed가 실행됩니다. 로컬/개발 환경에서 카탈로그에 추가된 신규 모델 row를 빠르게 보강하려면 아래 옵션을 켤 수 있습니다.
+
+- **환경 변수**: `BILLING_PRICING_SEED_MISSING=true`
+- **설정 키**: `billing.pricing.seed-missing=true` (`services/billing-service/src/main/resources/application.yml`)
+
+이 모드에서는 카탈로그의 row 중 **DB에 없는(provider/model/valid_from/valid_to=null) row만 추가 삽입**합니다(멱등).
+
+## billing-web USD 표시 규칙(아주 작은 값)
+
+지출 화면에서 USD 금액이 아주 작을 때 `toFixed(4)`로 인해 `$0.0000`으로 보이는 혼동을 줄이기 위해, billing-web은 아래 정책으로 표시를 통일합니다.
+
+- **기본**: 4자리 고정 \(예: `$12.3457`\)
+- **예외(임계값 라벨)**: \(0 < value < 0.0001\)이면 **`"<$0.0001"`**
+- **null/NaN**: `—`
+
+구현은 `services/billing-service/web/src/lib/expenditure/money.ts`의 `formatUsd` / `formatUsdTooltip`을 사용합니다.
+
