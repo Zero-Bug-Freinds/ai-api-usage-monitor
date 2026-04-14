@@ -208,6 +208,19 @@ public class ExternalApiKeyService {
 		return new InternalApiKeyResponse(plainKey, String.valueOf(entity.getId()));
 	}
 
+	@Transactional(readOnly = true)
+	public Optional<BigDecimal> resolveUserMonthlyBudgetUsd(Long userId) {
+		if (userId == null) {
+			throw new IllegalArgumentException("userId는 필수입니다");
+		}
+		long activeKeyCount = externalApiKeyRepository.countByUserIdAndDeletionRequestedAtIsNull(userId);
+		if (activeKeyCount == 0) {
+			return Optional.empty();
+		}
+		BigDecimal totalBudget = externalApiKeyRepository.sumMonthlyBudgetUsdByUserIdAndDeletionRequestedAtIsNull(userId);
+		return Optional.ofNullable(totalBudget);
+	}
+
 	/**
 	 * 삭제 요청: 유예 기간 후 {@link #purgeExpiredKeys()} 가 행을 제거한다.
 	 */
