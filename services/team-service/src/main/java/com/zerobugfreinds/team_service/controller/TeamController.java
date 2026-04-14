@@ -5,6 +5,8 @@ import com.zerobugfreinds.team_service.dto.CreateTeamRequest;
 import com.zerobugfreinds.team_service.dto.InviteTeamMemberRequest;
 import com.zerobugfreinds.team_service.dto.RegisterTeamApiKeyRequest;
 import com.zerobugfreinds.team_service.dto.TeamApiKeySummaryResponse;
+import com.zerobugfreinds.team_service.dto.TeamInvitationActionResponse;
+import com.zerobugfreinds.team_service.dto.TeamInvitationResponse;
 import com.zerobugfreinds.team_service.dto.UpdateTeamApiKeyRequest;
 import com.zerobugfreinds.team_service.dto.TeamSummaryResponse;
 import com.zerobugfreinds.team_service.security.TeamUserPrincipal;
@@ -61,7 +63,33 @@ public class TeamController {
 			@Valid @RequestBody InviteTeamMemberRequest request
 	) {
 		TeamSummaryResponse team = teamService.inviteMember(principal.userId(), teamId, request.userId().trim());
-		return ResponseEntity.ok(ApiResponse.ok("팀 초대가 완료되었습니다", team));
+		return ResponseEntity.ok(ApiResponse.ok("팀 초대를 보냈습니다", team));
+	}
+
+	@GetMapping("/me/team-invitations")
+	public ResponseEntity<ApiResponse<List<TeamInvitationResponse>>> getMyPendingInvitations(
+			@AuthenticationPrincipal TeamUserPrincipal principal
+	) {
+		List<TeamInvitationResponse> invitations = teamService.getMyPendingInvitations(principal.userId());
+		return ResponseEntity.ok(ApiResponse.ok("내 팀 초대 목록 조회에 성공했습니다", invitations));
+	}
+
+	@PostMapping("/me/team-invitations/{invitationId}/accept")
+	public ResponseEntity<ApiResponse<TeamInvitationActionResponse>> acceptInvitation(
+			@AuthenticationPrincipal TeamUserPrincipal principal,
+			@PathVariable("invitationId") Long invitationId
+	) {
+		TeamInvitationActionResponse result = teamService.acceptInvitation(principal.userId(), invitationId);
+		return ResponseEntity.ok(ApiResponse.ok("팀 초대를 수락했습니다", result));
+	}
+
+	@PostMapping("/me/team-invitations/{invitationId}/reject")
+	public ResponseEntity<ApiResponse<TeamInvitationActionResponse>> rejectInvitation(
+			@AuthenticationPrincipal TeamUserPrincipal principal,
+			@PathVariable("invitationId") Long invitationId
+	) {
+		TeamInvitationActionResponse result = teamService.rejectInvitation(principal.userId(), invitationId);
+		return ResponseEntity.ok(ApiResponse.ok("팀 초대를 거절했습니다", result));
 	}
 
 	@GetMapping("/teams/{id}/members")
@@ -71,6 +99,34 @@ public class TeamController {
 	) {
 		List<String> members = teamService.getTeamMemberUserIds(principal.userId(), teamId);
 		return ResponseEntity.ok(ApiResponse.ok("팀 멤버 조회에 성공했습니다", members));
+	}
+
+	@GetMapping("/teams/{id}/owner")
+	public ResponseEntity<ApiResponse<Boolean>> getIsTeamOwner(
+			@AuthenticationPrincipal TeamUserPrincipal principal,
+			@PathVariable("id") Long teamId
+	) {
+		boolean owner = teamService.isTeamOwner(principal.userId(), teamId);
+		return ResponseEntity.ok(ApiResponse.ok("팀장 여부 조회에 성공했습니다", owner));
+	}
+
+	@DeleteMapping("/teams/{teamId}/members/{userId}")
+	public ResponseEntity<ApiResponse<TeamSummaryResponse>> removeTeamMember(
+			@AuthenticationPrincipal TeamUserPrincipal principal,
+			@PathVariable("teamId") Long teamId,
+			@PathVariable("userId") String userId
+	) {
+		TeamSummaryResponse team = teamService.removeMember(principal.userId(), teamId, userId.trim());
+		return ResponseEntity.ok(ApiResponse.ok("팀원이 삭제되었습니다", team));
+	}
+
+	@DeleteMapping("/teams/{teamId}")
+	public ResponseEntity<ApiResponse<Void>> deleteTeam(
+			@AuthenticationPrincipal TeamUserPrincipal principal,
+			@PathVariable("teamId") Long teamId
+	) {
+		teamService.deleteTeam(principal.userId(), teamId);
+		return ResponseEntity.ok(ApiResponse.ok("팀이 삭제되었습니다", null));
 	}
 
 	@PostMapping("/teams/{id}/api-keys")
@@ -118,7 +174,7 @@ public class TeamController {
 	) {
 		TeamApiKeySummaryResponse updated =
 				teamApiKeyService.delete(principal.userId(), teamId, keyId, gracePeriodDays);
-		return ResponseEntity.ok(ApiResponse.ok("팀 API 키가 삭제 예정으로 등록되었습니다", updated));
+		return ResponseEntity.ok(ApiResponse.ok("팀 API 키 삭제 요청이 처리되었습니다", updated));
 	}
 
 	@PostMapping("/teams/{teamId}/api-keys/{keyId}/deletion/cancel")

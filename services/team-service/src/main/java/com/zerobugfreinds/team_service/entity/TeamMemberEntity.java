@@ -59,4 +59,8 @@ public class TeamMemberEntity {
 	public String getUserId() {
 		return userId;
 	}
+
+	public TeamMemberRole getRole() {
+		return role;
+	}
 }

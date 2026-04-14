@@ -37,4 +37,6 @@ public interface TeamApiKeyRepository extends JpaRepository<TeamApiKeyEntity, Lo
             String keyHash,
             Long id
     );
+
+    boolean existsByTeamId(Long teamId);
 }

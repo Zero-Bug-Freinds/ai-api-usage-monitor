@@ -28,7 +28,7 @@ export function LogoutButton({ className, variant = "outline" }: LogoutButtonPro
     } finally {
       setPending(false)
     }
-    router.replace("/login")
+    router.replace("/")
   }
 
   return (
