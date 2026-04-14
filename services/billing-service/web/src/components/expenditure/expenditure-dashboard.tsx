@@ -253,9 +253,16 @@ export function ExpenditureDashboard() {
     }
   }, [selectedTeamId]);
 
-  const budgetRatio = useMemo(() => {
-    if (!summary?.monthlyBudgetUsd || summary.monthlyBudgetUsd <= 0) return null;
-    return Math.min(1, summary.totalCostUsd / summary.monthlyBudgetUsd);
+  const budgetUi = useMemo(() => {
+    const total = summary?.totalCostUsd ?? null;
+    const budget = summary?.monthlyBudgetUsd ?? null;
+    if (total == null) return null;
+    if (budget == null || budget <= 0) {
+      return { totalCostUsd: total, monthlyBudgetUsd: null as number | null, remainingUsd: null as number | null, pct: null as number | null };
+    }
+    const remaining = Math.max(0, budget - total);
+    const pct = Math.min(100, (total / budget) * 100);
+    return { totalCostUsd: total, monthlyBudgetUsd: budget, remainingUsd: remaining, pct };
   }, [summary]);
 
   const dailyChart = useMemo(
@@ -294,6 +301,47 @@ export function ExpenditureDashboard() {
           프로바이더와 API 키를 선택한 뒤 기간별 비용을 확인합니다. 표시 금액은 실제 결제가 아니라 사용 로그·단가 기준 추정(USD)입니다.
         </p>
       </header>
+
+      {viewMode === "personal" && apiKeyId && budgetUi ? (
+        <section className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-sm">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div className="space-y-1">
+              <h2 className="text-sm font-medium text-muted-foreground">월 예산 대비</h2>
+              {budgetUi.monthlyBudgetUsd != null ? (
+                <p className="text-xs text-muted-foreground">
+                  이번 달 지출 ${budgetUi.totalCostUsd.toFixed(4)} / 월 예산 ${budgetUi.monthlyBudgetUsd.toFixed(2)} (잔여 $
+                  {(budgetUi.remainingUsd ?? 0).toFixed(2)})
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  월 예산: identity HTTP 연동이 없거나 미설정이면 표시되지 않습니다.
+                </p>
+              )}
+            </div>
+            {budgetUi.pct != null ? (
+              <div className="text-right">
+                <p className="text-xs text-muted-foreground">진행률</p>
+                <p className="text-lg font-semibold tabular-nums">{budgetUi.pct.toFixed(1)}%</p>
+              </div>
+            ) : null}
+          </div>
+
+          {budgetUi.pct != null ? (
+            <div className="space-y-1">
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>0%</span>
+                <span>100%</span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-primary transition-[width]"
+                  style={{ width: `${Math.min(100, Math.max(0, budgetUi.pct))}%` }}
+                />
+              </div>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       <div
         className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-950 dark:text-amber-100"
@@ -475,20 +523,6 @@ export function ExpenditureDashboard() {
                   </p>
                 )}
               </div>
-              {budgetRatio != null ? (
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>예산 대비</span>
-                    <span>{(budgetRatio * 100).toFixed(1)}%</span>
-                  </div>
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                    <div
-                      className="h-full rounded-full bg-primary transition-[width]"
-                      style={{ width: `${Math.min(100, budgetRatio * 100)}%` }}
-                    />
-                  </div>
-                </div>
-              ) : null}
             </section>
           ) : null}
 
