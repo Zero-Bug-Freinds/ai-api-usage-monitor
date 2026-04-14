@@ -239,6 +239,10 @@
 - `usage-recorded`
   - 발행 주체: Proxy Service
   - 소비 주체: **Usage Service**(저장·**API 사용량 대시보드** 원천), **Billing Service**(**비용 대시보드**·비용 집계 및 예산 대비 지출 판단의 입력).
+- `identity.user.account-deletion-requested`
+  - 발행 주체: Identity Service (회원 탈퇴 요청)
+  - 소비 주체: Team Service (해당 사용자 팀 멤버십/초대 정리) 등
+  - 후속 ACK: Team Service는 정리 완료 후 `identity.user.account-deletion-ack` 를 발행해 Identity의 삭제 코디네이션을 완료한다.
 - `billing-warning` / `billing-exceeded` (계획)
   - 발행 주체: Billing Service — 예산 한도 대비 지출이 임계치에 근접·초과할 때 Notification용 이벤트 발행
   - 소비 주체: Notification Service
