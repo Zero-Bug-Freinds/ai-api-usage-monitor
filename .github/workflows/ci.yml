@@ -56,12 +56,14 @@ jobs:
             notification:
               - 'services/notification-service/**'
             web:
+              - 'apps/web/**'
               - 'services/identity-service/web/**'
               - 'services/usage-service/web/**'
               - 'services/billing-service/web/**'
               - 'services/team-service/web/**'
               - 'services/notification-service/web/**'
               - 'packages/ui/**'
+              - 'packages/shell/**'
               - 'pnpm-workspace.yaml'
               - 'package.json'
               - 'pnpm-lock.yaml'
@@ -211,6 +213,8 @@ jobs:
           node-version: "22"
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
+      - name: Reset pnpm store metadata
+        run: pnpm store prune
       - name: Install workspace
         run: pnpm install --frozen-lockfile
       - name: Build (Nest)
@@ -229,24 +233,31 @@ jobs:
           node-version: "22"
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
+      - name: Reset pnpm store metadata
+        run: pnpm store prune
       - name: Install workspace
         run: pnpm install --frozen-lockfile
       - name: Lint / test / build (Next apps)
         run: |
+          pnpm --filter web-host run lint
           pnpm --filter identity-web run lint
           pnpm --filter usage-web run lint
           pnpm --filter billing-web run lint
           pnpm --filter team-web run lint
           pnpm --filter notification-web run lint
+          pnpm --filter web-host run test
           pnpm --filter identity-web test
           pnpm --filter usage-web test
           pnpm --filter billing-web test
           pnpm --filter team-web test
           pnpm --filter notification-web test
+          pnpm --filter web-host run build
           pnpm --filter notification-web run build
           pnpm run build:web
       - name: Docker image (identity-web, standalone)
         run: docker build -f services/identity-service/web/Dockerfile -t identity-web:ci .
+      - name: Docker image (web-host, standalone)
+        run: docker build -f apps/web/Dockerfile -t web-host:ci .
       - name: Docker image (usage-web, standalone)
         run: docker build -f services/usage-service/web/Dockerfile -t usage-web:ci .
       - name: Docker image (billing-web, standalone)

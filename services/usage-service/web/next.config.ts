@@ -1,5 +1,21 @@
 import type { NextConfig } from "next";
 import path from "path";
+import type { Configuration as WebpackConfig } from "webpack";
+
+type NextFederationPluginCtor = new (options: Record<string, unknown>) => unknown;
+
+if (process.env.NEXT_PRIVATE_LOCAL_WEBPACK !== "false") {
+  process.env.NEXT_PRIVATE_LOCAL_WEBPACK = "true";
+}
+
+function getNextFederationPlugin(): NextFederationPluginCtor {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const mf = require("@module-federation/nextjs-mf") as { NextFederationPlugin?: NextFederationPluginCtor };
+  if (!mf.NextFederationPlugin) {
+    throw new Error("NextFederationPlugin export not found from @module-federation/nextjs-mf");
+  }
+  return mf.NextFederationPlugin;
+}
 
 /**
  * 단일 도메인 엣지(`docker/web-edge/nginx.conf` → usage-web)에서 `/dashboard/` 접두만 Usage 앱으로 보낸다.
@@ -11,9 +27,29 @@ const nextConfig: NextConfig = {
   basePath,
   output: "standalone",
   outputFileTracingRoot: path.join(__dirname, "../../.."),
+  // 모노레포 내 공통 패키지 의존성 명시
   transpilePackages: ["@ai-usage/ui", "@ai-usage/shell"],
   env: {
     NEXT_PUBLIC_BASE_PATH: basePath,
+  },
+  webpack(config: WebpackConfig, options: { isServer: boolean }) {
+    if (options.isServer) return config;
+    const NextFederationPlugin = getNextFederationPlugin();
+    config.plugins = config.plugins ?? [];
+    config.plugins.push(
+      new NextFederationPlugin({
+        name: "usage",
+        filename: "static/chunks/remoteEntry.js",
+        exposes: {
+          "./TeamUsageDashboard": "./src/components/TeamUsageDashboard.tsx",
+        },
+        shared: {
+          react: { singleton: true, requiredVersion: false },
+          "react-dom": { singleton: true, requiredVersion: false },
+        },
+      })
+    );
+    return config;
   },
 };
 
