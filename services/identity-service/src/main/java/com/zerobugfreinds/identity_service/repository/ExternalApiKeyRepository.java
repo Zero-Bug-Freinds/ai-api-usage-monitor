@@ -3,6 +3,8 @@ package com.zerobugfreinds.identity_service.repository;
 import com.zerobugfreinds.identity_service.domain.ExternalApiKeyProvider;
 import com.zerobugfreinds.identity_service.entity.ExternalApiKeyEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
 import java.util.List;
@@ -44,12 +46,22 @@ public interface ExternalApiKeyRepository extends JpaRepository<ExternalApiKeyEn
 
 	long countByUserId(Long userId);
 
+	long countByUserIdAndDeletionRequestedAtIsNull(Long userId);
+
 	List<ExternalApiKeyEntity> findAllByUserIdOrderByCreatedAtDesc(Long userId);
 
 	Optional<ExternalApiKeyEntity> findTopByUserIdAndProviderAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(
 			Long userId,
 			ExternalApiKeyProvider provider
 	);
+
+	@Query("""
+			select coalesce(sum(e.monthlyBudgetUsd), 0)
+			from ExternalApiKeyEntity e
+			where e.userId = :userId
+			  and e.deletionRequestedAt is null
+			""")
+	java.math.BigDecimal sumMonthlyBudgetUsdByUserIdAndDeletionRequestedAtIsNull(@Param("userId") Long userId);
 
 	Optional<ExternalApiKeyEntity> findByIdAndUserId(Long id, Long userId);
 
