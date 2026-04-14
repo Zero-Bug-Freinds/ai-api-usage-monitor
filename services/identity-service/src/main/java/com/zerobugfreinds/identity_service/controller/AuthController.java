@@ -1,6 +1,7 @@
 package com.zerobugfreinds.identity_service.controller;
 
 import com.zerobugfreinds.identity_service.common.ApiResponse;
+import com.zerobugfreinds.identity_service.dto.DeleteAccountRequest;
 import com.zerobugfreinds.identity_service.dto.ForgotPasswordRequest;
 import com.zerobugfreinds.identity_service.dto.LoginRequest;
 import com.zerobugfreinds.identity_service.dto.LoginResponse;
@@ -9,6 +10,8 @@ import com.zerobugfreinds.identity_service.dto.SessionResponse;
 import com.zerobugfreinds.identity_service.dto.SignupRequest;
 import com.zerobugfreinds.identity_service.dto.SignupResponse;
 import com.zerobugfreinds.identity_service.exception.AuthContractViolationException;
+import com.zerobugfreinds.identity_service.security.IdentityUserPrincipal;
+import com.zerobugfreinds.identity_service.service.AccountDeletionService;
 import com.zerobugfreinds.identity_service.service.PasswordResetService;
 import com.zerobugfreinds.identity_service.service.UserService;
 import jakarta.validation.Valid;
@@ -17,15 +20,16 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 인증 관련 HTTP API.
+ * Authentication HTTP API.
  */
 @RestController
 @RequestMapping("/api/auth")
@@ -33,28 +37,25 @@ public class AuthController {
 
 	private final UserService userService;
 	private final PasswordResetService passwordResetService;
+	private final AccountDeletionService accountDeletionService;
 
-	public AuthController(UserService userService, PasswordResetService passwordResetService) {
+	public AuthController(
+			UserService userService,
+			PasswordResetService passwordResetService,
+			AccountDeletionService accountDeletionService
+	) {
 		this.userService = userService;
 		this.passwordResetService = passwordResetService;
+		this.accountDeletionService = accountDeletionService;
 	}
 
-	/**
-	 * 회원가입.
-	 */
 	@PostMapping("/signup")
 	@ResponseStatus(HttpStatus.CREATED)
 	public ApiResponse<SignupResponse> signup(@Valid @RequestBody SignupRequest request) {
 		SignupResponse body = userService.signup(request);
-		return ApiResponse.ok("회원가입이 완료되었습니다", body);
+		return ApiResponse.ok("Signup completed", body);
 	}
 
-	/**
-	 * 로그인.
-	 */
-	/**
-	 * 비밀번호 찾기: 이메일로 재설정 링크 발송(등록된 주소만 실제 발송).
-	 */
 	@PostMapping("/forgot-password")
 	public ResponseEntity<ApiResponse<Void>> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
 		passwordResetService.requestForgotPassword(request);
@@ -63,31 +64,25 @@ public class AuthController {
 				.body(ApiResponse.ok(PasswordResetService.FORGOT_PASSWORD_UNIFORM_MESSAGE, null));
 	}
 
-	/**
-	 * 비밀번호 재설정: 메일 링크의 토큰과 새 비밀번호로 갱신.
-	 */
 	@PostMapping("/reset-password")
 	public ResponseEntity<ApiResponse<Void>> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
 		passwordResetService.resetPassword(request);
 		return ResponseEntity.ok()
 				.cacheControl(CacheControl.noStore().mustRevalidate())
-				.body(ApiResponse.ok("비밀번호가 변경되었습니다. 로그인해 주세요", null));
+				.body(ApiResponse.ok("Password updated. Please sign in.", null));
 	}
 
 	@PostMapping("/login")
 	public ResponseEntity<ApiResponse<LoginResponse>> login(@Valid @RequestBody LoginRequest request) {
 		LoginResponse body = userService.login(request);
 		if (!"Bearer".equals(body.tokenType())) {
-			throw new AuthContractViolationException("토큰 타입 계약이 올바르지 않습니다");
+			throw new AuthContractViolationException("Token type contract violation");
 		}
 		return ResponseEntity.ok()
 				.cacheControl(CacheControl.noStore().mustRevalidate())
-				.body(ApiResponse.ok("로그인에 성공했습니다", body));
+				.body(ApiResponse.ok("Login successful", body));
 	}
 
-	/**
-	 * 세션(인증 상태) 확인.
-	 */
 	@GetMapping("/session")
 	public ResponseEntity<ApiResponse<SessionResponse>> session(Authentication authentication) {
 		String authority = authentication.getAuthorities().stream()
@@ -99,17 +94,31 @@ public class AuthController {
 		SessionResponse body = new SessionResponse(authentication.getName(), role, true);
 		return ResponseEntity.ok()
 				.cacheControl(CacheControl.noStore().mustRevalidate())
-				.body(ApiResponse.ok("세션이 유효합니다", body));
+				.body(ApiResponse.ok("Session valid", body));
 	}
 
-	/**
-	 * 로그아웃.
-	 * Stateless 구조이므로 서버 토큰 무효화 대신, BFF가 쿠키를 삭제하도록 신호를 보낸다.
-	 */
 	@PostMapping("/logout")
 	public ResponseEntity<ApiResponse<Void>> logout() {
 		return ResponseEntity.ok()
 				.header(HttpHeaders.CACHE_CONTROL, "no-store")
-				.body(ApiResponse.ok("로그아웃되었습니다. BFF에서 인증 쿠키를 삭제하세요", null));
+				.body(ApiResponse.ok("Signed out. Clear auth cookie on BFF.", null));
+	}
+
+	/**
+	 * 삭제 요청 이벤트 발행까지 완료하면 응답한다. identity 사용자 행 제거는 연동 서비스 ACK 후 비동기로 진행된다.
+	 */
+	@PostMapping("/delete-account")
+	public ResponseEntity<ApiResponse<Void>> deleteAccount(
+			@AuthenticationPrincipal IdentityUserPrincipal principal,
+			@Valid @RequestBody DeleteAccountRequest request
+	) {
+		accountDeletionService.deleteAuthenticatedAccount(principal, request.password());
+		return ResponseEntity.status(HttpStatus.ACCEPTED)
+				.cacheControl(CacheControl.noStore().mustRevalidate())
+				.body(ApiResponse.ok(
+						"\uC68D\uC6D0 \uC0CC\uD1F4 \uC694\uCCAD\uC774 \uC811\uC218\uB418\uC5C8\uC2B5\uB2C8\uB2E4. "
+								+ "\uC5F0\uB3D9 \uC11C\uBE44\uC2A4 \uC0AD\uC81C \uD655\uC778 \uD6C4 \uACC4\uC815\uC774 \uC81C\uAC70\uB429\uB2C8\uB2E4.",
+						null
+				));
 	}
 }
