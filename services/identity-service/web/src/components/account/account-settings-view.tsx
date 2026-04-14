@@ -112,6 +112,10 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
   const [saveEditLoadingId, setSaveEditLoadingId] = React.useState<number | null>(null)
   const [revealExternalKey, setRevealExternalKey] = React.useState(false)
 
+  const [deletePassword, setDeletePassword] = React.useState("")
+  const [deleteLoading, setDeleteLoading] = React.useState(false)
+  const [deleteError, setDeleteError] = React.useState<string | null>(null)
+
   const loadExternalKeys = React.useCallback(async (signal?: AbortSignal) => {
     setKeysLoading(true)
     setKeysError(null)
@@ -420,6 +424,42 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
       setKeysError("정보 수정에 실패했습니다")
     } finally {
       setSaveEditLoadingId(null)
+    }
+  }
+
+  async function onDeleteAccount() {
+    setDeleteError(null)
+    if (!deletePassword.trim()) {
+      setDeleteError("Password is required")
+      return
+    }
+    const ok = window.confirm("Delete your account permanently? This cannot be undone.")
+    if (!ok) {
+      return
+    }
+    setDeleteLoading(true)
+    try {
+      const { response, json } = await apiFetch<unknown>(
+        "/api/auth/delete-account",
+        {
+          method: "POST",
+          credentials: "include",
+          cache: "no-store",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ password: deletePassword }),
+        },
+        { authRequired: true }
+      )
+      const apiResponse = asApiResponse(json)
+      if (response.ok && apiResponse?.success) {
+        window.location.assign("/login")
+        return
+      }
+      setDeleteError(apiResponse?.message ?? "Account deletion failed")
+    } catch {
+      setDeleteError("Account deletion failed")
+    } finally {
+      setDeleteLoading(false)
     }
   }
 

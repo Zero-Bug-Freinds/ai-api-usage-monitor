@@ -56,4 +56,6 @@ public interface ExternalApiKeyRepository extends JpaRepository<ExternalApiKeyEn
 	Optional<ExternalApiKeyEntity> findByIdAndUserIdAndDeletionRequestedAtIsNull(Long id, Long userId);
 
 	List<ExternalApiKeyEntity> findAllByPermanentDeletionAtIsNotNullAndPermanentDeletionAtBefore(Instant now);
+
+	void deleteAllByUserId(Long userId);
 }
