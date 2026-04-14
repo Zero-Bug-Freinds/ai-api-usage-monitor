@@ -78,6 +78,29 @@ async function fetchTeamMemberUserIds(teamId: string): Promise<string[]> {
   return rec.data.filter((x): x is string => typeof x === "string");
 }
 
+type MyTeam = { id: string; name: string };
+
+async function fetchMyTeams(): Promise<MyTeam[]> {
+  const res = await fetch("/api/team/v1/me/teams", {
+    method: "GET",
+    credentials: "include",
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    return [];
+  }
+  const json: unknown = await res.json();
+  if (typeof json !== "object" || json === null) return [];
+  const rec = json as Record<string, unknown>;
+  if (rec.success !== true || !Array.isArray(rec.data)) return [];
+
+  return rec.data
+    .filter((x): x is Record<string, unknown> => typeof x === "object" && x !== null)
+    .map((x) => ({ id: String(x.id ?? ""), name: String(x.name ?? "") }))
+    .filter((t) => t.id.length > 0);
+}
+
 export function ExpenditureDashboard() {
   const [viewMode, setViewMode] = useState<"personal" | "team">("personal");
   const [provider, setProvider] = useState<AiProviderCode>("GOOGLE");
@@ -90,9 +113,11 @@ export function ExpenditureDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const [teamIdInput, setTeamIdInput] = useState("");
+  const [teams, setTeams] = useState<MyTeam[]>([]);
+  const [selectedTeamId, setSelectedTeamId] = useState("");
   const [teamRollup, setTeamRollup] = useState<TeamMonthRollup | null>(null);
   const [teamLoading, setTeamLoading] = useState(false);
+  const [teamsLoading, setTeamsLoading] = useState(false);
 
   const loadApiKeys = useCallback(async () => {
     const q = new URLSearchParams();
@@ -167,10 +192,34 @@ export function ExpenditureDashboard() {
     }
   }, [loadApiKeys, loadSeries]);
 
+  const loadTeams = useCallback(async () => {
+    setTeamsLoading(true);
+    setError(null);
+    try {
+      const list = await fetchMyTeams();
+      setTeams(list);
+      setSelectedTeamId((prev) => {
+        if (prev && list.some((t) => t.id === prev)) return prev;
+        return list[0]?.id ?? "";
+      });
+    } catch (e: unknown) {
+      setTeams([]);
+      setSelectedTeamId("");
+      setError(e instanceof Error ? e.message : "내 팀 목록을 불러오지 못했습니다");
+    } finally {
+      setTeamsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (viewMode !== "team") return;
+    void loadTeams();
+  }, [loadTeams, viewMode]);
+
   const loadTeamRollup = useCallback(async () => {
-    const tid = teamIdInput.trim();
+    const tid = selectedTeamId.trim();
     if (!tid) {
-      setError("팀 ID를 입력하세요.");
+      setError("팀을 선택하세요.");
       return;
     }
     setTeamLoading(true);
@@ -180,7 +229,7 @@ export function ExpenditureDashboard() {
       if (userIds.length === 0) {
         setTeamRollup(null);
         setError(
-          "팀 멤버를 불러오지 못했습니다. 단일 오리진(예: identity :3000)에서 지출을 열었는지, 팀 ID가 맞는지 확인하세요."
+          "팀 멤버를 불러오지 못했습니다. 단일 오리진(예: identity :3000)에서 지출을 열었는지, 팀 권한이 있는지 확인하세요."
         );
         return;
       }
@@ -202,7 +251,7 @@ export function ExpenditureDashboard() {
     } finally {
       setTeamLoading(false);
     }
-  }, [teamIdInput]);
+  }, [selectedTeamId]);
 
   const budgetRatio = useMemo(() => {
     if (!summary?.monthlyBudgetUsd || summary.monthlyBudgetUsd <= 0) return null;
@@ -282,6 +331,12 @@ export function ExpenditureDashboard() {
         ) : null}
       </div>
 
+      {error ? (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {error}
+        </div>
+      ) : null}
+
       {viewMode === "team" ? (
         <section className="space-y-4 rounded-xl border border-border bg-card p-4 shadow-sm">
           <h2 className="text-sm font-medium">팀 당월 누적 (billing 집계)</h2>
@@ -290,18 +345,41 @@ export function ExpenditureDashboard() {
           </p>
           <div className="flex flex-wrap items-end gap-2">
             <label className="flex flex-col gap-1 text-sm">
-              <span className="text-muted-foreground">팀 ID</span>
-              <input
-                className="h-9 min-w-[220px] rounded-md border border-input bg-background px-2 text-sm"
-                value={teamIdInput}
-                onChange={(e) => setTeamIdInput(e.target.value)}
-                placeholder="team-uuid"
-              />
+              <span className="text-muted-foreground">내 팀</span>
+              <select
+                className="h-9 min-w-[240px] rounded-md border border-input bg-background px-2 text-sm"
+                value={selectedTeamId}
+                onChange={(e) => {
+                  setSelectedTeamId(e.target.value);
+                  setTeamRollup(null);
+                }}
+                disabled={teamsLoading || teams.length === 0}
+              >
+                {teamsLoading ? (
+                  <option value="">불러오는 중…</option>
+                ) : teams.length === 0 ? (
+                  <option value="">표시할 팀이 없습니다</option>
+                ) : (
+                  teams.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name || t.id}
+                    </option>
+                  ))
+                )}
+              </select>
             </label>
             <button
               type="button"
+              className="h-9 rounded-md border border-border bg-background px-3 text-sm hover:bg-muted disabled:opacity-50"
+              disabled={teamsLoading}
+              onClick={() => void loadTeams()}
+            >
+              {teamsLoading ? "불러오는 중…" : "팀 목록 새로고침"}
+            </button>
+            <button
+              type="button"
               className="h-9 rounded-md bg-primary px-3 text-sm text-primary-foreground disabled:opacity-50"
-              disabled={teamLoading}
+              disabled={teamLoading || teamsLoading || !selectedTeamId}
               onClick={() => void loadTeamRollup()}
             >
               {teamLoading ? "불러오는 중…" : "집계"}
@@ -375,12 +453,6 @@ export function ExpenditureDashboard() {
               기간: {range.from} ~ {range.to} (30일)
             </div>
           </div>
-
-          {error ? (
-            <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {error}
-            </div>
-          ) : null}
 
           {loading ? <p className="text-sm text-muted-foreground">불러오는 중…</p> : null}
 
