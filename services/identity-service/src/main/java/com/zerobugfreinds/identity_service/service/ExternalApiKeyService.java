@@ -10,6 +10,7 @@ import com.zerobugfreinds.identity_service.exception.ExternalApiKeyNotPendingDel
 import com.zerobugfreinds.identity_service.exception.ExternalApiKeyNotFoundException;
 import com.zerobugfreinds.identity_service.exception.ExternalApiKeyPendingDeletionException;
 import com.zerobugfreinds.identity_service.repository.ExternalApiKeyRepository;
+import com.zerobugfreinds.identity_service.repository.UserRepository;
 import com.zerobugfreinds.identity_service.util.EncryptionUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,10 +36,16 @@ public class ExternalApiKeyService {
 	private static final Logger log = LoggerFactory.getLogger(ExternalApiKeyService.class);
 
 	private final ExternalApiKeyRepository externalApiKeyRepository;
+	private final UserRepository userRepository;
 	private final EncryptionUtil encryptionUtil;
 
-	public ExternalApiKeyService(ExternalApiKeyRepository externalApiKeyRepository, EncryptionUtil encryptionUtil) {
+	public ExternalApiKeyService(
+			ExternalApiKeyRepository externalApiKeyRepository,
+			UserRepository userRepository,
+			EncryptionUtil encryptionUtil
+	) {
 		this.externalApiKeyRepository = externalApiKeyRepository;
+		this.userRepository = userRepository;
 		this.encryptionUtil = encryptionUtil;
 	}
 
@@ -218,6 +225,28 @@ public class ExternalApiKeyService {
 			return Optional.empty();
 		}
 		BigDecimal totalBudget = externalApiKeyRepository.sumMonthlyBudgetUsdByUserIdAndDeletionRequestedAtIsNull(userId);
+		return Optional.ofNullable(totalBudget);
+	}
+
+	@Transactional(readOnly = true)
+	public Optional<BigDecimal> resolveUserMonthlyBudgetUsdByEmail(String email) {
+		if (!StringUtils.hasText(email)) {
+			throw new IllegalArgumentException("email은 필수입니다");
+		}
+		String normalizedEmail = email.trim();
+		Optional<Long> userId = userRepository.findByEmail(normalizedEmail).map(user -> user.getId());
+		if (userId.isEmpty()) {
+			return Optional.empty();
+		}
+
+		long activeBudgetedKeyCount =
+				externalApiKeyRepository.countByUserIdAndDeletionRequestedAtIsNullAndMonthlyBudgetUsdIsNotNull(userId.get());
+		if (activeBudgetedKeyCount == 0) {
+			return Optional.empty();
+		}
+
+		BigDecimal totalBudget =
+				externalApiKeyRepository.sumMonthlyBudgetUsdByUserIdAndActiveBudgetAssigned(userId.get());
 		return Optional.ofNullable(totalBudget);
 	}
 
