@@ -12,6 +12,13 @@ import java.util.List;
 
 public interface ProviderModelPriceRepository extends JpaRepository<ProviderModelPriceEntity, Long> {
 
+    boolean existsByProviderAndModelAndValidFromAndValidTo(
+            AiProvider provider,
+            String model,
+            Instant validFrom,
+            Instant validTo
+    );
+
     @Query("""
             select p from ProviderModelPriceEntity p
             where p.provider = :provider and p.model = :model

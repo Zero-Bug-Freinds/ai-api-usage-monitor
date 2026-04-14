@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { currentMonthStartKst, rangeLastDays } from "@/lib/expenditure/dates";
+import { formatUsd, formatUsdTooltip } from "@/lib/expenditure/money";
 import type {
   AiProviderCode,
   ApiKeySeen,
@@ -49,18 +50,6 @@ async function fetchJsonPost<T>(path: string, body: unknown): Promise<T> {
   return (await res.json()) as T;
 }
 
-function formatUsdTooltip(value: unknown): [string, string] {
-  if (value == null) {
-    return ["—", "USD"];
-  }
-  const raw = Array.isArray(value) ? value[0] : value;
-  const n = typeof raw === "number" ? raw : Number(raw);
-  if (Number.isNaN(n)) {
-    return ["—", "USD"];
-  }
-  return [`$${n.toFixed(4)}`, "USD"];
-}
-
 async function fetchTeamMemberUserIds(teamId: string): Promise<string[]> {
   const res = await fetch(`/api/team/v1/teams/${encodeURIComponent(teamId)}/members`, {
     method: "GET",
@@ -78,6 +67,29 @@ async function fetchTeamMemberUserIds(teamId: string): Promise<string[]> {
   return rec.data.filter((x): x is string => typeof x === "string");
 }
 
+type MyTeam = { id: string; name: string };
+
+async function fetchMyTeams(): Promise<MyTeam[]> {
+  const res = await fetch("/api/team/v1/me/teams", {
+    method: "GET",
+    credentials: "include",
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    return [];
+  }
+  const json: unknown = await res.json();
+  if (typeof json !== "object" || json === null) return [];
+  const rec = json as Record<string, unknown>;
+  if (rec.success !== true || !Array.isArray(rec.data)) return [];
+
+  return rec.data
+    .filter((x): x is Record<string, unknown> => typeof x === "object" && x !== null)
+    .map((x) => ({ id: String(x.id ?? ""), name: String(x.name ?? "") }))
+    .filter((t) => t.id.length > 0);
+}
+
 export function ExpenditureDashboard() {
   const [viewMode, setViewMode] = useState<"personal" | "team">("personal");
   const [provider, setProvider] = useState<AiProviderCode>("GOOGLE");
@@ -90,9 +102,11 @@ export function ExpenditureDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const [teamIdInput, setTeamIdInput] = useState("");
+  const [teams, setTeams] = useState<MyTeam[]>([]);
+  const [selectedTeamId, setSelectedTeamId] = useState("");
   const [teamRollup, setTeamRollup] = useState<TeamMonthRollup | null>(null);
   const [teamLoading, setTeamLoading] = useState(false);
+  const [teamsLoading, setTeamsLoading] = useState(false);
 
   const loadApiKeys = useCallback(async () => {
     const q = new URLSearchParams();
@@ -167,10 +181,34 @@ export function ExpenditureDashboard() {
     }
   }, [loadApiKeys, loadSeries]);
 
+  const loadTeams = useCallback(async () => {
+    setTeamsLoading(true);
+    setError(null);
+    try {
+      const list = await fetchMyTeams();
+      setTeams(list);
+      setSelectedTeamId((prev) => {
+        if (prev && list.some((t) => t.id === prev)) return prev;
+        return list[0]?.id ?? "";
+      });
+    } catch (e: unknown) {
+      setTeams([]);
+      setSelectedTeamId("");
+      setError(e instanceof Error ? e.message : "내 팀 목록을 불러오지 못했습니다");
+    } finally {
+      setTeamsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (viewMode !== "team") return;
+    void loadTeams();
+  }, [loadTeams, viewMode]);
+
   const loadTeamRollup = useCallback(async () => {
-    const tid = teamIdInput.trim();
+    const tid = selectedTeamId.trim();
     if (!tid) {
-      setError("팀 ID를 입력하세요.");
+      setError("팀을 선택하세요.");
       return;
     }
     setTeamLoading(true);
@@ -180,7 +218,7 @@ export function ExpenditureDashboard() {
       if (userIds.length === 0) {
         setTeamRollup(null);
         setError(
-          "팀 멤버를 불러오지 못했습니다. 단일 오리진(예: identity :3000)에서 지출을 열었는지, 팀 ID가 맞는지 확인하세요."
+          "팀 멤버를 불러오지 못했습니다. 단일 오리진(예: identity :3000)에서 지출을 열었는지, 팀 권한이 있는지 확인하세요."
         );
         return;
       }
@@ -202,11 +240,18 @@ export function ExpenditureDashboard() {
     } finally {
       setTeamLoading(false);
     }
-  }, [teamIdInput]);
+  }, [selectedTeamId]);
 
-  const budgetRatio = useMemo(() => {
-    if (!summary?.monthlyBudgetUsd || summary.monthlyBudgetUsd <= 0) return null;
-    return Math.min(1, summary.totalCostUsd / summary.monthlyBudgetUsd);
+  const budgetUi = useMemo(() => {
+    const total = summary?.totalCostUsd ?? null;
+    const budget = summary?.monthlyBudgetUsd ?? null;
+    if (total == null) return null;
+    if (budget == null || budget <= 0) {
+      return { totalCostUsd: total, monthlyBudgetUsd: null as number | null, remainingUsd: null as number | null, pct: null as number | null };
+    }
+    const remaining = Math.max(0, budget - total);
+    const pct = Math.min(100, (total / budget) * 100);
+    return { totalCostUsd: total, monthlyBudgetUsd: budget, remainingUsd: remaining, pct };
   }, [summary]);
 
   const dailyChart = useMemo(
@@ -246,6 +291,47 @@ export function ExpenditureDashboard() {
         </p>
       </header>
 
+      {viewMode === "personal" && apiKeyId && budgetUi ? (
+        <section className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-sm">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div className="space-y-1">
+              <h2 className="text-sm font-medium text-muted-foreground">월 예산 대비</h2>
+              {budgetUi.monthlyBudgetUsd != null ? (
+                <p className="text-xs text-muted-foreground">
+                  이번 달 지출 {formatUsd(budgetUi.totalCostUsd)} / 월 예산 ${budgetUi.monthlyBudgetUsd.toFixed(2)} (잔여 $
+                  {(budgetUi.remainingUsd ?? 0).toFixed(2)})
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  월 예산: identity HTTP 연동이 없거나 미설정이면 표시되지 않습니다.
+                </p>
+              )}
+            </div>
+            {budgetUi.pct != null ? (
+              <div className="text-right">
+                <p className="text-xs text-muted-foreground">진행률</p>
+                <p className="text-lg font-semibold tabular-nums">{budgetUi.pct.toFixed(1)}%</p>
+              </div>
+            ) : null}
+          </div>
+
+          {budgetUi.pct != null ? (
+            <div className="space-y-1">
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>0%</span>
+                <span>100%</span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-primary transition-[width]"
+                  style={{ width: `${Math.min(100, Math.max(0, budgetUi.pct))}%` }}
+                />
+              </div>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
       <div
         className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-950 dark:text-amber-100"
         role="note"
@@ -282,6 +368,12 @@ export function ExpenditureDashboard() {
         ) : null}
       </div>
 
+      {error ? (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {error}
+        </div>
+      ) : null}
+
       {viewMode === "team" ? (
         <section className="space-y-4 rounded-xl border border-border bg-card p-4 shadow-sm">
           <h2 className="text-sm font-medium">팀 당월 누적 (billing 집계)</h2>
@@ -290,18 +382,41 @@ export function ExpenditureDashboard() {
           </p>
           <div className="flex flex-wrap items-end gap-2">
             <label className="flex flex-col gap-1 text-sm">
-              <span className="text-muted-foreground">팀 ID</span>
-              <input
-                className="h-9 min-w-[220px] rounded-md border border-input bg-background px-2 text-sm"
-                value={teamIdInput}
-                onChange={(e) => setTeamIdInput(e.target.value)}
-                placeholder="team-uuid"
-              />
+              <span className="text-muted-foreground">내 팀</span>
+              <select
+                className="h-9 min-w-[240px] rounded-md border border-input bg-background px-2 text-sm"
+                value={selectedTeamId}
+                onChange={(e) => {
+                  setSelectedTeamId(e.target.value);
+                  setTeamRollup(null);
+                }}
+                disabled={teamsLoading || teams.length === 0}
+              >
+                {teamsLoading ? (
+                  <option value="">불러오는 중…</option>
+                ) : teams.length === 0 ? (
+                  <option value="">표시할 팀이 없습니다</option>
+                ) : (
+                  teams.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name || t.id}
+                    </option>
+                  ))
+                )}
+              </select>
             </label>
             <button
               type="button"
+              className="h-9 rounded-md border border-border bg-background px-3 text-sm hover:bg-muted disabled:opacity-50"
+              disabled={teamsLoading}
+              onClick={() => void loadTeams()}
+            >
+              {teamsLoading ? "불러오는 중…" : "팀 목록 새로고침"}
+            </button>
+            <button
+              type="button"
               className="h-9 rounded-md bg-primary px-3 text-sm text-primary-foreground disabled:opacity-50"
-              disabled={teamLoading}
+              disabled={teamLoading || teamsLoading || !selectedTeamId}
               onClick={() => void loadTeamRollup()}
             >
               {teamLoading ? "불러오는 중…" : "집계"}
@@ -311,7 +426,7 @@ export function ExpenditureDashboard() {
           {teamRollup ? (
             <div className="space-y-3">
               <p className="text-lg font-semibold tabular-nums">
-                팀 당월 합계: ${teamRollup.totalCostUsd.toFixed(4)} USD
+                팀 당월 합계: {formatUsd(teamRollup.totalCostUsd)} USD
               </p>
               {teamMemberChart.length > 0 ? (
                 <div className="h-72 w-full rounded-xl border border-border bg-card p-2">
@@ -376,12 +491,6 @@ export function ExpenditureDashboard() {
             </div>
           </div>
 
-          {error ? (
-            <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {error}
-            </div>
-          ) : null}
-
           {loading ? <p className="text-sm text-muted-foreground">불러오는 중…</p> : null}
 
           {summary && apiKeyId ? (
@@ -390,7 +499,7 @@ export function ExpenditureDashboard() {
               <div className="flex flex-wrap items-baseline gap-6">
                 <div>
                   <p className="text-xs text-muted-foreground">총 지출 (USD)</p>
-                  <p className="text-2xl font-semibold tabular-nums">${summary.totalCostUsd.toFixed(4)}</p>
+                  <p className="text-2xl font-semibold tabular-nums">{formatUsd(summary.totalCostUsd)}</p>
                 </div>
                 {summary.monthlyBudgetUsd != null ? (
                   <div>
@@ -403,20 +512,6 @@ export function ExpenditureDashboard() {
                   </p>
                 )}
               </div>
-              {budgetRatio != null ? (
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>예산 대비</span>
-                    <span>{(budgetRatio * 100).toFixed(1)}%</span>
-                  </div>
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                    <div
-                      className="h-full rounded-full bg-primary transition-[width]"
-                      style={{ width: `${Math.min(100, budgetRatio * 100)}%` }}
-                    />
-                  </div>
-                </div>
-              ) : null}
             </section>
           ) : null}
 
