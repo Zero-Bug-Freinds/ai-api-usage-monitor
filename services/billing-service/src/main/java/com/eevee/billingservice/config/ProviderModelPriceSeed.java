@@ -5,6 +5,7 @@ import com.eevee.billingservice.pricing.OfficialProviderModelPriceCatalog;
 import com.eevee.billingservice.repository.ProviderModelPriceRepository;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,18 +17,31 @@ import org.springframework.transaction.annotation.Transactional;
 public class ProviderModelPriceSeed implements ApplicationRunner {
 
     private final ProviderModelPriceRepository priceRepository;
+    private final boolean seedMissingEnabled;
 
-    public ProviderModelPriceSeed(ProviderModelPriceRepository priceRepository) {
+    public ProviderModelPriceSeed(
+            ProviderModelPriceRepository priceRepository,
+            @Value("${billing.pricing.seed-missing:false}") boolean seedMissingEnabled
+    ) {
         this.priceRepository = priceRepository;
+        this.seedMissingEnabled = seedMissingEnabled;
     }
 
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        if (priceRepository.count() > 0) {
+        if (!seedMissingEnabled && priceRepository.count() > 0) {
             return;
         }
         for (OfficialProviderModelPriceCatalog.CatalogRow row : OfficialProviderModelPriceCatalog.seedRows()) {
+            if (seedMissingEnabled && priceRepository.existsByProviderAndModelAndValidFromAndValidTo(
+                    row.provider(),
+                    row.modelId(),
+                    row.validFrom(),
+                    null
+            )) {
+                continue;
+            }
             priceRepository.save(new ProviderModelPriceEntity(
                     row.provider(),
                     row.modelId(),
