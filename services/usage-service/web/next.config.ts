@@ -1,6 +1,6 @@
-// @ts-nocheck
 import type { NextConfig } from "next";
 import path from "path";
+import type { Configuration as WebpackConfig } from "webpack";
 
 if (process.env.NEXT_PRIVATE_LOCAL_WEBPACK !== "false") {
   process.env.NEXT_PRIVATE_LOCAL_WEBPACK = "true";
@@ -25,7 +25,7 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_BASE_PATH: basePath,
   },
-  webpack(config) {
+  webpack(config: WebpackConfig) {
     config.plugins.push(
       new NextFederationPlugin({
         name: "usage",
