@@ -3,8 +3,8 @@ export type {
   ConsoleNavMeta,
   ConsoleProfile,
   RouteOwner,
-} from "./console-nav-model"
-export { CONSOLE_MAIN_NAV_ORDER, CONSOLE_NAV } from "./console-nav-model"
+} from "./console-nav"
+export { CONSOLE_MAIN_NAV_ORDER, CONSOLE_NAV } from "./console-nav"
 export {
   anchorHrefForPublicPath,
   identityWebOrigin,
@@ -13,9 +13,13 @@ export {
   usageDashboardHref,
   usageEntryPublicPath,
   type ConsoleNavLinkSpec,
-} from "./console-nav-resolve"
+} from "./console-nav"
 export { ConsoleSidebar, type ConsoleSidebarProps } from "./console-sidebar"
-export { ConsoleShell, type ConsoleShellProps } from "./console-shell"
+export {
+  ConsoleShell,
+  type ConsoleShellProps,
+  resolveIdentityLogoutPathsFromEnv,
+} from "./console-shell"
 
 /** Alias for billing layouts (same layout as `ConsoleShell`). */
 export { ConsoleShell as BillingConsoleShell } from "./console-shell"
