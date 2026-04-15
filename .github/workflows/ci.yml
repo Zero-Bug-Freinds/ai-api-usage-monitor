@@ -302,7 +302,10 @@ jobs:
           pnpm --filter team-web test
           pnpm --filter notification-web test
           pnpm --filter notification-web run build
-          pnpm run build:web
+          pnpm run build:identity-web
+          pnpm run build:usage-web
+          pnpm run build:billing-web
+          pnpm run build:team-web
       - name: Docker deps base image (shared pnpm install layer)
         run: docker build -f docker/web-node-deps.Dockerfile -t web-node-deps:ci .
       - name: Docker image (identity-web, standalone)
