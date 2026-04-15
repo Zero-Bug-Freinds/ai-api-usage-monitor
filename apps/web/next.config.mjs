@@ -14,13 +14,9 @@ const nextConfig = {
   transpilePackages: ["@ai-usage/ui", "@ai-usage/shell"],
   webpack(config, { isServer }) {
     if (isServer) {
-      if (Array.isArray(config.externals)) {
-        config.externals.push("node:module");
-      } else if (config.externals === undefined) {
-        config.externals = ["node:module"];
-      } else {
-        config.externals = [config.externals, "node:module"];
-      }
+      config.externals = Array.isArray(config.externals)
+        ? [...config.externals, "node:module"]
+        : [config.externals, "node:module"].filter(Boolean);
     }
     config.plugins = config.plugins ?? [];
     config.plugins.push(
