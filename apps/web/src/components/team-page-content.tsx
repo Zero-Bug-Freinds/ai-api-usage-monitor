@@ -1,16 +1,27 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { RemoteErrorBoundary } from "@/components/remote-error-boundary";
 
-const TeamManagement = dynamic(() => import("team/TeamManagement"), { ssr: false });
-const TeamUsageDashboard = dynamic(() => import("usage/TeamUsageDashboard"), { ssr: false });
+const TeamManagement = dynamic(() => import("team/TeamManagement"), {
+  ssr: false,
+  loading: () => <p className="text-sm text-muted-foreground">Team remote loading...</p>,
+});
+const TeamUsageDashboard = dynamic(() => import("usage/TeamUsageDashboard"), {
+  ssr: false,
+  loading: () => <p className="text-sm text-muted-foreground">Usage remote loading...</p>,
+});
 
 export function TeamPageContent() {
   return (
     <div className="flex h-full w-full gap-4 p-4">
       <div className="flex w-1/4 min-w-[240px] flex-col gap-4">
         <section className="flex-1 overflow-y-auto rounded-lg border border-border bg-card p-4">
-          <TeamManagement />
+          <RemoteErrorBoundary
+            fallback={<p className="text-sm text-muted-foreground">Team remote를 불러오지 못했습니다.</p>}
+          >
+            <TeamManagement />
+          </RemoteErrorBoundary>
         </section>
       </div>
 
@@ -21,7 +32,11 @@ export function TeamPageContent() {
           </p>
         </section>
         <section className="flex-1 rounded-lg border border-border bg-card p-4">
-          <TeamUsageDashboard />
+          <RemoteErrorBoundary
+            fallback={<p className="text-sm text-muted-foreground">Usage remote를 불러오지 못했습니다.</p>}
+          >
+            <TeamUsageDashboard />
+          </RemoteErrorBoundary>
         </section>
       </div>
     </div>
