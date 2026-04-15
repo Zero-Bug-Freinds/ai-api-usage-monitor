@@ -12,19 +12,22 @@ const nextConfig = {
   output: "standalone",
   outputFileTracingRoot: path.join(__dirname, "../.."),
   transpilePackages: ["@ai-usage/ui", "@ai-usage/shell"],
-  webpack(config, { isServer }) {
-    if (isServer) {
-      const prevExternals = config.externals;
-      config.externals = [
-        ...(Array.isArray(prevExternals) ? prevExternals : [prevExternals]),
-        ({ request }, callback) => {
-          if (request && /^node:/.test(request)) {
-            return callback(null, `commonjs ${request}`);
-          }
-          callback();
-        },
-      ].filter(Boolean);
-    }
+  // Avoid bundling MF (and its `node:` imports) on the server; pairs with webpack externals below.
+  serverExternalPackages: ["@module-federation/nextjs-mf"],
+  webpack(config) {
+    // `node:` is not a webpack-supported URI scheme. @module-federation/nextjs-mf pulls
+    // `import "node:module"` into the graph; if externals only run for `isServer`, the client
+    // build still tries to load that URI and fails with UnhandledSchemeError.
+    const prevExternals = config.externals;
+    config.externals = [
+      ...(Array.isArray(prevExternals) ? prevExternals : [prevExternals]),
+      ({ request }, callback) => {
+        if (request && /^node:/.test(request)) {
+          return callback(null, `commonjs ${request}`);
+        }
+        callback();
+      },
+    ].filter(Boolean);
     config.plugins = config.plugins ?? [];
     config.plugins.push(
       new NextFederationPlugin({
