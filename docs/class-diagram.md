@@ -1,6 +1,6 @@
 # Class Diagram
 
-`docs/c4-architecture-diagrams.md`에 붙여 넣을 수 있도록 Mermaid 클래스 다이어그램을 정리합니다. 최근 변경(Usage 대시보드·분석 API, 게이트웨이 신뢰 필터, Identity 세션 API 등)을 반영했습니다.
+`docs/c4-architecture-diagrams.md`에 붙여 넣을 수 있도록 Mermaid 클래스 다이어그램을 정리합니다. 최근 변경(Usage 대시보드·분석 API, 게이트웨이 신뢰 필터, Identity 세션 API, Billing 과금·집계, Notification 인앱 API 등)을 반영했습니다.
 
 **가독성:** 전 서비스를 한 그림에 넣으면 노드가 과다해지므로, **① 교차 서비스 개요** 후 **② 서비스·관심사별 서브다이어그램**으로 나눴습니다.
 
@@ -29,6 +29,8 @@ class UsageDashboardService
 class UsageRecordedEventListener
 class UsageRecordedService
 class UsageRecordedEvent
+class BillingUsageRecordedEventListener
+class BillingRecordedService
 
 AuthController --> UserService
 ProxyController --> ProxyRelayService
@@ -36,6 +38,8 @@ ProxyRelayService --> UsageEventPublisher
 UsageEventPublisher ..> UsageRecordedEvent : publishes JSON
 UsageRecordedEventListener --> UsageRecordedService
 UsageRecordedEventListener ..> UsageRecordedEvent : deserializes
+BillingUsageRecordedEventListener --> BillingRecordedService
+BillingUsageRecordedEventListener ..> UsageRecordedEvent : deserializes
 
 ProxyTrustHeadersWebFilter --> GatewayProperties
 GatewaySecurityConfiguration --> GatewayProperties
@@ -280,9 +284,107 @@ UsageRecordedEvent --> AiProvider
 
 ---
 
-## 8) Web (`apps/web`) — 다이어그램 (과도기 통합 Next; 목표 `services/*/web/`)
+## 9) Billing Service — Gateway trust & expenditure HTTP
 
-Java 백엔드 절(1–7)과 달리, **Next.js 앱 Mermaid 도식은 `docs/c4-architecture-diagrams.md` 한 곳에만 두고** 디렉터리·BFF·미들웨어가 바뀔 때 그 절(W1–W4)을 갱신한다.
+게이트웨이가 넘긴 `X-User-Id` / `X-Gateway-Auth`를 **`BillingGatewayTrustFilter`**에서 검증·요청 속성으로 두고, **`ExpenditureController`**가 **`ExpenditureQueryService`**·**`ExpenditureTeamRollupService`**로 지출 조회·팀 롤업을 위임합니다.
+
+```mermaid
+classDiagram
+direction TB
+
+class BillingGatewayTrustFilter
+class OncePerRequestFilter
+class BillingProperties
+class ExpenditureController
+class ExpenditureQueryService
+class ExpenditureTeamRollupService
+class DailyExpenditureAggRepository
+class MonthlyExpenditureAggRepository
+class BillingUserApiKeySeenRepository
+class IdentityBudgetClient
+
+BillingGatewayTrustFilter --|> OncePerRequestFilter
+BillingGatewayTrustFilter --> BillingProperties
+ExpenditureController --> ExpenditureQueryService
+ExpenditureController --> ExpenditureTeamRollupService
+ExpenditureController ..> BillingGatewayTrustFilter : ATTR_USER_ID
+ExpenditureQueryService --> DailyExpenditureAggRepository
+ExpenditureQueryService --> MonthlyExpenditureAggRepository
+ExpenditureQueryService --> BillingUserApiKeySeenRepository
+ExpenditureQueryService --> IdentityBudgetClient
+ExpenditureQueryService --> BillingProperties
+```
+
+---
+
+## 10) Billing Service — Rabbit ingestion & cost publishing
+
+**`BillingUsageRecordedEventListener`**가 `usage-recorded` 큐의 JSON을 **`UsageRecordedEvent`**로 역직렬화한 뒤 **`BillingRecordedService`**가 멱등·가격·일/월 집계를 처리하고, 설정에 따라 **`UsageCostFinalizedEventPublisher`**로 비용 확정 이벤트를 발행합니다.
+
+```mermaid
+classDiagram
+direction TB
+
+class BillingUsageRecordedEventListener
+class ObjectMapper
+class BillingRecordedService
+class BillingProcessedEventRepository
+class ProviderModelPriceRepository
+class BillingAggregationJdbc
+class UsageCostFinalizedEventPublisher
+class BillingProcessedEventLifecycle
+class BillingRabbitProperties
+class BillingProcessedEventEntity
+class JpaRepository
+class UsageRecordedEvent
+class TokenUsage
+class AiProvider
+
+BillingUsageRecordedEventListener --> ObjectMapper
+BillingUsageRecordedEventListener --> BillingRecordedService
+BillingUsageRecordedEventListener ..> UsageRecordedEvent
+BillingRecordedService --> BillingProcessedEventRepository
+BillingRecordedService --> ProviderModelPriceRepository
+BillingRecordedService --> BillingAggregationJdbc
+BillingRecordedService --> UsageCostFinalizedEventPublisher
+BillingRecordedService --> BillingProcessedEventLifecycle
+BillingRecordedService --> BillingRabbitProperties
+BillingRecordedService ..> UsageRecordedEvent
+BillingRecordedService ..> BillingProcessedEventEntity
+BillingProcessedEventRepository --|> JpaRepository
+UsageRecordedEvent --> TokenUsage
+UsageRecordedEvent --> AiProvider
+```
+
+---
+
+## 11) Notification Service (NestJS / Prisma)
+
+인앱 알림 API는 **`InAppNotificationsController`**가 **`InAppAuthGuard`**(게이트웨이 `X-User-Id`·내부 시크릿) 뒤에서 **`InAppNotificationsService`**로 Prisma 접근을 위임합니다. 스키마 모델은 `services/notification-service/prisma/schema.prisma`를 본다.
+
+```mermaid
+classDiagram
+direction TB
+
+class InAppNotificationsController
+class InAppAuthGuard
+class ConfigService
+class InAppNotificationsService
+class PrismaService
+class InAppNotification
+
+InAppNotificationsController --> InAppNotificationsService
+InAppNotificationsController ..> InAppAuthGuard : @UseGuards
+InAppAuthGuard --> ConfigService
+InAppNotificationsService --> PrismaService
+InAppNotificationsService ..> InAppNotification : Prisma model
+```
+
+---
+
+## 12) Web (`apps/web`) — 다이어그램 (과도기 통합 Next; 목표 `services/*/web/`)
+
+Java·Billing 백엔드 절(1–7, 9–10)·Notification 절(11)과 달리, **Next.js 앱 Mermaid 도식은 `docs/c4-architecture-diagrams.md` 한 곳에만 두고** 디렉터리·BFF·미들웨어가 바뀔 때 그 절(W1–W4)을 갱신한다.
 
 | 구분 | 문서 위치 |
 |------|-----------|
