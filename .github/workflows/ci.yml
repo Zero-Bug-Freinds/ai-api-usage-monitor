@@ -255,6 +255,7 @@ jobs:
         run: pnpm store prune
       - name: Install workspace
         run: pnpm install --frozen-lockfile
+      # ESLint: omit --max-warnings so only errors fail the step; warnings do not stop CI
       - name: Lint / test / build (web-host)
         run: |
           pnpm --filter web-host run lint
@@ -283,6 +284,7 @@ jobs:
         run: pnpm store prune
       - name: Install workspace
         run: pnpm install --frozen-lockfile
+      # ESLint: omit --max-warnings so only errors fail the step; warnings do not stop CI
       - name: Lint / test / build (service web apps)
         run: |
           pnpm --filter identity-web run lint
@@ -333,6 +335,7 @@ jobs:
       - name: Verify MF plugin settings (usage/team remotes)
         run: |
           node -e "const fs=require('node:fs');const checks=[['services/usage-service/web-mfe/next.config.ts',['NextFederationPlugin','name: \"usage\"','filename: \"static/chunks/remoteEntry.js\"']],['services/team-service/web-mfe/next.config.ts',['NextFederationPlugin','name: \"team\"','filename: \"static/chunks/remoteEntry.js\"']]];for(const [p,needles] of checks){const c=fs.readFileSync(p,'utf8');for(const n of needles){if(!c.includes(n)){throw new Error('missing '+n+' in '+p)}}}"
+      # ESLint: omit --max-warnings so only errors fail the step; warnings do not stop CI
       - name: Lint / typecheck / build (web-mfe)
         run: |
           pnpm --filter usage-web-mfe run lint

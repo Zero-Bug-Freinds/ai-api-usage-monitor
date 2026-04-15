@@ -6,7 +6,7 @@
     "dev": "next dev -p 3011",
     "build": "next build",
     "start": "next start -p 3011",
-    "lint": "eslint . --max-warnings=-1"
+    "lint": "eslint ."
   },
   "dependencies": {
     "@ai-usage/shell": "workspace:*",
