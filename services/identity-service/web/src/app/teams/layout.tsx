@@ -1,7 +1,7 @@
 import type { ReactNode } from "react"
 
-import { DashboardShell } from "@/components/dashboard/dashboard-shell"
+import { ConsoleShell } from "@ai-usage/shell"
 
 export default function TeamsLayout({ children }: { children: ReactNode }) {
-  return <DashboardShell>{children}</DashboardShell>
+  return <ConsoleShell profile="identity">{children}</ConsoleShell>
 }
