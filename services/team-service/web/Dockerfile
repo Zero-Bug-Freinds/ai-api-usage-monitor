@@ -26,7 +26,10 @@ COPY --from=deps /repo/pnpm-workspace.yaml ./pnpm-workspace.yaml
 COPY --from=deps /repo/package.json ./package.json
 COPY --from=deps /repo/packages/ui/package.json ./packages/ui/package.json
 COPY --from=deps /repo/packages/shell/package.json ./packages/shell/package.json
+COPY --from=deps /repo/packages/ui/node_modules ./packages/ui/node_modules
+COPY --from=deps /repo/packages/shell/node_modules ./packages/shell/node_modules
 COPY --from=deps /repo/services/team-service/web/package.json ./services/team-service/web/package.json
+COPY --from=deps /repo/services/team-service/web/node_modules ./services/team-service/web/node_modules
 
 # [중요] 리팩터링된 소스 코드 전체 복사
 # Tailwind가 packages/shell/src 내의 파일을 스캔해야 하므로 통째로 복사합니다.
