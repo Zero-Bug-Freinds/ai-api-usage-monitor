@@ -2,11 +2,11 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { useRouter } from "next/router";
 import { ConsoleShell, ConsoleSidebar } from "@ai-usage/shell";
 
 export function HostShellLayout({ children }: { children: ReactNode }) {
-  const pathname = usePathname() ?? "";
+  const { pathname } = useRouter();
 
   return (
     <ConsoleShell
