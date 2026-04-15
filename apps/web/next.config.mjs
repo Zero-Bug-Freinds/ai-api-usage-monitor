@@ -1,33 +1,18 @@
-import { createRequire } from "module";
 import path from "path";
 import { fileURLToPath } from "url";
+import NextFederationPlugin from "@module-federation/nextjs-mf";
 
-const require = createRequire(import.meta.url);
-
-if (process.env.NEXT_PRIVATE_LOCAL_WEBPACK !== "false") {
-  process.env.NEXT_PRIVATE_LOCAL_WEBPACK = "true";
-}
-
-function getNextFederationPlugin() {
-  const mf = require("@module-federation/nextjs-mf");
-  if (!mf?.NextFederationPlugin) {
-    throw new Error("NextFederationPlugin export not found from @module-federation/nextjs-mf");
-  }
-  return mf.NextFederationPlugin;
-}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const teamRemoteOrigin = process.env.NEXT_PUBLIC_MFE_TEAM_REMOTE_URL ?? "http://localhost:3002/teams";
-const usageRemoteOrigin = process.env.NEXT_PUBLIC_MFE_USAGE_REMOTE_URL ?? "http://localhost:3001/dashboard";
+const teamRemoteOrigin = process.env.NEXT_PUBLIC_MFE_TEAM_REMOTE_URL ?? "http://localhost:3012";
+const usageRemoteOrigin = process.env.NEXT_PUBLIC_MFE_USAGE_REMOTE_URL ?? "http://localhost:3011";
 
 /** @type {import("next").NextConfig} */
 const nextConfig = {
   output: "standalone",
   outputFileTracingRoot: path.join(__dirname, "../.."),
   transpilePackages: ["@ai-usage/ui", "@ai-usage/shell"],
-  webpack(config, { isServer }) {
-    if (isServer) return config;
-    const NextFederationPlugin = getNextFederationPlugin();
+  webpack(config) {
     config.plugins = config.plugins ?? [];
     config.plugins.push(
       new NextFederationPlugin({
@@ -38,8 +23,8 @@ const nextConfig = {
         },
         filename: "static/chunks/remoteEntry.js",
         shared: {
-          react: { singleton: true, requiredVersion: false },
-          "react-dom": { singleton: true, requiredVersion: false },
+          react: { singleton: true, strictVersion: true, requiredVersion: "19.2.4", eager: true },
+          "react-dom": { singleton: true, strictVersion: true, requiredVersion: "19.2.4", eager: true },
         },
       })
     );

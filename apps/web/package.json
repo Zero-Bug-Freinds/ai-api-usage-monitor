@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3100 --webpack",
-    "build": "cross-env NEXT_PRIVATE_LOCAL_WEBPACK=true next build --webpack",
+    "dev": "next dev -p 3100",
+    "build": "next build",
     "start": "next start -p 3100",
     "lint": "eslint",
     "test": "vitest run --passWithNoTests",
@@ -26,7 +26,6 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "cross-env": "^7.0.3",
     "eslint": "^9",
     "eslint-config-next": "15.2.4",
     "tailwindcss": "^4",
