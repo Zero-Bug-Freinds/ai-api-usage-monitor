@@ -48,6 +48,8 @@ public interface ExternalApiKeyRepository extends JpaRepository<ExternalApiKeyEn
 
 	long countByUserIdAndDeletionRequestedAtIsNull(Long userId);
 
+	long countByUserIdAndDeletionRequestedAtIsNullAndMonthlyBudgetUsdIsNotNull(Long userId);
+
 	List<ExternalApiKeyEntity> findAllByUserIdOrderByCreatedAtDesc(Long userId);
 
 	Optional<ExternalApiKeyEntity> findTopByUserIdAndProviderAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(
@@ -62,6 +64,15 @@ public interface ExternalApiKeyRepository extends JpaRepository<ExternalApiKeyEn
 			  and e.deletionRequestedAt is null
 			""")
 	java.math.BigDecimal sumMonthlyBudgetUsdByUserIdAndDeletionRequestedAtIsNull(@Param("userId") Long userId);
+
+	@Query("""
+			select sum(e.monthlyBudgetUsd)
+			from ExternalApiKeyEntity e
+			where e.userId = :userId
+			  and e.deletionRequestedAt is null
+			  and e.monthlyBudgetUsd is not null
+			""")
+	java.math.BigDecimal sumMonthlyBudgetUsdByUserIdAndActiveBudgetAssigned(@Param("userId") Long userId);
 
 	Optional<ExternalApiKeyEntity> findByIdAndUserId(Long id, Long userId);
 
