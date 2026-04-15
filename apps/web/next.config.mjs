@@ -14,7 +14,7 @@ const nextConfig = {
   transpilePackages: ["@ai-usage/ui", "@ai-usage/shell"],
   // Avoid bundling MF (and its `node:` imports) on the server; pairs with webpack externals below.
   serverExternalPackages: ["@module-federation/nextjs-mf"],
-  webpack(config, { isServer }) {
+  webpack(config, { isServer: _isServer }) {
     // `node:` is not a webpack-supported URI scheme. @module-federation/nextjs-mf pulls
     // `import "node:module"` into the graph; if externals only run for `isServer`, the client
     // build still tries to load that URI and fails with UnhandledSchemeError.
@@ -29,22 +29,20 @@ const nextConfig = {
       },
     ].filter(Boolean);
     config.plugins = config.plugins ?? [];
-    if (!isServer) {
-      config.plugins.push(
-        new NextFederationPlugin({
-          name: "host",
-          remotes: {
-            team: `team@${teamRemoteOrigin.replace(/\/$/, "")}/_next/static/chunks/remoteEntry.js`,
-            usage: `usage@${usageRemoteOrigin.replace(/\/$/, "")}/_next/static/chunks/remoteEntry.js`,
-          },
-          filename: "static/chunks/remoteEntry.js",
-          shared: {
-            react: { singleton: true, strictVersion: true, requiredVersion: "19.2.4", eager: true },
-            "react-dom": { singleton: true, strictVersion: true, requiredVersion: "19.2.4", eager: true },
-          },
-        })
-      );
-    }
+    config.plugins.push(
+      new NextFederationPlugin({
+        name: "host",
+        remotes: {
+          team: `team@${teamRemoteOrigin.replace(/\/$/, "")}/_next/static/chunks/remoteEntry.js`,
+          usage: `usage@${usageRemoteOrigin.replace(/\/$/, "")}/_next/static/chunks/remoteEntry.js`,
+        },
+        filename: "static/chunks/remoteEntry.js",
+        shared: {
+          react: { singleton: true, strictVersion: true, requiredVersion: "19.2.4" },
+          "react-dom": { singleton: true, strictVersion: true, requiredVersion: "19.2.4" },
+        },
+      })
+    );
     return config;
   },
 };
