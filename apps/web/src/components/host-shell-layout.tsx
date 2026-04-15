@@ -1,7 +1,6 @@
 "use client";
 
 import type { ReactNode } from "react";
-import Link from "next/link";
 
 export function HostShellLayout({ children }: { children: ReactNode }) {
   return (
@@ -15,12 +14,14 @@ export function HostShellLayout({ children }: { children: ReactNode }) {
             </p>
           </div>
           <nav className="flex flex-1 flex-col gap-1 px-3 py-3" aria-label="앱 메뉴">
-            <Link href="/" className="block rounded-md px-3 py-2.5 text-sm font-medium hover:bg-sidebar-accent/60">
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+            <a href="/" className="block rounded-md px-3 py-2.5 text-sm font-medium hover:bg-sidebar-accent/60">
               홈(/)
-            </Link>
-            <Link href="/team" className="block rounded-md px-3 py-2.5 text-sm font-medium hover:bg-sidebar-accent/60">
+            </a>
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+            <a href="/team" className="block rounded-md px-3 py-2.5 text-sm font-medium hover:bg-sidebar-accent/60">
               팀(/team)
-            </Link>
+            </a>
           </nav>
           <div className="mt-auto border-t border-sidebar-border px-3 py-4">
             <p className="text-xs text-muted-foreground">web-host · module federation</p>
