@@ -1,3 +1,5 @@
+ARG WEB_NODE_DEPS_IMAGE=deps-local
+
 FROM node:22-alpine AS deps-local
 WORKDIR /repo
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
@@ -6,7 +8,6 @@ COPY packages/ui/package.json ./packages/ui/
 COPY services/team-service/web/package.json ./services/team-service/web/
 RUN pnpm install --frozen-lockfile
 
-ARG WEB_NODE_DEPS_IMAGE=deps-local
 FROM ${WEB_NODE_DEPS_IMAGE} AS deps
 
 FROM node:22-alpine AS builder
@@ -18,7 +19,9 @@ COPY --from=deps /repo/pnpm-lock.yaml ./pnpm-lock.yaml
 COPY --from=deps /repo/pnpm-workspace.yaml ./pnpm-workspace.yaml
 COPY --from=deps /repo/package.json ./package.json
 COPY --from=deps /repo/packages/ui/package.json ./packages/ui/package.json
+COPY --from=deps /repo/packages/ui/node_modules ./packages/ui/node_modules
 COPY --from=deps /repo/services/team-service/web/package.json ./services/team-service/web/package.json
+COPY --from=deps /repo/services/team-service/web/node_modules ./services/team-service/web/node_modules
 
 COPY packages/ui ./packages/ui
 COPY services/team-service/web ./services/team-service/web

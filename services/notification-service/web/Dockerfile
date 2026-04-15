@@ -1,6 +1,8 @@
 # Next.js standalone — 패턴은 usage-web 과 동일 (저장소 루트에서 빌드).
 #   docker build -f services/notification-service/web/Dockerfile -t notification-web:local .
 
+ARG WEB_NODE_DEPS_IMAGE=deps-local
+
 FROM node:22-alpine AS deps-local
 WORKDIR /repo
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
@@ -10,7 +12,6 @@ COPY packages/shell/package.json ./packages/shell/
 COPY services/notification-service/web/package.json ./services/notification-service/web/
 RUN pnpm install --frozen-lockfile
 
-ARG WEB_NODE_DEPS_IMAGE=deps-local
 FROM ${WEB_NODE_DEPS_IMAGE} AS deps
 
 FROM node:22-alpine AS builder
@@ -22,8 +23,11 @@ COPY --from=deps /repo/pnpm-lock.yaml ./pnpm-lock.yaml
 COPY --from=deps /repo/pnpm-workspace.yaml ./pnpm-workspace.yaml
 COPY --from=deps /repo/package.json ./package.json
 COPY --from=deps /repo/packages/ui/package.json ./packages/ui/package.json
+COPY --from=deps /repo/packages/ui/node_modules ./packages/ui/node_modules
 COPY --from=deps /repo/packages/shell/package.json ./packages/shell/package.json
+COPY --from=deps /repo/packages/shell/node_modules ./packages/shell/node_modules
 COPY --from=deps /repo/services/notification-service/web/package.json ./services/notification-service/web/package.json
+COPY --from=deps /repo/services/notification-service/web/node_modules ./services/notification-service/web/node_modules
 
 COPY packages/ui ./packages/ui
 COPY packages/shell ./packages/shell
