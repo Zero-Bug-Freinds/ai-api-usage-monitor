@@ -18,9 +18,10 @@ const LOGS_PAGE_SIZE = 20
 const LOG_PROVIDER_ALL = "__all__"
 const LOG_API_KEY_ALL = "__all__"
 
-function maskApiKey(id: string): string {
-  if (id.length <= 12) return id
-  return `${id.slice(0, 12)}…`
+function toApiKeyLabel(item: UsageLogApiKeyItemResponse): string {
+  const alias = item.alias?.trim()
+  if (!alias) return "별칭 없음"
+  return item.status === "DELETED" ? `${alias} (삭제)` : alias
 }
 
 export function UsageLogPanel() {
@@ -30,7 +31,7 @@ export function UsageLogPanel() {
   const [logsPage, setLogsPage] = React.useState(0)
   const [logProvider, setLogProvider] = React.useState<string>(LOG_PROVIDER_ALL)
   const [apiKeyFilter, setApiKeyFilter] = React.useState<string>(LOG_API_KEY_ALL)
-  const [apiKeyOptions, setApiKeyOptions] = React.useState<string[]>([])
+  const [apiKeyOptions, setApiKeyOptions] = React.useState<UsageLogApiKeyItemResponse[]>([])
   const [modelDraft, setModelDraft] = React.useState("")
   const [appliedModelMask, setAppliedModelMask] = React.useState("")
   const [logRefresh, setLogRefresh] = React.useState(0)
@@ -50,7 +51,7 @@ export function UsageLogPanel() {
         const q = buildUsageQuery({ provider: providerParam })
         const data = await fetchUsageJson<UsageLogApiKeyItemResponse[]>(`logs/api-keys${q}`)
         if (!cancelled) {
-          setApiKeyOptions(Array.isArray(data) ? data.map((x) => x.apiKeyId) : [])
+          setApiKeyOptions(Array.isArray(data) ? data : [])
         }
       } catch {
         if (!cancelled) setApiKeyOptions([])
@@ -134,9 +135,9 @@ export function UsageLogPanel() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={LOG_API_KEY_ALL}>전체</SelectItem>
-              {apiKeyOptions.map((id) => (
-                <SelectItem key={id} value={id}>
-                  {maskApiKey(id)}
+              {apiKeyOptions.map((item) => (
+                <SelectItem key={item.apiKeyId} value={item.apiKeyId}>
+                  {toApiKeyLabel(item)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -193,9 +194,7 @@ export function UsageLogPanel() {
                       {formatOccurredAtKst(row.occurredAt)}
                     </td>
                     <td className="px-3 py-2">{row.provider}</td>
-                    <td className="px-3 py-2 font-mono text-xs">
-                      {row.apiKeyId ? maskApiKey(row.apiKeyId) : "—"}
-                    </td>
+                    <td className="px-3 py-2">{row.apiKeyAlias ?? "—"}</td>
                     <td className="px-3 py-2 font-mono text-xs">{row.model}</td>
                     <td className="px-3 py-2 tabular-nums">{row.totalTokens ?? "—"}</td>
                     <td className="px-3 py-2 tabular-nums">

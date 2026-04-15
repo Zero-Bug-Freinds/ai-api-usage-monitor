@@ -1,6 +1,7 @@
 package com.eevee.usageservice.repository;
 
 import com.eevee.usage.events.AiProvider;
+import com.eevee.usageservice.api.dto.UsageLogApiKeyItemResponse;
 import com.eevee.usageservice.domain.UsageRecordedLogEntity;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -25,6 +26,7 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
     @Query(
             value = """
                     select u from UsageRecordedLogEntity u
+                    left join fetch u.apiKeyMetadata m
                     where u.userId = :userId
                     and u.occurredAt >= :from
                     and u.occurredAt < :toExclusive
@@ -55,18 +57,24 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
 
     @Query(
             """
-                    select u.apiKeyId from UsageRecordedLogEntity u
+                    select new com.eevee.usageservice.api.dto.UsageLogApiKeyItemResponse(
+                        u.apiKeyId,
+                        m.alias,
+                        m.status
+                    )
+                    from UsageRecordedLogEntity u
+                    left join u.apiKeyMetadata m
                     where u.userId = :userId
                     and u.occurredAt >= :from
                     and u.occurredAt < :toExclusive
                     and u.apiKeyId is not null
                     and trim(u.apiKeyId) <> ''
                     and (:provider is null or u.provider = :provider)
-                    group by u.apiKeyId
+                    group by u.apiKeyId, m.alias, m.status
                     order by u.apiKeyId
                     """
     )
-    List<String> findDistinctApiKeyIdsForUserInRange(
+    List<UsageLogApiKeyItemResponse> findDistinctApiKeysForUserInRange(
             @Param("userId") String userId,
             @Param("from") Instant from,
             @Param("toExclusive") Instant toExclusive,
