@@ -12,6 +12,16 @@ on:
     branches:
       - main
       - develop
+    paths:
+      - '.github/workflows/**'
+      - 'services/**'
+      - 'apps/web/**'
+      - 'packages/**'
+      - 'libs/**'
+      - 'docker-compose.yml'
+      - 'pnpm-workspace.yaml'
+      - 'pnpm-lock.yaml'
+      - 'package.json'
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -31,7 +41,10 @@ jobs:
       billing: ${{ steps.filter.outputs.billing }}
       team: ${{ steps.filter.outputs.team }}
       notification: ${{ steps.filter.outputs.notification }}
-      web: ${{ steps.filter.outputs.web }}
+      web_host: ${{ steps.filter.outputs.web_host }}
+      web_apps: ${{ steps.filter.outputs.web_apps }}
+      web_mfe: ${{ steps.filter.outputs.web_mfe }}
+      web_shared: ${{ steps.filter.outputs.web_shared }}
       workflows: ${{ steps.filter.outputs.workflows }}
     steps:
       - uses: actions/checkout@v4
@@ -55,13 +68,18 @@ jobs:
               - 'services/team-service/**'
             notification:
               - 'services/notification-service/**'
-            web:
+            web_host:
               - 'apps/web/**'
+            web_apps:
               - 'services/identity-service/web/**'
               - 'services/usage-service/web/**'
               - 'services/billing-service/web/**'
               - 'services/team-service/web/**'
               - 'services/notification-service/web/**'
+            web_mfe:
+              - 'services/usage-service/web-mfe/**'
+              - 'services/team-service/web-mfe/**'
+            web_shared:
               - 'packages/ui/**'
               - 'packages/shell/**'
               - 'pnpm-workspace.yaml'
@@ -220,11 +238,11 @@ jobs:
       - name: Build (Nest)
         run: pnpm --filter notification-service run build
 
-  web:
-    name: Build web (identity + usage + billing + team)
+  web-host:
+    name: Build web-host (apps/web)
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.web == 'true' || needs.changes.outputs.workflows == 'true'
+    if: needs.changes.outputs.web_host == 'true' || needs.changes.outputs.web_shared == 'true' || needs.changes.outputs.workflows == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -237,27 +255,53 @@ jobs:
         run: pnpm store prune
       - name: Install workspace
         run: pnpm install --frozen-lockfile
-      - name: Lint / test / build (Next apps)
+      - name: Lint / test / build (web-host)
         run: |
           pnpm --filter web-host run lint
+          pnpm --filter web-host run test
+          pnpm --filter web-host run build
+      - name: Verify host remotes configuration
+        run: |
+          node -e "const fs=require('node:fs');const p='apps/web/next.config.mjs';const c=fs.readFileSync(p,'utf8');for(const x of ['NextFederationPlugin','team@','usage@','remoteEntry.js']){if(!c.includes(x)){throw new Error('missing '+x+' in '+p)}}"
+      - name: Docker image (web-host, standalone)
+        run: docker build -f apps/web/Dockerfile -t web-host:ci .
+
+  web-apps:
+    name: Build web apps (services/*/web)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.web_apps == 'true' || needs.changes.outputs.web_shared == 'true' || needs.changes.outputs.workflows == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Reset pnpm store metadata
+        run: pnpm store prune
+      - name: Install workspace
+        run: pnpm install --frozen-lockfile
+      - name: Lint / test / build (service web apps)
+        run: |
           pnpm --filter identity-web run lint
           pnpm --filter usage-web run lint
           pnpm --filter billing-web run lint
           pnpm --filter team-web run lint
           pnpm --filter notification-web run lint
-          pnpm --filter web-host run test
           pnpm --filter identity-web test
           pnpm --filter usage-web test
           pnpm --filter billing-web test
           pnpm --filter team-web test
           pnpm --filter notification-web test
-          pnpm --filter web-host run build
           pnpm --filter notification-web run build
-          pnpm run build:web
+          pnpm --filter identity-web run build
+          pnpm --filter usage-web run build
+          pnpm --filter billing-web run build
+          pnpm --filter team-web run build
       - name: Docker image (identity-web, standalone)
         run: docker build -f services/identity-service/web/Dockerfile -t identity-web:ci .
-      - name: Docker image (web-host, standalone)
-        run: docker build -f apps/web/Dockerfile -t web-host:ci .
       - name: Docker image (usage-web, standalone)
         run: docker build -f services/usage-service/web/Dockerfile -t usage-web:ci .
       - name: Docker image (billing-web, standalone)
@@ -266,6 +310,41 @@ jobs:
         run: docker build -f services/team-service/web/Dockerfile -t team-web:ci .
       - name: Docker image (notification-web, standalone)
         run: docker build -f services/notification-service/web/Dockerfile -t notification-web:ci .
+
+  web-mfe:
+    name: Build web-mfe remotes (usage/team)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.web_mfe == 'true' || needs.changes.outputs.web_shared == 'true' || needs.changes.outputs.workflows == 'true'
+    env:
+      NEXT_PRIVATE_LOCAL_WEBPACK: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Reset pnpm store metadata
+        run: pnpm store prune
+      - name: Install workspace
+        run: pnpm install --frozen-lockfile
+      - name: Verify MF plugin settings (usage/team remotes)
+        run: |
+          node -e "const fs=require('node:fs');const checks=[['services/usage-service/web-mfe/next.config.ts',['NextFederationPlugin','name: \"usage\"','filename: \"static/chunks/remoteEntry.js\"']],['services/team-service/web-mfe/next.config.ts',['NextFederationPlugin','name: \"team\"','filename: \"static/chunks/remoteEntry.js\"']]];for(const [p,needles] of checks){const c=fs.readFileSync(p,'utf8');for(const n of needles){if(!c.includes(n)){throw new Error('missing '+n+' in '+p)}}}"
+      - name: Lint / typecheck / build (web-mfe)
+        run: |
+          pnpm --filter usage-web-mfe run lint
+          pnpm --filter team-web-mfe run lint
+          pnpm --filter usage-web-mfe exec tsc --noEmit
+          pnpm --filter team-web-mfe exec tsc --noEmit
+          pnpm --filter usage-web-mfe run build
+          pnpm --filter team-web-mfe run build
+      - name: Docker image (usage-web-mfe, standalone)
+        run: docker build -f services/usage-service/web-mfe/Dockerfile -t usage-web-mfe:ci .
+      - name: Docker image (team-web-mfe, standalone)
+        run: docker build -f services/team-service/web-mfe/Dockerfile -t team-web-mfe:ci .
 
   # Single required check for branch protection.
   # Skipped Java/Compose jobs (path filter) do not fail the workflow.
@@ -282,7 +361,9 @@ jobs:
       - billing-service
       - team-service
       - notification-service
-      - web
+      - web-host
+      - web-apps
+      - web-mfe
     if: always()
     steps:
       - name: Assert required jobs
@@ -299,7 +380,7 @@ jobs:
             echo "compose-validate did not succeed: ${{ needs.compose-validate.result }}"
             exit 1
           fi
-          for name in identity-service proxy-gateway-service usage-service billing-service team-service notification-service web; do
+          for name in identity-service proxy-gateway-service usage-service billing-service team-service notification-service web-host web-apps web-mfe; do
             case "$name" in
               identity-service) v="${{ needs.identity-service.result }}" ;;
               proxy-gateway-service) v="${{ needs.proxy-gateway-service.result }}" ;;
@@ -307,7 +388,9 @@ jobs:
               billing-service) v="${{ needs.billing-service.result }}" ;;
               team-service) v="${{ needs.team-service.result }}" ;;
               notification-service) v="${{ needs.notification-service.result }}" ;;
-              web) v="${{ needs.web.result }}" ;;
+              web-host) v="${{ needs['web-host'].result }}" ;;
+              web-apps) v="${{ needs['web-apps'].result }}" ;;
+              web-mfe) v="${{ needs['web-mfe'].result }}" ;;
             esac
             if [[ "$v" == "failure" || "$v" == "cancelled" ]]; then
               echo "$name ended with $v"
