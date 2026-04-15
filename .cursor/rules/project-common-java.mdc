@@ -27,7 +27,7 @@ Canonical rules: **`docs/repository-structure.md`**.
 ## Stack (summary)
 
 - **Backend (Java):** Java 21, Spring Boot 4.x, Gradle (per service modules) — RabbitMQ (Spring AMQP), PostgreSQL, Redis as needed.
-- **웹·BFF(서비스 단위 풀스택):** `services/<svc>/web/` 또는 과도기 `apps/web/` — Next.js (App Router), React, TypeScript, Tailwind CSS, Shadcn UI, Recharts or Chart.js — see `project-common-nextjs.mdc` and root `.cursorrules`. Analytics·Notification **전담 백엔드**는 `docs/architecture.md` §12.
+- **웹·BFF(서비스 단위 풀스택):** `services/<svc>/web/` 또는 MF 호스트 `apps/web/` — **Next.js 15**(App Router), **React 19**, TypeScript, Tailwind CSS, Shadcn UI, Recharts or Chart.js — see `project-common-nextjs.mdc` and root `.cursorrules`. Usage·Team **MF remote**는 `services/<svc>/web-mfe/`. Analytics·Notification **전담 백엔드**는 `docs/architecture.md` §12.
 
 ## Layering (all services)
 

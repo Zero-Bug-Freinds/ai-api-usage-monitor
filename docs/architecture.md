@@ -1,5 +1,5 @@
 # <Team Project> AI Usage & Billing Platform (MSA) 아키텍처 문서
-버전: 0.4
+버전: 0.5
 
 ---
 
@@ -61,7 +61,7 @@
   - **FastAPI(Python)는 사용하지 않는다.**
 - **메시지 브로커**: **RabbitMQ** (이벤트 기반 연계의 단일 브로커)
 - **기타 마이크로서비스**: 동일 Spring 생태계 내에서 **Spring MVC(Web) + JPA** 등으로 구현할 수 있다(Identity/Billing 등, 팀 합의).
-- **프론트엔드(서비스 단위 풀스택)**: 사용자 대면 UI·BFF가 필요한 도메인은 **`services/<svc>/web/`** 의 **Next.js(App Router)**, **React**, **TypeScript**, **Tailwind CSS**, **Shadcn UI**(및 Radix), 차트는 **Recharts** 또는 **Chart.js** 등(팀 합의)으로 구현한다. 라우트·BFF·미들웨어 소유 경계는 `docs/contracts/web-split-boundary.md`. 런타임이 Spring과 달라도 MSA 원칙상 **HTTP API·BFF 계약**으로 연동한다.
+- **프론트엔드(서비스 단위 풀스택)**: 사용자 대면 UI·BFF가 필요한 도메인은 **`services/<svc>/web/`** 의 **Next.js 15(App Router)**, **React 19**, **TypeScript**, **Tailwind CSS**, **Shadcn UI**(및 Radix), 차트는 **Recharts** 또는 **Chart.js** 등(팀 합의)으로 구현한다(각 패키지의 정확한 버전은 루트·해당 `package.json`·`pnpm-lock.yaml` 정본). 라우트·BFF·미들웨어 소유 경계는 `docs/contracts/web-split-boundary.md`. 런타임이 Spring과 달라도 MSA 원칙상 **HTTP API·BFF 계약**으로 연동한다.
 - **Analytics·알림·집계 백엔드(백엔드 담당, 팀 합의)**: 집계·알림 워커는 **Spring MVC + JPA**, **Spring Boot + 메시지 소비**, 또는 팀 합의 하에 **Node(NestJS 등)** 로 둘 수 있다. 브로커·캐시는 §6, §10과 동일하게 **RabbitMQ**, **Redis**를 전제로 한다. 상세 책임은 **§12** 참고.
 
 ---
@@ -435,6 +435,46 @@
 - **권한별 UI**: 로그인 사용자의 **역할(RBAC)** 에 따라 뷰를 구분한다(§8.4).
 - **시각화**: §12 등이 노출하는 **집계·조회 API** 응답을 차트·테이블로 표현한다.
 - **보안**: 공급사 API Key·내부 토큰을 **브라우저 번들에 넣지 않는다**(§8). 플랫폼 JWT는 BFF·`httpOnly` 쿠키 패턴을 유지한다.
+
+### 13.3 브라우저 통합·Module Federation (`rewrites` · `web-mfe`)
+
+- **Identity `web`을 통한 앱 간 연결(고속도로):** `services/identity-service/web/next.config.ts`의 **`async rewrites()`** 는 브라우저 요청 경로를 **내부 오리진**(Compose·로컬에서 `USAGE_WEB_INTERNAL_ORIGIN`, `TEAM_WEB_INTERNAL_ORIGIN` 등)의 **Usage·Team·Billing·Notification `web`** 으로 넘긴다. 단일 호스트·단일 오리진 UX를 유지하면서 서비스별 Next 앱을 나란히 두는 **정본 라우팅 계층**이며, 운영·로컬에서 Nginx **`web-edge`**(§10.2)와 함께 “어떤 URL이 어느 컨테이너로 가는지”를 정의한다.
+- **`usage-service`·`team-service`의 디렉터리 분리:** 각각 **`web/`**(App Router·BFF·운영 UI)과 **`web-mfe/`**(Pages Router·**Module Federation** remote 전용)로 나뉜다. **`web-mfe`** 는 원격 엔트리(`exposes`)만 노출하고, 호스트는 **`apps/web`(web-host)** 등에서 `remotes`로 붙인다. 상세·작업 절차는 **`docs/mfe-pages-only-remote-split-guidance-20260414.md`**.
+- **공통 UI:** 사이드바·헤더·콘솔 네비는 **`packages/shell`** · **`packages/ui`** 를 사용한다(`docs/repository-structure.md` §6).
+- **라우트 변경 시:** 새 **최상위 브라우저 접두**를 도입하거나 BFF 경로를 바꿀 때는 **Identity `rewrites`**(및 필요 시 **`docker/web-edge/nginx.conf`**)를 함께 갱신한다(`docs/contracts/web-split-boundary.md`, `docs/howto-add-console-sidebar-route.md`).
+
+```mermaid
+flowchart LR
+  subgraph Browser["브라우저"]
+    U["사용자"]
+  end
+  subgraph Edge["선택: web-edge Nginx :8888"]
+    N["경로 prefix 분기"]
+  end
+  subgraph Identity["Identity web :3000"]
+    RW["next.config rewrites"]
+  end
+  subgraph Domains["도메인별 Next web"]
+    UW["usage web\n/dashboard · BFF"]
+    TW["team web\nbasePath=/teams"]
+    BW["billing web"]
+    NW["notification web"]
+  end
+  subgraph MF["Module Federation"]
+    H["apps/web host"]
+    UR["usage web-mfe\nremote"]
+    TR["team web-mfe\nremote"]
+    H --> UR
+    H --> TR
+  end
+  U --> N
+  N --> RW
+  U --> RW
+  RW --> UW
+  RW --> TW
+  RW --> BW
+  RW --> NW
+```
 
 ---
 

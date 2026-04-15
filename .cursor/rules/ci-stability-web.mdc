@@ -2,6 +2,8 @@
 description: Web(Next.js) 관련 로직 수정 시 CI 빌드 및 린트 안정성 확보 규칙
 globs:
   - "services/*/web/**/*"
+  - "services/*/web-mfe/**/*"
+  - "apps/web/**/*"
 alwaysApply: false
 ---
 

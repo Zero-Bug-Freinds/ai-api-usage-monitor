@@ -19,7 +19,7 @@
 | **Build identity-service** | Java 21(Temurin), Gradle 캐시, `./gradlew build` — 위 경로 필터 또는 워크플로 변경 시에만 실행 |
 | **Build proxy-gateway-service** | 동일 — proxy·gateway·`libs/usage-events`·워크플로 변경 시 실행 |
 | **Build usage-service** | 동일 — usage·`libs/usage-events`·워크플로 변경 시 실행 |
-| **Build web (lint/test/build)** | Node 22, **pnpm** 9, 저장소 루트 `pnpm install --frozen-lockfile` 후 각 `web`에 `pnpm --filter …` 로 lint·test·`pnpm run build:web`, **`docker build -f services/…/web/Dockerfile`**(context `.`) 두 이미지 — `services/**/web/**`, `packages/ui/**`, 루트 pnpm·워크플로 변경 시 실행 |
+| **Build web (lint/test/build)** | Node 22, **pnpm** 9, 저장소 루트 `pnpm install --frozen-lockfile` 후 각 `web`에 `pnpm --filter …` 로 lint·test·`pnpm run build:web`, **`docker build -f services/…/web/Dockerfile`**(context `.`) 등 — 팀 표준 프론트는 **Next.js 15**·**React 19**(`package.json` 정본). 경로: `services/**/web/**`, `packages/ui/**`, 루트 pnpm·워크플로 변경 시 실행(`web-mfe` 독립 잡은 후속 도입 가능) |
 | **CI summary** | gitleaks 성공 필수, 실행된 빌드·Compose 잡이 `failure`/`cancelled`이면 실패. 스킵된 잡은 허용 (`web` 포함) |
 
 ## 브랜치 보호(Branch protection)

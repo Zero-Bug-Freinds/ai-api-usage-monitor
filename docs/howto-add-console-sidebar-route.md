@@ -23,7 +23,7 @@
 1. 소유가 정해지면 **`services/<서비스명>/web/src/app/`** 아래에 App Router 규칙에 맞게 디렉터리·`page.tsx`(·`layout.tsx`)를 추가합니다.
 2. **Usage** 대시보드 하위라면 브라우저 경로는 보통 **`/dashboard/...`** 이고, 소스 트리에서는 `basePath`를 제외한 경로(예: `app/(shell)/foo/page.tsx` → 브라우저 `/dashboard/foo`)로 맞춥니다.
 3. **Identity** 전용(설정·조직 등)이면 **`/settings/...`**, **`/organizations/...`** 등 [`web-split-boundary.md`](contracts/web-split-boundary.md) §2와 미들웨어 보호 규칙을 따릅니다.
-4. **엣지(Nginx)** 나 **Identity `next.config` rewrites**로 경로가 넘어가는 구조라면, **새 최상위 접두**를 도입할 때 [`docker/web-edge/nginx.conf`](../docker/web-edge/nginx.conf) / identity 설정을 검토합니다(팀 합의 후).
+4. **엣지(Nginx)** 나 **Identity `next.config.ts`의 `rewrites()`** 로 경로가 넘어가는 구조라면, **새 최상위 접두**를 도입할 때 [`docker/web-edge/nginx.conf`](../docker/web-edge/nginx.conf) 와 **`services/identity-service/web/next.config.ts`** 를 함께 검토·갱신합니다(팀 합의 후). 정본: [`web-split-boundary.md`](contracts/web-split-boundary.md) §2.6.
 
 ---
 
