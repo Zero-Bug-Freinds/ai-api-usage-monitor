@@ -402,3 +402,26 @@
 - 토큰 원문, 비밀값, 인증 헤더, **외부 API 키 평문**을 로그에 남기지 않는다.
 - 외부 API 키 평문은 DB에 저장하지 않으며, AES-256-GCM 암호문만 저장한다. 암호화 재료는 `identity.api-key.encryption.secret` / `IDENTITY_API_KEY_ENCRYPTION_SECRET` 등으로 운영 환경에 안전하게 주입한다.
 
+## 13. 비동기 이벤트 발행 (Message Queue)
+
+외부 API 키의 상태가 변경(생성, 수정, 삭제 예약, 취소 등)될 때마다 타 서비스(Usage 등)와의 상태 동기화를 위해 RabbitMQ로 이벤트를 발행한다.
+(주의: 과금/결제 분리를 위해 `monthlyBudgetUsd`는 이벤트 페이로드에서 제외된다.)
+
+- **Exchange:** `identity.events` (기본값)
+- **Routing Key:** `identity.external-api-key.status-changed`
+- **발행 시점 (트랜잭션 커밋 후 AFTER_COMMIT 보장):**
+  - 신규 등록 성공 → `ACTIVE`
+  - 수정 성공(별칭 변경 포함) → `ACTIVE`
+  - 삭제 요청 성공(유예 시작) → `DELETION_REQUESTED`
+  - 삭제 예약 취소 성공 → `ACTIVE`
+  - 유예 만료로 인한 물리 삭제 시 → `DELETED`
+
+**Event Payload (JSON):**
+```json
+{
+  "keyId": 123,
+  "alias": "플랫폼팀 제미나이",
+  "userId": 456,
+  "provider": "GEMINI",
+  "status": "ACTIVE"
+}
