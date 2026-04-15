@@ -12,7 +12,16 @@ const nextConfig = {
   output: "standalone",
   outputFileTracingRoot: path.join(__dirname, "../.."),
   transpilePackages: ["@ai-usage/ui", "@ai-usage/shell"],
-  webpack(config) {
+  webpack(config, { isServer }) {
+    if (isServer) {
+      if (Array.isArray(config.externals)) {
+        config.externals.push("node:module");
+      } else if (config.externals === undefined) {
+        config.externals = ["node:module"];
+      } else {
+        config.externals = [config.externals, "node:module"];
+      }
+    }
     config.plugins = config.plugins ?? [];
     config.plugins.push(
       new NextFederationPlugin({
