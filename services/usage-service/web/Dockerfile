@@ -2,15 +2,29 @@
 # `packages/ui` workspace 포함. 빌드(저장소 루트에서):
 #   docker build -f services/usage-service/web/Dockerfile -t usage-web:local .
 
-FROM node:22-alpine AS builder
+FROM node:22-alpine AS deps-local
 WORKDIR /repo
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
-
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY packages/ui/package.json ./packages/ui/
 COPY packages/shell/package.json ./packages/shell/
 COPY services/usage-service/web/package.json ./services/usage-service/web/
 RUN pnpm install --frozen-lockfile
+
+ARG WEB_NODE_DEPS_IMAGE=deps-local
+FROM ${WEB_NODE_DEPS_IMAGE} AS deps
+
+FROM node:22-alpine AS builder
+WORKDIR /repo
+RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
+
+COPY --from=deps /repo/node_modules ./node_modules
+COPY --from=deps /repo/pnpm-lock.yaml ./pnpm-lock.yaml
+COPY --from=deps /repo/pnpm-workspace.yaml ./pnpm-workspace.yaml
+COPY --from=deps /repo/package.json ./package.json
+COPY --from=deps /repo/packages/ui/package.json ./packages/ui/package.json
+COPY --from=deps /repo/packages/shell/package.json ./packages/shell/package.json
+COPY --from=deps /repo/services/usage-service/web/package.json ./services/usage-service/web/package.json
 
 COPY packages/ui ./packages/ui
 COPY packages/shell ./packages/shell

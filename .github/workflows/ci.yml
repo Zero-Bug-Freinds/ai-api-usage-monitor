@@ -65,6 +65,7 @@ jobs:
               - 'pnpm-workspace.yaml'
               - 'package.json'
               - 'pnpm-lock.yaml'
+              - 'docker/web-node-deps.Dockerfile'
             workflows:
               - '.github/workflows/**'
 
@@ -245,16 +246,18 @@ jobs:
           pnpm --filter notification-web test
           pnpm --filter notification-web run build
           pnpm run build:web
+      - name: Docker deps base image (shared pnpm install layer)
+        run: docker build -f docker/web-node-deps.Dockerfile -t web-node-deps:ci .
       - name: Docker image (identity-web, standalone)
-        run: docker build -f services/identity-service/web/Dockerfile -t identity-web:ci .
+        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/identity-service/web/Dockerfile -t identity-web:ci .
       - name: Docker image (usage-web, standalone)
-        run: docker build -f services/usage-service/web/Dockerfile -t usage-web:ci .
+        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/usage-service/web/Dockerfile -t usage-web:ci .
       - name: Docker image (billing-web, standalone)
-        run: docker build -f services/billing-service/web/Dockerfile -t billing-web:ci .
+        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/billing-service/web/Dockerfile -t billing-web:ci .
       - name: Docker image (team-web, standalone)
-        run: docker build -f services/team-service/web/Dockerfile -t team-web:ci .
+        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/team-service/web/Dockerfile -t team-web:ci .
       - name: Docker image (notification-web, standalone)
-        run: docker build -f services/notification-service/web/Dockerfile -t notification-web:ci .
+        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/notification-service/web/Dockerfile -t notification-web:ci .
 
   # Single required check for branch protection.
   # Skipped Java/Compose jobs (path filter) do not fail the workflow.
