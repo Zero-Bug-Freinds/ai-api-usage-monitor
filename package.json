@@ -5,7 +5,7 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.5",
     "eslint": "^9",
-    "next": "16.2.1",
+    "next": "15.2.4",
     "vitest": "^4.1.1"
   },
   "pnpm": {
