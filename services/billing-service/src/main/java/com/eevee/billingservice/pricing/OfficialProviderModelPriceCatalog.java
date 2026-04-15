@@ -63,6 +63,24 @@ public final class OfficialProviderModelPriceCatalog {
         return List.of(
                 new CatalogRow(
                         AiProvider.GOOGLE,
+                        "gemini-3.1-pro",
+                        new BigDecimal("2.00"),
+                        new BigDecimal("12.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_GOOGLE_GEMINI,
+                        "Gemini 3.1 Pro, Paid tier Standard, input/output USD per 1M tokens (see official Gemini pricing page)"
+                ),
+                new CatalogRow(
+                        AiProvider.GOOGLE,
+                        "gemini-2.5-pro",
+                        new BigDecimal("1.25"),
+                        new BigDecimal("10.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_GOOGLE_GEMINI,
+                        "Gemini 2.5 Pro, Paid tier Standard, input/output USD per 1M tokens (see official Gemini pricing page)"
+                ),
+                new CatalogRow(
+                        AiProvider.GOOGLE,
                         "gemini-2.5-flash",
                         new BigDecimal("0.30"),
                         new BigDecimal("2.50"),
@@ -78,6 +96,15 @@ public final class OfficialProviderModelPriceCatalog {
                         DEFAULT_VALID_FROM,
                         REFERENCE_URL_GOOGLE_GEMINI,
                         "Gemini 2.5 Flash-Lite, Paid tier Standard, text/image/video input per 1M tokens; output per 1M tokens"
+                ),
+                new CatalogRow(
+                        AiProvider.GOOGLE,
+                        "gemini-2.0-flash",
+                        new BigDecimal("0.10"),
+                        new BigDecimal("0.40"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_GOOGLE_GEMINI,
+                        "Gemini 2.0 Flash (legacy), Paid tier Standard, input/output USD per 1M tokens (see official Gemini pricing page)"
                 ),
                 new CatalogRow(
                         AiProvider.OPENAI,

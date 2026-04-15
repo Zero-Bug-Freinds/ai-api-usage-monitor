@@ -1,6 +1,8 @@
 package com.zerobugfreinds.identity_service.service;
 
 import com.zerobugfreinds.identity_service.domain.ExternalApiKeyProvider;
+import com.zerobugfreinds.identity.events.ExternalApiKeyStatus;
+import com.zerobugfreinds.identity.events.ExternalApiKeyStatusChangedEvent;
 import com.zerobugfreinds.identity_service.dto.InternalApiKeyResponse;
 import com.zerobugfreinds.identity_service.entity.ExternalApiKeyEntity;
 import com.zerobugfreinds.identity_service.exception.DuplicateExternalApiKeyAliasException;
@@ -10,9 +12,11 @@ import com.zerobugfreinds.identity_service.exception.ExternalApiKeyNotPendingDel
 import com.zerobugfreinds.identity_service.exception.ExternalApiKeyNotFoundException;
 import com.zerobugfreinds.identity_service.exception.ExternalApiKeyPendingDeletionException;
 import com.zerobugfreinds.identity_service.repository.ExternalApiKeyRepository;
+import com.zerobugfreinds.identity_service.repository.UserRepository;
 import com.zerobugfreinds.identity_service.util.EncryptionUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -35,11 +39,20 @@ public class ExternalApiKeyService {
 	private static final Logger log = LoggerFactory.getLogger(ExternalApiKeyService.class);
 
 	private final ExternalApiKeyRepository externalApiKeyRepository;
+	private final UserRepository userRepository;
 	private final EncryptionUtil encryptionUtil;
+	private final ApplicationEventPublisher applicationEventPublisher;
 
-	public ExternalApiKeyService(ExternalApiKeyRepository externalApiKeyRepository, EncryptionUtil encryptionUtil) {
+	public ExternalApiKeyService(
+			ExternalApiKeyRepository externalApiKeyRepository,
+			UserRepository userRepository,
+			EncryptionUtil encryptionUtil,
+			ApplicationEventPublisher applicationEventPublisher
+	) {
 		this.externalApiKeyRepository = externalApiKeyRepository;
+		this.userRepository = userRepository;
 		this.encryptionUtil = encryptionUtil;
+		this.applicationEventPublisher = applicationEventPublisher;
 	}
 
 	@Transactional
@@ -107,6 +120,7 @@ public class ExternalApiKeyService {
 				trimmedAlias,
 				saved.getId()
 		);
+		publishExternalApiKeyStatusChanged(saved, ExternalApiKeyStatus.ACTIVE);
 
 		return saved;
 	}
@@ -189,6 +203,7 @@ public class ExternalApiKeyService {
 				trimmedAlias,
 				entity.getId()
 		);
+		publishExternalApiKeyStatusChanged(entity, ExternalApiKeyStatus.ACTIVE);
 
 		return entity;
 	}
@@ -206,6 +221,41 @@ public class ExternalApiKeyService {
 				.orElseThrow(() -> new ExternalApiKeyNotFoundException("등록된 API 키를 찾을 수 없습니다"));
 		String plainKey = encryptionUtil.decryptAes256Gcm(entity.getEncryptedKey());
 		return new InternalApiKeyResponse(plainKey, String.valueOf(entity.getId()));
+	}
+
+	@Transactional(readOnly = true)
+	public Optional<BigDecimal> resolveUserMonthlyBudgetUsd(Long userId) {
+		if (userId == null) {
+			throw new IllegalArgumentException("userId는 필수입니다");
+		}
+		long activeKeyCount = externalApiKeyRepository.countByUserIdAndDeletionRequestedAtIsNull(userId);
+		if (activeKeyCount == 0) {
+			return Optional.empty();
+		}
+		BigDecimal totalBudget = externalApiKeyRepository.sumMonthlyBudgetUsdByUserIdAndDeletionRequestedAtIsNull(userId);
+		return Optional.ofNullable(totalBudget);
+	}
+
+	@Transactional(readOnly = true)
+	public Optional<BigDecimal> resolveUserMonthlyBudgetUsdByEmail(String email) {
+		if (!StringUtils.hasText(email)) {
+			throw new IllegalArgumentException("email은 필수입니다");
+		}
+		String normalizedEmail = email.trim();
+		Optional<Long> userId = userRepository.findByEmail(normalizedEmail).map(user -> user.getId());
+		if (userId.isEmpty()) {
+			return Optional.empty();
+		}
+
+		long activeBudgetedKeyCount =
+				externalApiKeyRepository.countByUserIdAndDeletionRequestedAtIsNullAndMonthlyBudgetUsdIsNotNull(userId.get());
+		if (activeBudgetedKeyCount == 0) {
+			return Optional.empty();
+		}
+
+		BigDecimal totalBudget =
+				externalApiKeyRepository.sumMonthlyBudgetUsdByUserIdAndActiveBudgetAssigned(userId.get());
+		return Optional.ofNullable(totalBudget);
 	}
 
 	/**
@@ -230,6 +280,7 @@ public class ExternalApiKeyService {
 				entity.getId(),
 				entity.getPermanentDeletionAt()
 		);
+		publishExternalApiKeyStatusChanged(entity, ExternalApiKeyStatus.DELETION_REQUESTED);
 		return entity;
 	}
 
@@ -245,6 +296,7 @@ public class ExternalApiKeyService {
 		}
 		entity.clearPendingDeletion();
 		log.info("[AUDIT] external_api_key_deletion_cancelled userId={} keyId={}", userId, entity.getId());
+		publishExternalApiKeyStatusChanged(entity, ExternalApiKeyStatus.ACTIVE);
 		return entity;
 	}
 
@@ -262,9 +314,21 @@ public class ExternalApiKeyService {
 					e.getId(),
 					e.getProvider().name()
 			);
+			publishExternalApiKeyStatusChanged(e, ExternalApiKeyStatus.DELETED);
 		}
 		externalApiKeyRepository.deleteAll(expired);
 		return expired.size();
+	}
+
+	private void publishExternalApiKeyStatusChanged(ExternalApiKeyEntity entity, ExternalApiKeyStatus status) {
+		ExternalApiKeyStatusChangedEvent event = ExternalApiKeyStatusChangedEvent.of(
+				entity.getId(),
+				entity.getKeyAlias(),
+				entity.getUserId(),
+				entity.getProvider().name(),
+				status
+		);
+		applicationEventPublisher.publishEvent(event);
 	}
 
 	private static int resolveGracePeriodDays(Integer requested) {

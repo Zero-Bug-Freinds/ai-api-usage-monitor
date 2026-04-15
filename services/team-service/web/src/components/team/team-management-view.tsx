@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { ChevronDown, ChevronRight, Eye, EyeOff } from "lucide-react"
+import { ChevronDown, ChevronRight, Eye, EyeOff, Minus, Plus } from "lucide-react"
 
 type ApiResponse<T> = {
   success: boolean
@@ -29,6 +29,8 @@ type TeamApiKeySummary = {
   permanentDeletionAt?: string | null
   deletionGraceDays?: number | null
 }
+
+type _TeamKeyProvider = "OPENAI" | "GEMINI" | "CLAUDE"
 
 function asApiResponse(value: unknown): ApiResponse<unknown> | null {
   if (!value || typeof value !== "object") return null
@@ -97,6 +99,21 @@ function formatDeletionDeadline(iso: string) {
 }
 
 const BUDGET_STEP = 0.01
+const DEFAULT_DELETION_GRACE_DAYS = 7
+const MIN_DELETION_GRACE_DAYS = 0
+const MAX_DELETION_GRACE_DAYS = 365
+const TEAM_WEB_BASE_PATH = "/teams"
+
+type InviteeFieldRow = { id: string; value: string }
+
+function newInviteeRow(): InviteeFieldRow {
+  return { id: crypto.randomUUID(), value: "" }
+}
+
+function teamApiPath(path: string): string {
+  const normalized = path.startsWith("/") ? path : `/${path}`
+  return `${TEAM_WEB_BASE_PATH}${normalized}`
+}
 
 function normalizeBudgetNumericString(raw: string): string {
   const t = raw.trim()
@@ -107,13 +124,28 @@ function normalizeBudgetNumericString(raw: string): string {
   return Number(rounded.toFixed(2)).toString()
 }
 
+async function requestApi(path: string, init?: RequestInit) {
+  const res = await fetch(teamApiPath(path), {
+    credentials: "include",
+    cache: "no-store",
+    headers: { Accept: "application/json", ...(init?.headers ?? {}) },
+    ...init,
+  })
+  const json = (await res.json().catch(() => null)) as unknown
+  return { res, body: asApiResponse(json) }
+}
+
 export function TeamManagementView() {
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [teams, setTeams] = React.useState<TeamSummary[]>([])
+  const [teamMemberIdsByTeamId, setTeamMemberIdsByTeamId] = React.useState<Record<string, string[]>>({})
+  const [isTeamOwnerByTeamId, setIsTeamOwnerByTeamId] = React.useState<Record<string, boolean>>({})
+  const [showCreateForm, setShowCreateForm] = React.useState(false)
   const [teamName, setTeamName] = React.useState("")
+  const [inviteesOnCreate, setInviteesOnCreate] = React.useState<InviteeFieldRow[]>(() => [newInviteeRow()])
   const [createLoading, setCreateLoading] = React.useState(false)
-  const [inviteInputByTeamId, setInviteInputByTeamId] = React.useState<Record<string, string>>({})
+  const [inviteInputsByTeamId, setInviteInputsByTeamId] = React.useState<Record<string, InviteeFieldRow[]>>({})
   const [inviteLoadingTeamId, setInviteLoadingTeamId] = React.useState<string | null>(null)
   const [message, setMessage] = React.useState<{ kind: "success" | "error"; text: string } | null>(null)
 
@@ -128,20 +160,17 @@ export function TeamManagementView() {
   const [editTeamApiKeyAlias, setEditTeamApiKeyAlias] = React.useState("")
   const [editTeamApiKeyBudget, setEditTeamApiKeyBudget] = React.useState("")
   const [teamApiKeyUpdateLoading, setTeamApiKeyUpdateLoading] = React.useState<string | null>(null)
+  const [deleteLoadingKey, setDeleteLoadingKey] = React.useState<string | null>(null)
+  const [cancelDeleteLoadingKey, setCancelDeleteLoadingKey] = React.useState<string | null>(null)
+  const [removeMemberLoadingKey, setRemoveMemberLoadingKey] = React.useState<string | null>(null)
+  const [deleteTeamLoadingId, setDeleteTeamLoadingId] = React.useState<string | null>(null)
   const [openTeamId, setOpenTeamId] = React.useState<string | null>(null)
 
   const loadTeams = React.useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch("/api/team/v1/me/teams", {
-        method: "GET",
-        credentials: "include",
-        headers: { Accept: "application/json" },
-        cache: "no-store",
-      })
-      const json = (await res.json()) as unknown
-      const body = asApiResponse(json)
+      const { res, body } = await requestApi("/api/team/v1/me/teams", { method: "GET" })
       if (!res.ok || !body?.success || !Array.isArray(body.data)) {
         setError(body?.message ?? "팀 목록을 불러오지 못했습니다")
         setTeams([])
@@ -160,16 +189,36 @@ export function TeamManagementView() {
     }
   }, [])
 
+  const loadTeamMembers = React.useCallback(async (teamId: string) => {
+    try {
+      const { res, body } = await requestApi(`/api/team/v1/teams/${encodeURIComponent(teamId)}/members`, { method: "GET" })
+      if (!res.ok || !body?.success || !Array.isArray(body.data)) {
+        setTeamMemberIdsByTeamId((prev) => ({ ...prev, [teamId]: [] }))
+        return
+      }
+      const memberIds = body.data.filter((v) => typeof v === "string").map((v) => String(v))
+      setTeamMemberIdsByTeamId((prev) => ({ ...prev, [teamId]: memberIds }))
+    } catch {
+      setTeamMemberIdsByTeamId((prev) => ({ ...prev, [teamId]: [] }))
+    }
+  }, [])
+
+  const loadTeamOwnerFlag = React.useCallback(async (teamId: string) => {
+    try {
+      const { res, body } = await requestApi(`/api/team/v1/teams/${encodeURIComponent(teamId)}/owner`, { method: "GET" })
+      if (!res.ok || !body?.success || typeof body.data !== "boolean") {
+        setIsTeamOwnerByTeamId((prev) => ({ ...prev, [teamId]: false }))
+        return
+      }
+      setIsTeamOwnerByTeamId((prev) => ({ ...prev, [teamId]: body.data as boolean }))
+    } catch {
+      setIsTeamOwnerByTeamId((prev) => ({ ...prev, [teamId]: false }))
+    }
+  }, [])
+
   const loadTeamApiKeys = React.useCallback(async (teamId: string) => {
     try {
-      const res = await fetch(`/api/team/v1/teams/${encodeURIComponent(teamId)}/api-keys`, {
-        method: "GET",
-        credentials: "include",
-        headers: { Accept: "application/json" },
-        cache: "no-store",
-      })
-      const json = (await res.json()) as unknown
-      const body = asApiResponse(json)
+      const { res, body } = await requestApi(`/api/team/v1/teams/${encodeURIComponent(teamId)}/api-keys`, { method: "GET" })
       if (!res.ok || !body?.success || !Array.isArray(body.data)) {
         setTeamApiKeysByTeamId((prev) => ({ ...prev, [teamId]: [] }))
         return
@@ -192,6 +241,8 @@ export function TeamManagementView() {
 
   React.useEffect(() => {
     if (teams.length === 0) {
+      setTeamMemberIdsByTeamId({})
+      setIsTeamOwnerByTeamId({})
       setTeamApiKeysByTeamId({})
       setOpenTeamId(null)
     }
@@ -206,13 +257,16 @@ export function TeamManagementView() {
   React.useEffect(() => {
     if (!openTeamId) return
     if (!teams.some((t) => t.id === openTeamId)) return
+    void loadTeamOwnerFlag(openTeamId)
+    void loadTeamMembers(openTeamId)
     void loadTeamApiKeys(openTeamId)
-  }, [openTeamId, teams, loadTeamApiKeys])
+  }, [openTeamId, teams, loadTeamApiKeys, loadTeamMembers, loadTeamOwnerFlag])
 
   async function createTeam(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     if (createLoading) return
     const name = teamName.trim()
+    const inviteeIds = inviteesOnCreate.map((r) => r.value.trim()).filter((v) => v !== "")
     if (!name) {
       setMessage({ kind: "error", text: "팀 이름은 필수입니다" })
       return
@@ -220,20 +274,59 @@ export function TeamManagementView() {
     setCreateLoading(true)
     setMessage(null)
     try {
-      const res = await fetch("/api/team/v1/teams", {
+      const { res, body } = await requestApi("/api/team/v1/teams", {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({ name }),
       })
-      const json = (await res.json()) as unknown
-      const body = asApiResponse(json)
       if (!res.ok || !body?.success) {
         setMessage({ kind: "error", text: body?.message ?? "팀 생성에 실패했습니다" })
         return
       }
-      setMessage({ kind: "success", text: "팀이 생성되었습니다" })
+
+      const createdTeam =
+        body.data && typeof body.data === "object" ? (body.data as { id?: unknown }) : null
+      const createdTeamId =
+        typeof createdTeam?.id === "string" || typeof createdTeam?.id === "number" ? String(createdTeam.id) : null
+
+      if (inviteeIds.length > 0 && createdTeamId) {
+        let okCount = 0
+        let failCount = 0
+        for (const uid of inviteeIds) {
+          const inviteRes = await requestApi(`/api/team/v1/teams/${encodeURIComponent(createdTeamId)}/members`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify({ userId: uid }),
+          })
+          if (inviteRes.res.ok && inviteRes.body?.success) {
+            okCount += 1
+          } else {
+            failCount += 1
+          }
+        }
+        if (failCount === 0) {
+          setMessage({
+            kind: "success",
+            text:
+              okCount === 1
+                ? "팀이 생성되었고 팀원 초대를 보냈습니다"
+                : `팀이 생성되었고 팀원 ${okCount}명에게 초대를 보냈습니다`,
+          })
+        } else if (okCount === 0) {
+          setMessage({ kind: "error", text: "팀은 생성되었지만 팀원 초대에 실패했습니다" })
+        } else {
+          setMessage({
+            kind: "error",
+            text: `팀은 생성되었습니다. 초대 성공 ${okCount}명, 실패 ${failCount}명입니다`,
+          })
+        }
+      } else {
+        setMessage({ kind: "success", text: "팀이 생성되었습니다" })
+      }
+
       setTeamName("")
+      setInviteesOnCreate([newInviteeRow()])
+      setShowCreateForm(false)
       await loadTeams()
     } catch {
       setMessage({ kind: "error", text: "팀 생성에 실패했습니다" })
@@ -242,30 +335,63 @@ export function TeamManagementView() {
     }
   }
 
+  function openCreateForm() {
+    setMessage(null)
+    setShowCreateForm(true)
+  }
+
+  function closeCreateForm() {
+    setShowCreateForm(false)
+    setTeamName("")
+    setInviteesOnCreate([newInviteeRow()])
+  }
+
   async function invite(teamId: string) {
     if (inviteLoadingTeamId) return
-    const userId = (inviteInputByTeamId[teamId] ?? "").trim()
-    if (!userId) {
-      setMessage({ kind: "error", text: "초대할 사용자 아이디를 입력해 주세요" })
+    const rows = inviteInputsByTeamId[teamId] ?? [newInviteeRow()]
+    const userIds = rows.map((r) => r.value.trim()).filter((v) => v !== "")
+    if (userIds.length === 0) {
+      setMessage({ kind: "error", text: "초대할 사용자 이메일 또는 아이디를 입력해 주세요" })
       return
     }
     setInviteLoadingTeamId(teamId)
     setMessage(null)
     try {
-      const res = await fetch(`/api/team/v1/teams/${encodeURIComponent(teamId)}/members`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ userId }),
-      })
-      const json = (await res.json()) as unknown
-      const body = asApiResponse(json)
-      if (!res.ok || !body?.success) {
-        setMessage({ kind: "error", text: body?.message ?? "초대에 실패했습니다" })
-        return
+      let okCount = 0
+      let failCount = 0
+      let lastError: string | null = null
+      for (const userId of userIds) {
+        const { res, body } = await requestApi(`/api/team/v1/teams/${encodeURIComponent(teamId)}/members`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ userId }),
+        })
+        if (res.ok && body?.success) {
+          okCount += 1
+        } else {
+          failCount += 1
+          lastError = body?.message ?? null
+        }
       }
-      setMessage({ kind: "success", text: "초대를 보냈습니다" })
-      setInviteInputByTeamId((prev) => ({ ...prev, [teamId]: "" }))
+      if (failCount === 0) {
+        setMessage({
+          kind: "success",
+          text: okCount === 1 ? "초대를 보냈습니다" : `초대를 ${okCount}명에게 보냈습니다`,
+        })
+        setInviteInputsByTeamId((prev) => ({ ...prev, [teamId]: [newInviteeRow()] }))
+        await loadTeamMembers(teamId)
+      } else if (okCount === 0) {
+        setMessage({ kind: "error", text: lastError ?? "초대에 실패했습니다" })
+      } else {
+        setMessage({
+          kind: "error",
+          text: lastError
+            ? `일부만 초대되었습니다 (성공 ${okCount}명, 실패 ${failCount}명). ${lastError}`
+            : `일부만 초대되었습니다 (성공 ${okCount}명, 실패 ${failCount}명)`,
+        })
+        setInviteInputsByTeamId((prev) => ({ ...prev, [teamId]: [newInviteeRow()] }))
+        await loadTeamMembers(teamId)
+      }
     } catch {
       setMessage({ kind: "error", text: "초대에 실패했습니다" })
     } finally {
@@ -330,17 +456,14 @@ export function TeamManagementView() {
     setMessage(null)
     try {
       const body = { alias: aliasTrimmed, monthlyBudgetUsd }
-      const res = await fetch(
+      const { res, body: bodyRes } = await requestApi(
         `/api/team/v1/teams/${encodeURIComponent(teamId)}/api-keys/${encodeURIComponent(String(keyId))}`,
         {
           method: "PUT",
-          credentials: "include",
           headers: { "Content-Type": "application/json", Accept: "application/json" },
           body: JSON.stringify(body),
         },
       )
-      const json = (await res.json()) as unknown
-      const bodyRes = asApiResponse(json)
       if (!res.ok || !bodyRes?.success) {
         setMessage({ kind: "error", text: bodyRes?.message ?? "팀 API Key 수정에 실패했습니다" })
         return
@@ -388,14 +511,11 @@ export function TeamManagementView() {
     setApiKeyLoadingTeamId(teamId)
     setMessage(null)
     try {
-      const res = await fetch(`/api/team/v1/teams/${encodeURIComponent(teamId)}/api-keys`, {
+      const { res, body } = await requestApi(`/api/team/v1/teams/${encodeURIComponent(teamId)}/api-keys`, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({ provider, alias, externalKey, monthlyBudgetUsd }),
       })
-      const json = (await res.json()) as unknown
-      const body = asApiResponse(json)
       if (!res.ok || !body?.success) {
         setMessage({ kind: "error", text: body?.message ?? "팀 API Key 등록에 실패했습니다" })
         return
@@ -413,35 +533,208 @@ export function TeamManagementView() {
     }
   }
 
+  async function deleteTeamApiKey(teamId: string, keyId: number) {
+    const confirmed = window.confirm("팀 API Key 삭제를 진행할까요? (0일=즉시 삭제, 1일 이상=삭제 예약)")
+    if (!confirmed) return
+    const raw = window.prompt(
+      `유예 기간(일) ${MIN_DELETION_GRACE_DAYS}~${MAX_DELETION_GRACE_DAYS} (기본 ${DEFAULT_DELETION_GRACE_DAYS})`,
+      String(DEFAULT_DELETION_GRACE_DAYS),
+    )
+    if (raw === null) return
+    const trimmed = raw.trim()
+    let graceDays = DEFAULT_DELETION_GRACE_DAYS
+    if (trimmed !== "") {
+      const n = Number.parseInt(trimmed, 10)
+      if (!Number.isFinite(n) || n < MIN_DELETION_GRACE_DAYS || n > MAX_DELETION_GRACE_DAYS) {
+        setMessage({ kind: "error", text: `유예 기간은 ${MIN_DELETION_GRACE_DAYS}~${MAX_DELETION_GRACE_DAYS} 정수여야 합니다` })
+        return
+      }
+      graceDays = n
+    }
+
+    const loadingKey = `${teamId}:${keyId}`
+    setDeleteLoadingKey(loadingKey)
+    setMessage(null)
+    try {
+      const q = new URLSearchParams({ gracePeriodDays: String(graceDays) })
+      const { res, body } = await requestApi(
+        `/api/team/v1/teams/${encodeURIComponent(teamId)}/api-keys/${encodeURIComponent(String(keyId))}?${q.toString()}`,
+        { method: "DELETE" },
+      )
+      if (!res.ok || !body?.success) {
+        setMessage({ kind: "error", text: body?.message ?? "팀 API Key 삭제에 실패했습니다" })
+        return
+      }
+      setMessage({ kind: "success", text: "팀 API Key 삭제 요청이 처리되었습니다" })
+      await loadTeamApiKeys(teamId)
+    } catch {
+      setMessage({ kind: "error", text: "팀 API Key 삭제에 실패했습니다" })
+    } finally {
+      setDeleteLoadingKey(null)
+    }
+  }
+
+  async function cancelTeamApiKeyDeletion(teamId: string, keyId: number) {
+    const loadingKey = `${teamId}:${keyId}`
+    setCancelDeleteLoadingKey(loadingKey)
+    setMessage(null)
+    try {
+      const { res, body } = await requestApi(
+        `/api/team/v1/teams/${encodeURIComponent(teamId)}/api-keys/${encodeURIComponent(String(keyId))}/deletion/cancel`,
+        { method: "POST" },
+      )
+      if (!res.ok || !body?.success) {
+        setMessage({ kind: "error", text: body?.message ?? "삭제 예약 취소에 실패했습니다" })
+        return
+      }
+      setMessage({ kind: "success", text: "삭제 예약이 취소되었습니다" })
+      await loadTeamApiKeys(teamId)
+    } catch {
+      setMessage({ kind: "error", text: "삭제 예약 취소에 실패했습니다" })
+    } finally {
+      setCancelDeleteLoadingKey(null)
+    }
+  }
+
+  async function removeTeamMember(teamId: string, memberId: string) {
+    if (!window.confirm(`팀원 "${memberId}"를 삭제할까요?`)) return
+    const loadingKey = `${teamId}:${memberId}`
+    setRemoveMemberLoadingKey(loadingKey)
+    setMessage(null)
+    try {
+      const { res, body } = await requestApi(
+        `/api/team/v1/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(memberId)}`,
+        { method: "DELETE" },
+      )
+      if (!res.ok || !body?.success) {
+        setMessage({ kind: "error", text: body?.message ?? "팀원 삭제에 실패했습니다" })
+        return
+      }
+      setMessage({ kind: "success", text: "팀원을 삭제했습니다" })
+      await loadTeamMembers(teamId)
+    } catch {
+      setMessage({ kind: "error", text: "팀원 삭제에 실패했습니다" })
+    } finally {
+      setRemoveMemberLoadingKey(null)
+    }
+  }
+
+  async function deleteTeam(teamId: string, teamName: string) {
+    if (!window.confirm(`"${teamName}" 팀을 삭제할까요?\n(팀 API 키를 먼저 모두 삭제해야 합니다)`)) return
+    setDeleteTeamLoadingId(teamId)
+    setMessage(null)
+    try {
+      const { res, body } = await requestApi(`/api/team/v1/teams/${encodeURIComponent(teamId)}`, { method: "DELETE" })
+      if (!res.ok || !body?.success) {
+        setMessage({ kind: "error", text: body?.message ?? "팀 삭제에 실패했습니다" })
+        return
+      }
+      setMessage({ kind: "success", text: "팀을 삭제했습니다" })
+      await loadTeams()
+      cancelEditTeamApiKey()
+    } catch {
+      setMessage({ kind: "error", text: "팀 삭제에 실패했습니다" })
+    } finally {
+      setDeleteTeamLoadingId(null)
+    }
+  }
+
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-6 px-4 py-8">
+    <main className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-4">
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold">팀 관리</h1>
         <p className="text-sm text-zinc-600">
-          팀 생성 후 사용자 아이디로 팀원을 초대할 수 있으며, 팀 API Key를 등록하고 월 예산(USD)을 설정할 수 있습니다.
+          팀 생성 후 사용자 이메일로 팀원을 초대할 수 있으며, 팀 API Key를 등록하고 월 예산(USD)을 설정할 수 있습니다.
         </p>
       </header>
 
       <section className="space-y-3 rounded-lg border border-zinc-200 bg-white p-4">
-        <h2 className="text-sm font-semibold">팀 만들기</h2>
-        <form className="flex flex-col gap-2 sm:flex-row" onSubmit={createTeam}>
-          <input
-            className="h-10 flex-1 rounded-md border border-zinc-300 bg-white px-3 text-sm"
-            value={teamName}
-            onChange={(e) => setTeamName(e.target.value)}
-            placeholder="예: 플랫폼팀"
-            autoComplete="off"
-            disabled={createLoading}
-            required
-          />
+        {!showCreateForm ? (
           <button
-            type="submit"
+            type="button"
             className="h-10 rounded-md bg-black px-4 text-sm font-medium text-white disabled:opacity-60"
+            onClick={openCreateForm}
             disabled={createLoading}
           >
-            {createLoading ? "생성 중…" : "팀 만들기"}
+            팀 만들기
           </button>
-        </form>
+        ) : (
+          <form className="space-y-3" onSubmit={createTeam}>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">팀 이름 (필수)</label>
+              <input
+                className="h-10 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm"
+                value={teamName}
+                onChange={(e) => setTeamName(e.target.value)}
+                placeholder="예: 플랫폼팀"
+                autoComplete="off"
+                disabled={createLoading}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">팀원 초대 (선택)</label>
+              <div className="space-y-2">
+                {inviteesOnCreate.map((row) => (
+                  <div key={row.id} className="flex gap-2">
+                    <input
+                      className="h-10 min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-3 text-sm"
+                      value={row.value}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        setInviteesOnCreate((prev) =>
+                          prev.map((r) => (r.id === row.id ? { ...r, value: v } : r)),
+                        )
+                      }}
+                      placeholder="초대할 사용자 이메일 또는 아이디"
+                      autoComplete="off"
+                      disabled={createLoading}
+                    />
+                    {inviteesOnCreate.length > 1 ? (
+                      <button
+                        type="button"
+                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                        aria-label="이 초대 행 삭제"
+                        disabled={createLoading}
+                        onClick={() =>
+                          setInviteesOnCreate((prev) => prev.filter((r) => r.id !== row.id))
+                        }
+                      >
+                        <Minus className="h-4 w-4" aria-hidden />
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  className="inline-flex h-10 items-center gap-1.5 rounded-md border border-dashed border-zinc-300 bg-zinc-50 px-3 text-sm text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
+                  disabled={createLoading}
+                  onClick={() => setInviteesOnCreate((prev) => [...prev, newInviteeRow()])}
+                >
+                  <Plus className="h-4 w-4" aria-hidden />
+                  초대 대상 추가
+                </button>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                className="h-10 rounded-md bg-black px-4 text-sm font-medium text-white disabled:opacity-60"
+                disabled={createLoading}
+              >
+                {createLoading ? "생성 중…" : "생성"}
+              </button>
+              <button
+                type="button"
+                className="h-10 rounded-md border border-zinc-300 bg-white px-4 text-sm font-medium"
+                onClick={closeCreateForm}
+                disabled={createLoading}
+              >
+                취소
+              </button>
+            </div>
+          </form>
+        )}
       </section>
 
       {message ? <p className={message.kind === "success" ? "text-sm text-emerald-600" : "text-sm text-red-600"}>{message.text}</p> : null}
@@ -454,6 +747,7 @@ export function TeamManagementView() {
         <ul className="divide-y divide-zinc-200 rounded-lg border border-zinc-200 bg-white">
           {teams.map((team) => {
             const isOpen = openTeamId === team.id
+            const isOwner = isTeamOwnerByTeamId[team.id] === true
             return (
             <li key={team.id} className="overflow-hidden">
               <button
@@ -467,6 +761,9 @@ export function TeamManagementView() {
                       return null
                     }
                     cancelEditTeamApiKey()
+                    setInviteInputsByTeamId((p) =>
+                      p[team.id] !== undefined ? p : { ...p, [team.id]: [newInviteeRow()] },
+                    )
                     return team.id
                   })
                 }}
@@ -481,23 +778,92 @@ export function TeamManagementView() {
 
               {isOpen ? (
               <div className="space-y-2 border-t border-zinc-200 bg-zinc-50/50 px-4 pb-4 pt-2">
-              <p className="text-xs text-zinc-500">id: {team.id}</p>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <input
-                  className="h-9 flex-1 rounded-md border border-zinc-300 bg-white px-3 text-sm"
-                  value={inviteInputByTeamId[team.id] ?? ""}
-                  onChange={(e) => setInviteInputByTeamId((prev) => ({ ...prev, [team.id]: e.target.value }))}
-                  placeholder="초대할 사용자 아이디"
-                  autoComplete="off"
-                  disabled={inviteLoadingTeamId === team.id}
-                />
+              <div>
+                <p className="text-xs text-zinc-500">멤버 {(teamMemberIdsByTeamId[team.id] ?? []).length}명</p>
+                {(teamMemberIdsByTeamId[team.id] ?? []).length > 0 ? (
+                  <ul className="mt-2 space-y-1 text-xs text-zinc-600">
+                    {(teamMemberIdsByTeamId[team.id] ?? []).map((memberId) => (
+                      <li key={`${team.id}-${memberId}`} className="flex items-center justify-between gap-2">
+                        <span className="truncate">{memberId}</span>
+                        {isOwner ? (
+                          <button
+                            type="button"
+                            className="rounded border border-red-300 bg-white px-2 py-1 text-[11px] text-red-600 disabled:opacity-50"
+                            disabled={removeMemberLoadingKey === `${team.id}:${memberId}`}
+                            onClick={() => void removeTeamMember(team.id, memberId)}
+                          >
+                            {removeMemberLoadingKey === `${team.id}:${memberId}` ? "삭제 중…" : "팀원 삭제"}
+                          </button>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-1 text-xs text-zinc-500">등록된 팀원이 없습니다.</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-zinc-700">팀원 초대</p>
+                {(inviteInputsByTeamId[team.id] ?? []).map((row) => (
+                  <div key={row.id} className="flex gap-2">
+                    <input
+                      className="h-9 min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-3 text-sm"
+                      value={row.value}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        setInviteInputsByTeamId((prev) => {
+                          const list = prev[team.id] ?? []
+                          return {
+                            ...prev,
+                            [team.id]: list.map((r) => (r.id === row.id ? { ...r, value: v } : r)),
+                          }
+                        })
+                      }}
+                      placeholder="초대할 사용자 이메일 또는 아이디"
+                      autoComplete="off"
+                      disabled={inviteLoadingTeamId === team.id}
+                    />
+                    {(inviteInputsByTeamId[team.id] ?? []).length > 1 ? (
+                      <button
+                        type="button"
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                        aria-label="이 초대 행 삭제"
+                        disabled={inviteLoadingTeamId === team.id}
+                        onClick={() =>
+                          setInviteInputsByTeamId((prev) => {
+                            const list = prev[team.id] ?? []
+                            const next = list.filter((r) => r.id !== row.id)
+                            return { ...prev, [team.id]: next.length > 0 ? next : [newInviteeRow()] }
+                          })
+                        }
+                      >
+                        <Minus className="h-4 w-4" aria-hidden />
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
                 <button
                   type="button"
-                  className="h-9 rounded-md border border-zinc-300 bg-white px-3 text-xs font-medium disabled:opacity-60"
+                  className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-zinc-300 bg-white px-3 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 sm:w-auto sm:justify-start"
+                  disabled={inviteLoadingTeamId === team.id}
+                  onClick={() =>
+                    setInviteInputsByTeamId((prev) => {
+                      const list = prev[team.id] ?? [newInviteeRow()]
+                      return { ...prev, [team.id]: [...list, newInviteeRow()] }
+                    })
+                  }
+                >
+                  <Plus className="h-4 w-4" aria-hidden />
+                  초대 대상 추가
+                </button>
+                <button
+                  type="button"
+                  className="h-9 w-full rounded-md border border-zinc-300 bg-white px-3 text-xs font-medium disabled:opacity-60 sm:w-auto"
                   disabled={inviteLoadingTeamId === team.id}
                   onClick={() => void invite(team.id)}
                 >
-                  {inviteLoadingTeamId === team.id ? "초대 중…" : "아이디로 초대"}
+                  {inviteLoadingTeamId === team.id ? "초대 중…" : "멤버 초대"}
                 </button>
               </div>
 
@@ -573,7 +939,7 @@ export function TeamManagementView() {
                         return { ...prev, [team.id]: next }
                       })
                     }
-                    placeholder="월 예산 USD (스피너 ±0.01)"
+                    placeholder="월 예산 USD"
                     inputMode="decimal"
                     autoComplete="off"
                     disabled={apiKeyLoadingTeamId === team.id}
@@ -634,6 +1000,27 @@ export function TeamManagementView() {
                               >
                                 수정
                               </button>
+                              {isOwner ? (
+                                keyPendingDeletion ? (
+                                  <button
+                                    type="button"
+                                    className="h-8 shrink-0 rounded-md border border-zinc-300 bg-white px-2 text-[11px] font-medium disabled:opacity-50"
+                                    disabled={cancelDeleteLoadingKey === `${team.id}:${apiKey.id}`}
+                                    onClick={() => void cancelTeamApiKeyDeletion(team.id, apiKey.id)}
+                                  >
+                                    {cancelDeleteLoadingKey === `${team.id}:${apiKey.id}` ? "처리 중…" : "삭제 취소"}
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="h-8 shrink-0 rounded-md border border-red-300 bg-white px-2 text-[11px] font-medium text-red-600 disabled:opacity-50"
+                                    disabled={deleteLoadingKey === `${team.id}:${apiKey.id}`}
+                                    onClick={() => void deleteTeamApiKey(team.id, apiKey.id)}
+                                  >
+                                    {deleteLoadingKey === `${team.id}:${apiKey.id}` ? "처리 중…" : "삭제"}
+                                  </button>
+                                )
+                              ) : null}
                             </div>
                           ) : (
                             <div className="flex flex-col gap-2">
@@ -697,6 +1084,20 @@ export function TeamManagementView() {
                   <p className="text-xs text-zinc-500">등록된 팀 API Key가 없습니다.</p>
                 )}
               </div>
+
+              {isOwner ? (
+                <div className="rounded-md border border-red-200 bg-red-50 p-3">
+                  <p className="text-xs text-zinc-600">팀장은 팀 API 키를 모두 정리한 뒤 팀을 삭제할 수 있습니다.</p>
+                  <button
+                    type="button"
+                    className="mt-2 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-medium text-red-600 disabled:opacity-50"
+                    disabled={deleteTeamLoadingId === team.id}
+                    onClick={() => void deleteTeam(team.id, team.name)}
+                  >
+                    {deleteTeamLoadingId === team.id ? "팀 삭제 중…" : "팀 삭제"}
+                  </button>
+                </div>
+              ) : null}
               </div>
               ) : null}
             </li>

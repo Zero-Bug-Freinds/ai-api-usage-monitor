@@ -3,18 +3,22 @@
 이 문서는 목표 설계가 아니라, 현재 저장소에 존재하는 구현 코드 기준으로
 시스템 아키텍처를 C4 모델(C1 → C4)로 정리한다.
 
-**문서 버전:** 0.5 (정본 Web: `services/*/web/` — Identity·Usage·Team 분리 반영)
+**문서 버전:** 0.6 (정본 Web: `services/*/web/` — Identity·Usage·Team·Billing·Notification 분리 반영)
 
 분석 대상:
 - **`services/identity-service/web`** (정본: 랜딩·인증·설정/org UI + `/api/auth/**`·`/api/identity/**` BFF)
 - **`services/usage-service/web`** (정본: 대시보드 UI + `/api/usage/**` BFF → 게이트웨이)
 - **`services/team-service/web`** (정본: 팀 생성/조회/초대 UI + `/api/team/v1/**` BFF)
+- **`services/billing-service/web`** (정본: 지출·비용 UI + `/api/expenditure/**` BFF → 게이트웨이 `/api/v1/expenditure/**`)
+- **`services/notification-service/web`** (정본: 인앱 알림 UI + BFF → `notification-service` REST)
 - `apps/web` (과도기·레거시; 안내용 `README` 위주 — 런타임 정본 아님)
 - `services/api-gateway-service`
 - `services/proxy-service`
 - `services/identity-service`
 - `services/usage-service`
 - `services/team-service`
+- `services/billing-service`
+- `services/notification-service`
 - `libs/usage-events`
 - 서비스별 `application.yml`/`application.properties`
 - `test-report/` (팀·실험 보고·원인 분석 메모, 런타임 코드 아님)
@@ -34,10 +38,14 @@ flowchart TB
       direction TB
       identityWeb["Identity Web<br/>services/identity-service/web"]
       usageWeb["Usage Web<br/>services/usage-service/web"]
+      billingWeb["Billing Web<br/>services/billing-service/web"]
+      notifWeb["Notification Web<br/>services/notification-service/web"]
       gateway["API Gateway Service"]
       proxy["Proxy Service"]
       identity["Identity Service (Spring)"]
       usage["Usage Service (Spring)"]
+      billing["Billing Service (Spring)"]
+      notification["Notification Service (NestJS)"]
     end
 
     subgraph ext["External systems"]
@@ -52,15 +60,22 @@ flowchart TB
       rabbit["RabbitMQ"]
       appDb["PostgreSQL (app)"]
       usageDb["PostgreSQL (usage_db)"]
+      billingDb["PostgreSQL (billing_db)"]
+      notifDb["PostgreSQL (notification_db)"]
     end
 
     browser -->|HTTPS| identityWeb
     browser -->|HTTPS<br/>/dashboard 등| usageWeb
+    browser -->|HTTPS<br/>지출 등| billingWeb
+    browser -->|HTTPS<br/>/notifications| notifWeb
     identityWeb -->|BFF /api/auth·identity| identity
     usageWeb -->|BFF /api/usage| gateway
+    billingWeb -->|BFF → /api/v1/expenditure| gateway
+    notifWeb -->|BFF| notification
     client -->|Auth API| identity
     client -->|AI API| gateway
     gateway -->|/proxy| proxy
+    gateway -->|/api/v1/expenditure| billing
 
     proxy -->|relay| openai
     proxy -->|relay| anthropic
@@ -69,8 +84,12 @@ flowchart TB
     proxy -->|publish| rabbit
 
     usage -->|consume| rabbit
+    billing -->|consume| rabbit
+    billing -.->|optional GET budget| identity
     identity -->|JPA| appDb
     usage -->|JPA| usageDb
+    billing -->|JPA| billingDb
+    notification -->|Prisma| notifDb
 ```
 
 ## C2 - Container Diagram
@@ -83,29 +102,40 @@ Person(client, "Developer/User", "Auth and AI API consumer")
 Person(browserUser, "Browser user", "Web UI and same-origin BFF")
 
 System_Boundary(platform, "AI Usage Platform") {
-    Container(idWeb, "Identity Web", "Next.js", "랜딩·인증·설정; /api/auth/* · /api/identity/* BFF, httpOnly cookie")
-    Container(usWeb, "Usage Web", "Next.js", "대시보드; /api/usage/* BFF → Gateway")
-    Container(gateway, "API Gateway", "Spring Cloud Gateway", "JWT; /api/v1/ai→/proxy; trust headers")
+    Container(idWeb, "Identity Web", "Next.js 15", "랜딩·인증·설정; rewrites→타 도메인 web; /api/auth/* · /api/identity/* BFF")
+    Container(usWeb, "Usage Web", "Next.js 15", "대시보드; /api/usage/* BFF → Gateway; web-mfe=MF remote")
+    Container(billWeb, "Billing Web", "Next.js 15", "지출·비용; /api/expenditure/* BFF → Gateway /api/v1/expenditure")
+    Container(ntfWeb, "Notification Web", "Next.js 15", "인앱 알림; BFF → notification-service REST")
+    Container(gateway, "API Gateway", "Spring Cloud Gateway", "JWT; /api/v1/ai→/proxy; trust headers; /api/v1/expenditure→Billing")
     Container(proxy, "Proxy Service", "Spring WebFlux", "Relay; usage parse; MQ publish; key→Identity")
     Container(identity, "Identity Service", "Spring + JPA", "Signup/login, JWT")
     Container(usage, "Usage Service", "Spring + MQ + JPA", "Consume usage events")
+    Container(billing, "Billing Service", "Spring + MQ + JPA", "Consume usage-recorded; cost aggregates; optional Identity budget HTTP")
+    Container(notification, "Notification Service", "NestJS + Prisma", "In-app notifications API; MQ consumer는 로드맵(architecture §12)")
 
-    ContainerQueue(rabbit, "RabbitMQ", "AMQP", "usage.events / usage.recorded")
+    ContainerQueue(rabbit, "RabbitMQ", "AMQP", "usage.events / usage.recorded; billing queue")
     ContainerDb(appDb, "PostgreSQL (app)", "RDB", "Identity domain data")
     ContainerDb(usageDb, "PostgreSQL (usage_db)", "RDB", "Usage logs")
+    ContainerDb(billingDb, "PostgreSQL (billing_db)", "RDB", "Billing aggregates")
+    ContainerDb(notifDb, "PostgreSQL (notification_db)", "RDB", "In-app notifications")
 }
 
 System_Ext(openai, "OpenAI API", "LLM provider")
 System_Ext(anthropic, "Anthropic API", "LLM provider")
 System_Ext(google, "Google Gemini API", "LLM provider")
 
-Rel(browserUser, idWeb, "HTTPS UI + /api/auth/*", "HTTPS")
+Rel(browserUser, idWeb, "HTTPS UI + rewrites로 /dashboard 등 위임", "HTTPS")
 Rel(browserUser, usWeb, "HTTPS /dashboard + /api/usage/*", "HTTPS")
+Rel(browserUser, billWeb, "HTTPS 지출 UI + /api/expenditure/* BFF", "HTTPS")
+Rel(browserUser, ntfWeb, "HTTPS /notifications + BFF", "HTTPS")
 Rel(idWeb, identity, "auth/settings/org BFF → Identity REST", "HTTPS")
 Rel(usWeb, gateway, "usage BFF → /api/v1/usage/...", "HTTPS")
+Rel(billWeb, gateway, "expenditure BFF → /api/v1/expenditure", "HTTPS")
+Rel(ntfWeb, notification, "notification BFF → REST", "HTTPS")
 Rel(client, identity, "auth API direct", "HTTPS")
 Rel(client, gateway, "AI request", "HTTPS")
 Rel(gateway, proxy, "forward + trust headers", "HTTP")
+Rel(gateway, billing, "billing-http route", "HTTP")
 
 Rel(proxy, identity, "internal API keys per user", "HTTP")
 Rel(proxy, openai, "relay", "HTTPS")
@@ -114,8 +144,12 @@ Rel(proxy, google, "relay", "HTTPS")
 Rel(proxy, rabbit, "publish events", "AMQP")
 
 Rel(usage, rabbit, "consume events", "AMQP")
+Rel(billing, rabbit, "consume usage-recorded (billing queue)", "AMQP")
+Rel(billing, identity, "optional monthly budget HTTP", "HTTPS")
 Rel(identity, appDb, "read/write", "JPA")
 Rel(usage, usageDb, "read/write", "JPA")
+Rel(billing, billingDb, "read/write", "JPA")
+Rel(notification, notifDb, "read/write", "Prisma")
 ```
 
 ## C3 - Component Diagram (Cross-Service Runtime Flow)
@@ -151,6 +185,13 @@ flowchart TB
     usListener --> usSvc --> usRepo --> usEntity
   end
 
+  subgraph BL["Billing Service"]
+    direction TB
+    blListener["BillingUsageRecordedEventListener"]
+    blSvc["BillingRecordedService"]
+    blListener --> blSvc
+  end
+
   subgraph ID["Identity Service"]
     direction TB
     idCtl["AuthController"]
@@ -168,9 +209,14 @@ flowchart TB
   end
 
   GW -->|AI path| PX
+  GW -->|/api/v1/expenditure → Billing| BL
   PX -->|publish| RABBIT
   RABBIT -->|deliver| US
+  RABBIT -->|deliver| BL
+  BL -.->|IdentityBudgetClient (optional)| ID
 ```
+
+**C3 보충:** `Notification Service` 는 브라우저 BFF → REST·DB 중심이며, 본 절의 핵심 메시지 흐름(Proxy→MQ→Usage/Billing)과는 별도로 `docs/architecture.md` §12·`docs/contracts/web-notification-bff.md` 를 본다.
 
 ## C4 - Code Diagram (Proxy Relay Core)
 
@@ -348,14 +394,15 @@ RoleRepository --> Role
 
 ## Identity Web (`services/identity-service/web`) — 구조·흐름
 
-**목적:** Identity 도메인의 브라우저 UI·BFF를 **정본 트리** 기준으로 시각화한다. Usage 대시보드·Usage BFF는 **`services/usage-service/web`** 절(W2 시퀀스의 `Usage BFF`)을 본다. 집계·알림 전담 백엔드는 `docs/architecture.md` 참고.
+**목적:** Identity 도메인의 브라우저 UI·BFF를 **정본 트리** 기준으로 시각화한다. Usage 대시보드·Usage BFF는 **`services/usage-service/web`** 절(W2 시퀀스의 `Usage BFF`)을 본다. **지출·비용(Billing Web)** 은 `services/billing-service/web`·`docs/billing-service-overview-20260412.md`·`docs/billing-identity-budget.md` 를 본다. **인앱 알림(Notification Web)** 은 `services/notification-service/web`·`docs/contracts/web-notification-bff.md`·`docs/architecture.md` §12 를 본다.
 
 **동기화 체크리스트 (PR 또는 주기적으로):**
 
 1. `services/identity-service/web/src/app` 아래 **새 `page.tsx` / `route.ts` / 동적 세그먼트**가 생기면 W1·흐름도에 반영한다.
 2. `services/identity-service/web/middleware.ts`의 **`config.matcher`** 가 바뀌면 W4와 설명을 맞춘다.
 3. BFF가 Identity 업스트림을 호출하는 방식이 바뀌면 W2를 수정한다(계약: `docs/contracts/web-identity-bff.md`).
-4. **구현과 계약 문서가 어긋나면 다이어그램은 코드 우선**으로 둔다.
+4. **`next.config.ts`의 `rewrites()`** 가 바뀌면 `docs/contracts/web-split-boundary.md` §2.6·`docs/architecture.md` §13.3 과 맞춘다.
+5. **구현과 계약 문서가 어긋나면 다이어그램은 코드 우선**으로 둔다.
 
 ### W1 — 디렉터리·파일 맵 (논리 트리)
 
@@ -558,6 +605,22 @@ flowchart TD
 | UI | `src/app/dashboard/...` (기본 basePath는 팀 설정·Compose와 정합) |
 | 계약 | `docs/contracts/web-gateway-bff.md`, `docs/contracts/web-split-boundary.md` |
 
+### W6 — Billing Web 요약 (`services/billing-service/web`)
+
+| 항목 | 내용 |
+|------|------|
+| BFF | `src/app/api/expenditure/[[...path]]/route.ts` 등 → `API_GATEWAY_URL` 의 `/api/v1/expenditure/**` (게이트웨이가 `GATEWAY_BILLING_URI` 로 billing-service에 전달) |
+| UI | `src/components/expenditure/...` (기본 basePath·단일 오리진은 루트 `.env`·Compose와 정합) |
+| 계약·개요 | `docs/billing-service-overview-20260412.md`, `docs/billing-identity-budget.md` |
+
+### W7 — Notification Web 요약 (`services/notification-service/web`)
+
+| 항목 | 내용 |
+|------|------|
+| BFF | `src/app/api/notification/[[...path]]/route.ts` 등 → `NOTIFICATION_SERVICE_URL`(또는 환경별) 로 notification-service REST 프록시 |
+| UI | `basePath=/notifications` (web-edge·`docs/architecture.md` §2.3·§12 참고) |
+| 계약 | `docs/contracts/web-notification-bff.md` |
+
 ## 저장소 문서·실험 디렉터리 (비애플리케이션 코드)
 
 런타임 서비스는 아니나, 팀이 구조·원인·실험을 남기기 위해 루트에 다음을 둔다. C1–C4 다이어그램의 **컨테이너/컴포넌트 경계에는 포함하지 않는다.**
@@ -584,6 +647,23 @@ flowchart TD
 **Usage Web (정본)**  
 - `services/usage-service/web/src/app/api/usage/[[...path]]/route.ts` (+ `route.test.ts`)  
 
+**Billing Web (정본)**  
+- `services/billing-service/web/src/app/api/expenditure/[[...path]]/route.ts`  
+- `services/billing-service/web/src/components/expenditure/expenditure-dashboard.tsx`  
+
+**Notification Web (정본)**  
+- `services/notification-service/web/src/app/api/notification/[[...path]]/route.ts`  
+
+**Billing Service (Spring)**  
+- `services/billing-service/src/main/java/com/eevee/billingservice/consumer/BillingUsageRecordedEventListener.java`  
+- `services/billing-service/src/main/java/com/eevee/billingservice/service/BillingRecordedService.java`  
+- `services/billing-service/src/main/java/com/eevee/billingservice/integration/IdentityBudgetClient.java`  
+- `services/billing-service/src/main/resources/application.yml` (`billing.identity`, `billing.rabbit`)  
+
+**Notification Service (NestJS)**  
+- `services/notification-service/src/app.module.ts`  
+- `services/notification-service/prisma/schema.prisma`  
+
 **과도기**  
 - `apps/web/` — 통합 레거시; 런타임 정본은 위 두 `web/` 을 본다 (`apps/web/README.md` 등 안내 참고).
 - `docs/contracts/web-identity-bff.md`
@@ -595,7 +675,7 @@ flowchart TD
 - `services/proxy-service/src/main/java/com/eevee/proxyservice/provider/GoogleProviderHandler.java`
 - `services/proxy-service/src/main/java/com/eevee/proxyservice/security/UserContext.java`
 - `services/proxy-service/src/main/java/com/eevee/proxyservice/mq/UsageEventPublisher.java`
-- `docker-compose.yml` (프록시·게이트웨이·RabbitMQ 등 로컬 인프라; `identity`/`usage-service` 호스트 실행 전제는 `architecture.md`·본 문서 C1 참고)
+- `docker-compose.yml` (프록시·게이트웨이·RabbitMQ·`postgres-billing`·`postgres-notification`·선택 `billing-web`/`notification-web` 프로파일; 호스트 `bootRun` 전제는 `architecture.md`·본 문서 C1 참고)
 - `test-report/`, `experiment-logic/` (문서 전용, 위 § 저장소 문서·실험 디렉터리)
 - `services/usage-service/src/main/java/com/eevee/usageservice/consumer/UsageRecordedEventListener.java`
 - `services/usage-service/src/main/java/com/eevee/usageservice/service/UsageRecordedService.java`

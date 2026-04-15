@@ -6,10 +6,20 @@ function noStoreHeaders(): HeadersInit {
   return { "Cache-Control": "no-store" }
 }
 
+/** Spring team-service base URL (no trailing slash). */
 function envTeamBaseUrl(): string | null {
-  const url = process.env.TEAM_SERVICE_URL
-  if (!url) return null
-  return url.replace(/\/+$/, "")
+  const raw =
+    (process.env.TEAM_SERVICE_URL ?? process.env.WEB_TEAM_SERVICE_URL ?? "").trim()
+  if (raw) return raw.replace(/\/+$/, "")
+
+  if (process.env.NODE_ENV === "development") {
+    console.warn(
+      "[team-web] TEAM_SERVICE_URL is not set; using http://127.0.0.1:8093. " +
+        "If bootRun uses another port (e.g. TEAM_SERVICE_PORT=8094), set TEAM_SERVICE_URL in .env.local.",
+    )
+    return "http://127.0.0.1:8093"
+  }
+  return null
 }
 
 function getCookieValue(cookieHeader: string | null, name: string): string | null {

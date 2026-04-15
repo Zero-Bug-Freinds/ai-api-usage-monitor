@@ -32,6 +32,7 @@ COPY services/identity-service/web ./services/identity-service/web
 
 WORKDIR /repo/services/identity-service/web
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_PRIVATE_LOCAL_WEBPACK=true
 ARG NEXT_PUBLIC_USAGE_WEB_ORIGIN=
 ENV NEXT_PUBLIC_USAGE_WEB_ORIGIN=$NEXT_PUBLIC_USAGE_WEB_ORIGIN
 RUN pnpm run build

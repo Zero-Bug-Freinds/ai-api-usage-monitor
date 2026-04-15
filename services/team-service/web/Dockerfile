@@ -25,6 +25,7 @@ COPY services/team-service/web ./services/team-service/web
 
 WORKDIR /repo/services/team-service/web
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_PRIVATE_LOCAL_WEBPACK=true
 RUN pnpm run build
 
 FROM node:22-alpine AS runner

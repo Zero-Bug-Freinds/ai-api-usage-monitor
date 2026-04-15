@@ -3,11 +3,13 @@ package com.zerobugfreinds.team_service.service;
 import com.zerobugfreinds.team_service.domain.TeamMemberRole;
 import com.zerobugfreinds.team_service.domain.TeamInvitationStatus;
 import com.zerobugfreinds.team_service.dto.InternalTeamDetailResponse;
+import com.zerobugfreinds.team_service.dto.InternalBillingTeamApiKeyResponse;
+import com.zerobugfreinds.team_service.dto.InternalBillingTeamSummaryResponse;
 import com.zerobugfreinds.team_service.dto.TeamInvitationActionResponse;
 import com.zerobugfreinds.team_service.dto.TeamInvitationResponse;
 import com.zerobugfreinds.team_service.dto.TeamSummaryResponse;
-import com.zerobugfreinds.team_service.dto.InternalTeamDetailResponse;
 import com.zerobugfreinds.team_service.entity.TeamEntity;
+import com.zerobugfreinds.team_service.entity.TeamApiKeyEntity;
 import com.zerobugfreinds.team_service.entity.TeamInvitationEntity;
 import com.zerobugfreinds.team_service.entity.TeamMemberEntity;
 import com.zerobugfreinds.team_service.event.TeamMemberAddedEvent;
@@ -43,7 +45,6 @@ public class TeamService {
 	private final TeamMemberRepository teamMemberRepository;
 	private final TeamInvitationRepository teamInvitationRepository;
 	private final TeamApiKeyRepository teamApiKeyRepository;
-	private final IdentityUserLookupClient identityUserLookupClient;
 	private final TeamInvitationEventPublisher teamInvitationEventPublisher;
 	private final TeamMemberAddedEventPublisher teamMemberAddedEventPublisher;
 
@@ -52,7 +53,6 @@ public class TeamService {
 			TeamMemberRepository teamMemberRepository,
 			TeamInvitationRepository teamInvitationRepository,
 			TeamApiKeyRepository teamApiKeyRepository,
-			IdentityUserLookupClient identityUserLookupClient,
 			TeamInvitationEventPublisher teamInvitationEventPublisher,
 			TeamMemberAddedEventPublisher teamMemberAddedEventPublisher
 	) {
@@ -60,7 +60,6 @@ public class TeamService {
 		this.teamMemberRepository = teamMemberRepository;
 		this.teamInvitationRepository = teamInvitationRepository;
 		this.teamApiKeyRepository = teamApiKeyRepository;
-		this.identityUserLookupClient = identityUserLookupClient;
 		this.teamInvitationEventPublisher = teamInvitationEventPublisher;
 		this.teamMemberAddedEventPublisher = teamMemberAddedEventPublisher;
 	}
@@ -108,9 +107,6 @@ public class TeamService {
 			throw new IllegalArgumentException("userId는 필수입니다");
 		}
 		String invitee = inviteeUserId.trim();
-		if (!identityUserLookupClient.existsByEmail(invitee)) {
-			throw new IllegalArgumentException("존재하지 않는 사용자 아이디(이메일)입니다");
-		}
 		TeamEntity team = teamRepository.findById(teamId)
 				.orElseThrow(() -> new TeamNotFoundException("팀을 찾을 수 없습니다"));
 
@@ -160,6 +156,53 @@ public class TeamService {
 				team.getCreatedBy(),
 				team.getCreatedAt()
 		);
+	}
+
+	@Transactional(readOnly = true)
+	public List<InternalBillingTeamSummaryResponse> getBillingTeamSummariesInternal(String userId) {
+		if (!StringUtils.hasText(userId)) {
+			throw new IllegalArgumentException("userId는 필수입니다");
+		}
+		String normalizedUserId = userId.trim();
+		List<TeamMemberEntity> memberships = teamMemberRepository.findAllByUserId(normalizedUserId);
+		if (memberships.isEmpty()) {
+			return List.of();
+		}
+
+		List<Long> teamIds = memberships.stream()
+				.map(TeamMemberEntity::getTeamId)
+				.distinct()
+				.toList();
+		Map<Long, TeamEntity> teamById = teamRepository.findAllById(teamIds).stream()
+				.collect(Collectors.toMap(TeamEntity::getId, team -> team));
+		Map<Long, List<TeamApiKeyEntity>> apiKeysByTeamId = teamApiKeyRepository
+				.findAllByTeamIdInOrderByTeamIdAscCreatedAtDesc(teamIds)
+				.stream()
+				.collect(Collectors.groupingBy(TeamApiKeyEntity::getTeamId));
+
+		List<InternalBillingTeamSummaryResponse> result = new ArrayList<>();
+		for (Long teamId : teamIds) {
+			TeamEntity team = teamById.get(teamId);
+			if (team == null) {
+				continue;
+			}
+			List<InternalBillingTeamApiKeyResponse> keyResponses = apiKeysByTeamId
+					.getOrDefault(teamId, List.of())
+					.stream()
+					.map(apiKey -> new InternalBillingTeamApiKeyResponse(
+							apiKey.getId(),
+							apiKey.getProvider().name(),
+							apiKey.getKeyAlias(),
+							apiKey.getMonthlyBudgetUsd()
+					))
+					.toList();
+			result.add(new InternalBillingTeamSummaryResponse(
+					String.valueOf(team.getId()),
+					team.getName(),
+					keyResponses
+			));
+		}
+		return result;
 	}
 
 	@Transactional(readOnly = true)

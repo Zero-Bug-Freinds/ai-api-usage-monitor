@@ -9,4 +9,8 @@
 **/.vscode
 **/build
 **/.gradle
-apps
+# Monorepo `docker build` context is the repo root, so nested `services/*/web/.dockerignore` is not applied.
+# Host-only Next env (e.g. USAGE_WEB_INTERNAL_ORIGIN=http://localhost:3001) must not reach `next build` or
+# rewrite destinations are baked as localhost and proxy fails inside containers (ECONNREFUSED to :3001).
+**/.env.local
+# 'apps' 삭제 -> 이제 apps 폴더 내부가 Docker 빌드 컨텍스트에 포함됩니다.

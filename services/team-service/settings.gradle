@@ -1,1 +1,3 @@
 rootProject.name = 'team-service'
+include 'identity-events'
+project(':identity-events').projectDir = file("${rootDir}/../../libs/identity-events")

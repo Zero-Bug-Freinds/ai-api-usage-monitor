@@ -32,7 +32,8 @@
 - **백엔드(Proxy 등)**: **Spring Boot + Spring WebFlux** — 비동기 I/O·스트리밍·Provider 중계에 사용. **FastAPI(Python)는 사용하지 않습니다.**
 - **메시지 브로커**: **RabbitMQ** — `usage-recorded` 등 이벤트 발행·구독(Spring AMQP).
 - **기타 서비스**: 동일 Spring 생태계에서 Spring MVC + JPA 등으로 구현 가능(팀 합의).
-- 상세: `docs/architecture.md` §2.1, §6.2, §10.2, §13 · 웹 경계: `docs/contracts/web-split-boundary.md`
+- **프론트(웹·BFF):** **Next.js 15**(App Router, 서비스별 `web/`), **React 19** — 루트 `pnpm` 워크스페이스·각 `package.json` 정본. **Module Federation** 원격은 `usage-service`·`team-service`의 **`web-mfe/`**(Pages Router)에서 노출하고, 호스트는 **`apps/web`** 등에서 연결한다. **단일 오리진·경로 통합**은 **`services/identity-service/web/next.config.ts`의 `rewrites`**(및 선택 **`web-edge`** Nginx)가 담당한다.
+- 상세: `docs/architecture.md` §2.1, §6.2, §10.2, §13 · 웹 경계: `docs/contracts/web-split-boundary.md` · MFE 분리: `docs/mfe-pages-only-remote-split-guidance-20260414.md`
 
 ## 로컬 개발 관련(중요)
 - **Kubernetes는 사용하지 않음**: 배포하지 않는 캡스톤 환경을 전제로 합니다.
