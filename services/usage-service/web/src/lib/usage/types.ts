@@ -48,6 +48,8 @@ export type HourlyUsagePoint = {
 
 export type UsageLogApiKeyItemResponse = {
   apiKeyId: string
+  alias: string | null
+  status: "ACTIVE" | "DELETION_REQUESTED" | "DELETED" | null
 }
 
 export type UsageLogEntryResponse = {
@@ -57,6 +59,8 @@ export type UsageLogEntryResponse = {
   provider: string
   model: string
   apiKeyId: string | null
+  apiKeyAlias: string | null
+  apiKeyStatus: "ACTIVE" | "DELETION_REQUESTED" | "DELETED" | null
   promptTokens: number | null
   completionTokens: number | null
   totalTokens: number | null

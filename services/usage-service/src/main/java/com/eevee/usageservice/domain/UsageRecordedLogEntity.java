@@ -2,10 +2,15 @@ package com.eevee.usageservice.domain;
 
 import com.eevee.usage.events.AiProvider;
 import jakarta.persistence.Column;
+import jakarta.persistence.ConstraintMode;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.ForeignKey;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
 import java.math.BigDecimal;
@@ -32,7 +37,18 @@ public class UsageRecordedLogEntity {
 
     private String teamId;
 
+    @Column(name = "api_key_id")
     private String apiKeyId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(
+            name = "api_key_id",
+            referencedColumnName = "key_id",
+            insertable = false,
+            updatable = false,
+            foreignKey = @ForeignKey(ConstraintMode.NO_CONSTRAINT)
+    )
+    private ApiKeyMetadataEntity apiKeyMetadata;
 
     private String apiKeyFingerprint;
 
@@ -124,6 +140,7 @@ public class UsageRecordedLogEntity {
     public String getOrganizationId() { return organizationId; }
     public String getTeamId() { return teamId; }
     public String getApiKeyId() { return apiKeyId; }
+    public ApiKeyMetadataEntity getApiKeyMetadata() { return apiKeyMetadata; }
     public String getApiKeyFingerprint() { return apiKeyFingerprint; }
     public String getApiKeySource() { return apiKeySource; }
     public AiProvider getProvider() { return provider; }

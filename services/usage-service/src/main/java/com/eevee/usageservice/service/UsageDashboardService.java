@@ -11,6 +11,7 @@ import com.eevee.usageservice.api.dto.UsageLogApiKeyItemResponse;
 import com.eevee.usageservice.api.dto.UsageLogEntryResponse;
 import com.eevee.usageservice.api.dto.UsageSummaryResponse;
 import com.eevee.usageservice.config.UsageServiceProperties;
+import com.eevee.usageservice.domain.ApiKeyStatus;
 import com.eevee.usageservice.domain.UsageRecordedLogEntity;
 import com.eevee.usageservice.repository.UsageRecordedLogRepository;
 import com.eevee.usageservice.repository.analytics.UsageAnalyticsJdbcRepository;
@@ -35,6 +36,7 @@ public class UsageDashboardService {
 
     /** Dashboard date ranges and buckets align with Korea Standard Time (same as identity-service convention). */
     private static final ZoneId DASHBOARD_ZONE = ZoneId.of("Asia/Seoul");
+    private static final String DELETED_ALIAS_SUFFIX = " (삭제)";
 
     private static final int LOG_API_KEY_LOOKUP_DAYS = 30;
 
@@ -157,8 +159,7 @@ public class UsageDashboardService {
     public List<UsageLogApiKeyItemResponse> logApiKeys(String userId, AiProvider provider) {
         Instant to = clock.instant();
         Instant from = to.minus(LOG_API_KEY_LOOKUP_DAYS, ChronoUnit.DAYS);
-        List<String> ids = logRepository.findDistinctApiKeyIdsForUserInRange(userId, from, to, provider);
-        return ids.stream().map(UsageLogApiKeyItemResponse::new).toList();
+        return logRepository.findDistinctApiKeysForUserInRange(userId, from, to, provider);
     }
 
     private static UsageLogEntryResponse toLogDto(UsageRecordedLogEntity e) {
@@ -168,7 +169,11 @@ public class UsageDashboardService {
                 e.getCorrelationId(),
                 e.getProvider().name(),
                 e.getModel(),
-                e.getApiKeyId(),
+                null,
+                resolveDisplayAlias(e),
+                e.getApiKeyMetadata() != null && e.getApiKeyMetadata().getStatus() != null
+                        ? e.getApiKeyMetadata().getStatus().name()
+                        : null,
                 e.getPromptTokens(),
                 e.getCompletionTokens(),
                 e.getTotalTokens(),
@@ -179,6 +184,21 @@ public class UsageDashboardService {
                 e.isRequestSuccessful(),
                 e.getUpstreamStatusCode()
         );
+    }
+
+    private static String resolveDisplayAlias(UsageRecordedLogEntity e) {
+        if (e.getApiKeyMetadata() == null) {
+            return null;
+        }
+        String alias = e.getApiKeyMetadata().getAlias();
+        ApiKeyStatus status = e.getApiKeyMetadata().getStatus();
+        if (alias == null || alias.isBlank()) {
+            return null;
+        }
+        if (status == ApiKeyStatus.DELETED) {
+            return alias + DELETED_ALIAS_SUFFIX;
+        }
+        return alias;
     }
 
     private Range validateRange(LocalDate from, LocalDate toInclusive) {

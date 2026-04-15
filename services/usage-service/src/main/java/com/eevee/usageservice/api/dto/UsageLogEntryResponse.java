@@ -11,6 +11,8 @@ public record UsageLogEntryResponse(
         String provider,
         String model,
         String apiKeyId,
+        String apiKeyAlias,
+        String apiKeyStatus,
         Long promptTokens,
         Long completionTokens,
         Long totalTokens,
