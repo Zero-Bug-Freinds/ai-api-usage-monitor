@@ -30,7 +30,7 @@ type TeamApiKeySummary = {
   deletionGraceDays?: number | null
 }
 
-type TeamKeyProvider = "OPENAI" | "GEMINI" | "CLAUDE"
+type _TeamKeyProvider = "OPENAI" | "GEMINI" | "CLAUDE"
 
 function asApiResponse(value: unknown): ApiResponse<unknown> | null {
   if (!value || typeof value !== "object") return null

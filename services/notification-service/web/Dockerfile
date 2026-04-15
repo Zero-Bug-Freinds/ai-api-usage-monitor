@@ -17,6 +17,7 @@ COPY services/notification-service/web ./services/notification-service/web
 
 WORKDIR /repo/services/notification-service/web
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_PRIVATE_LOCAL_WEBPACK=true
 ARG NEXT_PUBLIC_BASE_PATH=/notifications
 ENV NEXT_PUBLIC_BASE_PATH=$NEXT_PUBLIC_BASE_PATH
 RUN pnpm run build

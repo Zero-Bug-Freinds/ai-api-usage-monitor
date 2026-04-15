@@ -41,8 +41,8 @@
 - **집계·알림 파이프라인(§12):** UI를 만드는 일과 **혼동하지 않는다** — 해당 백엔드는 `docs/architecture.md` §12 범위.
 
 ## 기술 스택 (웹·BFF, 권장)
-- **Framework:** Next.js (App Router), React, TypeScript
-- **UI:** Tailwind CSS, Shadcn UI, Radix UI — 공용 프리미티브는 **`packages/ui`** (`@ai-usage/ui`), 도메인 화면은 각 `services/<svc>/web/`
+- **Framework:** Next.js 15 (App Router), React 19, TypeScript — MF remote는 `usage-service`·`team-service`의 **`web-mfe/`**(Pages Router)만 사용; 호스트는 `apps/web` 등.
+- **UI:** Tailwind CSS, Shadcn UI, Radix UI — 공용 프리미티브는 **`packages/ui`** (`@ai-usage/ui`), 콘솔 레이아웃·사이드바는 **`packages/shell`** (`@ai-usage/shell`), 도메인 화면은 각 `services/<svc>/web/`
 - **차트:** Recharts 또는 Chart.js
 - **검증:** Zod (폼·스키마)
 - **(선택)** 데이터 패칭: TanStack Query; 서버 액션 패턴 도입 시 `next-safe-action` 등 팀 합의 후 사용

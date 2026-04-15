@@ -103,9 +103,9 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
   const [saveEditLoadingId, setSaveEditLoadingId] = React.useState<number | null>(null)
   const [revealExternalKey, setRevealExternalKey] = React.useState(false)
 
-  const [deletePassword, setDeletePassword] = React.useState("")
-  const [deleteLoading, setDeleteLoading] = React.useState(false)
-  const [deleteError, setDeleteError] = React.useState<string | null>(null)
+  const [deletePassword, _setDeletePassword] = React.useState("")
+  const [_deleteLoading, setDeleteLoading] = React.useState(false)
+  const [_deleteError, setDeleteError] = React.useState<string | null>(null)
 
   const loadExternalKeys = React.useCallback(async (signal?: AbortSignal) => {
     setKeysLoading(true)
@@ -374,7 +374,7 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
     }
   }
 
-  async function onDeleteAccount() {
+  async function _onDeleteAccount() {
     setDeleteError(null)
     if (!deletePassword.trim()) {
       setDeleteError("Password is required")

@@ -204,6 +204,17 @@ services:
     ports:
       - "${USAGE_WEB_PORT:-3001}:3000"
 
+  usage-web-mfe:
+    profiles:
+      - web
+    build:
+      context: .
+      dockerfile: services/usage-service/web-mfe/Dockerfile
+    depends_on:
+      - usage-web
+    expose:
+      - "3000"
+
   # billing-web 은 usage-web 과 동일 DashboardShell; 빌드 시 NEXT_PUBLIC_IDENTITY_WEB_ORIGIN 등은 루트 .env 와 맞출 것.
   billing-web:
     profiles:
@@ -291,6 +302,17 @@ services:
       - "host.docker.internal:host-gateway"
     ports:
       - "${TEAM_WEB_PORT:-3002}:3000"
+
+  team-web-mfe:
+    profiles:
+      - web
+    build:
+      context: .
+      dockerfile: services/team-service/web-mfe/Dockerfile
+    depends_on:
+      - team-web
+    expose:
+      - "3000"
 
   web-edge:
     profiles:
