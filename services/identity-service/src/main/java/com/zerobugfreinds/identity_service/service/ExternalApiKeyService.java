@@ -1,6 +1,8 @@
 package com.zerobugfreinds.identity_service.service;
 
 import com.zerobugfreinds.identity_service.domain.ExternalApiKeyProvider;
+import com.zerobugfreinds.identity.events.ExternalApiKeyStatus;
+import com.zerobugfreinds.identity.events.ExternalApiKeyStatusChangedEvent;
 import com.zerobugfreinds.identity_service.dto.InternalApiKeyResponse;
 import com.zerobugfreinds.identity_service.entity.ExternalApiKeyEntity;
 import com.zerobugfreinds.identity_service.exception.DuplicateExternalApiKeyAliasException;
@@ -14,6 +16,7 @@ import com.zerobugfreinds.identity_service.repository.UserRepository;
 import com.zerobugfreinds.identity_service.util.EncryptionUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -38,15 +41,18 @@ public class ExternalApiKeyService {
 	private final ExternalApiKeyRepository externalApiKeyRepository;
 	private final UserRepository userRepository;
 	private final EncryptionUtil encryptionUtil;
+	private final ApplicationEventPublisher applicationEventPublisher;
 
 	public ExternalApiKeyService(
 			ExternalApiKeyRepository externalApiKeyRepository,
 			UserRepository userRepository,
-			EncryptionUtil encryptionUtil
+			EncryptionUtil encryptionUtil,
+			ApplicationEventPublisher applicationEventPublisher
 	) {
 		this.externalApiKeyRepository = externalApiKeyRepository;
 		this.userRepository = userRepository;
 		this.encryptionUtil = encryptionUtil;
+		this.applicationEventPublisher = applicationEventPublisher;
 	}
 
 	@Transactional
@@ -114,6 +120,7 @@ public class ExternalApiKeyService {
 				trimmedAlias,
 				saved.getId()
 		);
+		publishExternalApiKeyStatusChanged(saved, ExternalApiKeyStatus.ACTIVE);
 
 		return saved;
 	}
@@ -196,6 +203,7 @@ public class ExternalApiKeyService {
 				trimmedAlias,
 				entity.getId()
 		);
+		publishExternalApiKeyStatusChanged(entity, ExternalApiKeyStatus.ACTIVE);
 
 		return entity;
 	}
@@ -272,6 +280,7 @@ public class ExternalApiKeyService {
 				entity.getId(),
 				entity.getPermanentDeletionAt()
 		);
+		publishExternalApiKeyStatusChanged(entity, ExternalApiKeyStatus.DELETION_REQUESTED);
 		return entity;
 	}
 
@@ -287,6 +296,7 @@ public class ExternalApiKeyService {
 		}
 		entity.clearPendingDeletion();
 		log.info("[AUDIT] external_api_key_deletion_cancelled userId={} keyId={}", userId, entity.getId());
+		publishExternalApiKeyStatusChanged(entity, ExternalApiKeyStatus.ACTIVE);
 		return entity;
 	}
 
@@ -304,9 +314,21 @@ public class ExternalApiKeyService {
 					e.getId(),
 					e.getProvider().name()
 			);
+			publishExternalApiKeyStatusChanged(e, ExternalApiKeyStatus.DELETED);
 		}
 		externalApiKeyRepository.deleteAll(expired);
 		return expired.size();
+	}
+
+	private void publishExternalApiKeyStatusChanged(ExternalApiKeyEntity entity, ExternalApiKeyStatus status) {
+		ExternalApiKeyStatusChangedEvent event = ExternalApiKeyStatusChangedEvent.of(
+				entity.getId(),
+				entity.getKeyAlias(),
+				entity.getUserId(),
+				entity.getProvider().name(),
+				status
+		);
+		applicationEventPublisher.publishEvent(event);
 	}
 
 	private static int resolveGracePeriodDays(Integer requested) {
