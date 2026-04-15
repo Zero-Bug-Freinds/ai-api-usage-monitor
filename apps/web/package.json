@@ -6,7 +6,7 @@
     "dev": "next dev -p 3100",
     "build": "next build",
     "start": "next start -p 3100",
-    "lint": "eslint",
+    "lint": "eslint . --max-warnings=-1",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest"
   },
@@ -26,6 +26,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@eslint/eslintrc": "^3.2.0",
     "eslint": "^9",
     "eslint-config-next": "15.2.4",
     "tailwindcss": "^4",

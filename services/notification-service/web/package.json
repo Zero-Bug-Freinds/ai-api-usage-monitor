@@ -6,7 +6,7 @@
     "dev": "next dev -p 3004",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
+    "lint": "eslint . --max-warnings=-1",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest"
   },
@@ -31,6 +31,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "cross-env": "^7.0.3",
+    "@eslint/eslintrc": "^3.2.0",
     "eslint": "^9",
     "eslint-config-next": "16.2.1",
     "jsdom": "^29.0.1",

@@ -3,6 +3,7 @@
   "private": true,
   "packageManager": "pnpm@9.15.9",
   "devDependencies": {
+    "@eslint/eslintrc": "^3.3.5",
     "eslint": "^9",
     "next": "16.2.1",
     "vitest": "^4.1.1"

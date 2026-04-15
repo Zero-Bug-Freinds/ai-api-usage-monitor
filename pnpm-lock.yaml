@@ -52,6 +52,9 @@ importers:
         specifier: 5.97.1
         version: 5.97.1
     devDependencies:
+      '@eslint/eslintrc':
+        specifier: ^3.3.5
+        version: 3.3.5
       '@tailwindcss/postcss':
         specifier: ^4
         version: 4.2.2
@@ -178,6 +181,9 @@ importers:
         specifier: 5.97.1
         version: 5.97.1
     devDependencies:
+      '@eslint/eslintrc':
+        specifier: ^3.2.0
+        version: 3.3.5
       '@tailwindcss/postcss':
         specifier: ^4
         version: 4.2.2
@@ -254,6 +260,9 @@ importers:
         specifier: ^4.3.6
         version: 4.3.6
     devDependencies:
+      '@eslint/eslintrc':
+        specifier: ^3.2.0
+        version: 3.3.5
       '@tailwindcss/postcss':
         specifier: ^4
         version: 4.2.2
@@ -385,6 +394,9 @@ importers:
         specifier: ^4.3.6
         version: 4.3.6
     devDependencies:
+      '@eslint/eslintrc':
+        specifier: ^3.2.0
+        version: 3.3.5
       '@tailwindcss/postcss':
         specifier: ^4
         version: 4.2.2
@@ -455,6 +467,9 @@ importers:
         specifier: 5.97.1
         version: 5.97.1
     devDependencies:
+      '@eslint/eslintrc':
+        specifier: ^3.2.0
+        version: 3.3.5
       '@tailwindcss/postcss':
         specifier: ^4
         version: 4.2.2
@@ -510,6 +525,9 @@ importers:
         specifier: 5.97.1
         version: 5.97.1
     devDependencies:
+      '@eslint/eslintrc':
+        specifier: ^3.2.0
+        version: 3.3.5
       '@tailwindcss/postcss':
         specifier: ^4
         version: 4.2.2
@@ -580,6 +598,9 @@ importers:
         specifier: ^4.3.6
         version: 4.3.6
     devDependencies:
+      '@eslint/eslintrc':
+        specifier: ^3.2.0
+        version: 3.3.5
       '@tailwindcss/postcss':
         specifier: ^4
         version: 4.2.2
@@ -647,6 +668,9 @@ importers:
         specifier: 5.97.1
         version: 5.97.1
     devDependencies:
+      '@eslint/eslintrc':
+        specifier: ^3.2.0
+        version: 3.3.5
       '@tailwindcss/postcss':
         specifier: ^4
         version: 4.2.2
