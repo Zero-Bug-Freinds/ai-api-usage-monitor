@@ -34,6 +34,29 @@ public class ApiKeyMetadataEntity {
     protected ApiKeyMetadataEntity() {
     }
 
+    public static ApiKeyMetadataEntity create(String keyId, String userId) {
+        ApiKeyMetadataEntity entity = new ApiKeyMetadataEntity();
+        entity.keyId = keyId;
+        entity.userId = userId;
+        entity.updatedAt = Instant.now();
+        entity.status = ApiKeyStatus.ACTIVE;
+        return entity;
+    }
+
+    public void apply(
+            String userId,
+            String provider,
+            String alias,
+            ApiKeyStatus status,
+            Instant updatedAt
+    ) {
+        this.userId = userId;
+        this.provider = provider;
+        this.alias = alias;
+        this.status = status;
+        this.updatedAt = updatedAt;
+    }
+
     public String getKeyId() {
         return keyId;
     }

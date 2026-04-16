@@ -128,6 +128,7 @@ public class UsageDashboardService {
             LocalDate toInclusive,
             AiProvider provider,
             String apiKeyId,
+            Boolean requestSuccessful,
             String modelMask,
             int page,
             int size
@@ -142,6 +143,7 @@ public class UsageDashboardService {
                 r.toExclusive(),
                 provider,
                 keyFilter,
+                requestSuccessful,
                 modelMask,
                 PageRequest.of(pageIndex, pageSize, Sort.by(Sort.Direction.DESC, "occurredAt"))
         );

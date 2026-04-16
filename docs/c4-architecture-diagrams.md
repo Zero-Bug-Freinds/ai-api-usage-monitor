@@ -3,7 +3,7 @@
 이 문서는 목표 설계가 아니라, 현재 저장소에 존재하는 구현 코드 기준으로
 시스템 아키텍처를 C4 모델(C1 → C4)로 정리한다.
 
-**문서 버전:** 0.6 (정본 Web: `services/*/web/` — Identity·Usage·Team·Billing·Notification 분리 반영)
+**문서 버전:** 0.7 (Usage API Key metadata 분리 + RabbitMQ 토폴로지 반영)
 
 분석 대상:
 - **`services/identity-service/web`** (정본: 랜딩·인증·설정/org UI + `/api/auth/**`·`/api/identity/**` BFF)
@@ -45,6 +45,7 @@ flowchart TB
       identity["Identity Service (Spring)"]
       usage["Usage Service (Spring)"]
       billing["Billing Service (Spring)"]
+      team["Team Service (Spring)"]
       notification["Notification Service (NestJS)"]
     end
 
@@ -83,8 +84,11 @@ flowchart TB
     proxy -->|internal /internal/api-keys| identity
     proxy -->|publish| rabbit
 
-    usage -->|consume| rabbit
-    billing -->|consume| rabbit
+    usage -->|consume usage.recorded| rabbit
+    usage -->|consume usage.cost.finalized| rabbit
+    billing -->|consume usage.recorded| rabbit
+    billing -->|publish usage.cost.finalized| rabbit
+    team -->|consume account-deletion| rabbit
     billing -.->|optional GET budget| identity
     identity -->|JPA| appDb
     usage -->|JPA| usageDb
@@ -109,11 +113,12 @@ System_Boundary(platform, "AI Usage Platform") {
     Container(gateway, "API Gateway", "Spring Cloud Gateway", "JWT; /api/v1/ai→/proxy; trust headers; /api/v1/expenditure→Billing")
     Container(proxy, "Proxy Service", "Spring WebFlux", "Relay; usage parse; MQ publish; key→Identity")
     Container(identity, "Identity Service", "Spring + JPA", "Signup/login, JWT")
-    Container(usage, "Usage Service", "Spring + MQ + JPA", "Consume usage events")
-    Container(billing, "Billing Service", "Spring + MQ + JPA", "Consume usage-recorded; cost aggregates; optional Identity budget HTTP")
+    Container(usage, "Usage Service", "Spring + MQ + JPA", "Consume usage-recorded + usage.cost.finalized; usage log + api key metadata")
+    Container(billing, "Billing Service", "Spring + MQ + JPA", "Consume usage-recorded; cost aggregates; publish usage.cost.finalized; optional Identity budget HTTP")
+    Container(team, "Team Service", "Spring + JPA + MQ", "Team domain + account deletion coordination listener")
     Container(notification, "Notification Service", "NestJS + Prisma", "In-app notifications API; MQ consumer는 로드맵(architecture §12)")
 
-    ContainerQueue(rabbit, "RabbitMQ", "AMQP", "usage.events / usage.recorded; billing queue")
+    ContainerQueue(rabbit, "RabbitMQ", "AMQP", "usage.events(usage.recorded), billing.events(usage.cost.finalized), account-deletion events")
     ContainerDb(appDb, "PostgreSQL (app)", "RDB", "Identity domain data")
     ContainerDb(usageDb, "PostgreSQL (usage_db)", "RDB", "Usage logs")
     ContainerDb(billingDb, "PostgreSQL (billing_db)", "RDB", "Billing aggregates")
@@ -143,8 +148,10 @@ Rel(proxy, anthropic, "relay", "HTTPS")
 Rel(proxy, google, "relay", "HTTPS")
 Rel(proxy, rabbit, "publish events", "AMQP")
 
-Rel(usage, rabbit, "consume events", "AMQP")
-Rel(billing, rabbit, "consume usage-recorded (billing queue)", "AMQP")
+Rel(usage, rabbit, "consume usage-service.queue + usage-service.usage-cost-finalized.queue", "AMQP")
+Rel(billing, rabbit, "consume billing-service.queue", "AMQP")
+Rel(billing, rabbit, "publish usage.cost.finalized", "AMQP")
+Rel(team, rabbit, "consume team.account-deletion.requested.queue", "AMQP")
 Rel(billing, identity, "optional monthly budget HTTP", "HTTPS")
 Rel(identity, appDb, "read/write", "JPA")
 Rel(usage, usageDb, "read/write", "JPA")
@@ -179,10 +186,15 @@ flowchart TB
   subgraph US["Usage Service"]
     direction TB
     usListener["UsageRecordedEventListener"]
+    usCostListener["UsageCostFinalizedEventListener"]
     usSvc["UsageRecordedService"]
+    usCostSvc["UsageCostFinalizedService"]
     usRepo["UsageRecordedLogRepository"]
     usEntity["UsageRecordedLogEntity"]
+    usApiMeta["ApiKeyMetadataEntity"]
     usListener --> usSvc --> usRepo --> usEntity
+    usCostListener --> usCostSvc --> usRepo
+    usEntity -. api_key_id join .-> usApiMeta
   end
 
   subgraph BL["Billing Service"]

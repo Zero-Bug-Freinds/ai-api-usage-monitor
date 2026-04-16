@@ -32,6 +32,7 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
                     and u.occurredAt < :toExclusive
                     and (:provider is null or u.provider = :provider)
                     and (:apiKeyId is null or :apiKeyId = '' or u.apiKeyId = :apiKeyId)
+                    and (:requestSuccessful is null or u.requestSuccessful = :requestSuccessful)
                     and (:modelMask is null or :modelMask = '' or lower(coalesce(u.model, '')) like lower(concat('%', :modelMask, '%')))
                     order by u.occurredAt desc
                     """,
@@ -42,6 +43,7 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
                     and u.occurredAt < :toExclusive
                     and (:provider is null or u.provider = :provider)
                     and (:apiKeyId is null or :apiKeyId = '' or u.apiKeyId = :apiKeyId)
+                    and (:requestSuccessful is null or u.requestSuccessful = :requestSuccessful)
                     and (:modelMask is null or :modelMask = '' or lower(coalesce(u.model, '')) like lower(concat('%', :modelMask, '%')))
                     """
     )
@@ -51,6 +53,7 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
             @Param("toExclusive") Instant toExclusive,
             @Param("provider") AiProvider provider,
             @Param("apiKeyId") String apiKeyId,
+            @Param("requestSuccessful") Boolean requestSuccessful,
             @Param("modelMask") String modelMask,
             Pageable pageable
     );

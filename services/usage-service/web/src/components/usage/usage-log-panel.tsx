@@ -17,11 +17,18 @@ import { addKstDays, formatKstIsoDate } from "@/lib/usage/kst-dates"
 const LOGS_PAGE_SIZE = 20
 const LOG_PROVIDER_ALL = "__all__"
 const LOG_API_KEY_ALL = "__all__"
+const LOG_SUCCESS_ALL = "__all__"
 
 function toApiKeyLabel(item: UsageLogApiKeyItemResponse): string {
   const alias = item.alias?.trim()
   if (!alias) return "별칭 없음"
   return item.status === "DELETED" ? `${alias} (삭제)` : alias
+}
+
+function toLogApiKeyLabel(row: UsageLogEntryResponse): string {
+  const alias = row.apiKeyAlias?.trim()
+  if (!alias) return "별칭 없음"
+  return alias
 }
 
 export function UsageLogPanel() {
@@ -31,6 +38,7 @@ export function UsageLogPanel() {
   const [logsPage, setLogsPage] = React.useState(0)
   const [logProvider, setLogProvider] = React.useState<string>(LOG_PROVIDER_ALL)
   const [apiKeyFilter, setApiKeyFilter] = React.useState<string>(LOG_API_KEY_ALL)
+  const [successFilter, setSuccessFilter] = React.useState<string>(LOG_SUCCESS_ALL)
   const [apiKeyOptions, setApiKeyOptions] = React.useState<UsageLogApiKeyItemResponse[]>([])
   const [modelDraft, setModelDraft] = React.useState("")
   const [appliedModelMask, setAppliedModelMask] = React.useState("")
@@ -43,6 +51,8 @@ export function UsageLogPanel() {
 
   const providerParam =
     logProvider !== LOG_PROVIDER_ALL ? (logProvider as UsageProviderFilter) : undefined
+  const requestSuccessfulParam =
+    successFilter === "true" ? "true" : successFilter === "false" ? "false" : undefined
 
   React.useEffect(() => {
     let cancelled = false
@@ -78,6 +88,7 @@ export function UsageLogPanel() {
           provider: providerParam,
           apiKeyId:
             apiKeyFilter !== LOG_API_KEY_ALL && apiKeyFilter ? apiKeyFilter : undefined,
+          requestSuccessful: requestSuccessfulParam,
           model: appliedModelMask || undefined,
         })
         const data = await fetchUsageJson<PagedLogsResponse>(`logs${q}`)
@@ -93,7 +104,7 @@ export function UsageLogPanel() {
     return () => {
       cancelled = true
     }
-  }, [logsPage, appliedModelMask, logProvider, providerParam, apiKeyFilter, logRefresh])
+  }, [logsPage, appliedModelMask, logProvider, providerParam, apiKeyFilter, requestSuccessfulParam, logRefresh])
 
   return (
     <div className="rounded-lg border border-border p-4 shadow-sm">
@@ -144,7 +155,21 @@ export function UsageLogPanel() {
           </Select>
         </div>
 
-        <div className="min-w-0 flex-1 space-y-2">
+        <div className="space-y-2 sm:w-40">
+          <Label htmlFor="log-success">성공</Label>
+          <Select value={successFilter} onValueChange={(v) => { setLogsPage(0); setSuccessFilter(v) }}>
+            <SelectTrigger id="log-success" className="w-full">
+              <SelectValue placeholder="전체" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={LOG_SUCCESS_ALL}>전체</SelectItem>
+              <SelectItem value="true">예</SelectItem>
+              <SelectItem value="false">아니오</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2 sm:w-56">
           <Label htmlFor="log-model">모델 (부분 일치)</Label>
           <Input
             id="log-model"
@@ -194,7 +219,7 @@ export function UsageLogPanel() {
                       {formatOccurredAtKst(row.occurredAt)}
                     </td>
                     <td className="px-3 py-2">{row.provider}</td>
-                    <td className="px-3 py-2">{row.apiKeyAlias ?? "—"}</td>
+                    <td className="px-3 py-2">{toLogApiKeyLabel(row)}</td>
                     <td className="px-3 py-2 font-mono text-xs">{row.model}</td>
                     <td className="px-3 py-2 tabular-nums">{row.totalTokens ?? "—"}</td>
                     <td className="px-3 py-2 tabular-nums">

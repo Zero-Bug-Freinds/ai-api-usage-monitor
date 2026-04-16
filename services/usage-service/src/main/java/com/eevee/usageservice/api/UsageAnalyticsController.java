@@ -101,12 +101,13 @@ public class UsageAnalyticsController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(required = false) AiProvider provider,
             @RequestParam(required = false) String apiKeyId,
+            @RequestParam(required = false) Boolean requestSuccessful,
             @RequestParam(required = false) String model,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
         String userId = currentUser(request);
-        return dashboardService.logs(userId, from, to, provider, apiKeyId, model, page, size);
+        return dashboardService.logs(userId, from, to, provider, apiKeyId, requestSuccessful, model, page, size);
     }
 
     @GetMapping("/logs/api-keys")
