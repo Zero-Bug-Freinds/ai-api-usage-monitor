@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { CircleHelp } from "lucide-react"
 
 import {
   Button,
@@ -232,7 +233,7 @@ export function UsageLogPanel() {
                               className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-muted-foreground/40 text-[10px] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
                               aria-label="추정 추론 토큰 설명"
                             >
-                              ?
+                              <CircleHelp className="h-3 w-3" />
                             </button>
                           </TooltipTrigger>
                           <TooltipContent side="top" align="start">
