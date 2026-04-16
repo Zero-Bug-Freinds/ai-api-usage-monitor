@@ -83,6 +83,19 @@ function tokenStackProviderTieRank(provider: string): number {
   return TOKEN_STACK_PROVIDER_TIE_ORDER[provider] ?? 99
 }
 
+/** AiProvider.pathSegment() + "_unknown" 집계 행(모델별 토큰 사용량 그래프에서만 제외). */
+const PROVIDER_UNKNOWN_MODEL_NAME: Record<string, string> = {
+  GOOGLE: "google_unknown",
+  OPENAI: "openai_unknown",
+  ANTHROPIC: "anthropic_unknown",
+}
+
+function isProviderUnknownPlaceholderModel(model: string, provider: string): boolean {
+  const expected = PROVIDER_UNKNOWN_MODEL_NAME[provider.toUpperCase()]
+  if (!expected) return false
+  return model.trim().toLowerCase() === expected
+}
+
 type PeriodMode = "today" | "7d" | "30d" | "custom"
 
 function tooltipNumericValue(value: unknown): number {
@@ -855,7 +868,8 @@ export function UsageDashboard() {
   const tokenStackRows = React.useMemo((): TokenStackRow[] => {
     const totalTokensOf = (m: ModelUsageAggregate) =>
       m.inputTokens + m.estimatedReasoningTokens + m.outputTokens
-    const sorted = [...byModel].sort((a, b) => {
+    const forTokenChart = byModel.filter((m) => !isProviderUnknownPlaceholderModel(m.model, m.provider))
+    const sorted = [...forTokenChart].sort((a, b) => {
       const byTotal = totalTokensOf(b) - totalTokensOf(a)
       if (byTotal !== 0) return byTotal
       const byProvider = tokenStackProviderTieRank(a.provider) - tokenStackProviderTieRank(b.provider)
