@@ -14,6 +14,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+
 /**
  * 사용자 도메인 유스케이스.
  */
@@ -83,5 +87,29 @@ public class UserService {
 			return false;
 		}
 		return userRepository.existsByEmail(email.trim());
+	}
+
+	@Transactional(readOnly = true)
+	public Set<String> findExistingUserIds(List<String> rawUserIds) {
+		if (rawUserIds == null || rawUserIds.isEmpty()) {
+			return Set.of();
+		}
+		Set<Long> numericUserIds = new LinkedHashSet<>();
+		for (String rawUserId : rawUserIds) {
+			if (rawUserId == null || rawUserId.isBlank()) {
+				continue;
+			}
+			try {
+				numericUserIds.add(Long.parseLong(rawUserId.trim()));
+			} catch (NumberFormatException ignored) {
+				// team-service userId 는 문자열이므로 숫자 변환 실패 값은 미존재 사용자로 취급한다.
+			}
+		}
+		if (numericUserIds.isEmpty()) {
+			return Set.of();
+		}
+		return userRepository.findAllById(numericUserIds).stream()
+				.map(user -> String.valueOf(user.getId()))
+				.collect(LinkedHashSet::new, Set::add, Set::addAll);
 	}
 }
