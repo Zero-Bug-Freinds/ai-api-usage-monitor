@@ -1,6 +1,6 @@
 # Class Diagram
 
-`docs/c4-architecture-diagrams.md`에 붙여 넣을 수 있도록 Mermaid 클래스 다이어그램을 정리합니다. 최근 변경(Usage 대시보드·분석 API, 게이트웨이 신뢰 필터, Identity 세션 API, Billing 과금·집계, Notification 인앱 API 등)을 반영했습니다.
+`docs/c4-architecture-diagrams.md`에 붙여 넣을 수 있도록 Mermaid 클래스 다이어그램을 정리합니다. 최근 변경(Usage 대시보드·분석 API, 게이트웨이 신뢰 필터, Identity 세션 API, Billing 과금·집계, Notification 인앱 API, Usage API Key metadata 분리)을 반영했습니다.
 
 **가독성:** 전 서비스를 한 그림에 넣으면 노드가 과다해지므로, **① 교차 서비스 개요** 후 **② 서비스·관심사별 서브다이어그램**으로 나눴습니다.
 
@@ -242,12 +242,18 @@ class UsageRecordedEventListener
 class UsageRecordedService
 class UsageRecordedLogRepository
 class UsageRecordedLogEntity
+class ApiKeyMetadataRepository
+class ApiKeyMetadataEntity
+class ApiKeyStatus
 class JpaRepository
 class UsageRabbitConfiguration
+class UsageCostFinalizedRabbitConfiguration
 class UsageRabbitProperties
 class UsageJacksonConfiguration
 class ObjectMapper
 class UsageRecordedEvent
+class UsageCostFinalizedEventListener
+class UsageCostFinalizedService
 class TokenUsage
 class AiProvider
 
@@ -255,13 +261,21 @@ UsageJacksonConfiguration ..> ObjectMapper
 UsageRecordedEventListener --> ObjectMapper
 UsageRecordedEventListener --> UsageRecordedService
 UsageRecordedEventListener ..> UsageRecordedEvent
+UsageCostFinalizedEventListener --> ObjectMapper
+UsageCostFinalizedEventListener --> UsageCostFinalizedService
 UsageRecordedService --> UsageRecordedLogRepository
 UsageRecordedService ..> UsageRecordedLogEntity
 UsageRecordedService ..> UsageRecordedEvent
 UsageRecordedService ..> TokenUsage
+UsageCostFinalizedService --> UsageRecordedLogRepository
+UsageCostFinalizedService --> ApiKeyMetadataRepository
 UsageRecordedLogRepository --|> JpaRepository
+ApiKeyMetadataRepository --|> JpaRepository
 UsageRecordedLogEntity --> AiProvider
+UsageRecordedLogEntity --> ApiKeyMetadataEntity : api_key_id(JoinColumn, NO_CONSTRAINT)
+ApiKeyMetadataEntity --> ApiKeyStatus
 UsageRabbitConfiguration --> UsageRabbitProperties
+UsageCostFinalizedRabbitConfiguration --> UsageRabbitProperties
 UsageRecordedEvent --> TokenUsage
 UsageRecordedEvent --> AiProvider
 ```

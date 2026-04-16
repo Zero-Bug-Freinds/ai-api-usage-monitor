@@ -25,6 +25,8 @@ public class UsageRabbitProperties {
      * Inbound stream from billing-service: {@link com.eevee.usage.events.UsageCostFinalizedEvent} on
      * {@link UsageCostEventAmqp#TOPIC_EXCHANGE_NAME} / {@link UsageCostEventAmqp#ROUTING_KEY_COST_FINALIZED}.
      */
+    private IdentityApiKey identityApiKey = new IdentityApiKey();
+
     private CostFinalized costFinalized = new CostFinalized();
 
     public String getExchange() {
@@ -55,9 +57,58 @@ public class UsageRabbitProperties {
         return costFinalized;
     }
 
+    public IdentityApiKey getIdentityApiKey() {
+        return identityApiKey;
+    }
+
+    public void setIdentityApiKey(IdentityApiKey identityApiKey) {
+        if (identityApiKey != null) {
+            this.identityApiKey = identityApiKey;
+        }
+    }
+
     public void setCostFinalized(CostFinalized costFinalized) {
         if (costFinalized != null) {
             this.costFinalized = costFinalized;
+        }
+    }
+
+    public static class IdentityApiKey {
+        private boolean enabled = true;
+        private String exchange = "identity.events";
+        private String routingKey = "identity.external-api-key.status-changed";
+        private String queue = "usage-service.identity.external-api-key.queue";
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getExchange() {
+            return exchange;
+        }
+
+        public void setExchange(String exchange) {
+            this.exchange = exchange;
+        }
+
+        public String getRoutingKey() {
+            return routingKey;
+        }
+
+        public void setRoutingKey(String routingKey) {
+            this.routingKey = routingKey;
+        }
+
+        public String getQueue() {
+            return queue;
+        }
+
+        public void setQueue(String queue) {
+            this.queue = queue;
         }
     }
 

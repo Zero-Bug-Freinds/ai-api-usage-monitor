@@ -1,5 +1,5 @@
 # <Team Project> AI Usage & Billing Platform (MSA) 아키텍처 문서
-버전: 0.5
+버전: 0.6
 
 ---
 
@@ -102,6 +102,18 @@
 
 아래는 캡스톤에서 현실적으로 구현 가능한 권장 분해(9개 내외)이다.
 
+### 4.0 현재 구현 배치(코드 기준)
+- `services/api-gateway-service` (Spring Cloud Gateway)
+- `services/proxy-service` (Spring WebFlux)
+- `services/identity-service` + `services/identity-service/web`
+- `services/usage-service` + `services/usage-service/web`
+- `services/billing-service` + `services/billing-service/web`
+- `services/team-service` + `services/team-service/web` + `services/team-service/web-mfe`
+- `services/notification-service`(NestJS/Prisma) + `services/notification-service/web`
+- `services/usage-service/web-mfe` (MF remote)
+- `apps/web` (web-host; 통합 호스트 용도)
+- `packages/ui`, `packages/shell` (웹 공통 패키지)
+
 ### 4.1 API Gateway Service
 - 역할
   - 외부 요청 진입점
@@ -152,6 +164,8 @@
 - 책임 범위
   - 이벤트에 담긴 사용자·조직·팀·API 키 식별·Provider·모델·토큰·추정 비용·요청 경로 등을 **저장 모델**로 옮겨 기록한다(구현: `services/usage-service`의 `@RabbitListener` 소비 → JPA 저장).
   - 저장된 로그는 이후 **Billing·Analytics** 등이 참조할 수 있는 **사실 데이터 원천**이 된다.
+  - API Key 메타데이터는 `api_key_metadata`(`key_id`, `alias`, `status`, `updated_at`)로 분리한다. 로그(`usage_recorded_log`)는 `api_key_id`를 유지하고 조회 시 조인한다.
+  - 운영·테스트 유연성을 위해 `usage_recorded_log.api_key_id` ↔ `api_key_metadata.key_id`는 JPA 연관은 두되 DB FK 제약은 강제하지 않는다(`ConstraintMode.NO_CONSTRAINT`).
 
 ### 4.6 Billing Service
 - 역할
@@ -239,6 +253,11 @@
 - `usage-recorded`
   - 발행 주체: Proxy Service
   - 소비 주체: **Usage Service**(저장·**API 사용량 대시보드** 원천), **Billing Service**(**비용 대시보드**·비용 집계 및 예산 대비 지출 판단의 입력).
+- `usage.cost.finalized`
+  - 발행 주체: Billing Service (`billing.events` exchange)
+  - 소비 주체: Usage Service (`usage-service.usage-cost-finalized.queue`)
+- `identity.user.account-deletion.requested` / `identity.user.account-deletion.ack`
+  - 발행/소비: Identity ↔ Team 계정 삭제 코디네이션
 - `identity.user.account-deletion-requested`
   - 발행 주체: Identity Service (회원 탈퇴 요청)
   - 소비 주체: Team Service (해당 사용자 팀 멤버십/초대 정리) 등
@@ -254,6 +273,19 @@
 - **브로커**: **RabbitMQ** (Kafka 등은 본 프로젝트 범위에서 사용하지 않는다).
 - **연동**: Spring 생태계에서는 **Spring AMQP**(`RabbitTemplate`, `@RabbitListener` 등)로 발행·구독한다.
 - **주의(WebFlux)**: `RabbitTemplate` 등 블로킹 API는 reactive 스레드에서 직접 호출하지 말고, **전용 스케줄러에 오프로드**하거나 Reactor와 호환되는 방식으로 호출해 이벤트 루프를 막지 않도록 한다.
+
+#### 코드 기준 큐/익스체인지 토폴로지(요약)
+- Proxy
+  - exchange: `usage.events`
+  - routing key: `usage.recorded`
+- Usage
+  - consume queue: `usage-service.queue` (`usage.recorded`)
+  - consume queue: `usage-service.usage-cost-finalized.queue` (`billing.events` / `usage.cost.finalized`)
+- Billing
+  - consume queue: `billing-service.queue` (`usage.recorded`)
+  - publish exchange/routing key: `billing.events` / `usage.cost.finalized`
+- Team/Identity 계정 삭제 이벤트
+  - queue 예: `team.account-deletion.requested.queue`, `identity.account-deletion.ack.queue`
 
 ---
 
