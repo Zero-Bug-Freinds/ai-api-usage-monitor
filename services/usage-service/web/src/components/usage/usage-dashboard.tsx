@@ -72,6 +72,17 @@ const PROVIDER_MODEL_PALETTES: Record<string, string[]> = {
   ANTHROPIC: ["#78350f", "#92400e", "#b45309", "#d97706", "#f59e0b", "#fbbf24"],
 }
 
+/** 모델별 토큰 사용량: 동일 토큰 합일 때 공급사 우선순위 (GOOGLE → OPENAI → ANTHROPIC). */
+const TOKEN_STACK_PROVIDER_TIE_ORDER: Record<string, number> = {
+  GOOGLE: 0,
+  OPENAI: 1,
+  ANTHROPIC: 2,
+}
+
+function tokenStackProviderTieRank(provider: string): number {
+  return TOKEN_STACK_PROVIDER_TIE_ORDER[provider] ?? 99
+}
+
 type PeriodMode = "today" | "7d" | "30d" | "custom"
 
 function tooltipNumericValue(value: unknown): number {
@@ -844,7 +855,13 @@ export function UsageDashboard() {
   const tokenStackRows = React.useMemo((): TokenStackRow[] => {
     const totalTokensOf = (m: ModelUsageAggregate) =>
       m.inputTokens + m.estimatedReasoningTokens + m.outputTokens
-    const sorted = [...byModel].sort((a, b) => totalTokensOf(b) - totalTokensOf(a))
+    const sorted = [...byModel].sort((a, b) => {
+      const byTotal = totalTokensOf(b) - totalTokensOf(a)
+      if (byTotal !== 0) return byTotal
+      const byProvider = tokenStackProviderTieRank(a.provider) - tokenStackProviderTieRank(b.provider)
+      if (byProvider !== 0) return byProvider
+      return a.model.localeCompare(b.model, "en")
+    })
     let grandIn = 0
     let grandEstimatedReasoning = 0
     let grandOut = 0
