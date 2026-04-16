@@ -116,6 +116,9 @@ public class TeamService {
 		if (teamMemberRepository.existsByTeamIdAndUserId(teamId, invitee)) {
 			throw new DuplicateTeamMemberException("이미 팀에 참여 중인 사용자입니다");
 		}
+		if (!existsUserInTeamDb(invitee)) {
+			throw new IllegalArgumentException("존재하는 사용자만 초대할 수 있습니다");
+		}
 		if (teamInvitationRepository.existsByTeamIdAndInviteeIdAndStatus(teamId, invitee, TeamInvitationStatus.PENDING)) {
 			throw new DuplicateTeamInvitationException("이미 대기 중인 팀 초대가 있습니다");
 		}
@@ -356,5 +359,10 @@ public class TeamService {
 		}
 		return teamInvitationRepository.findByIdAndInviteeId(invitationId, actorUserId.trim())
 				.orElseThrow(() -> new TeamInvitationNotFoundException("초대를 찾을 수 없습니다"));
+	}
+
+	private boolean existsUserInTeamDb(String userId) {
+		return teamMemberRepository.existsByUserId(userId)
+				|| teamInvitationRepository.existsByInviteeIdOrInviterId(userId, userId);
 	}
 }
