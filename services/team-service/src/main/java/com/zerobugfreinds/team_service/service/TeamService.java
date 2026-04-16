@@ -5,6 +5,7 @@ import com.zerobugfreinds.team_service.domain.TeamInvitationStatus;
 import com.zerobugfreinds.team_service.dto.InternalTeamDetailResponse;
 import com.zerobugfreinds.team_service.dto.InternalBillingTeamApiKeyResponse;
 import com.zerobugfreinds.team_service.dto.InternalBillingTeamSummaryResponse;
+import com.zerobugfreinds.team_service.dto.TeamResponse;
 import com.zerobugfreinds.team_service.dto.TeamInvitationActionResponse;
 import com.zerobugfreinds.team_service.dto.TeamInvitationResponse;
 import com.zerobugfreinds.team_service.dto.TeamSummaryResponse;
@@ -26,6 +27,8 @@ import com.zerobugfreinds.team_service.repository.TeamApiKeyRepository;
 import com.zerobugfreinds.team_service.repository.TeamInvitationRepository;
 import com.zerobugfreinds.team_service.repository.TeamMemberRepository;
 import com.zerobugfreinds.team_service.repository.TeamRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -99,6 +102,21 @@ public class TeamService {
 			}
 		}
 		return result;
+	}
+
+	@Transactional(readOnly = true)
+	public Page<TeamResponse> getTeams(String keyword, Pageable pageable) {
+		Page<TeamEntity> page;
+		if (!StringUtils.hasText(keyword)) {
+			page = teamRepository.findAll(pageable);
+		} else {
+			page = teamRepository.findByNameContainingIgnoreCase(keyword.trim(), pageable);
+		}
+		return page.map(team -> new TeamResponse(
+				String.valueOf(team.getId()),
+				team.getName(),
+				teamMemberRepository.countByTeamId(team.getId())
+		));
 	}
 
 	@Transactional

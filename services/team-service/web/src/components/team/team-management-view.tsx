@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { ChevronDown, ChevronRight, Eye, EyeOff, Minus, Plus } from "lucide-react"
+import { ChevronDown, ChevronRight, Eye, EyeOff, Minus, Plus, Search } from "lucide-react"
 
 type ApiResponse<T> = {
   success: boolean
@@ -115,6 +115,17 @@ function teamApiPath(path: string): string {
   return `${TEAM_WEB_BASE_PATH}${normalized}`
 }
 
+function useDebounce<T>(value: T, delayMs: number): T {
+  const [debouncedValue, setDebouncedValue] = React.useState(value)
+
+  React.useEffect(() => {
+    const timeoutId = window.setTimeout(() => setDebouncedValue(value), delayMs)
+    return () => window.clearTimeout(timeoutId)
+  }, [value, delayMs])
+
+  return debouncedValue
+}
+
 function normalizeBudgetNumericString(raw: string): string {
   const t = raw.trim()
   if (t === "") return ""
@@ -139,6 +150,9 @@ export function TeamManagementView() {
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [teams, setTeams] = React.useState<TeamSummary[]>([])
+  const [keyword, setKeyword] = React.useState("")
+  const debouncedKeyword = useDebounce(keyword, 500)
+  const [isSearching, setIsSearching] = React.useState(false)
   const [teamMemberIdsByTeamId, setTeamMemberIdsByTeamId] = React.useState<Record<string, string[]>>({})
   const [isTeamOwnerByTeamId, setIsTeamOwnerByTeamId] = React.useState<Record<string, boolean>>({})
   const [showCreateForm, setShowCreateForm] = React.useState(false)
@@ -165,27 +179,53 @@ export function TeamManagementView() {
   const [removeMemberLoadingKey, setRemoveMemberLoadingKey] = React.useState<string | null>(null)
   const [deleteTeamLoadingId, setDeleteTeamLoadingId] = React.useState<string | null>(null)
   const [openTeamId, setOpenTeamId] = React.useState<string | null>(null)
+  const latestLoadSeqRef = React.useRef(0)
 
-  const loadTeams = React.useCallback(async () => {
+  const loadTeams = React.useCallback(async (keywordParam?: string) => {
+    const requestSeq = latestLoadSeqRef.current + 1
+    latestLoadSeqRef.current = requestSeq
     setLoading(true)
+    setIsSearching(true)
     setError(null)
+    const q = new URLSearchParams({
+      page: "0",
+      size: "10",
+    })
+    const trimmedKeyword = (keywordParam ?? "").trim()
+    if (trimmedKeyword !== "") {
+      q.set("keyword", trimmedKeyword)
+    }
     try {
-      const { res, body } = await requestApi("/api/team/v1/me/teams", { method: "GET" })
-      if (!res.ok || !body?.success || !Array.isArray(body.data)) {
+      const { res, body } = await requestApi(`/api/team/v1/teams?${q.toString()}`, { method: "GET" })
+      if (requestSeq !== latestLoadSeqRef.current) {
+        return
+      }
+      const pageData = body?.data
+      const content =
+        pageData && typeof pageData === "object" && Array.isArray((pageData as { content?: unknown[] }).content)
+          ? (pageData as { content: unknown[] }).content
+          : null
+      if (!res.ok || !body?.success || content === null) {
         setError(body?.message ?? "팀 목록을 불러오지 못했습니다")
         setTeams([])
         return
       }
       setTeams(
-        body.data
+        content
           .map((item) => normalizeTeamSummary(item))
           .filter((item): item is TeamSummary => item !== null)
       )
     } catch {
+      if (requestSeq !== latestLoadSeqRef.current) {
+        return
+      }
       setError("팀 목록을 불러오지 못했습니다")
       setTeams([])
     } finally {
-      setLoading(false)
+      if (requestSeq === latestLoadSeqRef.current) {
+        setLoading(false)
+        setIsSearching(false)
+      }
     }
   }, [])
 
@@ -236,8 +276,8 @@ export function TeamManagementView() {
   }, [])
 
   React.useEffect(() => {
-    void loadTeams()
-  }, [loadTeams])
+    void loadTeams(debouncedKeyword)
+  }, [loadTeams, debouncedKeyword])
 
   React.useEffect(() => {
     if (teams.length === 0) {
@@ -327,7 +367,7 @@ export function TeamManagementView() {
       setTeamName("")
       setInviteesOnCreate([newInviteeRow()])
       setShowCreateForm(false)
-      await loadTeams()
+      await loadTeams(debouncedKeyword)
     } catch {
       setMessage({ kind: "error", text: "팀 생성에 실패했습니다" })
     } finally {
@@ -630,7 +670,7 @@ export function TeamManagementView() {
         return
       }
       setMessage({ kind: "success", text: "팀을 삭제했습니다" })
-      await loadTeams()
+      await loadTeams(debouncedKeyword)
       cancelEditTeamApiKey()
     } catch {
       setMessage({ kind: "error", text: "팀 삭제에 실패했습니다" })
@@ -647,6 +687,23 @@ export function TeamManagementView() {
           팀 생성 후 사용자 이메일로 팀원을 초대할 수 있으며, 팀 API Key를 등록하고 월 예산(USD)을 설정할 수 있습니다.
         </p>
       </header>
+
+      <section className="rounded-lg border border-zinc-200 bg-white p-4">
+        <label htmlFor="team-search" className="mb-2 block text-sm font-medium text-zinc-700">
+          팀 이름 검색
+        </label>
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" aria-hidden />
+          <input
+            id="team-search"
+            className="h-10 w-full rounded-md border border-zinc-300 bg-white pl-9 pr-3 text-sm outline-none transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            placeholder="팀 이름을 입력해 주세요"
+            autoComplete="off"
+          />
+        </div>
+      </section>
 
       <section className="space-y-3 rounded-lg border border-zinc-200 bg-white p-4">
         {!showCreateForm ? (
@@ -738,10 +795,12 @@ export function TeamManagementView() {
       </section>
 
       {message ? <p className={message.kind === "success" ? "text-sm text-emerald-600" : "text-sm text-red-600"}>{message.text}</p> : null}
-      {loading ? <p className="text-sm text-zinc-500">불러오는 중…</p> : null}
+      {loading ? <p className="text-sm text-zinc-500">{isSearching ? "검색 중..." : "불러오는 중…"}</p> : null}
       {error && !loading ? <p className="text-sm text-red-600">{error}</p> : null}
 
-      {!loading && !error && teams.length === 0 ? <p className="text-sm text-zinc-500">참여 중인 팀이 없습니다.</p> : null}
+      {!loading && !error && teams.length === 0 ? (
+        <p className="text-sm text-zinc-500">{debouncedKeyword.trim() ? "검색된 팀이 없습니다" : "참여 중인 팀이 없습니다."}</p>
+      ) : null}
 
       {!loading && teams.length > 0 ? (
         <ul className="divide-y divide-zinc-200 rounded-lg border border-zinc-200 bg-white">
