@@ -842,7 +842,9 @@ export function UsageDashboard() {
   }, [isOthersModalOpen])
 
   const tokenStackRows = React.useMemo((): TokenStackRow[] => {
-    const sorted = [...byModel].sort((a, b) => b.requestCount - a.requestCount)
+    const totalTokensOf = (m: ModelUsageAggregate) =>
+      m.inputTokens + m.estimatedReasoningTokens + m.outputTokens
+    const sorted = [...byModel].sort((a, b) => totalTokensOf(b) - totalTokensOf(a))
     let grandIn = 0
     let grandEstimatedReasoning = 0
     let grandOut = 0
