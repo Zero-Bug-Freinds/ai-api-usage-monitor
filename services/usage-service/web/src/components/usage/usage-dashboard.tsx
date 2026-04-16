@@ -1151,59 +1151,57 @@ export function UsageDashboard() {
 
           <section className="mb-8 rounded-lg border border-border bg-card p-4 shadow-sm min-w-0">
             <h2 className="mb-4 text-lg font-medium">모델별 토큰 사용량</h2>
-            <p className="mb-4 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
-              <span className="font-medium text-foreground">추정 추론 토큰 (Estimated Reasoning Tokens)</span>
-              <br />
-              모델의 사고 과정(Reasoning) 및 시스템 처리에 소모된 토큰의 합계입니다. API 응답의 총 토큰에서
-              가시적인 입력/출력 토큰을 제외한 수치로, 정확한 추론량과 시스템 토큰의 구분은 모델 제공사 정책에
-              따라 차이가 있을 수 있습니다.
-            </p>
             {tokenStackRows.length === 0 ? (
               <p className="text-sm text-muted-foreground">집계 데이터 없음</p>
             ) : (
-              <div
-                className="w-full max-w-full min-w-0"
-                style={{ height: tokenStackChartHeight, minHeight: tokenStackChartHeight }}
-              >
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    layout="vertical"
-                    data={tokenStackRows}
-                    margin={{ top: 8, left: 8, right: 120, bottom: 8 }}
-                  >
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      stroke="var(--border)"
-                      strokeOpacity={0.85}
-                    />
-                    <XAxis type="number" tick={{ fontSize: 11 }} tickCount={8} />
-                    <YAxis type="category" dataKey="label" width={128} tick={{ fontSize: 11 }} />
-                    <Tooltip content={TokenStackTooltip} cursor={{ fill: "var(--muted)", fillOpacity: 0.12 }} />
-                    <AnyLegend payload={tokenStackLegendPayload} />
-                    <Bar stackId="tokens" dataKey="inputTokens" name="입력 토큰" radius={[4, 0, 0, 4]}>
-                      {tokenStackRows.map((row) => (
-                        <Cell key={`stk-in-${row.model}`} fill={row.fillInput} />
-                      ))}
-                    </Bar>
-                    <Bar stackId="tokens" dataKey="estimatedReasoningTokens" name="추정 추론 토큰">
-                      {tokenStackRows.map((row) => (
-                        <Cell key={`stk-reason-${row.model}`} fill={row.fillEstimatedReasoning} />
-                      ))}
-                    </Bar>
-                    <Bar stackId="tokens" dataKey="outputTokens" name="출력 토큰" radius={[0, 4, 4, 0]}>
-                      {tokenStackRows.map((row) => (
-                        <Cell key={`stk-out-${row.model}`} fill={row.fillOutput} />
-                      ))}
-                      <LabelList
-                        position="right"
-                        content={(p: unknown) => (
-                          <TokenAvgLabelList {...(p as TokenAvgLabelProps)} />
-                        )}
+              <>
+                <div
+                  className="w-full max-w-full min-w-0"
+                  style={{ height: tokenStackChartHeight, minHeight: tokenStackChartHeight }}
+                >
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      layout="vertical"
+                      data={tokenStackRows}
+                      margin={{ top: 8, left: 8, right: 120, bottom: 8 }}
+                    >
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        stroke="var(--border)"
+                        strokeOpacity={0.85}
                       />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+                      <XAxis type="number" tick={{ fontSize: 11 }} tickCount={8} />
+                      <YAxis type="category" dataKey="label" width={128} tick={{ fontSize: 11 }} />
+                      <Tooltip content={TokenStackTooltip} cursor={{ fill: "var(--muted)", fillOpacity: 0.12 }} />
+                      <AnyLegend payload={tokenStackLegendPayload} />
+                      <Bar stackId="tokens" dataKey="inputTokens" name="입력 토큰" radius={[4, 0, 0, 4]}>
+                        {tokenStackRows.map((row) => (
+                          <Cell key={`stk-in-${row.model}`} fill={row.fillInput} />
+                        ))}
+                      </Bar>
+                      <Bar stackId="tokens" dataKey="estimatedReasoningTokens" name="추정 추론 토큰">
+                        {tokenStackRows.map((row) => (
+                          <Cell key={`stk-reason-${row.model}`} fill={row.fillEstimatedReasoning} />
+                        ))}
+                      </Bar>
+                      <Bar stackId="tokens" dataKey="outputTokens" name="출력 토큰" radius={[0, 4, 4, 0]}>
+                        {tokenStackRows.map((row) => (
+                          <Cell key={`stk-out-${row.model}`} fill={row.fillOutput} />
+                        ))}
+                        <LabelList
+                          position="right"
+                          content={(p: unknown) => (
+                            <TokenAvgLabelList {...(p as TokenAvgLabelProps)} />
+                          )}
+                        />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <p className="mt-3 text-xs text-muted-foreground">
+                  ※ &apos;추정 추론 토큰&apos;은 API에서 별도로 구분되지 않는 시스템/추론 토큰의 합산 추정치입니다.
+                </p>
+              </>
             )}
           </section>
 

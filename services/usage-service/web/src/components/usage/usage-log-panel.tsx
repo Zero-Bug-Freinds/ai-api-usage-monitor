@@ -115,14 +115,6 @@ export function UsageLogPanel() {
         </Button>
       </div>
 
-      <p className="mb-4 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
-        <span className="font-medium text-foreground">추정 추론 토큰 (Estimated Reasoning Tokens)</span>
-        <br />
-        모델의 사고 과정(Reasoning) 및 시스템 처리에 소모된 토큰의 합계입니다. API 응답의 총 토큰에서
-        가시적인 입력/출력 토큰을 제외한 수치로, 정확한 추론량과 시스템 토큰의 구분은 모델 제공사 정책에
-        따라 차이가 있을 수 있습니다.
-      </p>
-
       <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
         <div className="space-y-2 sm:w-48">
           <Label htmlFor="log-provider">공급자</Label>
@@ -216,7 +208,18 @@ export function UsageLogPanel() {
                   <th className="px-3 py-2 font-medium">API Key</th>
                   <th className="px-3 py-2 font-medium">모델</th>
                   <th className="px-3 py-2 font-medium">입력 토큰</th>
-                  <th className="px-3 py-2 font-medium">추정 추론 토큰</th>
+                  <th className="px-3 py-2 font-medium">
+                    <span className="inline-flex items-center gap-1">
+                      추정 추론 토큰
+                      <span
+                        className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-muted-foreground/40 text-[10px] text-muted-foreground cursor-help"
+                        title="'추정 추론 토큰'은 모델의 사고 과정뿐만 아니라 시스템 운영상 발생하는 기타 과금 토큰을 모두 포함한 포괄적 지표입니다. 모델별로 내부 동작 방식이 다르므로, 단순 비교보다는 해당 서비스의 전체적인 사용 흐름을 파악하는 용도로 활용하시기 바랍니다."
+                        aria-label="추정 추론 토큰 설명"
+                      >
+                        ?
+                      </span>
+                    </span>
+                  </th>
                   <th className="px-3 py-2 font-medium">출력 토큰</th>
                   <th className="px-3 py-2 font-medium">총 토큰</th>
                   <th className="px-3 py-2 font-medium">비용</th>
