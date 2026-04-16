@@ -241,6 +241,7 @@ services:
     build:
       context: .
       dockerfile: services/notification-service/web/Dockerfile
+      network: host
       args:
         NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_NOTIFICATION_BASE_PATH:-/notifications}
     depends_on:
