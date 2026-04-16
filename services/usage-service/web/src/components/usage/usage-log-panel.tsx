@@ -323,7 +323,7 @@ export function UsageLogPanel() {
                       {isOpenAi && hasOpenAiDetails ? (
                         <ChevronRight className="inline-block h-4 w-4" aria-label="상세보기" />
                       ) : (
-                        <CircleHelp className="inline-block h-4 w-4 opacity-40" aria-label="추가 지표 없음" />
+                        <span className="inline-block h-4 w-4" aria-hidden="true" />
                       )}
                     </td>
                   </tr>
