@@ -239,6 +239,33 @@ type ModelRequestRow = {
   members?: Array<{ model: string; provider: string; requests: number }>
 }
 
+const PLACEHOLDER_MODEL_BAR_ROW: ModelRequestRow[] = [
+  { label: "—", model: "__empty__", provider: "GOOGLE", requests: 0, isOthers: false },
+]
+
+const EMPTY_TOKEN_STACK_DISPLAY_ROW: TokenStackRow = {
+  label: "—",
+  model: "__empty__",
+  provider: "GOOGLE",
+  requests: 0,
+  inputTokens: 0,
+  estimatedReasoningTokens: 0,
+  outputTokens: 0,
+  totalTokens: 0,
+  avgInputPerReq: 0,
+  avgEstimatedReasoningPerReq: 0,
+  avgOutputPerReq: 0,
+  pctInputOfBar: 0,
+  pctEstimatedReasoningOfBar: 0,
+  pctOutputOfBar: 0,
+  pctInputOfGrand: 0,
+  pctEstimatedReasoningOfGrand: 0,
+  pctOutputOfGrand: 0,
+  fillInput: "rgba(148, 163, 184, 0.3)",
+  fillEstimatedReasoning: "rgba(148, 163, 184, 0.65)",
+  fillOutput: "#94a3b8",
+}
+
 type TokenStackTooltipProps = {
   active?: boolean
   /** Recharts Tooltip passes `string | number` for category axis labels */
@@ -401,6 +428,62 @@ function stabilityRateDomain(rows: MainStabilityRow[]): [number, number] {
   return [lower, upper]
 }
 
+function emptyHourlyStabilityRows(): MainStabilityRow[] {
+  const rows: MainStabilityRow[] = []
+  for (let h = 0; h < 24; h++) {
+    rows.push({
+      label: `${h}시`,
+      requestCount: 0,
+      successCount: 0,
+      errorCount: 0,
+      successRate: 0,
+      errorRate: 0,
+    })
+  }
+  return rows
+}
+
+function emptyDailyStabilityRows(fromIso: string, toIso: string): MainStabilityRow[] {
+  const n = kstDaysInclusive(fromIso, toIso)
+  const rows: MainStabilityRow[] = []
+  for (let i = 0; i < n; i++) {
+    const dateStr = addKstDays(fromIso, i)
+    rows.push({
+      label: dateStr,
+      requestCount: 0,
+      successCount: 0,
+      errorCount: 0,
+      successRate: 0,
+      errorRate: 0,
+    })
+  }
+  return rows
+}
+
+/** 월별 막대 차트 빈 상태에서 축·틀만 보이도록 하는 플레이스홀더 (종료 월 기준 12개월). */
+function placeholderMonthlyChart(anchorDayIso: string, barCount = 12): { yearMonth: string; requestCount: number }[] {
+  let y = Number(anchorDayIso.slice(0, 4))
+  let m = Number(anchorDayIso.slice(5, 7))
+  if (Number.isNaN(y) || Number.isNaN(m)) {
+    const today = formatKstIsoDate()
+    y = Number(today.slice(0, 4))
+    m = Number(today.slice(5, 7))
+  }
+  const rows: { yearMonth: string; requestCount: number }[] = []
+  for (let i = 0; i < barCount; i++) {
+    rows.unshift({
+      yearMonth: `${y}-${String(m).padStart(2, "0")}`,
+      requestCount: 0,
+    })
+    m -= 1
+    if (m < 1) {
+      m = 12
+      y -= 1
+    }
+  }
+  return rows
+}
+
 function isAbortError(e: unknown): boolean {
   return (
     (typeof DOMException !== "undefined" && e instanceof DOMException && e.name === "AbortError") ||
@@ -418,7 +501,7 @@ export function UsageDashboard() {
   const [periodMode, setPeriodMode] = React.useState<PeriodMode>("today")
   const [customFrom, setCustomFrom] = React.useState("")
   const [customTo, setCustomTo] = React.useState("")
-  const [dashProvider, setDashProvider] = React.useState<string>("GOOGLE")
+  const [dashProvider, setDashProvider] = React.useState<string>(DASHBOARD_PROVIDER_ALL)
 
   const [mainLoading, setMainLoading] = React.useState(true)
   const [mainError, setMainError] = React.useState<string | null>(null)
@@ -569,6 +652,20 @@ export function UsageDashboard() {
     [hourly]
   )
 
+  const mainStabilitySeries = React.useMemo((): MainStabilityRow[] => {
+    if (periodMode === "today") {
+      return hourlyChart.length > 0 ? hourlyChart : emptyHourlyStabilityRows()
+    }
+    return dailyChart.length > 0 ? dailyChart : emptyDailyStabilityRows(rangeFrom, rangeTo)
+  }, [periodMode, hourlyChart, dailyChart, rangeFrom, rangeTo])
+
+  const mainStabilityNoRequests = React.useMemo(() => {
+    if (periodMode === "today") {
+      return !(hourly ?? []).some((h) => h.requestCount > 0)
+    }
+    return !daily.some((d) => d.requestCount > 0)
+  }, [periodMode, hourly, daily])
+
   const monthlyChart = React.useMemo(
     () =>
       monthly.map((row) => ({
@@ -608,6 +705,24 @@ export function UsageDashboard() {
       percent: total > 0 ? value / total : 0,
     }))
   }, [byModel])
+
+  const modelPieChartData = React.useMemo(
+    () =>
+      pieData.length > 0
+        ? pieData
+        : [{ name: "—", fullName: "—", provider: "GOOGLE", value: 1, percent: 1 }],
+    [pieData]
+  )
+  const isModelPiePlaceholder = pieData.length === 0
+
+  const providerPieChartData = React.useMemo(
+    () =>
+      providerPieData.length > 0
+        ? providerPieData
+        : [{ name: "—", provider: "GOOGLE", value: 1, percent: 1 }],
+    [providerPieData]
+  )
+  const isProviderPiePlaceholder = providerPieData.length === 0
 
   const modelPieLegendPayload = React.useMemo(
     () =>
@@ -666,6 +781,11 @@ export function UsageDashboard() {
     [modelBarRows]
   )
 
+  const modelBarDisplayRows = React.useMemo(
+    () => (modelBarRows.length > 0 ? modelBarRows : PLACEHOLDER_MODEL_BAR_ROW),
+    [modelBarRows]
+  )
+
   React.useEffect(() => {
     if (!isOthersModalOpen) return
     const prev = document.body.style.overflow
@@ -718,13 +838,18 @@ export function UsageDashboard() {
     })
   }, [byModel])
 
+  const tokenStackDisplayRows = React.useMemo(
+    () => (tokenStackRows.length > 0 ? tokenStackRows : [EMPTY_TOKEN_STACK_DISPLAY_ROW]),
+    [tokenStackRows]
+  )
+
   const tokenStackChartHeight = React.useMemo(() => {
-    const n = tokenStackRows.length
+    const n = tokenStackDisplayRows.length
     return Math.min(TOKEN_CHART_MAX_H, Math.max(TOKEN_CHART_MIN_H, n * TOKEN_ROW_HEIGHT_PX))
-  }, [tokenStackRows.length])
+  }, [tokenStackDisplayRows.length])
 
   const tokenStackLegendPayload = React.useMemo(() => {
-    const first = tokenStackRows[0]
+    const first = tokenStackDisplayRows[0]
     return [
       {
         value: "입력 토큰",
@@ -742,7 +867,7 @@ export function UsageDashboard() {
         color: first?.fillOutput ?? "#94a3b8",
       },
     ]
-  }, [tokenStackRows])
+  }, [tokenStackDisplayRows])
 
   const hasMainData =
     (kpiSummary && kpiSummary.totalRequests > 0) ||
@@ -775,12 +900,20 @@ export function UsageDashboard() {
 
   const monthlyHasActivity = monthlyChart.some((r) => r.requestCount > 0)
 
+  const monthlyBarDisplayData = React.useMemo(
+    () =>
+      monthlyChart.length > 0 && monthlyHasActivity
+        ? monthlyChart
+        : placeholderMonthlyChart(rangeTo),
+    [monthlyChart, monthlyHasActivity, rangeTo]
+  )
+
   const mainChartTitle =
     periodMode === "today" ? "시간별 요청·성공률·오류율 (오늘 KST)" : "일별 요청·성공률·오류율 (선택 기간)"
 
   const rateAxisDomain = React.useMemo(
-    () => stabilityRateDomain(periodMode === "today" ? hourlyChart : dailyChart),
-    [periodMode, hourlyChart, dailyChart]
+    () => stabilityRateDomain(mainStabilitySeries),
+    [mainStabilitySeries]
   )
 
   const errorSubStyle =
@@ -929,305 +1062,295 @@ export function UsageDashboard() {
 
           <section className="mb-8 rounded-lg border border-border p-4 shadow-sm">
             <h2 className="mb-4 text-lg font-medium">{mainChartTitle}</h2>
-            {periodMode === "today" && hourlyChart.length > 0 ? (
-              <div className="h-[380px] min-h-[380px] w-full min-w-0">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={hourlyChart}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                    <YAxis
-                      yAxisId="left"
-                      tick={{ fontSize: 11 }}
-                      label={{ value: "요청 수 (건)", angle: -90, position: "insideLeft", offset: 2 }}
-                    />
-                    <YAxis
-                      yAxisId="right"
-                      orientation="right"
-                      domain={rateAxisDomain}
-                      tick={{ fontSize: 11 }}
-                      tickFormatter={(v) => `${Number(v).toFixed(1)}%`}
-                      label={{ value: "성공/오류율 (%)", angle: 90, position: "insideRight", offset: 2 }}
-                    />
-                    <Tooltip content={MainStabilityTooltip} />
-                    <AnyLegend />
-                    <Bar
-                      yAxisId="left"
-                      dataKey="requestCount"
-                      name="총 요청 수"
-                      fill="#a3a3a3"
-                      radius={[4, 4, 0, 0]}
-                    />
-                    <Line
-                      yAxisId="right"
-                      type="monotone"
-                      dataKey="successRate"
-                      name="성공률"
-                      stroke="#10b981"
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                    <Line
-                      yAxisId="right"
-                      type="monotone"
-                      dataKey="errorRate"
-                      name="오류율"
-                      stroke="#f43f5e"
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
-            ) : periodMode !== "today" && dailyChart.length > 0 ? (
-              <div className="h-[380px] min-h-[380px] w-full min-w-0">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={dailyChart}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                    <YAxis
-                      yAxisId="left"
-                      tick={{ fontSize: 11 }}
-                      label={{ value: "요청 수 (건)", angle: -90, position: "insideLeft", offset: 2 }}
-                    />
-                    <YAxis
-                      yAxisId="right"
-                      orientation="right"
-                      domain={rateAxisDomain}
-                      tick={{ fontSize: 11 }}
-                      tickFormatter={(v) => `${Number(v).toFixed(1)}%`}
-                      label={{ value: "성공/오류율 (%)", angle: 90, position: "insideRight", offset: 2 }}
-                    />
-                    <Tooltip content={MainStabilityTooltip} />
-                    <AnyLegend />
-                    <Bar
-                      yAxisId="left"
-                      dataKey="requestCount"
-                      name="총 요청 수"
-                      fill="#a3a3a3"
-                      radius={[4, 4, 0, 0]}
-                    />
-                    <Line
-                      yAxisId="right"
-                      type="monotone"
-                      dataKey="successRate"
-                      name="성공률"
-                      stroke="#10b981"
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                    <Line
-                      yAxisId="right"
-                      type="monotone"
-                      dataKey="errorRate"
-                      name="오류율"
-                      stroke="#f43f5e"
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">표시할 시계열 데이터가 없습니다</p>
-            )}
+            <div className="h-[380px] min-h-[380px] w-full min-w-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={mainStabilitySeries}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                  <YAxis
+                    yAxisId="left"
+                    tick={{ fontSize: 11 }}
+                    label={{ value: "요청 수 (건)", angle: -90, position: "insideLeft", offset: 2 }}
+                  />
+                  <YAxis
+                    yAxisId="right"
+                    orientation="right"
+                    domain={rateAxisDomain}
+                    tick={{ fontSize: 11 }}
+                    tickFormatter={(v) => `${Number(v).toFixed(1)}%`}
+                    label={{ value: "성공/오류율 (%)", angle: 90, position: "insideRight", offset: 2 }}
+                  />
+                  <Tooltip content={MainStabilityTooltip} />
+                  <AnyLegend />
+                  <Bar
+                    yAxisId="left"
+                    dataKey="requestCount"
+                    name="총 요청 수"
+                    fill="#a3a3a3"
+                    radius={[4, 4, 0, 0]}
+                  />
+                  <Line
+                    yAxisId="right"
+                    type="monotone"
+                    dataKey="successRate"
+                    name="성공률"
+                    stroke="#10b981"
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                  <Line
+                    yAxisId="right"
+                    type="monotone"
+                    dataKey="errorRate"
+                    name="오류율"
+                    stroke="#f43f5e"
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+            {mainStabilityNoRequests ? (
+              <p className="mt-2 text-center text-sm text-muted-foreground">집계 데이터 없음</p>
+            ) : null}
           </section>
 
           <div className="mb-8 grid gap-5 lg:grid-cols-2 lg:gap-6">
             <section className="rounded-lg border border-border p-4 shadow-sm">
               <h2 className="mb-4 text-lg font-medium">모델별 요청 비중</h2>
-              {pieData.length === 0 ? (
-                <p className="text-sm text-muted-foreground">집계 데이터 없음</p>
-              ) : (
-                <div className="h-[320px] min-h-[320px] w-full min-w-0">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={pieData}
-                        dataKey="value"
-                        nameKey="name"
-                        cx="50%"
-                        cy="50%"
-                        innerRadius="52%"
-                        outerRadius="80%"
-                        paddingAngle={2}
-                        label={({ name, percent }) => `${name} (${((percent ?? 0) * 100).toFixed(0)}%)`}
-                      >
-                        {pieData.map((entry, i) => (
-                          <Cell
-                            key={`m-${entry.fullName}-${i}`}
-                            fill={colorForModel(entry.fullName, entry.provider)}
-                            style={{ cursor: "default" }}
-                          />
-                        ))}
-                      </Pie>
-                      <Tooltip content={ModelDonutTooltip} />
-                      <AnyLegend payload={modelPieLegendPayload} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
+              <div className="h-[320px] min-h-[320px] w-full min-w-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={modelPieChartData}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius="52%"
+                      outerRadius="80%"
+                      paddingAngle={2}
+                      isAnimationActive={!isModelPiePlaceholder}
+                      label={
+                        isModelPiePlaceholder
+                          ? false
+                          : ({ name, percent }) => `${name} (${((percent ?? 0) * 100).toFixed(0)}%)`
+                      }
+                    >
+                      {modelPieChartData.map((entry, i) => (
+                        <Cell
+                          key={`m-${entry.fullName}-${i}`}
+                          fill={
+                            isModelPiePlaceholder
+                              ? "var(--border)"
+                              : colorForModel(entry.fullName, entry.provider)
+                          }
+                          fillOpacity={isModelPiePlaceholder ? 0.35 : 1}
+                          style={{ cursor: "default" }}
+                        />
+                      ))}
+                    </Pie>
+                    <Tooltip content={ModelDonutTooltip} />
+                    {!isModelPiePlaceholder ? <AnyLegend payload={modelPieLegendPayload} /> : null}
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              {isModelPiePlaceholder ? (
+                <p className="mt-2 text-center text-sm text-muted-foreground">집계 데이터 없음</p>
+              ) : null}
             </section>
 
             <section className="rounded-lg border border-border p-4 shadow-sm">
               <h2 className="mb-4 text-lg font-medium">공급사별 요청 비중</h2>
-              {providerPieData.length === 0 ? (
-                <p className="text-sm text-muted-foreground">집계 데이터 없음</p>
-              ) : (
-                <div className="h-[320px] min-h-[320px] w-full min-w-0">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={providerPieData}
-                        dataKey="value"
-                        nameKey="name"
-                        cx="50%"
-                        cy="50%"
-                        innerRadius="52%"
-                        outerRadius="80%"
-                        paddingAngle={2}
-                        label={({ name, percent }) => `${name} (${((percent ?? 0) * 100).toFixed(0)}%)`}
-                      >
-                        {providerPieData.map((entry, i) => (
-                          <Cell
-                            key={`p-${entry.provider}-${i}`}
-                            fill={PROVIDER_COLOR[entry.provider] ?? "#737373"}
-                            style={{ cursor: "default" }}
-                          />
-                        ))}
-                      </Pie>
-                      <Tooltip content={ProviderDonutTooltip} />
-                      <AnyLegend payload={providerPieLegendPayload} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
+              <div className="h-[320px] min-h-[320px] w-full min-w-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={providerPieChartData}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius="52%"
+                      outerRadius="80%"
+                      paddingAngle={2}
+                      isAnimationActive={!isProviderPiePlaceholder}
+                      label={
+                        isProviderPiePlaceholder
+                          ? false
+                          : ({ name, percent }) => `${name} (${((percent ?? 0) * 100).toFixed(0)}%)`
+                      }
+                    >
+                      {providerPieChartData.map((entry, i) => (
+                        <Cell
+                          key={`p-${entry.provider}-${i}`}
+                          fill={
+                            isProviderPiePlaceholder
+                              ? "var(--border)"
+                              : PROVIDER_COLOR[entry.provider] ?? "#737373"
+                          }
+                          fillOpacity={isProviderPiePlaceholder ? 0.35 : 1}
+                          style={{ cursor: "default" }}
+                        />
+                      ))}
+                    </Pie>
+                    <Tooltip content={ProviderDonutTooltip} />
+                    {!isProviderPiePlaceholder ? <AnyLegend payload={providerPieLegendPayload} /> : null}
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              {isProviderPiePlaceholder ? (
+                <p className="mt-2 text-center text-sm text-muted-foreground">집계 데이터 없음</p>
+              ) : null}
             </section>
 
             <section className="rounded-lg border border-border p-4 shadow-sm lg:col-span-2">
               <h2 className="mb-4 text-lg font-medium">모델별 요청 수 (가로)</h2>
-              {modelBarRows.length === 0 ? (
-                <p className="text-sm text-muted-foreground">집계 데이터 없음</p>
-              ) : (
-                <div className="h-[320px] min-h-[320px] w-full max-w-full min-w-0">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart layout="vertical" data={modelBarRows} margin={H_BAR_MARGIN}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                      <XAxis type="number" />
-                      <YAxis type="category" dataKey="label" width={128} tick={{ fontSize: 11 }} />
-                      <Tooltip formatter={(v) => formatRequestCount(tooltipNumericValue(v))} />
-                      <Bar
-                        dataKey="requests"
-                        name="요청 수"
-                        radius={[0, 4, 4, 0]}
-                        isAnimationActive={false}
-                        onClick={(_, index) => {
-                          const row = modelBarRows[index]
-                          if (row?.isOthers) setIsOthersModalOpen(true)
-                        }}
-                      >
-                        {modelBarRows.map((row) => (
-                          <Cell
-                            key={`req-${row.model}`}
-                            fill={row.isOthers ? OTHERS_BAR_COLOR : colorForModel(row.model, row.provider)}
-                            style={{ cursor: row.isOthers ? "pointer" : "default" }}
-                          />
-                        ))}
-                        <LabelList
-                          dataKey="requests"
-                          position="right"
-                          formatter={(value: unknown) => formatRequestCount(tooltipNumericValue(value))}
-                          style={{ fill: "var(--muted-foreground)", fontSize: 11 }}
+              <div className="h-[320px] min-h-[320px] w-full max-w-full min-w-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart layout="vertical" data={modelBarDisplayRows} margin={H_BAR_MARGIN}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                    <XAxis type="number" />
+                    <YAxis type="category" dataKey="label" width={128} tick={{ fontSize: 11 }} />
+                    <Tooltip formatter={(v) => formatRequestCount(tooltipNumericValue(v))} />
+                    <Bar
+                      dataKey="requests"
+                      name="요청 수"
+                      radius={[0, 4, 4, 0]}
+                      isAnimationActive={false}
+                      onClick={(_, index) => {
+                        if (modelBarRows.length === 0) return
+                        const row = modelBarDisplayRows[index]
+                        if (row?.isOthers) setIsOthersModalOpen(true)
+                      }}
+                    >
+                      {modelBarDisplayRows.map((row) => (
+                        <Cell
+                          key={`req-${row.model}`}
+                          fill={
+                            modelBarRows.length === 0
+                              ? "var(--border)"
+                              : row.isOthers
+                                ? OTHERS_BAR_COLOR
+                                : colorForModel(row.model, row.provider)
+                          }
+                          fillOpacity={modelBarRows.length === 0 ? 0.35 : 1}
+                          style={{ cursor: row.isOthers ? "pointer" : "default" }}
                         />
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-              <p className="mt-3 text-xs text-muted-foreground">
-                기타 막대를 클릭하여 전체 상세 내역을 확인하세요.
-              </p>
+                      ))}
+                      <LabelList
+                        dataKey="requests"
+                        position="right"
+                        formatter={(value: unknown) => formatRequestCount(tooltipNumericValue(value))}
+                        style={{ fill: "var(--muted-foreground)", fontSize: 11 }}
+                      />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              {modelBarRows.length === 0 ? (
+                <p className="mt-2 text-center text-sm text-muted-foreground">집계 데이터 없음</p>
+              ) : null}
+              {modelBarRows.length > 0 ? (
+                <p className="mt-3 text-xs text-muted-foreground">
+                  기타 막대를 클릭하여 전체 상세 내역을 확인하세요.
+                </p>
+              ) : null}
             </section>
           </div>
 
           <section className="mb-8 rounded-lg border border-border bg-card p-4 shadow-sm min-w-0">
             <h2 className="mb-4 text-lg font-medium">모델별 토큰 사용량</h2>
-            {tokenStackRows.length === 0 ? (
-              <p className="text-sm text-muted-foreground">집계 데이터 없음</p>
-            ) : (
-              <>
-                <div
-                  className="w-full max-w-full min-w-0"
-                  style={{ height: tokenStackChartHeight, minHeight: tokenStackChartHeight }}
-                >
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      layout="vertical"
-                      data={tokenStackRows}
-                      margin={{ top: 8, left: 8, right: 120, bottom: 8 }}
-                    >
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        stroke="var(--border)"
-                        strokeOpacity={0.85}
-                      />
-                      <XAxis type="number" tick={{ fontSize: 11 }} tickCount={8} />
-                      <YAxis type="category" dataKey="label" width={128} tick={{ fontSize: 11 }} />
-                      <Tooltip content={TokenStackTooltip} cursor={{ fill: "var(--muted)", fillOpacity: 0.12 }} />
-                      <AnyLegend payload={tokenStackLegendPayload} />
-                      <Bar stackId="tokens" dataKey="inputTokens" name="입력 토큰" radius={[4, 0, 0, 4]}>
-                        {tokenStackRows.map((row) => (
-                          <Cell key={`stk-in-${row.model}`} fill={row.fillInput} />
-                        ))}
-                      </Bar>
-                      <Bar stackId="tokens" dataKey="estimatedReasoningTokens" name="추정 추론 토큰">
-                        {tokenStackRows.map((row) => (
-                          <Cell key={`stk-reason-${row.model}`} fill={row.fillEstimatedReasoning} />
-                        ))}
-                      </Bar>
-                      <Bar stackId="tokens" dataKey="outputTokens" name="출력 토큰" radius={[0, 4, 4, 0]}>
-                        {tokenStackRows.map((row) => (
-                          <Cell key={`stk-out-${row.model}`} fill={row.fillOutput} />
-                        ))}
-                        <LabelList
-                          position="right"
-                          content={(p: unknown) => (
-                            <TokenAvgLabelList {...(p as TokenAvgLabelProps)} />
-                          )}
+            <>
+              <div
+                className="w-full max-w-full min-w-0"
+                style={{ height: tokenStackChartHeight, minHeight: tokenStackChartHeight }}
+              >
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    layout="vertical"
+                    data={tokenStackDisplayRows}
+                    margin={{ top: 8, left: 8, right: 120, bottom: 8 }}
+                  >
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="var(--border)"
+                      strokeOpacity={0.85}
+                    />
+                    <XAxis type="number" tick={{ fontSize: 11 }} tickCount={8} />
+                    <YAxis type="category" dataKey="label" width={128} tick={{ fontSize: 11 }} />
+                    <Tooltip content={TokenStackTooltip} cursor={{ fill: "var(--muted)", fillOpacity: 0.12 }} />
+                    <AnyLegend payload={tokenStackLegendPayload} />
+                    <Bar stackId="tokens" dataKey="inputTokens" name="입력 토큰" radius={[4, 0, 0, 4]}>
+                      {tokenStackDisplayRows.map((row) => (
+                        <Cell
+                          key={`stk-in-${row.model}`}
+                          fill={row.fillInput}
+                          fillOpacity={tokenStackRows.length === 0 ? 0.35 : 1}
                         />
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
+                      ))}
+                    </Bar>
+                    <Bar stackId="tokens" dataKey="estimatedReasoningTokens" name="추정 추론 토큰">
+                      {tokenStackDisplayRows.map((row) => (
+                        <Cell
+                          key={`stk-reason-${row.model}`}
+                          fill={row.fillEstimatedReasoning}
+                          fillOpacity={tokenStackRows.length === 0 ? 0.35 : 1}
+                        />
+                      ))}
+                    </Bar>
+                    <Bar stackId="tokens" dataKey="outputTokens" name="출력 토큰" radius={[0, 4, 4, 0]}>
+                      {tokenStackDisplayRows.map((row) => (
+                        <Cell
+                          key={`stk-out-${row.model}`}
+                          fill={row.fillOutput}
+                          fillOpacity={tokenStackRows.length === 0 ? 0.35 : 1}
+                        />
+                      ))}
+                      <LabelList
+                        position="right"
+                        content={(p: unknown) => (
+                          <TokenAvgLabelList {...(p as TokenAvgLabelProps)} />
+                        )}
+                      />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              {tokenStackRows.length === 0 ? (
+                <p className="mt-2 text-center text-sm text-muted-foreground">집계 데이터 없음</p>
+              ) : null}
+              {tokenStackRows.length > 0 ? (
                 <p className="mt-3 text-xs text-muted-foreground">
                   ※ &apos;추정 추론 토큰&apos;은 API에서 별도로 구분되지 않는 시스템/추론 토큰의 합산 추정치입니다.
                 </p>
-              </>
-            )}
+              ) : null}
+            </>
           </section>
 
           <section className="mb-8 rounded-lg border border-border p-4 shadow-sm">
             <h2 className="mb-4 text-lg font-medium">월별 요청 수 (누적 추이)</h2>
-            {monthlyChart.length === 0 || !monthlyHasActivity ? (
-              <p className="text-sm text-muted-foreground">집계 데이터 없음</p>
-            ) : (
-              <div className="h-[360px] min-h-[360px] w-full min-w-0">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={monthlyChart}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis dataKey="yearMonth" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip formatter={(value) => formatRequestCount(tooltipNumericValue(value))} />
-                    <AnyLegend />
-                    <Bar
-                      dataKey="requestCount"
-                      name="요청 수"
-                      fill="#64748b"
-                      radius={[4, 4, 0, 0]}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
+            <div className="h-[360px] min-h-[360px] w-full min-w-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={monthlyBarDisplayData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                  <XAxis dataKey="yearMonth" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip formatter={(value) => formatRequestCount(tooltipNumericValue(value))} />
+                  <AnyLegend />
+                  <Bar
+                    dataKey="requestCount"
+                    name="요청 수"
+                    fill={monthlyHasActivity ? "#64748b" : "var(--border)"}
+                    fillOpacity={monthlyHasActivity ? 1 : 0.35}
+                    radius={[4, 4, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            {!monthlyHasActivity ? (
+              <p className="mt-2 text-center text-sm text-muted-foreground">집계 데이터 없음</p>
+            ) : null}
           </section>
         </>
       )}
