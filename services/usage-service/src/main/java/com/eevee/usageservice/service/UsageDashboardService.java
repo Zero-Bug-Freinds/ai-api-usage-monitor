@@ -15,6 +15,8 @@ import com.eevee.usageservice.domain.ApiKeyStatus;
 import com.eevee.usageservice.domain.UsageRecordedLogEntity;
 import com.eevee.usageservice.repository.UsageRecordedLogRepository;
 import com.eevee.usageservice.repository.analytics.UsageAnalyticsJdbcRepository;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -44,17 +46,20 @@ public class UsageDashboardService {
     private final UsageRecordedLogRepository logRepository;
     private final UsageServiceProperties properties;
     private final Clock clock;
+    private final ObjectMapper objectMapper;
 
     public UsageDashboardService(
             UsageAnalyticsJdbcRepository analyticsJdbcRepository,
             UsageRecordedLogRepository logRepository,
             UsageServiceProperties properties,
-            Clock clock
+            Clock clock,
+            ObjectMapper objectMapper
     ) {
         this.analyticsJdbcRepository = analyticsJdbcRepository;
         this.logRepository = logRepository;
         this.properties = properties;
         this.clock = clock;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional(readOnly = true)
@@ -147,7 +152,7 @@ public class UsageDashboardService {
                 modelMask,
                 PageRequest.of(pageIndex, pageSize, Sort.by(Sort.Direction.DESC, "occurredAt"))
         );
-        List<UsageLogEntryResponse> content = p.getContent().stream().map(UsageDashboardService::toLogDto).toList();
+        List<UsageLogEntryResponse> content = p.getContent().stream().map(this::toLogDto).toList();
         return new PagedLogsResponse(
                 content,
                 p.getNumber(),
@@ -164,7 +169,8 @@ public class UsageDashboardService {
         return logRepository.findDistinctApiKeysForUserInRange(userId, from, to, provider);
     }
 
-    private static UsageLogEntryResponse toLogDto(UsageRecordedLogEntity e) {
+    private UsageLogEntryResponse toLogDto(UsageRecordedLogEntity e) {
+        JsonNode details = parseProviderTokenDetails(e.getProviderTokenDetails());
         return new UsageLogEntryResponse(
                 e.getEventId(),
                 e.getOccurredAt(),
@@ -179,12 +185,12 @@ public class UsageDashboardService {
                 e.getPromptTokens(),
                 e.getCompletionTokens(),
                 resolveEstimatedReasoningTokens(e),
-                e.getPromptCachedTokens(),
-                e.getPromptAudioTokens(),
-                e.getCompletionReasoningTokens(),
-                e.getCompletionAudioTokens(),
-                e.getCompletionAcceptedPredictionTokens(),
-                e.getCompletionRejectedPredictionTokens(),
+                getLongOrNull(details, "prompt_cached_tokens"),
+                getLongOrNull(details, "prompt_audio_tokens"),
+                getLongOrNull(details, "completion_reasoning_tokens"),
+                getLongOrNull(details, "completion_audio_tokens"),
+                getLongOrNull(details, "completion_accepted_prediction_tokens"),
+                getLongOrNull(details, "completion_rejected_prediction_tokens"),
                 e.getTotalTokens(),
                 e.getEstimatedCost(),
                 e.getRequestPath(),
@@ -219,6 +225,24 @@ public class UsageDashboardService {
         }
         long fallback = e.getTotalTokens() - e.getPromptTokens() - e.getCompletionTokens();
         return Math.max(fallback, 0L);
+    }
+
+    private JsonNode parseProviderTokenDetails(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readTree(json);
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private static Long getLongOrNull(JsonNode node, String fieldName) {
+        if (node == null || !node.has(fieldName) || !node.get(fieldName).canConvertToLong()) {
+            return null;
+        }
+        return node.get(fieldName).longValue();
     }
 
     private Range validateRange(LocalDate from, LocalDate toInclusive) {

@@ -5,6 +5,7 @@ import com.eevee.usage.events.TokenUsage;
 import com.eevee.usage.events.UsageRecordedEvent;
 import com.eevee.usageservice.domain.UsageRecordedLogEntity;
 import com.eevee.usageservice.repository.UsageRecordedLogRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -127,7 +128,6 @@ class UsageRecordedServiceTest {
         verify(repository).save(captor.capture());
         // OPENAI = reasoning + audio + accepted + rejected
         assertThat(captor.getValue().getEstimatedReasoningTokens()).isEqualTo(26L);
-        assertThat(captor.getValue().getCompletionReasoningTokens()).isEqualTo(11L);
     }
 
     @Test

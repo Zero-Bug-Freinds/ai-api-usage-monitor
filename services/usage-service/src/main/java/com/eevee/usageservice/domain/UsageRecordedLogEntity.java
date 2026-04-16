@@ -72,24 +72,20 @@ public class UsageRecordedLogEntity {
     @Column(name = "estimated_reasoning_tokens")
     private Long estimatedReasoningTokens;
 
-    // OpenAI-only token breakdown (nullable for other providers)
-    @Column(name = "prompt_cached_tokens")
-    private Long promptCachedTokens;
-
-    @Column(name = "prompt_audio_tokens")
-    private Long promptAudioTokens;
-
-    @Column(name = "completion_reasoning_tokens")
-    private Long completionReasoningTokens;
-
-    @Column(name = "completion_audio_tokens")
-    private Long completionAudioTokens;
-
-    @Column(name = "completion_accepted_prediction_tokens")
-    private Long completionAcceptedPredictionTokens;
-
-    @Column(name = "completion_rejected_prediction_tokens")
-    private Long completionRejectedPredictionTokens;
+    /**
+     * Provider-specific token breakdown, stored as JSONB.
+     * Example (OpenAI):
+     * {
+     *   "prompt_cached_tokens": 1,
+     *   "prompt_audio_tokens": 2,
+     *   "completion_reasoning_tokens": 11,
+     *   "completion_audio_tokens": 3,
+     *   "completion_accepted_prediction_tokens": 5,
+     *   "completion_rejected_prediction_tokens": 7
+     * }
+     */
+    @Column(name = "provider_token_details", columnDefinition = "jsonb")
+    private String providerTokenDetails;
 
     /** USD; matches billing output. {@code NUMERIC(18,10)} — small per-call costs stay distinguishable after sum. */
     @Column(precision = 18, scale = 10)
@@ -129,12 +125,7 @@ public class UsageRecordedLogEntity {
             Long completionTokens,
             Long totalTokens,
             Long estimatedReasoningTokens,
-            Long promptCachedTokens,
-            Long promptAudioTokens,
-            Long completionReasoningTokens,
-            Long completionAudioTokens,
-            Long completionAcceptedPredictionTokens,
-            Long completionRejectedPredictionTokens,
+            String providerTokenDetails,
             BigDecimal estimatedCost,
             String requestPath,
             String upstreamHost,
@@ -158,12 +149,7 @@ public class UsageRecordedLogEntity {
         this.completionTokens = completionTokens;
         this.totalTokens = totalTokens;
         this.estimatedReasoningTokens = estimatedReasoningTokens;
-        this.promptCachedTokens = promptCachedTokens;
-        this.promptAudioTokens = promptAudioTokens;
-        this.completionReasoningTokens = completionReasoningTokens;
-        this.completionAudioTokens = completionAudioTokens;
-        this.completionAcceptedPredictionTokens = completionAcceptedPredictionTokens;
-        this.completionRejectedPredictionTokens = completionRejectedPredictionTokens;
+        this.providerTokenDetails = providerTokenDetails;
         this.estimatedCost = estimatedCost;
         this.requestPath = requestPath;
         this.upstreamHost = upstreamHost;
@@ -189,12 +175,7 @@ public class UsageRecordedLogEntity {
     public Long getCompletionTokens() { return completionTokens; }
     public Long getTotalTokens() { return totalTokens; }
     public Long getEstimatedReasoningTokens() { return estimatedReasoningTokens; }
-    public Long getPromptCachedTokens() { return promptCachedTokens; }
-    public Long getPromptAudioTokens() { return promptAudioTokens; }
-    public Long getCompletionReasoningTokens() { return completionReasoningTokens; }
-    public Long getCompletionAudioTokens() { return completionAudioTokens; }
-    public Long getCompletionAcceptedPredictionTokens() { return completionAcceptedPredictionTokens; }
-    public Long getCompletionRejectedPredictionTokens() { return completionRejectedPredictionTokens; }
+    public String getProviderTokenDetails() { return providerTokenDetails; }
     public BigDecimal getEstimatedCost() { return estimatedCost; }
     public String getRequestPath() { return requestPath; }
     public String getUpstreamHost() { return upstreamHost; }

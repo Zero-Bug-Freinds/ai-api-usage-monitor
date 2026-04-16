@@ -5,6 +5,8 @@ import com.eevee.usage.events.AiProvider;
 import com.eevee.usage.events.UsageRecordedEvent;
 import com.eevee.usageservice.domain.UsageRecordedLogEntity;
 import com.eevee.usageservice.repository.UsageRecordedLogRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -18,9 +20,11 @@ public class UsageRecordedService {
     private static final Logger log = LoggerFactory.getLogger(UsageRecordedService.class);
 
     private final UsageRecordedLogRepository repository;
+    private final ObjectMapper objectMapper;
 
-    public UsageRecordedService(UsageRecordedLogRepository repository) {
+    public UsageRecordedService(UsageRecordedLogRepository repository, ObjectMapper objectMapper) {
         this.repository = repository;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional
@@ -34,7 +38,7 @@ public class UsageRecordedService {
         log.debug("Stored usage event eventId={} userId={}", event.eventId(), event.userId());
     }
 
-    private static UsageRecordedLogEntity map(UsageRecordedEvent event) {
+    private UsageRecordedLogEntity map(UsageRecordedEvent event) {
         TokenUsage tu = event.tokenUsage();
         String model = event.model();
         Long prompt = null;
@@ -72,6 +76,9 @@ public class UsageRecordedService {
             // Google/Claude: estimate derived from total - input - output.
             estimatedReasoningTokens = estimateReasoningTokens(total, prompt, completion);
         }
+        String providerTokenDetailsJson = buildProviderTokenDetailsJson(event.provider(), promptCachedTokens, promptAudioTokens,
+                completionReasoningTokens, completionAudioTokens,
+                completionAcceptedPredictionTokens, completionRejectedPredictionTokens);
         boolean successful = Boolean.TRUE.equals(event.requestSuccessful());
         return new UsageRecordedLogEntity(
                 event.eventId(),
@@ -89,12 +96,7 @@ public class UsageRecordedService {
                 completion,
                 total,
                 estimatedReasoningTokens,
-                promptCachedTokens,
-                promptAudioTokens,
-                completionReasoningTokens,
-                completionAudioTokens,
-                completionAcceptedPredictionTokens,
-                completionRejectedPredictionTokens,
+                providerTokenDetailsJson,
                 event.estimatedCost(),
                 event.requestPath(),
                 event.upstreamHost(),
@@ -103,6 +105,46 @@ public class UsageRecordedService {
                 event.upstreamStatusCode(),
                 Instant.now()
         );
+    }
+
+    private String buildProviderTokenDetailsJson(AiProvider provider,
+                                                 Long promptCachedTokens,
+                                                 Long promptAudioTokens,
+                                                 Long completionReasoningTokens,
+                                                 Long completionAudioTokens,
+                                                 Long completionAcceptedPredictionTokens,
+                                                 Long completionRejectedPredictionTokens) {
+        if (provider != AiProvider.OPENAI) {
+            return null;
+        }
+        var map = new java.util.LinkedHashMap<String, Long>();
+        if (promptCachedTokens != null) {
+            map.put("prompt_cached_tokens", promptCachedTokens);
+        }
+        if (promptAudioTokens != null) {
+            map.put("prompt_audio_tokens", promptAudioTokens);
+        }
+        if (completionReasoningTokens != null) {
+            map.put("completion_reasoning_tokens", completionReasoningTokens);
+        }
+        if (completionAudioTokens != null) {
+            map.put("completion_audio_tokens", completionAudioTokens);
+        }
+        if (completionAcceptedPredictionTokens != null) {
+            map.put("completion_accepted_prediction_tokens", completionAcceptedPredictionTokens);
+        }
+        if (completionRejectedPredictionTokens != null) {
+            map.put("completion_rejected_prediction_tokens", completionRejectedPredictionTokens);
+        }
+        if (map.isEmpty()) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(map);
+        } catch (JsonProcessingException e) {
+            log.warn("Failed to serialize provider_token_details, skipping. provider={}", provider, e);
+            return null;
+        }
     }
 
     private static long safeLong(Long v) {
