@@ -31,6 +31,7 @@ COPY --from=deps /repo/package.json ./package.json
 COPY --from=deps /repo/pnpm-workspace.yaml ./pnpm-workspace.yaml
 COPY --from=deps /repo/pnpm-lock.yaml ./pnpm-lock.yaml
 COPY --from=deps /repo/services/notification-service/package.json ./services/notification-service/package.json
+COPY --from=deps /repo/services/notification-service/node_modules ./services/notification-service/node_modules
 
 COPY services/notification-service ./services/notification-service
 WORKDIR /repo/services/notification-service
