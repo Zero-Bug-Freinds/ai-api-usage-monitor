@@ -2,7 +2,20 @@
 
 import * as React from "react"
 
-import { Button, Input, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ai-usage/ui"
+import {
+  Button,
+  Input,
+  Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@ai-usage/ui"
 import { buildUsageQuery, fetchUsageJson } from "@/lib/usage/fetch-usage"
 import { formatOccurredAtKst } from "@/lib/usage/format-occurred-at-kst"
 import { formatUsd } from "@/lib/usage/format"
@@ -211,13 +224,25 @@ export function UsageLogPanel() {
                   <th className="px-3 py-2 font-medium">
                     <span className="inline-flex items-center gap-1">
                       추정 추론 토큰
-                      <span
-                        className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-muted-foreground/40 text-[10px] text-muted-foreground cursor-help"
-                        title="'추정 추론 토큰'은 모델의 사고 과정뿐만 아니라 시스템 운영상 발생하는 기타 과금 토큰을 모두 포함한 포괄적 지표입니다. 모델별로 내부 동작 방식이 다르므로, 단순 비교보다는 해당 서비스의 전체적인 사용 흐름을 파악하는 용도로 활용하시기 바랍니다."
-                        aria-label="추정 추론 토큰 설명"
-                      >
-                        ?
-                      </span>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-muted-foreground/40 text-[10px] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                              aria-label="추정 추론 토큰 설명"
+                            >
+                              ?
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" align="start">
+                            &apos;추정 추론 토큰&apos;은 모델의 사고 과정뿐만 아니라 시스템 운영상 발생하는 기타
+                            과금 토큰을 모두 포함한 포괄적 지표입니다. 모델별로 내부 동작 방식이 다르므로,
+                            단순 비교보다는 해당 서비스의 전체적인 사용 흐름을 파악하는 용도로 활용하시기
+                            바랍니다.
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     </span>
                   </th>
                   <th className="px-3 py-2 font-medium">출력 토큰</th>
