@@ -1,5 +1,6 @@
 "use client"
 
+import * as React from "react"
 import type { ReactNode } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
@@ -14,11 +15,10 @@ import {
   Wallet,
 } from "lucide-react"
 
-import { cn } from "@ai-usage/ui"
-
-import type { ConsoleNavId, ConsoleProfile } from "./console-nav-model"
-import { CONSOLE_MAIN_NAV_ORDER, CONSOLE_NAV } from "./console-nav-model"
-import { isConsoleNavActive, resolveConsoleNavLink } from "./console-nav-resolve"
+import { Button, cn } from "@ai-usage/ui"
+import type { ConsoleNavId, ConsoleProfile } from "./console-nav"
+import { CONSOLE_MAIN_NAV_ORDER, CONSOLE_NAV } from "./console-nav"
+import { isConsoleNavActive, resolveConsoleNavLink } from "./console-nav"
 
 const ICONS: Record<ConsoleNavId, ReactNode> = {
   usageHome: <LayoutDashboard className="size-[1.125rem] shrink-0" aria-hidden />,
@@ -76,12 +76,34 @@ function NavRow({
 
 export type ConsoleSidebarProps = {
   profile: ConsoleProfile
-  /** Logout button or other footer actions from the host app. */
-  footer: ReactNode
+  /** Per-service BFF logout endpoint path. */
+  logoutApiPath?: string
+  /** Redirect path after logout request. */
+  logoutRedirectPath?: string
 }
 
-export function ConsoleSidebar({ profile, footer }: ConsoleSidebarProps) {
+export function ConsoleSidebar({
+  profile,
+  logoutApiPath = "/api/auth/logout",
+  logoutRedirectPath = "/",
+}: ConsoleSidebarProps) {
   const pathname = usePathname() ?? ""
+  const [logoutPending, setLogoutPending] = React.useState(false)
+
+  async function handleLogout() {
+    setLogoutPending(true)
+    try {
+      await fetch(logoutApiPath, {
+        method: "POST",
+        credentials: "include",
+      })
+    } catch {
+      // Network failure should not block redirect to sign-in entry.
+    } finally {
+      setLogoutPending(false)
+    }
+    window.location.assign(logoutRedirectPath)
+  }
 
   return (
     <aside className="flex h-full min-h-0 w-64 min-w-[240px] max-w-[280px] shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
@@ -102,7 +124,19 @@ export function ConsoleSidebar({ profile, footer }: ConsoleSidebarProps) {
         ))}
       </nav>
 
-      <div className="mt-auto border-t border-sidebar-border px-3 py-4">{footer}</div>
+      <div className="mt-auto border-t border-sidebar-border px-3 py-4">
+        <div className="flex flex-col gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="h-9 w-full justify-center text-sm"
+            disabled={logoutPending}
+            onClick={handleLogout}
+          >
+            {logoutPending ? "로그아웃 중..." : "로그아웃"}
+          </Button>
+        </div>
+      </div>
     </aside>
   )
 }

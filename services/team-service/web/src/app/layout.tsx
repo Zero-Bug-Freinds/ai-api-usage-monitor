@@ -1,7 +1,20 @@
+import type { Metadata } from "next"
+import { Geist, Geist_Mono } from "next/font/google"
+import type { ReactNode } from "react"
+
 import "./globals.css"
 
-import type { Metadata } from "next"
-import type { ReactNode } from "react"
+import { ConsoleShell } from "@ai-usage/shell"
+
+const geistSans = Geist({
+  variable: "--font-geist-sans",
+  subsets: ["latin"],
+})
+
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+})
 
 export const metadata: Metadata = {
   title: "Team Management",
@@ -9,9 +22,21 @@ export const metadata: Metadata = {
 }
 
 export default function RootLayout({ children }: { children: ReactNode }) {
+  const idOrigin = (process.env.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN ?? "").replace(/\/$/, "")
+  const logoutApiPath = `${idOrigin}/api/auth/logout`
+  const logoutRedirectPath = `${idOrigin}/login`
+
   return (
-    <html lang="ko">
-      <body>{children}</body>
+    <html lang="ko" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+      <body className="min-h-full flex flex-col">
+        <ConsoleShell
+          profile="team"
+          logoutApiPath={logoutApiPath}
+          logoutRedirectPath={logoutRedirectPath}
+        >
+          {children}
+        </ConsoleShell>
+      </body>
     </html>
   )
 }

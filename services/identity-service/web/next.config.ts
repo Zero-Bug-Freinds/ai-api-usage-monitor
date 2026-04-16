@@ -12,7 +12,6 @@ function usageOrigin(): string {
 function teamOrigin(): string {
   return (
     process.env.TEAM_WEB_INTERNAL_ORIGIN ??
-    process.env.NEXT_PUBLIC_TEAM_WEB_ORIGIN ??
     "http://host.docker.internal:3002"
   ).replace(/\/+$/, "");
 }
@@ -68,6 +67,14 @@ const nextConfig: NextConfig = {
       {
         source: "/notifications/:path*",
         destination: `${notification}/notifications/:path*`,
+      },
+      {
+        source: "/teams",
+        destination: `${team}/teams`,
+      },
+      {
+        source: "/teams/:path*",
+        destination: `${team}/teams/:path*`,
       },
       {
         source: "/api/team/v1/:path*",

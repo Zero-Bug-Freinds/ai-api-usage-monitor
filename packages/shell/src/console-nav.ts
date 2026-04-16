@@ -1,8 +1,48 @@
-import type { ConsoleNavId, ConsoleProfile } from "./console-nav-model"
-import { CONSOLE_NAV } from "./console-nav-model"
+export type ConsoleProfile = "identity" | "usage" | "billing" | "notification" | "team"
+
+export type ConsoleNavId =
+  | "usageHome"
+  | "usageLog"
+  | "billingHome"
+  | "notifications"
+  | "settings"
+  | "organizations"
+  | "teams"
+  | "identityLanding"
+
+export type RouteOwner = "usage" | "billing" | "identity" | "notification" | "team"
+
+export type ConsoleNavMeta = {
+  label: string
+  owner: RouteOwner
+  /** Browser path at the identity edge (single host, no basePath on identity app). */
+  publicPath: string
+}
+
+export const CONSOLE_NAV: Record<ConsoleNavId, ConsoleNavMeta> = {
+  usageHome: { label: "사용량", owner: "usage", publicPath: "/dashboard" },
+  usageLog: { label: "상세 로그", owner: "usage", publicPath: "/dashboard/usagelog" },
+  billingHome: { label: "지출", owner: "billing", publicPath: "/billing" },
+  notifications: { label: "알림", owner: "notification", publicPath: "/notifications" },
+  settings: { label: "설정", owner: "identity", publicPath: "/settings" },
+  organizations: { label: "조직", owner: "identity", publicPath: "/organizations" },
+  teams: { label: "팀", owner: "team", publicPath: "/teams" },
+  identityLanding: { label: "홈으로", owner: "identity", publicPath: "/" },
+}
+
+/** Main sidebar order (excludes identity landing / back link). */
+export const CONSOLE_MAIN_NAV_ORDER: ConsoleNavId[] = [
+  "usageHome",
+  "usageLog",
+  "billingHome",
+  "notifications",
+  "settings",
+  "organizations",
+  "teams",
+]
 
 /**
- * Identity web origin for split ports (e.g. usage on :3001 → identity on :3000).
+ * Identity web origin for split ports (e.g. usage on :3001 -> identity on :3000).
  * Empty when apps are served on the same browser origin (e.g. :3000 + rewrite).
  */
 export function identityWebOrigin(): string {
@@ -70,6 +110,13 @@ export function resolveConsoleNavLink(profile: ConsoleProfile, id: ConsoleNavId)
     return { kind: "anchor", href: anchorHrefForPublicPath(publicPath) }
   }
 
+  if (profile === "team") {
+    if (owner === "team") {
+      return { kind: "next", href: "/" }
+    }
+    return { kind: "anchor", href: anchorHrefForPublicPath(publicPath) }
+  }
+
   const _never: never = profile
   throw new Error(`Unexpected profile: ${_never}`)
 }
@@ -83,7 +130,7 @@ export function usageDashboardHref(): string {
 }
 
 /**
- * Identity landing / 대시보드 entry: same semantics as former `usageAppHref("/dashboard")` on identity.
+ * Identity landing / dashboard entry: same semantics as former `usageAppHref("/dashboard")` on identity.
  */
 export function usageEntryPublicPath(): string {
   return "/dashboard"
@@ -126,6 +173,11 @@ export function isConsoleNavActive(profile: ConsoleProfile, pathname: string, id
 
   if (profile === "notification") {
     if (id === "notifications") return p === "/" || p === ""
+    return false
+  }
+
+  if (profile === "team") {
+    if (id === "teams") return true
     return false
   }
 

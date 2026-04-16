@@ -5,11 +5,13 @@ RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY packages/ui/package.json ./packages/ui/
 COPY packages/shell/package.json ./packages/shell/
+COPY services/usage-service/web/package.json ./services/usage-service/web/
 COPY services/usage-service/web-mfe/package.json ./services/usage-service/web-mfe/
 RUN pnpm install --frozen-lockfile
 
 COPY packages/ui ./packages/ui
 COPY packages/shell ./packages/shell
+COPY services/usage-service/web ./services/usage-service/web
 COPY services/usage-service/web-mfe ./services/usage-service/web-mfe
 
 WORKDIR /repo/services/usage-service/web-mfe
