@@ -12,8 +12,10 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.NotFound;
 import org.hibernate.annotations.NotFoundAction;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -84,6 +86,7 @@ public class UsageRecordedLogEntity {
      *   "completion_rejected_prediction_tokens": 7
      * }
      */
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "provider_token_details", columnDefinition = "jsonb")
     private String providerTokenDetails;
 

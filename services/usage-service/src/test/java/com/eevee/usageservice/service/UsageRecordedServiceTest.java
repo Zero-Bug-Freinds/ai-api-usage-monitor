@@ -6,10 +6,10 @@ import com.eevee.usage.events.UsageRecordedEvent;
 import com.eevee.usageservice.domain.UsageRecordedLogEntity;
 import com.eevee.usageservice.repository.UsageRecordedLogRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -29,8 +29,12 @@ class UsageRecordedServiceTest {
     @Mock
     private UsageRecordedLogRepository repository;
 
-    @InjectMocks
     private UsageRecordedService usageRecordedService;
+
+    @BeforeEach
+    void setUp() {
+        usageRecordedService = new UsageRecordedService(repository, new ObjectMapper());
+    }
 
     @Test
     void skipsPersistWhenEventIdAlreadyExists() {
