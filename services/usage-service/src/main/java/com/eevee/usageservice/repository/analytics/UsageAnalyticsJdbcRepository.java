@@ -175,7 +175,7 @@ public class UsageAnalyticsJdbcRepository {
             AiProvider provider
     ) {
         String sql = """
-                SELECT COALESCE(NULLIF(trim(model), ''), '_unknown') AS m,
+                SELECT COALESCE(NULLIF(trim(model), ''), lower(provider::text) || '_unknown') AS m,
                        provider,
                        COUNT(*)::bigint,
                        COALESCE(SUM(prompt_tokens), 0)::bigint,
@@ -191,7 +191,7 @@ public class UsageAnalyticsJdbcRepository {
                        COALESCE(SUM(completion_tokens), 0)::bigint
                 FROM usage_recorded_log
                 WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ?%s
-                GROUP BY COALESCE(NULLIF(trim(model), ''), '_unknown'), provider
+                GROUP BY COALESCE(NULLIF(trim(model), ''), lower(provider::text) || '_unknown'), provider
                 ORDER BY COUNT(*) DESC
                 """.formatted(PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();

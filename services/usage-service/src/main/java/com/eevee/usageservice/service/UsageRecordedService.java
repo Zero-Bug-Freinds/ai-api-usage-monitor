@@ -64,6 +64,7 @@ public class UsageRecordedService {
             completionAcceptedPredictionTokens = tu.completionAcceptedPredictionTokens();
             completionRejectedPredictionTokens = tu.completionRejectedPredictionTokens();
         }
+        model = effectiveModelName(model, event.provider());
         Long estimatedReasoningTokens;
         if (event.provider() == AiProvider.OPENAI && tu != null) {
             // OpenAI: reasoning token breakdown is provided in response.
@@ -145,6 +146,25 @@ public class UsageRecordedService {
             log.warn("Failed to serialize provider_token_details, skipping. provider={}", provider, e);
             return null;
         }
+    }
+
+    /**
+     * Blank or generic failure placeholders become {@code <providerPathSegment>_unknown}
+     * (e.g. {@code openai_unknown}) so dashboards can tell providers apart.
+     */
+    private static String effectiveModelName(String model, AiProvider provider) {
+        if (model == null || model.isBlank()) {
+            return providerUnknownModel(provider);
+        }
+        String t = model.trim();
+        if ("unknown".equalsIgnoreCase(t) || "_unknown".equalsIgnoreCase(t)) {
+            return providerUnknownModel(provider);
+        }
+        return model;
+    }
+
+    private static String providerUnknownModel(AiProvider provider) {
+        return provider.pathSegment() + "_unknown";
     }
 
     private static long safeLong(Long v) {

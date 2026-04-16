@@ -166,4 +166,64 @@ class UsageRecordedServiceTest {
         // GOOGLE/ANTHROPIC = max(total - prompt - completion, 0)
         assertThat(captor.getValue().getEstimatedReasoningTokens()).isEqualTo(20L);
     }
+
+    @Test
+    void unknownLiteralModel_isStoredAsProviderPrefixedUnknown() {
+        UUID eventId = UUID.randomUUID();
+        UsageRecordedEvent event = new UsageRecordedEvent(
+                eventId,
+                Instant.parse("2025-01-01T00:00:00Z"),
+                "corr-1",
+                "user-1",
+                null,
+                null,
+                "key-1",
+                "deadbeef00112233",
+                "managed",
+                AiProvider.OPENAI,
+                "unknown",
+                null,
+                BigDecimal.ZERO,
+                "/proxy/openai/v1/chat/completions",
+                "api.openai.com",
+                false,
+                false,
+                401
+        );
+        when(repository.existsByEventId(eventId)).thenReturn(false);
+        usageRecordedService.persist(event);
+        ArgumentCaptor<UsageRecordedLogEntity> captor = ArgumentCaptor.forClass(UsageRecordedLogEntity.class);
+        verify(repository).save(captor.capture());
+        assertThat(captor.getValue().getModel()).isEqualTo("openai_unknown");
+    }
+
+    @Test
+    void blankModelWithTokenUsageFallsBackToProviderPrefixedUnknown() {
+        UUID eventId = UUID.randomUUID();
+        UsageRecordedEvent event = new UsageRecordedEvent(
+                eventId,
+                Instant.parse("2025-01-01T00:00:00Z"),
+                "corr-2",
+                "user-1",
+                null,
+                null,
+                "key-1",
+                "deadbeef00112233",
+                "managed",
+                AiProvider.GOOGLE,
+                null,
+                new TokenUsage(null, null, null, null, null, null, null, null, null, null),
+                BigDecimal.ZERO,
+                "/proxy/google/v1beta/models/gemini:generateContent",
+                "generativelanguage.googleapis.com",
+                false,
+                false,
+                500
+        );
+        when(repository.existsByEventId(eventId)).thenReturn(false);
+        usageRecordedService.persist(event);
+        ArgumentCaptor<UsageRecordedLogEntity> captor = ArgumentCaptor.forClass(UsageRecordedLogEntity.class);
+        verify(repository).save(captor.capture());
+        assertThat(captor.getValue().getModel()).isEqualTo("google_unknown");
+    }
 }
