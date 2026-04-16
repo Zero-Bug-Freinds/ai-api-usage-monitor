@@ -213,15 +213,20 @@ type TokenStackRow = {
   provider: string
   requests: number
   inputTokens: number
+  estimatedReasoningTokens: number
   outputTokens: number
   totalTokens: number
   avgInputPerReq: number
+  avgEstimatedReasoningPerReq: number
   avgOutputPerReq: number
   pctInputOfBar: number
+  pctEstimatedReasoningOfBar: number
   pctOutputOfBar: number
   pctInputOfGrand: number
+  pctEstimatedReasoningOfGrand: number
   pctOutputOfGrand: number
   fillInput: string
+  fillEstimatedReasoning: string
   fillOutput: string
 }
 
@@ -256,13 +261,20 @@ function TokenStackTooltip({ active, payload, label }: TokenStackTooltipProps) {
         <span className="tabular-nums">전체 {row.pctInputOfGrand.toFixed(1)}%</span>
       </p>
       <p className="mt-0.5 text-muted-foreground">
+        추정 추론: {formatTokenCount(row.estimatedReasoningTokens)}{" "}
+        <span className="tabular-nums">({row.pctEstimatedReasoningOfBar.toFixed(1)}% 막대)</span>
+        {" · "}
+        <span className="tabular-nums">전체 {row.pctEstimatedReasoningOfGrand.toFixed(1)}%</span>
+      </p>
+      <p className="mt-0.5 text-muted-foreground">
         출력: {formatTokenCount(row.outputTokens)}{" "}
         <span className="tabular-nums">({row.pctOutputOfBar.toFixed(1)}% 막대)</span>
         {" · "}
         <span className="tabular-nums">전체 {row.pctOutputOfGrand.toFixed(1)}%</span>
       </p>
       <p className="mt-1 text-[11px] text-muted-foreground tabular-nums">
-        요청당 평균 — in {Math.round(row.avgInputPerReq).toLocaleString("en-US")} / out{" "}
+        요청당 평균 — in {Math.round(row.avgInputPerReq).toLocaleString("en-US")} / reason{" "}
+        {Math.round(row.avgEstimatedReasoningPerReq).toLocaleString("en-US")} / out{" "}
         {Math.round(row.avgOutputPerReq).toLocaleString("en-US")}
       </p>
     </div>
@@ -280,9 +292,9 @@ type TokenAvgLabelProps = {
 function TokenAvgLabelList(props: TokenAvgLabelProps) {
   const { x, y, width, height, payload } = props
   if (payload == null || payload.totalTokens <= 0) return null
-  const text = `in:${Math.round(payload.avgInputPerReq).toLocaleString("en-US")} / out:${Math.round(
-    payload.avgOutputPerReq
-  ).toLocaleString("en-US")}`
+  const text = `in:${Math.round(payload.avgInputPerReq).toLocaleString("en-US")} / reason:${Math.round(
+    payload.avgEstimatedReasoningPerReq
+  ).toLocaleString("en-US")} / out:${Math.round(payload.avgOutputPerReq).toLocaleString("en-US")}`
   const nx = typeof x === "number" ? x : Number(x)
   const ny = typeof y === "number" ? y : Number(y)
   const nw = typeof width === "number" ? width : Number(width)
@@ -666,33 +678,41 @@ export function UsageDashboard() {
   const tokenStackRows = React.useMemo((): TokenStackRow[] => {
     const sorted = [...byModel].sort((a, b) => b.requestCount - a.requestCount)
     let grandIn = 0
+    let grandEstimatedReasoning = 0
     let grandOut = 0
     for (const m of sorted) {
       grandIn += m.inputTokens
+      grandEstimatedReasoning += m.estimatedReasoningTokens
       grandOut += m.outputTokens
     }
-    const grandTotal = grandIn + grandOut
+    const grandTotal = grandIn + grandEstimatedReasoning + grandOut
     return sorted.map((m) => {
       const base = colorForModel(m.model, m.provider)
       const rc = m.requestCount
       const inT = m.inputTokens
+      const estimatedReasoningT = m.estimatedReasoningTokens
       const outT = m.outputTokens
-      const total = inT + outT
+      const total = inT + estimatedReasoningT + outT
       return {
         label: truncateModelLabel(m.model),
         model: m.model,
         provider: m.provider,
         requests: rc,
         inputTokens: inT,
+        estimatedReasoningTokens: estimatedReasoningT,
         outputTokens: outT,
         totalTokens: total,
         avgInputPerReq: rc > 0 ? inT / rc : 0,
+        avgEstimatedReasoningPerReq: rc > 0 ? estimatedReasoningT / rc : 0,
         avgOutputPerReq: rc > 0 ? outT / rc : 0,
         pctInputOfBar: total > 0 ? (100 * inT) / total : 0,
+        pctEstimatedReasoningOfBar: total > 0 ? (100 * estimatedReasoningT) / total : 0,
         pctOutputOfBar: total > 0 ? (100 * outT) / total : 0,
         pctInputOfGrand: grandTotal > 0 ? (100 * inT) / grandTotal : 0,
+        pctEstimatedReasoningOfGrand: grandTotal > 0 ? (100 * estimatedReasoningT) / grandTotal : 0,
         pctOutputOfGrand: grandTotal > 0 ? (100 * outT) / grandTotal : 0,
         fillInput: rgbaFromHex(base, 0.3),
+        fillEstimatedReasoning: rgbaFromHex(base, 0.65),
         fillOutput: rgbaFromHex(base, 1),
       }
     })
@@ -710,6 +730,11 @@ export function UsageDashboard() {
         value: "입력 토큰",
         type: "square" as const,
         color: first?.fillInput ?? "rgba(148, 163, 184, 0.3)",
+      },
+      {
+        value: "추정 추론 토큰",
+        type: "square" as const,
+        color: first?.fillEstimatedReasoning ?? "rgba(148, 163, 184, 0.65)",
       },
       {
         value: "출력 토큰",
@@ -1126,6 +1151,13 @@ export function UsageDashboard() {
 
           <section className="mb-8 rounded-lg border border-border bg-card p-4 shadow-sm min-w-0">
             <h2 className="mb-4 text-lg font-medium">모델별 토큰 사용량</h2>
+            <p className="mb-4 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+              <span className="font-medium text-foreground">추정 추론 토큰 (Estimated Reasoning Tokens)</span>
+              <br />
+              모델의 사고 과정(Reasoning) 및 시스템 처리에 소모된 토큰의 합계입니다. API 응답의 총 토큰에서
+              가시적인 입력/출력 토큰을 제외한 수치로, 정확한 추론량과 시스템 토큰의 구분은 모델 제공사 정책에
+              따라 차이가 있을 수 있습니다.
+            </p>
             {tokenStackRows.length === 0 ? (
               <p className="text-sm text-muted-foreground">집계 데이터 없음</p>
             ) : (
@@ -1151,6 +1183,11 @@ export function UsageDashboard() {
                     <Bar stackId="tokens" dataKey="inputTokens" name="입력 토큰" radius={[4, 0, 0, 4]}>
                       {tokenStackRows.map((row) => (
                         <Cell key={`stk-in-${row.model}`} fill={row.fillInput} />
+                      ))}
+                    </Bar>
+                    <Bar stackId="tokens" dataKey="estimatedReasoningTokens" name="추정 추론 토큰">
+                      {tokenStackRows.map((row) => (
+                        <Cell key={`stk-reason-${row.model}`} fill={row.fillEstimatedReasoning} />
                       ))}
                     </Bar>
                     <Bar stackId="tokens" dataKey="outputTokens" name="출력 토큰" radius={[0, 4, 4, 0]}>

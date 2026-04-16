@@ -15,6 +15,7 @@ public record UsageLogEntryResponse(
         String apiKeyStatus,
         Long promptTokens,
         Long completionTokens,
+        Long estimatedReasoningTokens,
         Long totalTokens,
         BigDecimal estimatedCost,
         String requestPath,

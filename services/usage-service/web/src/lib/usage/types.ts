@@ -28,6 +28,7 @@ export type ModelUsageAggregate = {
   provider: string
   requestCount: number
   inputTokens: number
+  estimatedReasoningTokens: number
   outputTokens: number
 }
 
@@ -63,6 +64,7 @@ export type UsageLogEntryResponse = {
   apiKeyStatus: "ACTIVE" | "DELETION_REQUESTED" | "DELETED" | null
   promptTokens: number | null
   completionTokens: number | null
+  estimatedReasoningTokens: number | null
   totalTokens: number | null
   estimatedCost: number | string | null
   requestPath: string | null

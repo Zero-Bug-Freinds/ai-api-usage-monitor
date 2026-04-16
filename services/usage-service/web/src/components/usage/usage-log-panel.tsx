@@ -115,6 +115,14 @@ export function UsageLogPanel() {
         </Button>
       </div>
 
+      <p className="mb-4 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+        <span className="font-medium text-foreground">추정 추론 토큰 (Estimated Reasoning Tokens)</span>
+        <br />
+        모델의 사고 과정(Reasoning) 및 시스템 처리에 소모된 토큰의 합계입니다. API 응답의 총 토큰에서
+        가시적인 입력/출력 토큰을 제외한 수치로, 정확한 추론량과 시스템 토큰의 구분은 모델 제공사 정책에
+        따라 차이가 있을 수 있습니다.
+      </p>
+
       <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
         <div className="space-y-2 sm:w-48">
           <Label htmlFor="log-provider">공급자</Label>
@@ -200,14 +208,17 @@ export function UsageLogPanel() {
       ) : (
         <>
           <div className="overflow-x-auto rounded-md border border-border">
-            <table className="w-full min-w-[800px] text-left text-sm">
+            <table className="w-full min-w-[1200px] text-left text-sm">
               <thead className="border-b border-border bg-muted/40">
                 <tr>
                   <th className="px-3 py-2 font-medium">시각 (KST)</th>
                   <th className="px-3 py-2 font-medium">공급자</th>
                   <th className="px-3 py-2 font-medium">API Key</th>
                   <th className="px-3 py-2 font-medium">모델</th>
-                  <th className="px-3 py-2 font-medium">토큰</th>
+                  <th className="px-3 py-2 font-medium">입력 토큰</th>
+                  <th className="px-3 py-2 font-medium">추정 추론 토큰</th>
+                  <th className="px-3 py-2 font-medium">출력 토큰</th>
+                  <th className="px-3 py-2 font-medium">총 토큰</th>
                   <th className="px-3 py-2 font-medium">비용</th>
                   <th className="px-3 py-2 font-medium">성공</th>
                 </tr>
@@ -221,6 +232,9 @@ export function UsageLogPanel() {
                     <td className="px-3 py-2">{row.provider}</td>
                     <td className="px-3 py-2">{toLogApiKeyLabel(row)}</td>
                     <td className="px-3 py-2 font-mono text-xs">{row.model}</td>
+                    <td className="px-3 py-2 tabular-nums">{row.promptTokens ?? "—"}</td>
+                    <td className="px-3 py-2 tabular-nums">{row.estimatedReasoningTokens ?? "—"}</td>
+                    <td className="px-3 py-2 tabular-nums">{row.completionTokens ?? "—"}</td>
                     <td className="px-3 py-2 tabular-nums">{row.totalTokens ?? "—"}</td>
                     <td className="px-3 py-2 tabular-nums">
                       {row.estimatedCost != null ? formatUsd(row.estimatedCost) : "—"}

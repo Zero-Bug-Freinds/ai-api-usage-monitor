@@ -47,6 +47,7 @@ public class UsageRecordedService {
             completion = tu.completionTokens();
             total = tu.totalTokens();
         }
+        Long estimatedReasoningTokens = estimateReasoningTokens(total, prompt, completion);
         boolean successful = Boolean.TRUE.equals(event.requestSuccessful());
         return new UsageRecordedLogEntity(
                 event.eventId(),
@@ -63,6 +64,7 @@ public class UsageRecordedService {
                 prompt,
                 completion,
                 total,
+                estimatedReasoningTokens,
                 event.estimatedCost(),
                 event.requestPath(),
                 event.upstreamHost(),
@@ -71,5 +73,13 @@ public class UsageRecordedService {
                 event.upstreamStatusCode(),
                 Instant.now()
         );
+    }
+
+    private static Long estimateReasoningTokens(Long totalTokens, Long promptTokens, Long completionTokens) {
+        if (totalTokens == null || promptTokens == null || completionTokens == null) {
+            return null;
+        }
+        long reasoning = totalTokens - promptTokens - completionTokens;
+        return Math.max(reasoning, 0L);
     }
 }

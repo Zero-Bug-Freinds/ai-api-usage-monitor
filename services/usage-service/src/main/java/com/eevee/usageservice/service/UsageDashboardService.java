@@ -178,6 +178,7 @@ public class UsageDashboardService {
                         : null,
                 e.getPromptTokens(),
                 e.getCompletionTokens(),
+                resolveEstimatedReasoningTokens(e),
                 e.getTotalTokens(),
                 e.getEstimatedCost(),
                 e.getRequestPath(),
@@ -201,6 +202,17 @@ public class UsageDashboardService {
             return alias + DELETED_ALIAS_SUFFIX;
         }
         return alias;
+    }
+
+    private static Long resolveEstimatedReasoningTokens(UsageRecordedLogEntity e) {
+        if (e.getEstimatedReasoningTokens() != null) {
+            return e.getEstimatedReasoningTokens();
+        }
+        if (e.getTotalTokens() == null || e.getPromptTokens() == null || e.getCompletionTokens() == null) {
+            return null;
+        }
+        long fallback = e.getTotalTokens() - e.getPromptTokens() - e.getCompletionTokens();
+        return Math.max(fallback, 0L);
     }
 
     private Range validateRange(LocalDate from, LocalDate toInclusive) {
