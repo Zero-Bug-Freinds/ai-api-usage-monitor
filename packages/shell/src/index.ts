@@ -20,6 +20,7 @@ export {
   type ConsoleShellProps,
   resolveIdentityLogoutPathsFromEnv,
 } from "./console-shell"
+export { ConsoleLayoutOverride } from "./console-layout-override"
 
 /** Alias for billing layouts (same layout as `ConsoleShell`). */
 export { ConsoleShell as BillingConsoleShell } from "./console-shell"

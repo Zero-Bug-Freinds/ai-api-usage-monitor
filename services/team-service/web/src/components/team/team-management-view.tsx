@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { ChevronDown, ChevronRight, Eye, EyeOff, Minus, Plus } from "lucide-react"
+import { ChevronRight, Eye, EyeOff, Minus, Plus, Search } from "lucide-react"
 
 type ApiResponse<T> = {
   success: boolean
@@ -115,6 +115,17 @@ function teamApiPath(path: string): string {
   return `${TEAM_WEB_BASE_PATH}${normalized}`
 }
 
+function useDebounce<T>(value: T, delayMs: number): T {
+  const [debouncedValue, setDebouncedValue] = React.useState(value)
+
+  React.useEffect(() => {
+    const timeoutId = window.setTimeout(() => setDebouncedValue(value), delayMs)
+    return () => window.clearTimeout(timeoutId)
+  }, [value, delayMs])
+
+  return debouncedValue
+}
+
 function normalizeBudgetNumericString(raw: string): string {
   const t = raw.trim()
   if (t === "") return ""
@@ -139,6 +150,9 @@ export function TeamManagementView() {
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [teams, setTeams] = React.useState<TeamSummary[]>([])
+  const [keyword, setKeyword] = React.useState("")
+  const debouncedKeyword = useDebounce(keyword, 500)
+  const [isSearching, setIsSearching] = React.useState(false)
   const [teamMemberIdsByTeamId, setTeamMemberIdsByTeamId] = React.useState<Record<string, string[]>>({})
   const [isTeamOwnerByTeamId, setIsTeamOwnerByTeamId] = React.useState<Record<string, boolean>>({})
   const [showCreateForm, setShowCreateForm] = React.useState(false)
@@ -164,28 +178,55 @@ export function TeamManagementView() {
   const [cancelDeleteLoadingKey, setCancelDeleteLoadingKey] = React.useState<string | null>(null)
   const [removeMemberLoadingKey, setRemoveMemberLoadingKey] = React.useState<string | null>(null)
   const [deleteTeamLoadingId, setDeleteTeamLoadingId] = React.useState<string | null>(null)
-  const [openTeamId, setOpenTeamId] = React.useState<string | null>(null)
+  const [selectedTeamId, setSelectedTeamId] = React.useState<string | null>(null)
+  const [activeTab, setActiveTab] = React.useState<"dashboard" | "members" | "settings">("dashboard")
+  const latestLoadSeqRef = React.useRef(0)
 
-  const loadTeams = React.useCallback(async () => {
+  const loadTeams = React.useCallback(async (keywordParam?: string) => {
+    const requestSeq = latestLoadSeqRef.current + 1
+    latestLoadSeqRef.current = requestSeq
     setLoading(true)
+    setIsSearching(true)
     setError(null)
+    const q = new URLSearchParams({
+      page: "0",
+      size: "10",
+    })
+    const trimmedKeyword = (keywordParam ?? "").trim()
+    if (trimmedKeyword !== "") {
+      q.set("keyword", trimmedKeyword)
+    }
     try {
-      const { res, body } = await requestApi("/api/team/v1/me/teams", { method: "GET" })
-      if (!res.ok || !body?.success || !Array.isArray(body.data)) {
+      const { res, body } = await requestApi(`/api/team/v1/teams?${q.toString()}`, { method: "GET" })
+      if (requestSeq !== latestLoadSeqRef.current) {
+        return
+      }
+      const pageData = body?.data
+      const content =
+        pageData && typeof pageData === "object" && Array.isArray((pageData as { content?: unknown[] }).content)
+          ? (pageData as { content: unknown[] }).content
+          : null
+      if (!res.ok || !body?.success || content === null) {
         setError(body?.message ?? "팀 목록을 불러오지 못했습니다")
         setTeams([])
         return
       }
       setTeams(
-        body.data
+        content
           .map((item) => normalizeTeamSummary(item))
           .filter((item): item is TeamSummary => item !== null)
       )
     } catch {
+      if (requestSeq !== latestLoadSeqRef.current) {
+        return
+      }
       setError("팀 목록을 불러오지 못했습니다")
       setTeams([])
     } finally {
-      setLoading(false)
+      if (requestSeq === latestLoadSeqRef.current) {
+        setLoading(false)
+        setIsSearching(false)
+      }
     }
   }, [])
 
@@ -236,31 +277,35 @@ export function TeamManagementView() {
   }, [])
 
   React.useEffect(() => {
-    void loadTeams()
-  }, [loadTeams])
+    void loadTeams(debouncedKeyword)
+  }, [loadTeams, debouncedKeyword])
 
   React.useEffect(() => {
     if (teams.length === 0) {
       setTeamMemberIdsByTeamId({})
       setIsTeamOwnerByTeamId({})
       setTeamApiKeysByTeamId({})
-      setOpenTeamId(null)
+      setSelectedTeamId(null)
     }
   }, [teams.length])
 
   React.useEffect(() => {
-    if (openTeamId && !teams.some((t) => t.id === openTeamId)) {
-      setOpenTeamId(null)
+    if (selectedTeamId && !teams.some((t) => t.id === selectedTeamId)) {
+      setSelectedTeamId(null)
     }
-  }, [teams, openTeamId])
+  }, [teams, selectedTeamId])
 
   React.useEffect(() => {
-    if (!openTeamId) return
-    if (!teams.some((t) => t.id === openTeamId)) return
-    void loadTeamOwnerFlag(openTeamId)
-    void loadTeamMembers(openTeamId)
-    void loadTeamApiKeys(openTeamId)
-  }, [openTeamId, teams, loadTeamApiKeys, loadTeamMembers, loadTeamOwnerFlag])
+    setActiveTab("dashboard")
+  }, [selectedTeamId])
+
+  React.useEffect(() => {
+    if (!selectedTeamId) return
+    if (!teams.some((t) => t.id === selectedTeamId)) return
+    void loadTeamOwnerFlag(selectedTeamId)
+    void loadTeamMembers(selectedTeamId)
+    void loadTeamApiKeys(selectedTeamId)
+  }, [selectedTeamId, teams, loadTeamApiKeys, loadTeamMembers, loadTeamOwnerFlag])
 
   async function createTeam(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -327,7 +372,7 @@ export function TeamManagementView() {
       setTeamName("")
       setInviteesOnCreate([newInviteeRow()])
       setShowCreateForm(false)
-      await loadTeams()
+      await loadTeams(debouncedKeyword)
     } catch {
       setMessage({ kind: "error", text: "팀 생성에 실패했습니다" })
     } finally {
@@ -630,7 +675,7 @@ export function TeamManagementView() {
         return
       }
       setMessage({ kind: "success", text: "팀을 삭제했습니다" })
-      await loadTeams()
+      await loadTeams(debouncedKeyword)
       cancelEditTeamApiKey()
     } catch {
       setMessage({ kind: "error", text: "팀 삭제에 실패했습니다" })
@@ -639,472 +684,533 @@ export function TeamManagementView() {
     }
   }
 
-  return (
-    <main className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-4">
-      <header className="space-y-2">
-        <h1 className="text-2xl font-semibold">팀 관리</h1>
-        <p className="text-sm text-zinc-600">
-          팀 생성 후 사용자 이메일로 팀원을 초대할 수 있으며, 팀 API Key를 등록하고 월 예산(USD)을 설정할 수 있습니다.
-        </p>
-      </header>
+  const selectedTeam = selectedTeamId ? teams.find((team) => team.id === selectedTeamId) ?? null : null
 
-      <section className="space-y-3 rounded-lg border border-zinc-200 bg-white p-4">
-        {!showCreateForm ? (
-          <button
-            type="button"
-            className="h-10 rounded-md bg-black px-4 text-sm font-medium text-white disabled:opacity-60"
-            onClick={openCreateForm}
-            disabled={createLoading}
-          >
-            팀 만들기
-          </button>
-        ) : (
-          <form className="space-y-3" onSubmit={createTeam}>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">팀 이름 (필수)</label>
-              <input
-                className="h-10 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm"
-                value={teamName}
-                onChange={(e) => setTeamName(e.target.value)}
-                placeholder="예: 플랫폼팀"
-                autoComplete="off"
+  return (
+    <main className="flex min-h-screen overflow-hidden bg-white">
+      <aside className="w-72 shrink-0 border-r border-zinc-200 bg-gray-50">
+        <div className="flex h-full flex-col">
+          <div className="border-b border-zinc-200 px-4 py-4">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-base font-semibold text-zinc-900">팀 목록</h2>
+              <button
+                type="button"
+                className="h-8 rounded-md border border-zinc-300 bg-white px-2.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-60"
+                onClick={openCreateForm}
                 disabled={createLoading}
-                required
+              >
+                + 새 팀
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-zinc-500">팀을 선택하면 우측에서 상세 설정을 수정할 수 있습니다.</p>
+            <div className="relative mt-3">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" aria-hidden />
+              <input
+                id="team-search"
+                className="h-10 w-full rounded-md border border-zinc-300 bg-white pl-9 pr-3 text-sm outline-none transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200"
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                placeholder="팀 이름 검색"
+                autoComplete="off"
               />
             </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">팀원 초대 (선택)</label>
-              <div className="space-y-2">
-                {inviteesOnCreate.map((row) => (
-                  <div key={row.id} className="flex gap-2">
-                    <input
-                      className="h-10 min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-3 text-sm"
-                      value={row.value}
-                      onChange={(e) => {
-                        const v = e.target.value
-                        setInviteesOnCreate((prev) =>
-                          prev.map((r) => (r.id === row.id ? { ...r, value: v } : r)),
-                        )
-                      }}
-                      placeholder="초대할 사용자 이메일 또는 아이디"
-                      autoComplete="off"
-                      disabled={createLoading}
-                    />
-                    {inviteesOnCreate.length > 1 ? (
-                      <button
-                        type="button"
-                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
-                        aria-label="이 초대 행 삭제"
-                        disabled={createLoading}
-                        onClick={() =>
-                          setInviteesOnCreate((prev) => prev.filter((r) => r.id !== row.id))
-                        }
-                      >
-                        <Minus className="h-4 w-4" aria-hidden />
-                      </button>
-                    ) : null}
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  className="inline-flex h-10 items-center gap-1.5 rounded-md border border-dashed border-zinc-300 bg-zinc-50 px-3 text-sm text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
-                  disabled={createLoading}
-                  onClick={() => setInviteesOnCreate((prev) => [...prev, newInviteeRow()])}
-                >
-                  <Plus className="h-4 w-4" aria-hidden />
-                  초대 대상 추가
-                </button>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button
-                type="submit"
-                className="h-10 rounded-md bg-black px-4 text-sm font-medium text-white disabled:opacity-60"
-                disabled={createLoading}
-              >
-                {createLoading ? "생성 중…" : "생성"}
-              </button>
-              <button
-                type="button"
-                className="h-10 rounded-md border border-zinc-300 bg-white px-4 text-sm font-medium"
-                onClick={closeCreateForm}
-                disabled={createLoading}
-              >
-                취소
-              </button>
-            </div>
-          </form>
-        )}
-      </section>
-
-      {message ? <p className={message.kind === "success" ? "text-sm text-emerald-600" : "text-sm text-red-600"}>{message.text}</p> : null}
-      {loading ? <p className="text-sm text-zinc-500">불러오는 중…</p> : null}
-      {error && !loading ? <p className="text-sm text-red-600">{error}</p> : null}
-
-      {!loading && !error && teams.length === 0 ? <p className="text-sm text-zinc-500">참여 중인 팀이 없습니다.</p> : null}
-
-      {!loading && teams.length > 0 ? (
-        <ul className="divide-y divide-zinc-200 rounded-lg border border-zinc-200 bg-white">
-          {teams.map((team) => {
-            const isOpen = openTeamId === team.id
-            const isOwner = isTeamOwnerByTeamId[team.id] === true
-            return (
-            <li key={team.id} className="overflow-hidden">
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-zinc-50"
-                aria-expanded={isOpen}
-                onClick={() => {
-                  setOpenTeamId((prev) => {
-                    if (prev === team.id) {
-                      cancelEditTeamApiKey()
-                      return null
-                    }
-                    cancelEditTeamApiKey()
-                    setInviteInputsByTeamId((p) =>
-                      p[team.id] !== undefined ? p : { ...p, [team.id]: [newInviteeRow()] },
-                    )
-                    return team.id
-                  })
-                }}
-              >
-                {isOpen ? (
-                  <ChevronDown className="h-4 w-4 shrink-0 text-zinc-500" aria-hidden />
-                ) : (
-                  <ChevronRight className="h-4 w-4 shrink-0 text-zinc-500" aria-hidden />
-                )}
-                <span className="min-w-0 flex-1 font-medium">{team.name}</span>
-              </button>
-
-              {isOpen ? (
-              <div className="space-y-2 border-t border-zinc-200 bg-zinc-50/50 px-4 pb-4 pt-2">
-              <div>
-                <p className="text-xs text-zinc-500">멤버 {(teamMemberIdsByTeamId[team.id] ?? []).length}명</p>
-                {(teamMemberIdsByTeamId[team.id] ?? []).length > 0 ? (
-                  <ul className="mt-2 space-y-1 text-xs text-zinc-600">
-                    {(teamMemberIdsByTeamId[team.id] ?? []).map((memberId) => (
-                      <li key={`${team.id}-${memberId}`} className="flex items-center justify-between gap-2">
-                        <span className="truncate">{memberId}</span>
-                        {isOwner ? (
+            {showCreateForm ? (
+              <form className="mt-3 space-y-3 rounded-md border border-zinc-200 bg-white p-3" onSubmit={createTeam}>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">팀 이름 (필수)</label>
+                  <input
+                    className="h-9 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm"
+                    value={teamName}
+                    onChange={(e) => setTeamName(e.target.value)}
+                    placeholder="예: 플랫폼팀"
+                    autoComplete="off"
+                    disabled={createLoading}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-medium">팀원 초대 (선택)</label>
+                  <div className="space-y-2">
+                    {inviteesOnCreate.map((row) => (
+                      <div key={row.id} className="flex gap-2">
+                        <input
+                          className="h-9 min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-3 text-sm"
+                          value={row.value}
+                          onChange={(e) => {
+                            const v = e.target.value
+                            setInviteesOnCreate((prev) =>
+                              prev.map((r) => (r.id === row.id ? { ...r, value: v } : r)),
+                            )
+                          }}
+                          placeholder="초대할 사용자 이메일 또는 아이디"
+                          autoComplete="off"
+                          disabled={createLoading}
+                        />
+                        {inviteesOnCreate.length > 1 ? (
                           <button
                             type="button"
-                            className="rounded border border-red-300 bg-white px-2 py-1 text-[11px] text-red-600 disabled:opacity-50"
-                            disabled={removeMemberLoadingKey === `${team.id}:${memberId}`}
-                            onClick={() => void removeTeamMember(team.id, memberId)}
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                            aria-label="이 초대 행 삭제"
+                            disabled={createLoading}
+                            onClick={() =>
+                              setInviteesOnCreate((prev) => prev.filter((r) => r.id !== row.id))
+                            }
                           >
-                            {removeMemberLoadingKey === `${team.id}:${memberId}` ? "삭제 중…" : "팀원 삭제"}
+                            <Minus className="h-4 w-4" aria-hidden />
                           </button>
                         ) : null}
-                      </li>
+                      </div>
                     ))}
-                  </ul>
-                ) : (
-                  <p className="mt-1 text-xs text-zinc-500">등록된 팀원이 없습니다.</p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <p className="text-xs font-medium text-zinc-700">팀원 초대</p>
-                {(inviteInputsByTeamId[team.id] ?? []).map((row) => (
-                  <div key={row.id} className="flex gap-2">
-                    <input
-                      className="h-9 min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-3 text-sm"
-                      value={row.value}
-                      onChange={(e) => {
-                        const v = e.target.value
-                        setInviteInputsByTeamId((prev) => {
-                          const list = prev[team.id] ?? []
-                          return {
-                            ...prev,
-                            [team.id]: list.map((r) => (r.id === row.id ? { ...r, value: v } : r)),
-                          }
-                        })
-                      }}
-                      placeholder="초대할 사용자 이메일 또는 아이디"
-                      autoComplete="off"
-                      disabled={inviteLoadingTeamId === team.id}
-                    />
-                    {(inviteInputsByTeamId[team.id] ?? []).length > 1 ? (
-                      <button
-                        type="button"
-                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
-                        aria-label="이 초대 행 삭제"
-                        disabled={inviteLoadingTeamId === team.id}
-                        onClick={() =>
-                          setInviteInputsByTeamId((prev) => {
-                            const list = prev[team.id] ?? []
-                            const next = list.filter((r) => r.id !== row.id)
-                            return { ...prev, [team.id]: next.length > 0 ? next : [newInviteeRow()] }
-                          })
-                        }
-                      >
-                        <Minus className="h-4 w-4" aria-hidden />
-                      </button>
-                    ) : null}
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-zinc-300 bg-white px-3 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 sm:w-auto sm:justify-start"
-                  disabled={inviteLoadingTeamId === team.id}
-                  onClick={() =>
-                    setInviteInputsByTeamId((prev) => {
-                      const list = prev[team.id] ?? [newInviteeRow()]
-                      return { ...prev, [team.id]: [...list, newInviteeRow()] }
-                    })
-                  }
-                >
-                  <Plus className="h-4 w-4" aria-hidden />
-                  초대 대상 추가
-                </button>
-                <button
-                  type="button"
-                  className="h-9 w-full rounded-md border border-zinc-300 bg-white px-3 text-xs font-medium disabled:opacity-60 sm:w-auto"
-                  disabled={inviteLoadingTeamId === team.id}
-                  onClick={() => void invite(team.id)}
-                >
-                  {inviteLoadingTeamId === team.id ? "초대 중…" : "멤버 초대"}
-                </button>
-              </div>
-
-              <div className="space-y-2 rounded-md border border-zinc-200 bg-zinc-50 p-3">
-                <p className="text-xs font-medium text-zinc-700">팀 API Key 등록</p>
-                <div className="flex flex-col gap-2">
-                  <select
-                    className="h-9 rounded-md border border-zinc-300 bg-white px-3 text-xs"
-                    value={apiKeyProviderByTeamId[team.id] ?? "OPENAI"}
-                    onChange={(e) => setApiKeyProviderByTeamId((prev) => ({ ...prev, [team.id]: e.target.value }))}
-                    disabled={apiKeyLoadingTeamId === team.id}
-                  >
-                    <option value="OPENAI">OPENAI</option>
-                    <option value="GEMINI">GEMINI</option>
-                    <option value="CLAUDE">CLAUDE</option>
-                  </select>
-                  <input
-                    className="h-9 rounded-md border border-zinc-300 bg-white px-3 text-xs"
-                    value={apiKeyAliasByTeamId[team.id] ?? ""}
-                    onChange={(e) => setApiKeyAliasByTeamId((prev) => ({ ...prev, [team.id]: e.target.value }))}
-                    placeholder="API Key 별칭"
-                    autoComplete="off"
-                    disabled={apiKeyLoadingTeamId === team.id}
-                  />
-                  <div className="flex gap-1">
-                    <input
-                      type={apiKeyRevealByTeamId[team.id] ? "text" : "password"}
-                      className="h-9 min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-3 text-xs"
-                      value={apiKeyValueByTeamId[team.id] ?? ""}
-                      onChange={(e) => setApiKeyValueByTeamId((prev) => ({ ...prev, [team.id]: e.target.value }))}
-                      placeholder="API Key 값"
-                      autoComplete="new-password"
-                      disabled={apiKeyLoadingTeamId === team.id}
-                    />
                     <button
                       type="button"
-                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
-                      aria-label={apiKeyRevealByTeamId[team.id] ? "API Key 숨기기" : "API Key 보기"}
-                      disabled={apiKeyLoadingTeamId === team.id}
-                      onClick={() =>
-                        setApiKeyRevealByTeamId((prev) => ({ ...prev, [team.id]: !prev[team.id] }))
-                      }
+                      className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-zinc-300 bg-zinc-50 px-3 text-xs text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
+                      disabled={createLoading}
+                      onClick={() => setInviteesOnCreate((prev) => [...prev, newInviteeRow()])}
                     >
-                      {apiKeyRevealByTeamId[team.id] ? (
-                        <EyeOff className="h-4 w-4" aria-hidden />
-                      ) : (
-                        <Eye className="h-4 w-4" aria-hidden />
-                      )}
+                      <Plus className="h-4 w-4" aria-hidden />
+                      초대 대상 추가
                     </button>
                   </div>
-                  <input
-                    type="number"
-                    step={0.01}
-                    min={0}
-                    className="h-9 w-full rounded-md border border-zinc-300 bg-white px-3 text-xs"
-                    value={apiKeyMonthlyBudgetByTeamId[team.id] ?? ""}
-                    onChange={(e) => {
-                      const v = e.target.value
-                      if (v === "") {
-                        setApiKeyMonthlyBudgetByTeamId((prev) => ({ ...prev, [team.id]: "" }))
-                        return
-                      }
-                      const n = Number(v)
-                      if (!Number.isFinite(n) || n < 0) return
-                      setApiKeyMonthlyBudgetByTeamId((prev) => ({ ...prev, [team.id]: v }))
-                    }}
-                    onBlur={() =>
-                      setApiKeyMonthlyBudgetByTeamId((prev) => {
-                        const cur = prev[team.id] ?? ""
-                        if (cur.trim() === "") return prev
-                        const next = normalizeBudgetNumericString(cur)
-                        if (next === cur) return prev
-                        return { ...prev, [team.id]: next }
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    className="h-9 rounded-md bg-black px-3 text-xs font-medium text-white disabled:opacity-60"
+                    disabled={createLoading}
+                  >
+                    {createLoading ? "생성 중…" : "생성"}
+                  </button>
+                  <button
+                    type="button"
+                    className="h-9 rounded-md border border-zinc-300 bg-white px-3 text-xs font-medium"
+                    onClick={closeCreateForm}
+                    disabled={createLoading}
+                  >
+                    취소
+                  </button>
+                </div>
+              </form>
+            ) : null}
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+            {loading ? <p className="px-2 py-3 text-sm text-zinc-500">{isSearching ? "검색 중..." : "불러오는 중…"}</p> : null}
+            {error && !loading ? <p className="px-2 py-3 text-sm text-red-600">{error}</p> : null}
+            {!loading && !error && teams.length === 0 ? (
+              <p className="px-2 py-3 text-sm text-zinc-500">{debouncedKeyword.trim() ? "검색된 팀이 없습니다" : "참여 중인 팀이 없습니다."}</p>
+            ) : null}
+            {!loading && teams.length > 0 ? (
+              <ul className="space-y-2">
+                {teams.map((team) => {
+                  const isSelected = selectedTeamId === team.id
+                  return (
+                    <li key={team.id}>
+                      <button
+                        type="button"
+                        className={`w-full rounded-lg border px-3 py-2 text-left transition ${
+                          isSelected
+                            ? "border-zinc-900 bg-white shadow-sm"
+                            : "border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50"
+                        }`}
+                        onClick={() => {
+                          cancelEditTeamApiKey()
+                          setSelectedTeamId(team.id)
+                          setInviteInputsByTeamId((prev) =>
+                            prev[team.id] !== undefined ? prev : { ...prev, [team.id]: [newInviteeRow()] },
+                          )
+                        }}
+                      >
+                        <div className="flex items-center gap-2">
+                          {isSelected ? (
+                            <ChevronRight className="h-4 w-4 shrink-0 text-zinc-700" aria-hidden />
+                          ) : (
+                            <ChevronRight className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden />
+                          )}
+                          <span className="truncate text-sm font-medium text-zinc-900">{team.name}</span>
+                        </div>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            ) : null}
+          </div>
+        </div>
+      </aside>
+
+      <section className="flex-1 overflow-y-auto bg-white px-6 py-5">
+
+        {message ? (
+          <p className={`mt-4 text-sm ${message.kind === "success" ? "text-emerald-600" : "text-red-600"}`}>{message.text}</p>
+        ) : null}
+
+        {!selectedTeam ? (
+          <div className="mt-6 flex min-h-[360px] items-center justify-center rounded-lg border border-dashed border-zinc-300 bg-zinc-50">
+            <p className="text-sm text-zinc-500">왼쪽에서 팀을 선택해 주세요.</p>
+          </div>
+        ) : (
+          <div className="mt-6 space-y-4 rounded-lg border border-zinc-200 bg-zinc-50/50 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold">{selectedTeam.name}</h2>
+              <p className="text-xs text-zinc-500">멤버 {(teamMemberIdsByTeamId[selectedTeam.id] ?? []).length}명</p>
+            </div>
+            <div className="border-b border-zinc-200">
+              <nav className="flex items-center gap-5">
+                <button
+                  type="button"
+                  className={`pb-2 text-sm font-medium ${
+                    activeTab === "dashboard"
+                      ? "border-b-2 border-blue-500 text-blue-600"
+                      : "border-b-2 border-transparent text-zinc-500 hover:text-zinc-700"
+                  }`}
+                  onClick={() => setActiveTab("dashboard")}
+                >
+                  대시보드
+                </button>
+                <button
+                  type="button"
+                  className={`pb-2 text-sm font-medium ${
+                    activeTab === "members"
+                      ? "border-b-2 border-blue-500 text-blue-600"
+                      : "border-b-2 border-transparent text-zinc-500 hover:text-zinc-700"
+                  }`}
+                  onClick={() => setActiveTab("members")}
+                >
+                  멤버 관리
+                </button>
+                <button
+                  type="button"
+                  className={`pb-2 text-sm font-medium ${
+                    activeTab === "settings"
+                      ? "border-b-2 border-blue-500 text-blue-600"
+                      : "border-b-2 border-transparent text-zinc-500 hover:text-zinc-700"
+                  }`}
+                  onClick={() => setActiveTab("settings")}
+                >
+                  API 및 설정
+                </button>
+              </nav>
+            </div>
+
+            {activeTab === "dashboard" ? (
+              <div className="flex min-h-[320px] items-center justify-center rounded-lg border border-dashed border-zinc-300 bg-white p-6">
+                <p className="text-sm text-zinc-500">여기에 사용량 차트와 대시보드가 들어갈 예정입니다.</p>
+              </div>
+            ) : null}
+
+            {activeTab === "members" ? (
+              <>
+                <div>
+                  {(teamMemberIdsByTeamId[selectedTeam.id] ?? []).length > 0 ? (
+                    <ul className="space-y-1 text-xs text-zinc-600">
+                      {(teamMemberIdsByTeamId[selectedTeam.id] ?? []).map((memberId) => (
+                        <li key={`${selectedTeam.id}-${memberId}`} className="flex items-center justify-between gap-2">
+                          <span className="truncate">{memberId}</span>
+                          {isTeamOwnerByTeamId[selectedTeam.id] ? (
+                            <button
+                              type="button"
+                              className="rounded border border-red-300 bg-white px-2 py-1 text-[11px] text-red-600 disabled:opacity-50"
+                              disabled={removeMemberLoadingKey === `${selectedTeam.id}:${memberId}`}
+                              onClick={() => void removeTeamMember(selectedTeam.id, memberId)}
+                            >
+                              {removeMemberLoadingKey === `${selectedTeam.id}:${memberId}` ? "삭제 중…" : "팀원 삭제"}
+                            </button>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-1 text-xs text-zinc-500">등록된 팀원이 없습니다.</p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-zinc-700">팀원 초대</p>
+                  {(inviteInputsByTeamId[selectedTeam.id] ?? []).map((row) => (
+                    <div key={row.id} className="flex gap-2">
+                      <input
+                        className="h-9 min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-3 text-sm"
+                        value={row.value}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          setInviteInputsByTeamId((prev) => {
+                            const list = prev[selectedTeam.id] ?? []
+                            return {
+                              ...prev,
+                              [selectedTeam.id]: list.map((r) => (r.id === row.id ? { ...r, value: v } : r)),
+                            }
+                          })
+                        }}
+                        placeholder="초대할 사용자 이메일 또는 아이디"
+                        autoComplete="off"
+                        disabled={inviteLoadingTeamId === selectedTeam.id}
+                      />
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-zinc-300 bg-white px-3 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 sm:w-auto sm:justify-start"
+                    disabled={inviteLoadingTeamId === selectedTeam.id}
+                    onClick={() =>
+                      setInviteInputsByTeamId((prev) => {
+                        const list = prev[selectedTeam.id] ?? [newInviteeRow()]
+                        return { ...prev, [selectedTeam.id]: [...list, newInviteeRow()] }
                       })
                     }
-                    placeholder="월 예산 USD"
-                    inputMode="decimal"
-                    autoComplete="off"
-                    disabled={apiKeyLoadingTeamId === team.id}
+                  >
+                    <Plus className="h-4 w-4" aria-hidden />
+                    초대 대상 추가
+                  </button>
+                  <button
+                    type="button"
+                    className="h-9 w-full rounded-md border border-zinc-300 bg-white px-3 text-xs font-medium disabled:opacity-60 sm:w-auto"
+                    disabled={inviteLoadingTeamId === selectedTeam.id}
+                    onClick={() => void invite(selectedTeam.id)}
+                  >
+                    {inviteLoadingTeamId === selectedTeam.id ? "초대 중…" : "멤버 초대"}
+                  </button>
+                </div>
+              </>
+            ) : null}
+
+            {activeTab === "settings" ? (
+              <>
+                <div className="space-y-2 rounded-md border border-zinc-200 bg-zinc-50 p-3">
+              <p className="text-xs font-medium text-zinc-700">팀 API Key 등록</p>
+              <div className="flex flex-col gap-2">
+                <select
+                  className="h-9 rounded-md border border-zinc-300 bg-white px-3 text-xs"
+                  value={apiKeyProviderByTeamId[selectedTeam.id] ?? "OPENAI"}
+                  onChange={(e) => setApiKeyProviderByTeamId((prev) => ({ ...prev, [selectedTeam.id]: e.target.value }))}
+                  disabled={apiKeyLoadingTeamId === selectedTeam.id}
+                >
+                  <option value="OPENAI">OPENAI</option>
+                  <option value="GEMINI">GEMINI</option>
+                  <option value="CLAUDE">CLAUDE</option>
+                </select>
+                <input
+                  className="h-9 rounded-md border border-zinc-300 bg-white px-3 text-xs"
+                  value={apiKeyAliasByTeamId[selectedTeam.id] ?? ""}
+                  onChange={(e) => setApiKeyAliasByTeamId((prev) => ({ ...prev, [selectedTeam.id]: e.target.value }))}
+                  placeholder="API Key 별칭"
+                  autoComplete="off"
+                  disabled={apiKeyLoadingTeamId === selectedTeam.id}
+                />
+                <div className="flex gap-1">
+                  <input
+                    type={apiKeyRevealByTeamId[selectedTeam.id] ? "text" : "password"}
+                    className="h-9 min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-3 text-xs"
+                    value={apiKeyValueByTeamId[selectedTeam.id] ?? ""}
+                    onChange={(e) => setApiKeyValueByTeamId((prev) => ({ ...prev, [selectedTeam.id]: e.target.value }))}
+                    placeholder="API Key 값"
+                    autoComplete="new-password"
+                    disabled={apiKeyLoadingTeamId === selectedTeam.id}
                   />
                   <button
                     type="button"
-                    className="h-9 rounded-md border border-zinc-300 bg-white px-3 text-xs font-medium disabled:opacity-60"
-                    disabled={apiKeyLoadingTeamId === team.id}
-                    onClick={() => void registerTeamApiKey(team.id)}
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
+                    aria-label={apiKeyRevealByTeamId[selectedTeam.id] ? "API Key 숨기기" : "API Key 보기"}
+                    disabled={apiKeyLoadingTeamId === selectedTeam.id}
+                    onClick={() =>
+                      setApiKeyRevealByTeamId((prev) => ({ ...prev, [selectedTeam.id]: !prev[selectedTeam.id] }))
+                    }
                   >
-                    {apiKeyLoadingTeamId === team.id ? "등록 중…" : "팀 API Key 등록"}
+                    {apiKeyRevealByTeamId[selectedTeam.id] ? (
+                      <EyeOff className="h-4 w-4" aria-hidden />
+                    ) : (
+                      <Eye className="h-4 w-4" aria-hidden />
+                    )}
                   </button>
                 </div>
+                <input
+                  type="number"
+                  step={0.01}
+                  min={0}
+                  className="h-9 w-full rounded-md border border-zinc-300 bg-white px-3 text-xs"
+                  value={apiKeyMonthlyBudgetByTeamId[selectedTeam.id] ?? ""}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    if (v === "") {
+                      setApiKeyMonthlyBudgetByTeamId((prev) => ({ ...prev, [selectedTeam.id]: "" }))
+                      return
+                    }
+                    const n = Number(v)
+                    if (!Number.isFinite(n) || n < 0) return
+                    setApiKeyMonthlyBudgetByTeamId((prev) => ({ ...prev, [selectedTeam.id]: v }))
+                  }}
+                  onBlur={() =>
+                    setApiKeyMonthlyBudgetByTeamId((prev) => {
+                      const cur = prev[selectedTeam.id] ?? ""
+                      if (cur.trim() === "") return prev
+                      const next = normalizeBudgetNumericString(cur)
+                      if (next === cur) return prev
+                      return { ...prev, [selectedTeam.id]: next }
+                    })
+                  }
+                  placeholder="월 예산 USD"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  disabled={apiKeyLoadingTeamId === selectedTeam.id}
+                />
+                <button
+                  type="button"
+                  className="h-9 rounded-md border border-zinc-300 bg-white px-3 text-xs font-medium disabled:opacity-60"
+                  disabled={apiKeyLoadingTeamId === selectedTeam.id}
+                  onClick={() => void registerTeamApiKey(selectedTeam.id)}
+                >
+                  {apiKeyLoadingTeamId === selectedTeam.id ? "등록 중…" : "팀 API Key 등록"}
+                </button>
+              </div>
 
-                {(teamApiKeysByTeamId[team.id] ?? []).length > 0 ? (
-                  <ul className="space-y-2 text-xs text-zinc-700">
-                    {(teamApiKeysByTeamId[team.id] ?? []).map((apiKey) => {
-                      const isEditing =
-                        editingTeamApiKey?.teamId === team.id && editingTeamApiKey?.keyId === apiKey.id
-                      const updateKey = `${team.id}:${apiKey.id}`
-                      const updating = teamApiKeyUpdateLoading === updateKey
-                      const keyPendingDeletion = Boolean(apiKey.deletionRequestedAt)
-                      return (
-                        <li
-                          key={`${team.id}-api-key-${apiKey.id}`}
-                          className="rounded border border-zinc-200 bg-white px-2 py-2"
-                        >
-                          {!isEditing ? (
-                            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                              <div>
-                                <p>
-                                  {apiKey.provider} · {apiKey.alias}
-                                  {keyPendingDeletion ? (
-                                    <span className="ml-1.5 rounded bg-zinc-200 px-1.5 py-0.5 text-[10px] font-medium text-zinc-700">
-                                      삭제 예정
-                                    </span>
-                                  ) : null}
-                                </p>
-                                <p className="text-[11px] text-zinc-500">
-                                  월 예산:{" "}
-                                  {formatBudgetUsd(apiKey.monthlyBudgetUsd ?? undefined) ?? "— (기존 데이터)"}
-                                </p>
-                                {keyPendingDeletion && apiKey.permanentDeletionAt ? (
-                                  <p className="text-[11px] text-amber-800">
-                                    영구 삭제 예정: {formatDeletionDeadline(apiKey.permanentDeletionAt)}
-                                    {typeof apiKey.deletionGraceDays === "number"
-                                      ? ` (${apiKey.deletionGraceDays}일 유예)`
-                                      : ""}
-                                  </p>
+              {(teamApiKeysByTeamId[selectedTeam.id] ?? []).length > 0 ? (
+                <ul className="space-y-2 text-xs text-zinc-700">
+                  {(teamApiKeysByTeamId[selectedTeam.id] ?? []).map((apiKey) => {
+                    const isEditing =
+                      editingTeamApiKey?.teamId === selectedTeam.id && editingTeamApiKey?.keyId === apiKey.id
+                    const updateKey = `${selectedTeam.id}:${apiKey.id}`
+                    const updating = teamApiKeyUpdateLoading === updateKey
+                    const keyPendingDeletion = Boolean(apiKey.deletionRequestedAt)
+                    return (
+                      <li
+                        key={`${selectedTeam.id}-api-key-${apiKey.id}`}
+                        className="rounded border border-zinc-200 bg-white px-2 py-2"
+                      >
+                        {!isEditing ? (
+                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                              <p>
+                                {apiKey.provider} · {apiKey.alias}
+                                {keyPendingDeletion ? (
+                                  <span className="ml-1.5 rounded bg-zinc-200 px-1.5 py-0.5 text-[10px] font-medium text-zinc-700">
+                                    삭제 예정
+                                  </span>
                                 ) : null}
-                              </div>
-                              <button
-                                type="button"
-                                className="h-8 shrink-0 rounded-md border border-zinc-300 bg-white px-2 text-[11px] font-medium disabled:cursor-not-allowed disabled:opacity-50"
-                                disabled={keyPendingDeletion}
-                                title={keyPendingDeletion ? "삭제 예정인 키는 수정할 수 없습니다" : undefined}
-                                onClick={() => startEditTeamApiKey(team.id, apiKey)}
-                              >
-                                수정
-                              </button>
-                              {isOwner ? (
-                                keyPendingDeletion ? (
-                                  <button
-                                    type="button"
-                                    className="h-8 shrink-0 rounded-md border border-zinc-300 bg-white px-2 text-[11px] font-medium disabled:opacity-50"
-                                    disabled={cancelDeleteLoadingKey === `${team.id}:${apiKey.id}`}
-                                    onClick={() => void cancelTeamApiKeyDeletion(team.id, apiKey.id)}
-                                  >
-                                    {cancelDeleteLoadingKey === `${team.id}:${apiKey.id}` ? "처리 중…" : "삭제 취소"}
-                                  </button>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    className="h-8 shrink-0 rounded-md border border-red-300 bg-white px-2 text-[11px] font-medium text-red-600 disabled:opacity-50"
-                                    disabled={deleteLoadingKey === `${team.id}:${apiKey.id}`}
-                                    onClick={() => void deleteTeamApiKey(team.id, apiKey.id)}
-                                  >
-                                    {deleteLoadingKey === `${team.id}:${apiKey.id}` ? "처리 중…" : "삭제"}
-                                  </button>
-                                )
+                              </p>
+                              <p className="text-[11px] text-zinc-500">
+                                월 예산:{" "}
+                                {formatBudgetUsd(apiKey.monthlyBudgetUsd ?? undefined) ?? "— (기존 데이터)"}
+                              </p>
+                              {keyPendingDeletion && apiKey.permanentDeletionAt ? (
+                                <p className="text-[11px] text-amber-800">
+                                  영구 삭제 예정: {formatDeletionDeadline(apiKey.permanentDeletionAt)}
+                                  {typeof apiKey.deletionGraceDays === "number"
+                                    ? ` (${apiKey.deletionGraceDays}일 유예)`
+                                    : ""}
+                                </p>
                               ) : null}
                             </div>
-                          ) : (
-                            <div className="flex flex-col gap-2">
-                              <input
-                                className="h-8 rounded-md border border-zinc-300 bg-white px-2 text-xs"
-                                value={editTeamApiKeyAlias}
-                                onChange={(e) => setEditTeamApiKeyAlias(e.target.value)}
-                                placeholder="별칭"
-                                disabled={updating}
-                              />
-                              <input
-                                type="number"
-                                step={0.01}
-                                min={0}
-                                className="h-8 w-full max-w-[12rem] rounded-md border border-zinc-300 bg-white px-2 text-xs"
-                                value={editTeamApiKeyBudget}
-                                onChange={(e) => {
-                                  const v = e.target.value
-                                  if (v === "") {
-                                    setEditTeamApiKeyBudget("")
-                                    return
-                                  }
-                                  const n = Number(v)
-                                  if (!Number.isFinite(n) || n < 0) return
-                                  setEditTeamApiKeyBudget(v)
-                                }}
-                                onBlur={() =>
-                                  setEditTeamApiKeyBudget((prev) =>
-                                    prev.trim() === "" ? prev : normalizeBudgetNumericString(prev),
-                                  )
+                            <button
+                              type="button"
+                              className="h-8 shrink-0 rounded-md border border-zinc-300 bg-white px-2 text-[11px] font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                              disabled={keyPendingDeletion}
+                              title={keyPendingDeletion ? "삭제 예정인 키는 수정할 수 없습니다" : undefined}
+                              onClick={() => startEditTeamApiKey(selectedTeam.id, apiKey)}
+                            >
+                              수정
+                            </button>
+                            {isTeamOwnerByTeamId[selectedTeam.id] ? (
+                              keyPendingDeletion ? (
+                                <button
+                                  type="button"
+                                  className="h-8 shrink-0 rounded-md border border-zinc-300 bg-white px-2 text-[11px] font-medium disabled:opacity-50"
+                                  disabled={cancelDeleteLoadingKey === `${selectedTeam.id}:${apiKey.id}`}
+                                  onClick={() => void cancelTeamApiKeyDeletion(selectedTeam.id, apiKey.id)}
+                                >
+                                  {cancelDeleteLoadingKey === `${selectedTeam.id}:${apiKey.id}` ? "처리 중…" : "삭제 취소"}
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="h-8 shrink-0 rounded-md border border-red-300 bg-white px-2 text-[11px] font-medium text-red-600 disabled:opacity-50"
+                                  disabled={deleteLoadingKey === `${selectedTeam.id}:${apiKey.id}`}
+                                  onClick={() => void deleteTeamApiKey(selectedTeam.id, apiKey.id)}
+                                >
+                                  {deleteLoadingKey === `${selectedTeam.id}:${apiKey.id}` ? "처리 중…" : "삭제"}
+                                </button>
+                              )
+                            ) : null}
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-2">
+                            <input
+                              className="h-8 rounded-md border border-zinc-300 bg-white px-2 text-xs"
+                              value={editTeamApiKeyAlias}
+                              onChange={(e) => setEditTeamApiKeyAlias(e.target.value)}
+                              placeholder="별칭"
+                              disabled={updating}
+                            />
+                            <input
+                              type="number"
+                              step={0.01}
+                              min={0}
+                              className="h-8 w-full max-w-[12rem] rounded-md border border-zinc-300 bg-white px-2 text-xs"
+                              value={editTeamApiKeyBudget}
+                              onChange={(e) => {
+                                const v = e.target.value
+                                if (v === "") {
+                                  setEditTeamApiKeyBudget("")
+                                  return
                                 }
-                                placeholder="월 예산 USD"
-                                inputMode="decimal"
+                                const n = Number(v)
+                                if (!Number.isFinite(n) || n < 0) return
+                                setEditTeamApiKeyBudget(v)
+                              }}
+                              onBlur={() =>
+                                setEditTeamApiKeyBudget((prev) =>
+                                  prev.trim() === "" ? prev : normalizeBudgetNumericString(prev),
+                                )
+                              }
+                              placeholder="월 예산 USD"
+                              inputMode="decimal"
+                              disabled={updating}
+                            />
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                className="h-8 rounded-md bg-black px-3 text-[11px] font-medium text-white disabled:opacity-60"
                                 disabled={updating}
-                              />
-                              <div className="flex gap-2">
-                                <button
-                                  type="button"
-                                  className="h-8 rounded-md bg-black px-3 text-[11px] font-medium text-white disabled:opacity-60"
-                                  disabled={updating}
-                                  onClick={() => void saveEditTeamApiKey(team.id)}
-                                >
-                                  {updating ? "저장 중…" : "저장"}
-                                </button>
-                                <button
-                                  type="button"
-                                  className="h-8 rounded-md border border-zinc-300 bg-white px-3 text-[11px] font-medium"
-                                  disabled={updating}
-                                  onClick={cancelEditTeamApiKey}
-                                >
-                                  취소
-                                </button>
-                              </div>
+                                onClick={() => void saveEditTeamApiKey(selectedTeam.id)}
+                              >
+                                {updating ? "저장 중…" : "저장"}
+                              </button>
+                              <button
+                                type="button"
+                                className="h-8 rounded-md border border-zinc-300 bg-white px-3 text-[11px] font-medium"
+                                disabled={updating}
+                                onClick={cancelEditTeamApiKey}
+                              >
+                                취소
+                              </button>
                             </div>
-                          )}
-                        </li>
-                      )
-                    })}
-                  </ul>
-                ) : (
-                  <p className="text-xs text-zinc-500">등록된 팀 API Key가 없습니다.</p>
-                )}
-              </div>
+                          </div>
+                        )}
+                      </li>
+                    )
+                  })}
+                </ul>
+              ) : (
+                <p className="text-xs text-zinc-500">등록된 팀 API Key가 없습니다.</p>
+              )}
+            </div>
 
-              {isOwner ? (
-                <div className="rounded-md border border-red-200 bg-red-50 p-3">
-                  <p className="text-xs text-zinc-600">팀장은 팀 API 키를 모두 정리한 뒤 팀을 삭제할 수 있습니다.</p>
-                  <button
-                    type="button"
-                    className="mt-2 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-medium text-red-600 disabled:opacity-50"
-                    disabled={deleteTeamLoadingId === team.id}
-                    onClick={() => void deleteTeam(team.id, team.name)}
-                  >
-                    {deleteTeamLoadingId === team.id ? "팀 삭제 중…" : "팀 삭제"}
-                  </button>
-                </div>
-              ) : null}
-              </div>
-              ) : null}
-            </li>
-            )
-          })}
-        </ul>
-      ) : null}
+                {isTeamOwnerByTeamId[selectedTeam.id] ? (
+                  <div className="rounded-md border border-red-200 bg-red-50 p-3">
+                    <p className="text-xs text-zinc-600">팀장은 팀 API 키를 모두 정리한 뒤 팀을 삭제할 수 있습니다.</p>
+                    <button
+                      type="button"
+                      className="mt-2 rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-medium text-red-600 disabled:opacity-50"
+                      disabled={deleteTeamLoadingId === selectedTeam.id}
+                      onClick={() => void deleteTeam(selectedTeam.id, selectedTeam.name)}
+                    >
+                      {deleteTeamLoadingId === selectedTeam.id ? "팀 삭제 중…" : "팀 삭제"}
+                    </button>
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+          </div>
+        )}
+      </section>
     </main>
   )
 }

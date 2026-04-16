@@ -7,12 +7,16 @@ import com.zerobugfreinds.team_service.dto.RegisterTeamApiKeyRequest;
 import com.zerobugfreinds.team_service.dto.TeamApiKeySummaryResponse;
 import com.zerobugfreinds.team_service.dto.TeamInvitationActionResponse;
 import com.zerobugfreinds.team_service.dto.TeamInvitationResponse;
+import com.zerobugfreinds.team_service.dto.TeamResponse;
 import com.zerobugfreinds.team_service.dto.UpdateTeamApiKeyRequest;
 import com.zerobugfreinds.team_service.dto.TeamSummaryResponse;
 import com.zerobugfreinds.team_service.security.TeamUserPrincipal;
 import com.zerobugfreinds.team_service.service.TeamApiKeyService;
 import com.zerobugfreinds.team_service.service.TeamService;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -54,6 +58,15 @@ public class TeamController {
 	) {
 		List<TeamSummaryResponse> teams = teamService.getMyTeams(principal.userId());
 		return ResponseEntity.ok(ApiResponse.ok("팀 목록 조회에 성공했습니다", teams));
+	}
+
+	@GetMapping("/teams")
+	public ResponseEntity<ApiResponse<Page<TeamResponse>>> getTeams(
+			@RequestParam(name = "keyword", required = false) String keyword,
+			@PageableDefault(size = 20) Pageable pageable
+	) {
+		Page<TeamResponse> teams = teamService.getTeams(keyword, pageable);
+		return ResponseEntity.ok(ApiResponse.ok("팀 검색에 성공했습니다", teams));
 	}
 
 	@PostMapping("/teams/{id}/members")
