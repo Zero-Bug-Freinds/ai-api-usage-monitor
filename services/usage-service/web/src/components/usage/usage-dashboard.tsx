@@ -413,6 +413,52 @@ function ProviderDonutTooltip({ active, payload }: SimpleDonutTooltipProps) {
   )
 }
 
+type ModelRequestBarTooltipProps = {
+  active?: boolean
+  label?: string | number
+  payload?: readonly unknown[]
+}
+
+function ModelRequestBarTooltip({ active, label, payload }: ModelRequestBarTooltipProps) {
+  if (!active || !payload?.length) return null
+  const row = (payload[0] as { payload?: ModelRequestRow }).payload
+  if (!row) return null
+  const title = row.model === "__empty__" ? "—" : row.model
+  return (
+    <div className="rounded-md border border-border bg-card px-3 py-2 text-xs shadow-md">
+      <p className="font-medium text-foreground">{title}</p>
+      <p className="mt-1 text-muted-foreground">총 요청 수: {formatRequestCount(row.requests)}</p>
+      {row.model !== "__empty__" && row.model !== "__OTHERS__" ? (
+        <p className="text-muted-foreground">{labelForProviderCode(row.provider)}</p>
+      ) : row.model === "__OTHERS__" ? (
+        <p className="text-muted-foreground">{String(label)}</p>
+      ) : null}
+    </div>
+  )
+}
+
+type MonthlyBarRow = { yearMonth: string; requestCount: number }
+
+type MonthlyRequestBarTooltipProps = {
+  active?: boolean
+  label?: string | number
+  payload?: readonly unknown[]
+}
+
+function MonthlyRequestBarTooltip({ active, label, payload }: MonthlyRequestBarTooltipProps) {
+  if (!active || !payload?.length) return null
+  const row = (payload[0] as { payload?: MonthlyBarRow }).payload
+  const requests =
+    row?.requestCount ?? tooltipNumericValue((payload[0] as { value?: unknown }).value)
+  const ym = row?.yearMonth ?? String(label)
+  return (
+    <div className="rounded-md border border-border bg-card px-3 py-2 text-xs shadow-md">
+      <p className="font-medium text-foreground">{ym}</p>
+      <p className="mt-1 text-muted-foreground">총 요청 수: {formatRequestCount(requests)}</p>
+    </div>
+  )
+}
+
 function stabilityRateDomain(rows: MainStabilityRow[]): [number, number] {
   if (rows.length === 0) return [90, 100]
   const rates = rows
@@ -1212,7 +1258,7 @@ export function UsageDashboard() {
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                     <XAxis type="number" />
                     <YAxis type="category" dataKey="label" width={128} tick={{ fontSize: 11 }} />
-                    <Tooltip formatter={(v) => formatRequestCount(tooltipNumericValue(v))} />
+                    <Tooltip content={ModelRequestBarTooltip} />
                     <Bar
                       dataKey="requests"
                       name="요청 수"
@@ -1336,7 +1382,7 @@ export function UsageDashboard() {
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                   <XAxis dataKey="yearMonth" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip formatter={(value) => formatRequestCount(tooltipNumericValue(value))} />
+                  <Tooltip content={MonthlyRequestBarTooltip} />
                   <AnyLegend />
                   <Bar
                     dataKey="requestCount"
