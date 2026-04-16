@@ -1,8 +1,10 @@
 # Next.js standalone host shell image
 # Build from repo root:
-#   docker build -f apps/web/Dockerfile -t web-host:local .
+#   docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:local -f apps/web/Dockerfile -t web-host:local .
 
-FROM node:22-alpine AS builder
+ARG WEB_NODE_DEPS_IMAGE=deps-local
+
+FROM node:22-alpine AS deps-local
 WORKDIR /repo
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 
@@ -11,6 +13,23 @@ COPY packages/ui/package.json ./packages/ui/
 COPY packages/shell/package.json ./packages/shell/
 COPY apps/web/package.json ./apps/web/
 RUN pnpm install --frozen-lockfile
+
+FROM ${WEB_NODE_DEPS_IMAGE} AS deps
+
+FROM node:22-alpine AS builder
+WORKDIR /repo
+RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
+
+COPY --from=deps /repo/node_modules ./node_modules
+COPY --from=deps /repo/pnpm-lock.yaml ./pnpm-lock.yaml
+COPY --from=deps /repo/pnpm-workspace.yaml ./pnpm-workspace.yaml
+COPY --from=deps /repo/package.json ./package.json
+COPY --from=deps /repo/packages/ui/package.json ./packages/ui/package.json
+COPY --from=deps /repo/packages/ui/node_modules ./packages/ui/node_modules
+COPY --from=deps /repo/packages/shell/package.json ./packages/shell/package.json
+COPY --from=deps /repo/packages/shell/node_modules ./packages/shell/node_modules
+COPY --from=deps /repo/apps/web/package.json ./apps/web/package.json
+COPY --from=deps /repo/apps/web/node_modules ./apps/web/node_modules
 
 COPY packages/ui ./packages/ui
 COPY packages/shell ./packages/shell
