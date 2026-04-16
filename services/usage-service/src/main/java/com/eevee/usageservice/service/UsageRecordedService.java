@@ -1,6 +1,7 @@
 package com.eevee.usageservice.service;
 
 import com.eevee.usage.events.TokenUsage;
+import com.eevee.usage.events.AiProvider;
 import com.eevee.usage.events.UsageRecordedEvent;
 import com.eevee.usageservice.domain.UsageRecordedLogEntity;
 import com.eevee.usageservice.repository.UsageRecordedLogRepository;
@@ -39,6 +40,12 @@ public class UsageRecordedService {
         Long prompt = null;
         Long completion = null;
         Long total = null;
+        Long promptCachedTokens = null;
+        Long promptAudioTokens = null;
+        Long completionReasoningTokens = null;
+        Long completionAudioTokens = null;
+        Long completionAcceptedPredictionTokens = null;
+        Long completionRejectedPredictionTokens = null;
         if (tu != null) {
             if (model == null || model.isBlank()) {
                 model = tu.model();
@@ -46,8 +53,25 @@ public class UsageRecordedService {
             prompt = tu.promptTokens();
             completion = tu.completionTokens();
             total = tu.totalTokens();
+            promptCachedTokens = tu.promptCachedTokens();
+            promptAudioTokens = tu.promptAudioTokens();
+            completionReasoningTokens = tu.completionReasoningTokens();
+            completionAudioTokens = tu.completionAudioTokens();
+            completionAcceptedPredictionTokens = tu.completionAcceptedPredictionTokens();
+            completionRejectedPredictionTokens = tu.completionRejectedPredictionTokens();
         }
-        Long estimatedReasoningTokens = estimateReasoningTokens(total, prompt, completion);
+        Long estimatedReasoningTokens;
+        if (event.provider() == AiProvider.OPENAI && tu != null) {
+            // OpenAI: reasoning token breakdown is provided in response.
+            estimatedReasoningTokens =
+                    safeLong(completionReasoningTokens)
+                            + safeLong(completionAudioTokens)
+                            + safeLong(completionAcceptedPredictionTokens)
+                            + safeLong(completionRejectedPredictionTokens);
+        } else {
+            // Google/Claude: estimate derived from total - input - output.
+            estimatedReasoningTokens = estimateReasoningTokens(total, prompt, completion);
+        }
         boolean successful = Boolean.TRUE.equals(event.requestSuccessful());
         return new UsageRecordedLogEntity(
                 event.eventId(),
@@ -65,6 +89,12 @@ public class UsageRecordedService {
                 completion,
                 total,
                 estimatedReasoningTokens,
+                promptCachedTokens,
+                promptAudioTokens,
+                completionReasoningTokens,
+                completionAudioTokens,
+                completionAcceptedPredictionTokens,
+                completionRejectedPredictionTokens,
                 event.estimatedCost(),
                 event.requestPath(),
                 event.upstreamHost(),
@@ -73,6 +103,10 @@ public class UsageRecordedService {
                 event.upstreamStatusCode(),
                 Instant.now()
         );
+    }
+
+    private static long safeLong(Long v) {
+        return v == null ? 0L : v;
     }
 
     private static Long estimateReasoningTokens(Long totalTokens, Long promptTokens, Long completionTokens) {

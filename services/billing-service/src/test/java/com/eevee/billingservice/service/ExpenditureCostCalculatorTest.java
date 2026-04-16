@@ -22,14 +22,14 @@ class ExpenditureCostCalculatorTest {
                 new BigDecimal("1.00"),
                 new BigDecimal("2.00")
         );
-        TokenUsage tu = new TokenUsage("m", 1_000_000L, 500_000L, 1_500_000L);
+        TokenUsage tu = new TokenUsage("m", 1_000_000L, 500_000L, 1_500_000L, null, null, null, null, null, null);
         BigDecimal cost = ExpenditureCostCalculator.compute(tu, price);
         assertEquals(0, cost.compareTo(new BigDecimal("2.0")));
     }
 
     @Test
     void normalize_splitsTotalWhenBreakdownMissing() {
-        TokenUsage tu = new TokenUsage("m", null, null, 10L);
+        TokenUsage tu = new TokenUsage("m", null, null, 10L, null, null, null, null, null, null);
         ExpenditureCostCalculator.NormalizedTokens nt = ExpenditureCostCalculator.normalizeTokens(tu);
         assertEquals(10L, nt.promptTokens() + nt.completionTokens());
     }

@@ -54,7 +54,8 @@ public class AnthropicProviderHandler implements ProviderHandler {
             if (input != null && output != null) {
                 total = input + output;
             }
-            return new TokenUsage(model, input, output, total);
+            return new TokenUsage(model, input, output, total,
+                    null, null, null, null, null, null);
         } catch (IOException e) {
             return null;
         }

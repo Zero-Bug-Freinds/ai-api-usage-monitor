@@ -113,7 +113,7 @@ class BillingRecordedEventPipelineIntegrationTest {
                 "managed",
                 AiProvider.OPENAI,
                 "gpt-4o-mini",
-                new TokenUsage("gpt-4o-mini", 1L, 2L, 3L),
+                new TokenUsage("gpt-4o-mini", 1L, 2L, 3L, null, null, null, null, null, null),
                 BigDecimal.ZERO,
                 "/proxy/openai/v1/chat/completions",
                 "api.openai.com",

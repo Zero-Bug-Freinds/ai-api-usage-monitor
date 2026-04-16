@@ -16,6 +16,13 @@ public record UsageLogEntryResponse(
         Long promptTokens,
         Long completionTokens,
         Long estimatedReasoningTokens,
+        // OpenAI-only breakdown tokens for progressive disclosure drawer (nullable for other providers)
+        Long promptCachedTokens,
+        Long promptAudioTokens,
+        Long completionReasoningTokens,
+        Long completionAudioTokens,
+        Long completionAcceptedPredictionTokens,
+        Long completionRejectedPredictionTokens,
         Long totalTokens,
         BigDecimal estimatedCost,
         String requestPath,

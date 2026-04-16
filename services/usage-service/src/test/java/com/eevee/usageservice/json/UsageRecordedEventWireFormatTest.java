@@ -39,7 +39,7 @@ class UsageRecordedEventWireFormatTest {
                 "managed",
                 AiProvider.OPENAI,
                 "gpt-4o-mini",
-                new TokenUsage("gpt-4o-mini", 5L, 7L, 12L),
+                new TokenUsage("gpt-4o-mini", 5L, 7L, 12L, null, null, null, null, null, null),
                 new BigDecimal("0.0012"),
                 "/proxy/openai/v1/chat/completions",
                 "api.openai.com",

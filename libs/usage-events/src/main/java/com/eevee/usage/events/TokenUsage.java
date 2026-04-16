@@ -10,6 +10,13 @@ public record TokenUsage(
         String model,
         Long promptTokens,
         Long completionTokens,
-        Long totalTokens
+        Long totalTokens,
+        // OpenAI-only nested token breakdown (nullable for other providers)
+        Long promptCachedTokens,
+        Long promptAudioTokens,
+        Long completionReasoningTokens,
+        Long completionAudioTokens,
+        Long completionAcceptedPredictionTokens,
+        Long completionRejectedPredictionTokens
 ) {
 }

@@ -81,10 +81,37 @@ public class OpenAiProviderHandler implements ProviderHandler {
         Long prompt = longVal(usage.get("prompt_tokens"));
         Long completion = longVal(usage.get("completion_tokens"));
         Long total = longVal(usage.get("total_tokens"));
+        // OpenAI provides nested token details for prompt/completion.
+        // For non-streaming JSON this comes from `usage.prompt_tokens_details` and
+        // `usage.completion_tokens_details`.
+        JsonNode promptDetails = usage.get("prompt_tokens_details");
+        Long promptCachedTokens = longVal(promptDetails != null ? promptDetails.get("cached_tokens") : null);
+        Long promptAudioTokens = longVal(promptDetails != null ? promptDetails.get("audio_tokens") : null);
+
+        JsonNode completionDetails = usage.get("completion_tokens_details");
+        Long completionReasoningTokens = longVal(completionDetails != null ? completionDetails.get("reasoning_tokens") : null);
+        Long completionAudioTokens = longVal(completionDetails != null ? completionDetails.get("audio_tokens") : null);
+        Long completionAcceptedPredictionTokens = longVal(
+                completionDetails != null ? completionDetails.get("accepted_prediction_tokens") : null
+        );
+        Long completionRejectedPredictionTokens = longVal(
+                completionDetails != null ? completionDetails.get("rejected_prediction_tokens") : null
+        );
         if (prompt == null && completion == null && total == null) {
             return null;
         }
-        return new TokenUsage(model, prompt, completion, total);
+        return new TokenUsage(
+                model,
+                prompt,
+                completion,
+                total,
+                promptCachedTokens,
+                promptAudioTokens,
+                completionReasoningTokens,
+                completionAudioTokens,
+                completionAcceptedPredictionTokens,
+                completionRejectedPredictionTokens
+        );
     }
 
     private static String text(JsonNode n) {
