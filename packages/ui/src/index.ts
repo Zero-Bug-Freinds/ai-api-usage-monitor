@@ -14,3 +14,4 @@ export {
   SelectTrigger,
   SelectValue,
 } from "./components/select"
+export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./components/tooltip"

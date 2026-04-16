@@ -61,7 +61,8 @@ public class GoogleProviderHandler implements ProviderHandler {
             Long prompt = longVal(meta.get("promptTokenCount"));
             Long completion = longVal(meta.get("candidatesTokenCount"));
             Long total = longVal(meta.get("totalTokenCount"));
-            return new TokenUsage(model, prompt, completion, total);
+            return new TokenUsage(model, prompt, completion, total,
+                    null, null, null, null, null, null);
         } catch (IOException e) {
             return null;
         }

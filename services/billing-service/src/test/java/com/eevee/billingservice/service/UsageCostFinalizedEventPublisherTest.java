@@ -55,7 +55,7 @@ class UsageCostFinalizedEventPublisherTest {
                 "managed",
                 AiProvider.OPENAI,
                 "gpt-4o-mini",
-                new TokenUsage("gpt-4o-mini", 1L, 2L, 3L),
+                new TokenUsage("gpt-4o-mini", 1L, 2L, 3L, null, null, null, null, null, null),
                 BigDecimal.ZERO,
                 "/p",
                 "h",

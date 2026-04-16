@@ -3,6 +3,7 @@ package com.eevee.usageservice.service;
 import com.eevee.usageservice.config.UsageServiceProperties;
 import com.eevee.usageservice.repository.UsageRecordedLogRepository;
 import com.eevee.usageservice.repository.analytics.UsageAnalyticsJdbcRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -34,7 +35,7 @@ class UsageDashboardServiceTest {
     @BeforeEach
     void setUp() {
         properties.getAnalytics().setMaxRangeDays(10);
-        service = new UsageDashboardService(analyticsJdbcRepository, logRepository, properties, fixedClock);
+        service = new UsageDashboardService(analyticsJdbcRepository, logRepository, properties, fixedClock, new ObjectMapper());
     }
 
     @Test

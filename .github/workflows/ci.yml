@@ -14,6 +14,7 @@ on:
       - develop
     paths:
       - '.github/workflows/**'
+      - 'docker/**'
       - 'services/**'
       - 'apps/web/**'
       - 'packages/**'
@@ -68,6 +69,7 @@ jobs:
               - 'services/team-service/**'
             notification:
               - 'services/notification-service/**'
+              - 'docker/backend-node-deps.Dockerfile'
             web_host:
               - 'apps/web/**'
             web_apps:
@@ -238,6 +240,10 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build (Nest)
         run: pnpm --filter notification-service run build
+      - name: Docker deps base image (notification backend)
+        run: docker build -f docker/backend-node-deps.Dockerfile -t backend-node-deps:ci .
+      - name: Docker image (notification-service)
+        run: docker build --build-arg BACKEND_NODE_DEPS_IMAGE=backend-node-deps:ci -f services/notification-service/Dockerfile -t notification-service:ci .
 
   web-host:
     name: Build web-host (apps/web)
@@ -269,7 +275,7 @@ jobs:
         run: |
           node -e "const fs=require('node:fs');const p='apps/web/next.config.mjs';const c=fs.readFileSync(p,'utf8');for(const x of ['NextFederationPlugin','team@','usage@','remoteEntry.js']){if(!c.includes(x)){throw new Error('missing '+x+' in '+p)}}"
       - name: Docker image (web-host, standalone)
-        run: docker build -f apps/web/Dockerfile -t web-host:ci .
+        run: docker build -f docker/web-node-deps.Dockerfile -t web-node-deps:ci . && docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f apps/web/Dockerfile -t web-host:ci .
 
   web-apps:
     name: Build web apps (services/*/web)
@@ -351,9 +357,9 @@ jobs:
           pnpm --filter usage-web-mfe run build
           pnpm --filter team-web-mfe run build
       - name: Docker image (usage-web-mfe, standalone)
-        run: docker build -f services/usage-service/web-mfe/Dockerfile -t usage-web-mfe:ci .
+        run: docker build -f docker/web-node-deps.Dockerfile -t web-node-deps:ci . && docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/usage-service/web-mfe/Dockerfile -t usage-web-mfe:ci .
       - name: Docker image (team-web-mfe, standalone)
-        run: docker build -f services/team-service/web-mfe/Dockerfile -t team-web-mfe:ci .
+        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/team-service/web-mfe/Dockerfile -t team-web-mfe:ci .
 
   # Single required check for branch protection.
   # Skipped Java/Compose jobs (path filter) do not fail the workflow.

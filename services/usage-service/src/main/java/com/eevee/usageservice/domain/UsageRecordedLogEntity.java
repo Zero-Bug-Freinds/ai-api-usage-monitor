@@ -12,8 +12,10 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.NotFound;
 import org.hibernate.annotations.NotFoundAction;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -69,7 +71,27 @@ public class UsageRecordedLogEntity {
 
     private Long totalTokens;
 
-    @Column(precision = 19, scale = 4)
+    @Column(name = "estimated_reasoning_tokens")
+    private Long estimatedReasoningTokens;
+
+    /**
+     * Provider-specific token breakdown, stored as JSONB.
+     * Example (OpenAI):
+     * {
+     *   "prompt_cached_tokens": 1,
+     *   "prompt_audio_tokens": 2,
+     *   "completion_reasoning_tokens": 11,
+     *   "completion_audio_tokens": 3,
+     *   "completion_accepted_prediction_tokens": 5,
+     *   "completion_rejected_prediction_tokens": 7
+     * }
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "provider_token_details", columnDefinition = "jsonb")
+    private String providerTokenDetails;
+
+    /** USD; matches billing output. {@code NUMERIC(18,10)} — small per-call costs stay distinguishable after sum. */
+    @Column(precision = 18, scale = 10)
     private BigDecimal estimatedCost;
 
     private String requestPath;
@@ -105,6 +127,8 @@ public class UsageRecordedLogEntity {
             Long promptTokens,
             Long completionTokens,
             Long totalTokens,
+            Long estimatedReasoningTokens,
+            String providerTokenDetails,
             BigDecimal estimatedCost,
             String requestPath,
             String upstreamHost,
@@ -127,6 +151,8 @@ public class UsageRecordedLogEntity {
         this.promptTokens = promptTokens;
         this.completionTokens = completionTokens;
         this.totalTokens = totalTokens;
+        this.estimatedReasoningTokens = estimatedReasoningTokens;
+        this.providerTokenDetails = providerTokenDetails;
         this.estimatedCost = estimatedCost;
         this.requestPath = requestPath;
         this.upstreamHost = upstreamHost;
@@ -151,6 +177,8 @@ public class UsageRecordedLogEntity {
     public Long getPromptTokens() { return promptTokens; }
     public Long getCompletionTokens() { return completionTokens; }
     public Long getTotalTokens() { return totalTokens; }
+    public Long getEstimatedReasoningTokens() { return estimatedReasoningTokens; }
+    public String getProviderTokenDetails() { return providerTokenDetails; }
     public BigDecimal getEstimatedCost() { return estimatedCost; }
     public String getRequestPath() { return requestPath; }
     public String getUpstreamHost() { return upstreamHost; }

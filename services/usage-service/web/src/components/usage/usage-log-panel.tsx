@@ -1,11 +1,24 @@
 "use client"
 
 import * as React from "react"
+import { CircleHelp, ChevronRight } from "lucide-react"
 
-import { Button, Input, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ai-usage/ui"
+import {
+  Button,
+  Input,
+  Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@ai-usage/ui"
 import { buildUsageQuery, fetchUsageJson } from "@/lib/usage/fetch-usage"
 import { formatOccurredAtKst } from "@/lib/usage/format-occurred-at-kst"
-import { formatUsd } from "@/lib/usage/format"
 import type {
   PagedLogsResponse,
   UsageLogApiKeyItemResponse,
@@ -25,10 +38,19 @@ function toApiKeyLabel(item: UsageLogApiKeyItemResponse): string {
   return item.status === "DELETED" ? `${alias} (삭제)` : alias
 }
 
-function toLogApiKeyLabel(row: UsageLogEntryResponse): string {
-  const alias = row.apiKeyAlias?.trim()
-  if (!alias) return "별칭 없음"
-  return alias
+function toLongOrZero(v: number | null | undefined): number {
+  return typeof v === "number" && Number.isFinite(v) ? v : 0
+}
+
+function openAiDetailsSum(row: UsageLogEntryResponse): number {
+  return (
+    toLongOrZero(row.promptCachedTokens) +
+    toLongOrZero(row.promptAudioTokens) +
+    toLongOrZero(row.completionReasoningTokens) +
+    toLongOrZero(row.completionAudioTokens) +
+    toLongOrZero(row.completionAcceptedPredictionTokens) +
+    toLongOrZero(row.completionRejectedPredictionTokens)
+  )
 }
 
 export function UsageLogPanel() {
@@ -43,11 +65,23 @@ export function UsageLogPanel() {
   const [modelDraft, setModelDraft] = React.useState("")
   const [appliedModelMask, setAppliedModelMask] = React.useState("")
   const [logRefresh, setLogRefresh] = React.useState(0)
+  const [openAiDetailsRow, setOpenAiDetailsRow] = React.useState<UsageLogEntryResponse | null>(null)
 
   const applyLogFilters = React.useCallback(() => {
     setLogsPage(0)
     setAppliedModelMask(modelDraft.trim())
   }, [modelDraft])
+
+  React.useEffect(() => {
+    if (!openAiDetailsRow) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+    return () => {
+      document.body.style.overflow = prev
+    }
+  }, [openAiDetailsRow])
+
+  const closeOpenAiDetails = React.useCallback(() => setOpenAiDetailsRow(null), [])
 
   const providerParam =
     logProvider !== LOG_PROVIDER_ALL ? (logProvider as UsageProviderFilter) : undefined
@@ -200,34 +234,101 @@ export function UsageLogPanel() {
       ) : (
         <>
           <div className="overflow-x-auto rounded-md border border-border">
-            <table className="w-full min-w-[800px] text-left text-sm">
+            <table className="w-full min-w-[980px] text-left text-sm">
               <thead className="border-b border-border bg-muted/40">
                 <tr>
                   <th className="px-3 py-2 font-medium">시각 (KST)</th>
                   <th className="px-3 py-2 font-medium">공급자</th>
-                  <th className="px-3 py-2 font-medium">API Key</th>
                   <th className="px-3 py-2 font-medium">모델</th>
-                  <th className="px-3 py-2 font-medium">토큰</th>
-                  <th className="px-3 py-2 font-medium">비용</th>
-                  <th className="px-3 py-2 font-medium">성공</th>
+                  <th className="px-3 py-2 font-medium">입력 토큰</th>
+                  <th className="px-3 py-2 font-medium">
+                    <span className="inline-flex items-center gap-1">
+                      추정 추론 토큰
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-muted-foreground/40 text-[10px] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                              aria-label="추정 추론 토큰 설명"
+                            >
+                              <CircleHelp className="h-3 w-3" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" align="start">
+                            <div className="space-y-1">
+                              <p className="font-medium text-foreground">추정 추론 토큰 산출</p>
+                              <p>Google / Claude: 모델 응답 총량에서 입력/출력을 제외한 계산된 추정치입니다.</p>
+                              <p>OpenAI: 모델이 직접 응답 전문에 포함하여 제공한 실제 추론 수치입니다.</p>
+                              <p>공통: 모델의 사고 과정(Reasoning) 및 시스템 처리 비용을 포함합니다.</p>
+                            </div>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </span>
+                  </th>
+                  <th className="px-3 py-2 font-medium">출력 토큰</th>
+                  <th className="px-3 py-2 font-medium">합계</th>
+                  <th className="px-3 py-2 font-medium text-right">상세</th>
                 </tr>
               </thead>
               <tbody>
-                {logs.content.map((row: UsageLogEntryResponse) => (
-                  <tr key={row.eventId} className="border-b border-border last:border-0">
+                {logs.content.map((row: UsageLogEntryResponse) => {
+                  const isOpenAi = row.provider === "OPENAI"
+                  const hasOpenAiDetails = isOpenAi && openAiDetailsSum(row) > 0
+                  return (
+                    <tr
+                      key={row.eventId}
+                      className={[
+                        "border-b border-border last:border-0",
+                        isOpenAi && hasOpenAiDetails ? "cursor-pointer hover:bg-muted/40" : "",
+                      ].join(" ")}
+                      onClick={() => {
+                        if (!hasOpenAiDetails) return
+                        setOpenAiDetailsRow(row)
+                      }}
+                      role={isOpenAi && hasOpenAiDetails ? "button" : undefined}
+                      tabIndex={isOpenAi && hasOpenAiDetails ? 0 : -1}
+                      onKeyDown={(e) => {
+                        if (!hasOpenAiDetails) return
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault()
+                          setOpenAiDetailsRow(row)
+                        }
+                      }}
+                    >
                     <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">
                       {formatOccurredAtKst(row.occurredAt)}
                     </td>
                     <td className="px-3 py-2">{row.provider}</td>
-                    <td className="px-3 py-2">{toLogApiKeyLabel(row)}</td>
                     <td className="px-3 py-2 font-mono text-xs">{row.model}</td>
-                    <td className="px-3 py-2 tabular-nums">{row.totalTokens ?? "—"}</td>
-                    <td className="px-3 py-2 tabular-nums">
-                      {row.estimatedCost != null ? formatUsd(row.estimatedCost) : "—"}
+                    <td className="px-3 py-2 tabular-nums">{row.promptTokens ?? "—"}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        {row.provider === "OPENAI" ? (
+                          <span className="inline-flex items-center rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
+                            실제값
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                            추정치
+                          </span>
+                        )}
+                        <span className="tabular-nums">{row.estimatedReasoningTokens ?? "—"}</span>
+                      </div>
                     </td>
-                    <td className="px-3 py-2">{row.requestSuccessful ? "예" : "아니오"}</td>
+                    <td className="px-3 py-2 tabular-nums">{row.completionTokens ?? "—"}</td>
+                    <td className="px-3 py-2 tabular-nums">{row.totalTokens ?? "—"}</td>
+                    <td className="px-3 py-2 text-right text-muted-foreground">
+                      {isOpenAi && hasOpenAiDetails ? (
+                        <ChevronRight className="inline-block h-4 w-4" aria-label="상세보기" />
+                      ) : (
+                        <span className="inline-block h-4 w-4" aria-hidden="true" />
+                      )}
+                    </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -260,6 +361,110 @@ export function UsageLogPanel() {
           </div>
         </>
       )}
+
+      {openAiDetailsRow ? (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/40" onClick={closeOpenAiDetails} />
+
+          <aside
+            className="absolute right-0 top-0 h-full w-full max-w-md overflow-y-auto border-l border-border bg-card shadow-xl"
+            aria-label="OpenAI 상세 로그 패널"
+          >
+            <div className="p-4">
+              <div className="flex items-start justify-between gap-3 border-b border-border pb-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">OpenAI 상세 토큰</p>
+                  <p className="mt-1 truncate text-xs text-muted-foreground">
+                    {openAiDetailsRow.provider} / {openAiDetailsRow.model}
+                  </p>
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={closeOpenAiDetails}>
+                  닫기
+                </Button>
+              </div>
+
+              {(() => {
+                const cached = toLongOrZero(openAiDetailsRow.promptCachedTokens)
+                const promptAudio = toLongOrZero(openAiDetailsRow.promptAudioTokens)
+                const reasoning = toLongOrZero(openAiDetailsRow.completionReasoningTokens)
+                const completionAudio = toLongOrZero(openAiDetailsRow.completionAudioTokens)
+                const accepted = toLongOrZero(openAiDetailsRow.completionAcceptedPredictionTokens)
+                const rejected = toLongOrZero(openAiDetailsRow.completionRejectedPredictionTokens)
+
+                const bothPredZero = accepted === 0 && rejected === 0
+                const predSum = accepted + rejected
+
+                return (
+                  <div className="mt-4 space-y-5">
+                    <section className="space-y-3">
+                      <h3 className="text-sm font-semibold">Prompt Details</h3>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="rounded-md border border-border/70 p-3">
+                          <p className="text-xs text-muted-foreground">Cached Tokens</p>
+                          <p className="mt-1 tabular-nums text-sm font-semibold">{cached.toLocaleString("en-US")}</p>
+                        </div>
+                        <div className="rounded-md border border-border/70 p-3">
+                          <p className="text-xs text-muted-foreground">Audio Tokens</p>
+                          <p className="mt-1 tabular-nums text-sm font-semibold">{promptAudio.toLocaleString("en-US")}</p>
+                        </div>
+                      </div>
+                    </section>
+
+                    <section className="space-y-3">
+                      <h3 className="text-sm font-semibold">Completion Details</h3>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="rounded-md border border-border/70 p-3">
+                          <p className="text-xs text-muted-foreground">Reasoning Tokens</p>
+                          <p className="mt-1 tabular-nums text-sm font-semibold">{reasoning.toLocaleString("en-US")}</p>
+                        </div>
+                        <div className="rounded-md border border-border/70 p-3">
+                          <p className="text-xs text-muted-foreground">Audio Tokens</p>
+                          <p className="mt-1 tabular-nums text-sm font-semibold">{completionAudio.toLocaleString("en-US")}</p>
+                        </div>
+                      </div>
+
+                      <div className="rounded-md border border-border/70 p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-xs text-muted-foreground">Prediction Tokens</p>
+                            <p className="mt-1 text-sm font-semibold tabular-nums">
+                              Accepted {accepted.toLocaleString("en-US")} / Rejected {rejected.toLocaleString("en-US")}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="mt-3">
+                          {bothPredZero ? (
+                            <p className="text-xs text-muted-foreground">두 값 모두 0</p>
+                          ) : (
+                            <>
+                              <div className="flex h-2 overflow-hidden rounded bg-muted/30" aria-label="Accepted/Rejected prediction mini graph">
+                                <div
+                                  className="h-full bg-emerald-500"
+                                  style={{ flexGrow: accepted }}
+                                  aria-hidden="true"
+                                />
+                                <div
+                                  className="h-full bg-rose-500"
+                                  style={{ flexGrow: rejected }}
+                                  aria-hidden="true"
+                                />
+                              </div>
+                              <p className="mt-2 text-[11px] text-muted-foreground tabular-nums">
+                                Accepted {Math.round((accepted / predSum) * 100)}% · Rejected {Math.round((rejected / predSum) * 100)}%
+                              </p>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </section>
+                  </div>
+                )
+              })()}
+            </div>
+          </aside>
+        </div>
+      ) : null}
     </div>
   )
 }

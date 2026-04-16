@@ -15,6 +15,12 @@
 #
 # [Next] 빌드: 저장소 루트에서 pnpm install 후 `pnpm build:web` 또는 각 web 에서 build.
 #   Docker 이미지: build context 는 루트(.), dockerfile 은 services/<svc>/web/Dockerfile (workspace `packages/ui`).
+#   공통 pnpm install 레이어를 재사용하려면 먼저
+#   `docker build -f docker/web-node-deps.Dockerfile -t ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local} .`
+#   후 `docker compose --profile web up -d --build` 를 실행한다.
+# [Node backend] notification-service 공통 install 레이어를 재사용하려면 먼저
+#   `docker build -f docker/backend-node-deps.Dockerfile -t ${BACKEND_NODE_DEPS_IMAGE:-backend-node-deps:local} .`
+#   후 `docker compose --profile web up -d --build notification-service` 를 실행한다.
 #
 # Next.js — 선택: docker compose --profile web up (identity-web + usage-web + billing-web + web-edge)
 #   게이트웨이는 컨테이너 네트워크(api-gateway-service:8080)로 연결(API_GATEWAY_URL).
@@ -122,6 +128,8 @@ services:
     build:
       context: .
       dockerfile: services/notification-service/Dockerfile
+      args:
+        BACKEND_NODE_DEPS_IMAGE: ${BACKEND_NODE_DEPS_IMAGE:-backend-node-deps:local}
     depends_on:
       - postgres-notification
     environment:
@@ -171,6 +179,7 @@ services:
       context: .
       dockerfile: services/identity-service/web/Dockerfile
       args:
+        WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
         NEXT_PUBLIC_USAGE_WEB_ORIGIN: ${NEXT_PUBLIC_USAGE_WEB_ORIGIN:-http://usage-web:3000}
     depends_on:
       - api-gateway-service
@@ -191,6 +200,7 @@ services:
       context: .
       dockerfile: services/usage-service/web/Dockerfile
       args:
+        WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
         NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${IDENTITY_WEB_PORT:-3000}}
         NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_BASE_PATH:-/dashboard}
     depends_on:
@@ -210,6 +220,8 @@ services:
     build:
       context: .
       dockerfile: services/usage-service/web-mfe/Dockerfile
+      args:
+        WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
     depends_on:
       - usage-web
     expose:
@@ -223,6 +235,7 @@ services:
       context: .
       dockerfile: services/billing-service/web/Dockerfile
       args:
+        WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
         NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${IDENTITY_WEB_PORT:-3000}}
     depends_on:
       - api-gateway-service
@@ -241,7 +254,9 @@ services:
     build:
       context: .
       dockerfile: services/notification-service/web/Dockerfile
+      network: host
       args:
+        WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
         NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_NOTIFICATION_BASE_PATH:-/notifications}
     depends_on:
       - api-gateway-service
@@ -293,6 +308,8 @@ services:
     build:
       context: .
       dockerfile: services/team-service/web/Dockerfile
+      args:
+        WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
     depends_on:
       - team-service
     environment:
@@ -309,6 +326,8 @@ services:
     build:
       context: .
       dockerfile: services/team-service/web-mfe/Dockerfile
+      args:
+        WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
     depends_on:
       - team-web
     expose:

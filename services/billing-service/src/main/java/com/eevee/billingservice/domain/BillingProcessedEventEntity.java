@@ -23,7 +23,7 @@ public class BillingProcessedEventEntity {
      * When true, a {@link com.eevee.usage.events.UsageCostFinalizedEvent} should be emitted for this row
      * (successful billable path). When false, processing is complete without a cost event (skipped or feature off).
      */
-    @Column(name = "cost_event_applicable", nullable = false)
+    @Column(name = "cost_event_applicable", nullable = false, columnDefinition = "boolean default false")
     private boolean costEventApplicable;
 
     /**

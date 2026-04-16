@@ -5,6 +5,7 @@ public record ModelUsageAggregate(
         String provider,
         long requestCount,
         long inputTokens,
+        long estimatedReasoningTokens,
         long outputTokens
 ) {
 }
