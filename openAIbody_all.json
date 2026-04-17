@@ -1,0 +1,15 @@
+{
+  "model": "gpt-5.4-nano",
+  "reasoning": { "effort": "medium" },
+  "prediction": {
+    "type": "content",
+    "content": "결론: 정답은 7"
+  },
+  "max_output_tokens": 180,
+  "input": [
+    {
+      "role": "user",
+      "content": "2+5의 결과를 한 줄로만 답하고, 반드시 '결론:'으로 시작해라."
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+    "model": "gpt-5.4-nano",
+    "messages": [
+      { "role": "user", "content": "'복숭아와 여행' 시를 10줄 이내로 알려줘." }
+    ]
+  }

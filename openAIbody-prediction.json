@@ -1,0 +1,14 @@
+{
+  "model": "gpt-5.4-nano",
+  "reasoning": { "effort": "none" },
+  "prediction": {
+    "type": "content",
+    "content": "I drank coffee."
+  },
+  "input": [
+    {
+      "role": "user",
+      "content": "문장 하나를 영어로 번역해줘: 나는 커피를 마셨다."
+    }
+  ]
+}
