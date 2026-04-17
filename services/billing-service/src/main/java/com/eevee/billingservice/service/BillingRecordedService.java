@@ -7,6 +7,7 @@ import com.eevee.billingservice.repository.BillingProcessedEventRepository;
 import com.eevee.billingservice.repository.ProviderModelPriceRepository;
 import com.eevee.usage.events.TokenUsage;
 import com.eevee.usage.events.UsageRecordedEvent;
+import com.eevee.usage.events.AiProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
@@ -20,12 +21,14 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 @Service
 public class BillingRecordedService {
 
     private static final Logger log = LoggerFactory.getLogger(BillingRecordedService.class);
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
+    private static final Pattern OPENAI_DATED_SNAPSHOT_SUFFIX = Pattern.compile("^(?<base>.+)-\\d{4}-\\d{2}-\\d{2}$");
 
     private final BillingProcessedEventRepository processedEventRepository;
     private final ProviderModelPriceRepository priceRepository;
@@ -157,6 +160,9 @@ public class BillingRecordedService {
                 .stream()
                 .findFirst()
                 .orElse(null);
+        if (price == null) {
+            price = resolveAliasedPrice(event.provider(), model, occurredAt);
+        }
 
         BigDecimal cost = ExpenditureCostCalculator.compute(event.tokenUsage(), price);
         ExpenditureCostCalculator.NormalizedTokens tokens = ExpenditureCostCalculator.normalizeTokens(event.tokenUsage());
@@ -182,6 +188,50 @@ public class BillingRecordedService {
             return tu.model().trim();
         }
         return null;
+    }
+
+    /**
+     * OpenAI models may include dated snapshot suffixes (ex: {@code gpt-5.4-mini-2026-03-17}).
+     * Billing pricing is keyed by exact (provider, model), so we resolve against the base model
+     * and persist a compatible alias price row for future events.
+     */
+    private ProviderModelPriceEntity resolveAliasedPrice(AiProvider provider, String model, Instant at) {
+        if (provider != AiProvider.OPENAI || model == null || model.isBlank()) {
+            return null;
+        }
+        var m = OPENAI_DATED_SNAPSHOT_SUFFIX.matcher(model);
+        if (!m.matches()) {
+            return null;
+        }
+        String base = m.group("base");
+        if (base == null || base.isBlank() || base.equals(model)) {
+            return null;
+        }
+
+        ProviderModelPriceEntity basePrice = priceRepository
+                .findActivePrices(provider, base, at, PageRequest.of(0, 1))
+                .stream()
+                .findFirst()
+                .orElse(null);
+        if (basePrice == null) {
+            return null;
+        }
+
+        Instant validFrom = basePrice.getValidFrom();
+        Instant validTo = basePrice.getValidTo();
+        boolean exists = priceRepository.existsByProviderAndModelAndValidFromAndValidTo(provider, model, validFrom, validTo);
+        if (!exists) {
+            priceRepository.save(new ProviderModelPriceEntity(
+                    provider,
+                    model,
+                    validFrom,
+                    validTo,
+                    basePrice.getInputUsdPerMillionTokens(),
+                    basePrice.getOutputUsdPerMillionTokens()
+            ));
+            log.info("Seeded OpenAI snapshot model price alias baseModel={} snapshotModel={}", base, model);
+        }
+        return basePrice;
     }
 
     private record BillableComputation(
