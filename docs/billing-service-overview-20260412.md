@@ -56,6 +56,7 @@
   - `GET /daily` — 일별 비용 시계열
   - `GET /monthly` — 월별 비용 시계열(확정 여부 포함)
   - `GET /api-keys` — 사용자가 본 API Key 목록(공급사 필터 선택)
+  - `GET /me` — 현재 사용자 식별자(`X-User-Id`) 반환(웹 UI 상단 표시 용도)
   - `POST /team/month-rollup` — 팀(또는 관리) 뷰: 여러 플랫폼 `userId`에 대해 지정 월의 `monthly_expenditure_agg` 합산(본문: `TeamMonthRollupRequest`). 호출자는 **노출 가능한 userId만** 넘기도록 BFF/Gateway에서 제한하는 것을 전제로 한다.
 - **인증**: Gateway가 넘기는 `X-User-Id` 필수; `billing.gateway.shared-secret`이 설정된 경우 `X-Gateway-Auth` 일치 필요.
 
@@ -103,11 +104,13 @@
 | `GET /api/v1/expenditure/daily` | 동일 | 일자별 `totalCostUsd` 시계열(`DailyExpenditurePoint`). |
 | `GET /api/v1/expenditure/monthly` | `apiKeyId`, `from`, `to` (**provider 없음**) | 월 시작일(`month_start_date`)별 누적 비용 + `isFinalized` 플래그(`MonthlyExpenditurePoint`). |
 | `GET /api/v1/expenditure/api-keys` | `provider` 선택 | `billing_user_api_key_seen`에서 해당 사용자의 API Key·provider·`firstSeenAt` 목록. provider 생략 시 전체. |
+| `GET /api/v1/expenditure/me` | (없음) | `{ userId }` 반환. 웹 UI에서 “현재 사용자 식별자” 표시 및 예산 연동 상태 설명에 사용. |
 | `POST /api/v1/expenditure/team/month-rollup` | JSON 본문 `userIds`, `monthStartDate`(해당 월의 **1일** 필수, 최대 500명) | `monthly_expenditure_agg`에서 해당 월·user 집합에 대한 합계 및 사용자별 비용(`TeamMonthRollupResponse`). |
 
 **기간 제한**: `from`~`to` 포함 일수가 `billing.analytics.max-range-days`(기본 400)를 넘으면 `IllegalArgumentException` → HTTP 400.
 
 **예산 연동**: `billing.identity.enabled=true`이고 `base-url`·`budget-path-template`이 유효할 때만 `IdentityBudgetClient`가 GET으로 JSON을 읽고, 루트에 `monthlyBudgetUsd` 필드가 있으면 요약에 포함. 404·비활성·오류 시 예산 필드는 null에 가깝게 동작(클라이언트는 empty optional).
+`budget-path-template`에 `{userId}`가 들어가고 이메일을 쿼리에 넣는 구성(예: `...?email={userId}`)에서도 깨지지 않도록 billing은 URL-safe 인코딩으로 URI를 구성한다.
 
 ### 4.8 스케줄러 (`MonthlyExpenditureFinalizeScheduler`)
 
@@ -119,6 +122,7 @@
 
 - 애플리케이션 기동 시 `provider_model_price` **행 수가 0**일 때만 카탈로그 행을 INSERT.
 - 금액·모델 ID·공식 URL·as-of는 카탈로그 클래스 및 `private-docs` 설계 문서에 정의된 스냅샷을 따른다(런타임 크롤링 없음).
+- 로컬/개발에서 기존 DB를 재사용하는 경우, `billing.pricing.seed-missing=true`(또는 `BILLING_PRICING_SEED_MISSING=true`)로 “카탈로그에 있는데 DB에 없는 row만” 보강 삽입할 수 있다.
 
 ### 4.10 Next.js BFF (`services/billing-service/web`)
 
@@ -126,6 +130,8 @@
 - **인증**: 쿠키 `access_token`을 `Authorization: Bearer`로 전달.
 - **게이트웨이 개발 모드**(`GATEWAY_DEV_MODE`): Identity `GET /api/auth/session`으로 이메일 등을 받아 **`X-User-Id`**를 세팅(운영에서는 Gateway가 사용자 식별 헤더를 붙이는 패턴).
 - **환경 변수**: `API_GATEWAY_URL` 필수, 개발 모드 시 `IDENTITY_SERVICE_URL` 필수.
+  - 지출 화면은 기간(`from`, `to`)을 프리셋(최근 7/30/90일, 이번 달) 또는 커스텀 날짜로 선택해 `/api/expenditure/summary|daily|monthly`에 반영한다.
+  - 팀 모드 집계는 월 선택(type="month") UI에서 선택한 월의 `YYYY-MM-01`을 `monthStartDate`로 전송한다.
 
 ### 4.11 기타 런타임 구성
 

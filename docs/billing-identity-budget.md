@@ -6,7 +6,9 @@
 
 - `BILLING_IDENTITY_ENABLED` — `true`로 켠다.
 - `BILLING_IDENTITY_BASE_URL` — identity HTTP 베이스 (예: `http://localhost:8090`).
-- `BILLING_IDENTITY_BUDGET_PATH` — Spring 설정 `billing.identity.budget-path-template`에 매핑된다. `{userId}` 플레이스홀더를 쓸 수 있다. 예: `/api/identity/v1/users/{userId}/budget`.
+- `BILLING_IDENTITY_BUDGET_PATH` — Spring 설정 `billing.identity.budget-path-template`에 매핑된다. `{userId}` 플레이스홀더를 쓸 수 있다.
+  - 이메일 기반(권장, `X-User-Id`가 이메일인 구성): `/api/identity/v1/users/budget?email={userId}`
+  - 숫자 userId 기반: `/api/identity/v1/users/{userId}/budget`
 
 ## 응답 JSON
 

@@ -21,6 +21,18 @@
 2. **새 모델** 추가 시 동일하게 `provider_model_price`에 행을 넣는다.
 3. 변경 후 **로컬·스테이징**에서 지출 집계 샘플 이벤트로 금액을 검증한다.
 
+## OpenAI 스냅샷 모델(날짜 suffix) 주의
+
+OpenAI 이벤트의 `model`이 `gpt-5.4-mini-2026-03-17`처럼 **날짜 suffix**를 포함할 수 있다.
+`provider_model_price`는 `(provider, model)` **완전 일치**로 매칭하므로, DB에 `gpt-5.4-mini`만 있고 스냅샷 ID가 들어오면 단가를 못 찾아 비용이 `0`이 될 수 있다.
+
+로컬/개발 편의를 위해 billing은 다음 정책을 지원한다:
+
+- OpenAI의 `-YYYY-MM-DD` suffix 패턴이 들어온 모델은 base 모델(`gpt-5.4-mini`) 단가를 먼저 조회하고,
+- base 단가가 존재하면 스냅샷 모델명으로 **alias 단가 row를 자동으로 upsert**해서 이후 이벤트부터는 DB가 따라가도록 한다.
+
+> 운영 환경에서는 가격 정책(스냅샷 모델이 base와 동일 단가인지)을 팀 기준으로 확인하고, 필요하면 별도 row를 명시적으로 관리하는 것을 권장한다.
+
 ## 참고
 
 - 집계 일자·월 경계는 **KST**를 사용한다 (`BillingRecordedService`, `MonthlyExpenditureFinalizeScheduler`).
