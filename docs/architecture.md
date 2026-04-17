@@ -1,5 +1,5 @@
 # <Team Project> AI Usage & Billing Platform (MSA) 아키텍처 문서
-버전: 0.6
+버전: 0.6.1
 
 ---
 
@@ -8,6 +8,7 @@
 - **MSA 이론 배경**(일반 개념·특징·API Gateway 패턴): [`docs/msa-architecture-theory.md`](msa-architecture-theory.md)
   - 본 문서(`architecture.md`)는 **이 팀 프로젝트의 구조·스택·서비스 분해**를 다룬다. 위 이론 문서는 구현과 무관한 **일반 설명**을 위한 참고 자료이다.
 - **이벤트 소비·발행 흐름**(Proxy `UsageRecordedEvent` → usage·billing 소비, Billing `UsageCostFinalizedEvent` → usage 등): 본 문서 **§6**, 공유 타입·AMQP는 [`libs/usage-events`](../libs/usage-events) · 상세는 [`docs/billing-service-overview-20260412.md`](billing-service-overview-20260412.md)(부록 A 포함)
+- **팀 도메인 이벤트 → 인앱 알림**: Team Service 발행 `team.events` / notification-service 소비·인앱 저장 — 본 문서 **§4.9·§6**, 페이로드 계약은 [`docs/contracts/web-team-bff.md`](contracts/web-team-bff.md) §6.2
 - **사용량·집계·대시보드 관점**: 본 문서 **§6·§11**, 다이어그램은 [`docs/c4-architecture-diagrams.md`](c4-architecture-diagrams.md)
 - **서비스별 DB 구성·서비스 간 데이터 전달**(물리/논리 PostgreSQL, 타 서비스 DB 직접 접근 금지, API vs RabbitMQ, 조회 성능): [`docs/msa-database-and-service-integration.md`](msa-database-and-service-integration.md)
 
@@ -199,6 +200,7 @@
   - **(1차) 인앱 알림의 진실 공급원(Source of truth)** 을 **notification-service의 PostgreSQL(`notification_db`)** 로 둔다.
     - 알림 목록·읽음 처리·테스트 발송(설정 화면에서 호출) 등은 **notification-service API**가 담당한다.
     - 사용자 세션/식별은 Identity `web`의 쿠키 기반 인증을 유지하고, **Notification `web` BFF가 서버에서 세션을 확인**한 뒤 내부 호출로 전달한다(§10.2, §13).
+  - **팀 도메인 이벤트 → 인앱(비동기):** **team-service**가 RabbitMQ TopicExchange **`team.events`** 로 발행하는 팀 도메인 이벤트(본문·헤더 `eventType`, 페이로드 정본은 [`docs/contracts/web-team-bff.md`](contracts/web-team-bff.md) §6.2·Java `TeamDomainOutboundEvent`)를 **notification-service**가 큐에서 소비해 `InAppNotification` 행을 생성한다. `type` 필드는 `team:{eventType}` 형태를 사용한다. 동일 이벤트 재전송 시 중복 행 방지를 위해 **`NotificationDelivery.dedupeKey`**(채널 `in-app`)로 멱등 처리한다. `TEAM_INVITATION_ACCEPTED`는 초대한 사용자에게, `TEAM_MEMBER_JOINED`는 **참여한 사용자(`receiverId`)에게만** 인앱을 생성해 초대자에게 수락 알림과 중복되지 않게 한다. 구현·환경 변수·로컬 Compose는 **`services/notification-service/README.md`** 를 본다.
   - 외부 채널(Slack/Email)·이벤트 기반 알림은 **발행 측(Billing/Quota 등) 코드가 생긴 뒤** 연결한다(“타 서비스 코드 변경 금지” 전제에서는 후속 스프린트로 둔다).
 
 ### 4.10 Team Service
@@ -267,6 +269,9 @@
 - `billing-updated`(선택)
   - 발행 주체: Billing Service
   - 소비 주체: Analytics Service
+- 팀 도메인 이벤트(`TEAM_CREATED`, `TEAM_INVITE_CREATED`, … — **12종**, [`TeamEventTypes`](../services/team-service/src/main/java/com/zerobugfreinds/team_service/event/TeamEventTypes.java))
+  - 발행 주체: **Team Service** — exchange **`team.events`**, routing key **`team-member-added`**(기본, `application.properties`로 조정 가능)
+  - 소비 주체: **notification-service** — 큐 **`notification.team.events`**(기본) 등으로 구독·인앱 생성(§4.9, §6.2 토폴로지)
 
 ### 6.2 브로커 및 연동
 - **브로커**: **RabbitMQ** (Kafka 등은 본 프로젝트 범위에서 사용하지 않는다).
@@ -285,6 +290,9 @@
   - publish exchange/routing key: `billing.events` / `usage.cost.finalized`
 - Team/Identity 계정 삭제 이벤트
   - queue 예: `team.account-deletion.requested.queue`, `identity.account-deletion.ack.queue`
+- Team 도메인(팀 생성·초대·API 키 등)
+  - publish: **Team Service** — exchange **`team.events`**, routing key **`team-member-added`**
+  - consume: **notification-service** — queue **`notification.team.events`**(기본; `TEAM_EVENTS_QUEUE_NAME`로 변경 가능), 바인딩은 배포/Compose에서 `team.events`와 합의. 로컬 루트 `docker-compose.yml`의 `notification-service`는 `rabbitmq`에 의존하고 `RABBITMQ_URL`·소비자 플래그 등을 주입한다.
 
 ---
 
