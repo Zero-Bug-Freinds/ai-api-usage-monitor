@@ -132,10 +132,18 @@ services:
         BACKEND_NODE_DEPS_IMAGE: ${BACKEND_NODE_DEPS_IMAGE:-backend-node-deps:local}
     depends_on:
       - postgres-notification
+      - rabbitmq
     environment:
       DATABASE_URL: postgresql://${NOTIFICATION_POSTGRES_USER:-notification_app}:${NOTIFICATION_POSTGRES_PASSWORD:-notification_app}@postgres-notification:5432/${NOTIFICATION_POSTGRES_DB:-notification_db}
       PORT: 8096
       NOTIFICATION_INTERNAL_SECRET: ${NOTIFICATION_INTERNAL_SECRET:-}
+      # team-service TeamDomainEventPublisher: exchange team.events, routing key team-member-added (application.properties)
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672
+      TEAM_EVENTS_CONSUMER_ENABLED: ${TEAM_EVENTS_CONSUMER_ENABLED:-true}
+      TEAM_EVENTS_QUEUE_NAME: ${TEAM_EVENTS_QUEUE_NAME:-notification.team.events}
+      TEAM_EVENTS_ASSERT_TOPOLOGY: ${TEAM_EVENTS_ASSERT_TOPOLOGY:-true}
+      TEAM_EVENTS_EXCHANGE_NAME: ${TEAM_EVENTS_EXCHANGE_NAME:-team.events}
+      TEAM_EVENTS_BINDING_KEYS: ${TEAM_EVENTS_BINDING_KEYS:-team-member-added}
     ports:
       - "${NOTIFICATION_SERVICE_PORT:-8096}:8096"
 

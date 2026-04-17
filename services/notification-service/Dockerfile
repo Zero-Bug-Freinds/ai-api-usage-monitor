@@ -34,6 +34,9 @@ COPY --from=deps /repo/services/notification-service/package.json ./services/not
 COPY --from=deps /repo/services/notification-service/node_modules ./services/notification-service/node_modules
 
 COPY services/notification-service ./services/notification-service
+# 호스트 소스 COPY 가 서비스 디렉터리의 node_modules(심볼릭 링크)를 덮어쓰므로 워크스페이스 링크를 다시 맞춘다.
+WORKDIR /repo
+RUN pnpm install --frozen-lockfile --ignore-scripts
 WORKDIR /repo/services/notification-service
 RUN pnpm run prisma:generate
 RUN pnpm run build
