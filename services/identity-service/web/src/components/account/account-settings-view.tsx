@@ -61,8 +61,25 @@ function formatBudgetUsd(value: number | null | undefined) {
 }
 
 const DEFAULT_DELETION_GRACE_DAYS = 7
-const MIN_DELETION_GRACE_DAYS = 1
+const MIN_DELETION_GRACE_DAYS = 0
 const MAX_DELETION_GRACE_DAYS = 365
+
+const GRACE_PERIOD_DELETION_HINT =
+  "유예 기간은 0~365일 사이의 정수로 입력해 주세요. (0 입력 시 즉시 삭제)"
+
+function parseDeletionGraceInput(raw: string):
+  | { valid: true; graceDays: number; immediate: boolean }
+  | { valid: false } {
+  const trimmed = raw.trim()
+  if (trimmed === "") {
+    return { valid: true, graceDays: DEFAULT_DELETION_GRACE_DAYS, immediate: false }
+  }
+  const n = Number.parseInt(trimmed, 10)
+  if (!Number.isFinite(n) || n < MIN_DELETION_GRACE_DAYS || n > MAX_DELETION_GRACE_DAYS) {
+    return { valid: false }
+  }
+  return { valid: true, graceDays: n, immediate: n === 0 }
+}
 
 function sanitizeBudgetInput(value: string) {
   const normalized = value.replace(/,/g, ".")
@@ -102,6 +119,11 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
   const [editMonthlyBudgetUsdInput, setEditMonthlyBudgetUsdInput] = React.useState("")
   const [saveEditLoadingId, setSaveEditLoadingId] = React.useState<number | null>(null)
   const [revealExternalKey, setRevealExternalKey] = React.useState(false)
+
+  const [externalKeyDeletionModal, setExternalKeyDeletionModal] = React.useState<{
+    keyId: number
+    graceDaysInput: string
+  } | null>(null)
 
   const [deletePassword, _setDeletePassword] = React.useState("")
   const [_deleteLoading, setDeleteLoading] = React.useState(false)
@@ -243,44 +265,42 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
     }
   }
 
-  async function requestKeyDeletion(id: number) {
-    const ok = window.confirm(
-      `이 API 키를 삭제 예약합니다.\n\n유예 기간이 지나면 DB에서 키가 영구 삭제됩니다. 유예 중에는 취소할 수 있습니다.\n과거 사용량 로그는 usage 쪽 기록에 남을 수 있습니다.\n\n다음 단계에서 유예 기간(일)을 입력합니다. (기본 ${DEFAULT_DELETION_GRACE_DAYS}일)`,
-    )
-    if (!ok) return
-    const raw = window.prompt(
-      `유예 기간(일) (${MIN_DELETION_GRACE_DAYS}~${MAX_DELETION_GRACE_DAYS}, 비우면 ${DEFAULT_DELETION_GRACE_DAYS}일)`,
-      String(DEFAULT_DELETION_GRACE_DAYS),
-    )
-    if (raw === null) return
-    const trimmed = raw.trim()
-    let graceDays = DEFAULT_DELETION_GRACE_DAYS
-    if (trimmed !== "") {
-      const n = Number.parseInt(trimmed, 10)
-      if (!Number.isFinite(n) || n < MIN_DELETION_GRACE_DAYS || n > MAX_DELETION_GRACE_DAYS) {
-        setKeysError(
-          `유예 기간은 ${MIN_DELETION_GRACE_DAYS}~${MAX_DELETION_GRACE_DAYS}일 사이의 정수로 입력해 주세요`,
-        )
-        return
-      }
-      graceDays = n
+  function openExternalKeyDeletionModal(keyId: number) {
+    setKeysError(null)
+    setExternalKeyDeletionModal({ keyId, graceDaysInput: String(DEFAULT_DELETION_GRACE_DAYS) })
+  }
+
+  function closeExternalKeyDeletionModal() {
+    setExternalKeyDeletionModal(null)
+  }
+
+  async function confirmExternalKeyDeletion() {
+    if (!externalKeyDeletionModal) return
+    const parsed = parseDeletionGraceInput(externalKeyDeletionModal.graceDaysInput)
+    if (!parsed.valid) {
+      setKeysError(GRACE_PERIOD_DELETION_HINT)
+      return
     }
-    setKeyActionId(id)
+    const { keyId } = externalKeyDeletionModal
+    const { graceDays } = parsed
+    setKeysError(null)
+    setKeyActionId(keyId)
     try {
       const q = new URLSearchParams({ gracePeriodDays: String(graceDays) })
       const { response, json } = await apiFetch<unknown>(
-        `/api/auth/external-keys/${id}?${q.toString()}`,
+        `/api/auth/external-keys/${keyId}?${q.toString()}`,
         { method: "DELETE", credentials: "include", cache: "no-store", headers: { Accept: "application/json" } },
         { authRequired: true }
       )
       const apiResponse = asApiResponse(json)
       if (response.ok && apiResponse?.success) {
+        closeExternalKeyDeletionModal()
         void loadExternalKeys()
       } else {
-        setKeysError(apiResponse?.message ?? "삭제 예약에 실패했습니다")
+        setKeysError(apiResponse?.message ?? "삭제 요청에 실패했습니다")
       }
     } catch {
-      setKeysError("삭제 예약에 실패했습니다")
+      setKeysError("삭제 요청에 실패했습니다")
     } finally {
       setKeyActionId(null)
     }
@@ -410,8 +430,91 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
     }
   }
 
+  const deletionModalParsed = externalKeyDeletionModal
+    ? parseDeletionGraceInput(externalKeyDeletionModal.graceDaysInput)
+    : null
+
   return (
     <div className="flex min-h-[40vh] flex-col gap-8 py-4">
+      {externalKeyDeletionModal ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeExternalKeyDeletionModal()
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="external-key-delete-title"
+            className="w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-lg"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <h3 id="external-key-delete-title" className="text-sm font-semibold tracking-tight">
+              외부 API 키 삭제
+            </h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {deletionModalParsed?.valid && deletionModalParsed.immediate
+                ? null
+                : "유예 기간이 지나면 DB에서 키가 영구 삭제됩니다. 유예 중에는 취소할 수 있습니다. 과거 사용량 로그는 usage 쪽 기록에 남을 수 있습니다."}
+            </p>
+            {deletionModalParsed?.valid && deletionModalParsed.immediate ? (
+              <p className="mt-2 text-sm font-medium text-destructive">이 API Key는 즉시 영구 삭제됩니다.</p>
+            ) : null}
+            <div className="mt-4 space-y-1.5">
+              <label className="text-sm font-medium" htmlFor="external-key-delete-grace">
+                유예 기간(일)
+              </label>
+              <input
+                id="external-key-delete-grace"
+                type="text"
+                inputMode="numeric"
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm tabular-nums"
+                value={externalKeyDeletionModal.graceDaysInput}
+                onChange={(e) => {
+                  setKeysError(null)
+                  setExternalKeyDeletionModal((prev) =>
+                    prev ? { ...prev, graceDaysInput: e.target.value } : prev
+                  )
+                }}
+                autoComplete="off"
+                disabled={keyActionId === externalKeyDeletionModal.keyId}
+              />
+              <p className="text-xs text-muted-foreground">{GRACE_PERIOD_DELETION_HINT}</p>
+              {keysError && externalKeyDeletionModal ? (
+                <p className="text-xs text-destructive">{keysError}</p>
+              ) : null}
+            </div>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
+                disabled={keyActionId === externalKeyDeletionModal.keyId}
+                onClick={closeExternalKeyDeletionModal}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                className={
+                  deletionModalParsed?.valid && deletionModalParsed.immediate
+                    ? "rounded-md bg-destructive px-3 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
+                    : "rounded-md border border-destructive/40 bg-background px-3 py-2 text-sm font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                }
+                disabled={!deletionModalParsed?.valid || keyActionId === externalKeyDeletionModal.keyId}
+                onClick={() => void confirmExternalKeyDeletion()}
+              >
+                {keyActionId === externalKeyDeletionModal.keyId
+                  ? "처리 중…"
+                  : deletionModalParsed?.valid && deletionModalParsed.immediate
+                    ? "즉시 삭제"
+                    : "삭제 예약"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">설정</h1>
         <p className="text-sm text-muted-foreground">로그인 계정 정보입니다. 조직·팀은 각 메뉴에서 관리합니다.</p>
@@ -458,7 +561,9 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
           {keysLoading || externalKeys === null ? (
             <p className="text-sm text-muted-foreground">목록을 불러오는 중…</p>
           ) : null}
-          {keysError && !keysLoading && externalKeys !== null ? <p className="text-sm text-destructive">{keysError}</p> : null}
+          {keysError && !keysLoading && externalKeys !== null && !externalKeyDeletionModal ? (
+            <p className="text-sm text-destructive">{keysError}</p>
+          ) : null}
 
           {!keysLoading && externalKeys !== null && externalKeys.length === 0 ? (
             <p className="rounded-md border border-dashed border-border bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground">
@@ -562,9 +667,9 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
                           type="button"
                           className="rounded-md border border-destructive/40 bg-background px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
                           disabled={keyActionId === row.id}
-                          onClick={() => void requestKeyDeletion(row.id)}
+                          onClick={() => openExternalKeyDeletionModal(row.id)}
                         >
-                          {keyActionId === row.id ? "처리 중…" : "삭제 예약"}
+                          {keyActionId === row.id ? "처리 중…" : "삭제"}
                         </button>
                       )}
                     </div>

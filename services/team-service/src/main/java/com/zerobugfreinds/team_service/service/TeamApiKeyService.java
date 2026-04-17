@@ -8,6 +8,13 @@ import com.zerobugfreinds.team_service.entity.TeamEntity;
 import com.zerobugfreinds.team_service.entity.TeamMemberEntity;
 import com.zerobugfreinds.team_service.exception.ForbiddenTeamAccessException;
 import com.zerobugfreinds.team_service.exception.OwnerPermissionRequiredException;
+import com.zerobugfreinds.team_service.event.TeamDomainOutboundEvent;
+import com.zerobugfreinds.team_service.event.TeamDomainOutboundEvent.TeamApiKeyDeletedEvent;
+import com.zerobugfreinds.team_service.event.TeamDomainOutboundEvent.TeamApiKeyDeletionCancelledEvent;
+import com.zerobugfreinds.team_service.event.TeamDomainOutboundEvent.TeamApiKeyDeletionScheduledEvent;
+import com.zerobugfreinds.team_service.event.TeamDomainOutboundEvent.TeamApiKeyRegisteredEvent;
+import com.zerobugfreinds.team_service.event.TeamDomainOutboundEvent.TeamApiKeyUpdatedEvent;
+import com.zerobugfreinds.team_service.event.TeamEventRecipients;
 import com.zerobugfreinds.team_service.exception.TeamNotFoundException;
 import com.zerobugfreinds.team_service.repository.TeamApiKeyRepository;
 import com.zerobugfreinds.team_service.repository.TeamMemberRepository;
@@ -33,17 +40,20 @@ public class TeamApiKeyService {
     private final TeamMemberRepository teamMemberRepository;
     private final TeamApiKeyRepository teamApiKeyRepository;
     private final EncryptionUtil encryptionUtil;
+    private final TeamDomainEventPublisher teamDomainEventPublisher;
 
     public TeamApiKeyService(
             TeamRepository teamRepository,
             TeamMemberRepository teamMemberRepository,
             TeamApiKeyRepository teamApiKeyRepository,
-            EncryptionUtil encryptionUtil
+            EncryptionUtil encryptionUtil,
+            TeamDomainEventPublisher teamDomainEventPublisher
     ) {
         this.teamRepository = teamRepository;
         this.teamMemberRepository = teamMemberRepository;
         this.teamApiKeyRepository = teamApiKeyRepository;
         this.encryptionUtil = encryptionUtil;
+        this.teamDomainEventPublisher = teamDomainEventPublisher;
     }
 
     @Transactional
@@ -83,6 +93,18 @@ public class TeamApiKeyService {
         TeamApiKeyEntity saved = teamApiKeyRepository.save(
                 TeamApiKeyEntity.register(teamId, provider, normalizedAlias, keyHash, encrypted, monthlyBudgetUsd)
         );
+        TeamApiKeyNotifyContext ctx = teamApiKeyNotifyContext(teamId);
+        Instant occurredAt = Instant.now();
+        publish(TeamApiKeyRegisteredEvent.of(
+                actorUserId,
+                teamId,
+                ctx.teamName(),
+                ctx.recipientUserIds(),
+                saved.getId(),
+                saved.getProvider().name(),
+                saved.getKeyAlias(),
+                occurredAt
+        ));
         return toSummary(saved);
     }
 
@@ -139,6 +161,17 @@ public class TeamApiKeyService {
             entity.updateAliasAndBudget(normalizedAlias, monthlyBudgetUsd);
         }
 
+        TeamApiKeyNotifyContext ctx = teamApiKeyNotifyContext(teamId);
+        publish(TeamApiKeyUpdatedEvent.of(
+                actorUserId,
+                teamId,
+                ctx.teamName(),
+                ctx.recipientUserIds(),
+                entity.getId(),
+                entity.getProvider().name(),
+                entity.getKeyAlias(),
+                Instant.now()
+        ));
         return toSummary(entity);
     }
 
@@ -154,12 +187,36 @@ public class TeamApiKeyService {
             throw new IllegalArgumentException("이미 삭제 예정인 키입니다");
         }
         int days = resolveGracePeriodDays(gracePeriodDays);
+        TeamApiKeyNotifyContext ctx = teamApiKeyNotifyContext(teamId);
+        Instant occurredAt = Instant.now();
         if (days == 0) {
+            publish(TeamApiKeyDeletedEvent.of(
+                    actorUserId,
+                    teamId,
+                    ctx.teamName(),
+                    ctx.recipientUserIds(),
+                    entity.getId(),
+                    entity.getProvider().name(),
+                    entity.getKeyAlias(),
+                    occurredAt
+            ));
             teamApiKeyRepository.delete(entity);
             return toSummary(entity);
         }
         entity.markDeletionRequested(Instant.now(), days);
         teamApiKeyRepository.save(entity);
+        publish(TeamApiKeyDeletionScheduledEvent.of(
+                actorUserId,
+                teamId,
+                ctx.teamName(),
+                ctx.recipientUserIds(),
+                entity.getId(),
+                entity.getProvider().name(),
+                entity.getKeyAlias(),
+                days,
+                entity.getPermanentDeletionAt(),
+                occurredAt
+        ));
         return toSummary(entity);
     }
 
@@ -176,6 +233,17 @@ public class TeamApiKeyService {
         }
         entity.clearDeletionRequest();
         teamApiKeyRepository.save(entity);
+        TeamApiKeyNotifyContext ctx = teamApiKeyNotifyContext(teamId);
+        publish(TeamApiKeyDeletionCancelledEvent.of(
+                actorUserId,
+                teamId,
+                ctx.teamName(),
+                ctx.recipientUserIds(),
+                entity.getId(),
+                entity.getProvider().name(),
+                entity.getKeyAlias(),
+                Instant.now()
+        ));
         return toSummary(entity);
     }
 
@@ -254,5 +322,18 @@ public class TeamApiKeyService {
                 entity.getPermanentDeletionAt(),
                 entity.getDeletionGraceDays()
         );
+    }
+
+    private record TeamApiKeyNotifyContext(String teamName, List<String> recipientUserIds) {
+    }
+
+    private TeamApiKeyNotifyContext teamApiKeyNotifyContext(Long teamId) {
+        TeamEntity team = teamRepository.findById(teamId)
+                .orElseThrow(() -> new TeamNotFoundException("팀을 찾을 수 없습니다"));
+        return new TeamApiKeyNotifyContext(team.getName(), TeamEventRecipients.allMemberUserIds(teamMemberRepository, teamId));
+    }
+
+    private void publish(TeamDomainOutboundEvent event) {
+        teamDomainEventPublisher.publish(event);
     }
 }

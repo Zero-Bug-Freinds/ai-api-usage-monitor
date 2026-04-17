@@ -273,6 +273,12 @@ public class ExternalApiKeyService {
 		}
 		int days = resolveGracePeriodDays(gracePeriodDays);
 		Instant now = Instant.now();
+		if (days == 0) {
+			log.info("[AUDIT] external_api_key_immediately_deleted userId={} keyId={}", userId, entity.getId());
+			publishExternalApiKeyStatusChanged(entity, ExternalApiKeyStatus.DELETED);
+			externalApiKeyRepository.delete(entity);
+			return entity;
+		}
 		entity.markPendingDeletion(now, days);
 		log.info(
 				"[AUDIT] external_api_key_deletion_requested userId={} keyId={} permanentDeletionAt={}",

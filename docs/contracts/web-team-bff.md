@@ -60,8 +60,10 @@
   - `GET /api/v1/me/team-invitations`, 초대 수락/거절
   - `PUT /api/v1/teams/{teamId}/api-keys/{keyId}` (별칭·예산 등 수정)
   - `POST /api/v1/teams/{teamId}/api-keys/{keyId}/deletion/cancel` (삭제 예정 해제)
-- 팀원 초대 시 Team Service는 Identity 내부 API(`GET /internal/users/exists?email=...`)로
-  사용자 존재 여부를 확인한 뒤, **실제로 존재하는 아이디(이메일)만** 초대를 허용한다.
+- 팀원 초대 시 Team Service는 아래 순서로 사용자 존재 여부를 확인한다.
+  1) `identity_user_sync` 로컬 캐시(`IdentityUserSyncListener`가 RabbitMQ로 수신한 사용자 동기화 이벤트 기반)
+  2) Identity 내부 API fallback (`GET /internal/users/exists?email=...` 또는 user-id 일괄 확인)
+  → 둘 다 실패/미존재면 초대를 거부한다.
 - 팀 API Key는 Team Service DB에 **평문 저장하지 않고 암호화 저장**한다.
 - 팀 API Key 조회·등록·수정 응답에는 **원문 키를 포함하지 않는다**(미리보기 필드 없음). 저장은 DB에 암호화된다.
 - 팀 삭제(`DELETE /teams/{teamId}`)는 팀 API Key가 하나라도 남아 있으면 `409`으로 거절된다.
@@ -74,6 +76,18 @@
 - 입력값 `inviteeUserId`는 가입/로그인에 사용한 이메일 형식의 아이디를 기준으로 한다.
 - 존재하지 않는 아이디(이메일)이면 Team Service는 초대를 거부한다.
 - Identity 연동 실패(네트워크/5xx/비정상 응답) 시 안전하게 초대를 거부한다.
+- Team Service는 사용자 전체 프로필을 복제하지 않고, 존재성 판단에 필요한 최소 필드만 `identity_user_sync` 테이블에 저장한다(`userId`, `email`, `displayName`, `lastEventType`, `updatedAt`).
+
+### 5.2 identity → team 사용자 동기화 이벤트
+
+- Queue/Binding 설정 정본:
+  - `identity.user-sync.exchange` (기본 `identity.events`)
+  - `identity.user-sync.routing-key` (기본 `identity.user.sync`)
+  - `identity.user-sync.queue` (기본 `team.identity.user-sync.queue`)
+- 리스너: `IdentityUserSyncListener` (`@RabbitListener`)
+- DTO: `IdentityUserSyncEvent`
+  - `@JsonAlias`로 필드명 변형(`eventType/type`, `userId/identityUserId/id`, `email/userEmail`, `name/displayName/username`, `occurredAt/createdAt/updatedAt`)을 허용한다.
+- 장애 분석을 위해 리스너는 실패 시 payload 원문과 stacktrace를 함께 기록한다.
 
 ### 5.1 실패 응답 예시
 
@@ -162,9 +176,9 @@
 ### 6.2 RabbitMQ 이벤트 (`team.events`)
 
 - 설정 정본: `services/team-service/src/main/resources/application.properties` — `team.member-added-event.exchange`, `team.member-added-event.routing-key`(기본값 `team-member-added`), `spring.rabbitmq.*`.
-- **동일 익스체인지·라우팅 키**로 두 종류의 JSON 메시지가 발행될 수 있다. 구독자는 본문 필드로 구분한다(예: `invitationId` 유무).
-  - **초대 생성 시** (`TeamMemberInvitedEvent`): `invitationId`, `receiverId`, `inviterId`, `teamId`, `teamName`, `createdAt`
-  - **멤버 추가 시** (`TeamMemberAddedEvent`): `receiverId`, `inviterId`, `teamId`, `teamName`, `createdAt` (`invitationId` 없음)
+- **동일 TopicExchange·라우팅 키**로 팀 도메인 이벤트 JSON이 발행된다. 각 메시지 본문에 **`eventType`**(필수)과 공통 필드(`teamId`, `teamName`, `actorUserId`, `occurredAt`, `recipientUserIds` 등)가 포함되며, AMQP **헤더 `eventType`**에도 동일 문자열이 실린다. 구독자는 헤더 또는 본문 `eventType`으로 분기한다.
+- 주요 `eventType` 값: `TEAM_CREATED`, `TEAM_INVITE_CREATED`, `TEAM_INVITATION_ACCEPTED`, `TEAM_INVITATION_REJECTED`, `TEAM_MEMBER_JOINED`, `TEAM_MEMBER_REMOVED`, `TEAM_DELETED`, `TEAM_API_KEY_REGISTERED`, `TEAM_API_KEY_UPDATED`, `TEAM_API_KEY_DELETED`, `TEAM_API_KEY_DELETION_SCHEDULED`, `TEAM_API_KEY_DELETION_CANCELLED`.
+- 하위 호환: `TEAM_INVITE_CREATED` 페이로드에 기존 `invitationId`, `receiverId`, `inviterId`, `createdAt` 필드가 유지된다. `TEAM_MEMBER_JOINED`에 `receiverId`, `inviterId`, `createdAt`(레거시)가 유지된다.
 - 목적: notification 등이 알림·감사 로그를 비동기로 처리할 수 있도록 전달
 
 ---
@@ -195,6 +209,7 @@
 - 접힌 행에는 **팀 이름**만 보인다.
 - 행을 눌러 펼치면 팀 `id`, 멤버 수·이메일 목록, 초대 입력, 팀 API Key 등록·목록·수정·삭제 영역이 나온다. 펼친 팀에 대해서만 멤버/API Key 목록 API를 호출한다.
 - `GET /api/team/v1/me/teams` 응답의 팀 요약은 **`id`, `name`** 수준이며, **리더·인원 수·생성일**을 한 줄로 주지 않는다. 검증은 **이름이 목록에 나타나는지**, 펼쳤을 때 **멤버·초대·키** 동작이 보이는지로 맞춘다.
+- 팀원 초대 입력 행은 여러 개 추가할 수 있고, 2개 이상일 때 각 행 우측 `-` 버튼으로 빈 행을 즉시 제거할 수 있다.
 
 ### 7.4 팀 API Key 삭제 예정·유예·취소 (Identity `/teams`)
 

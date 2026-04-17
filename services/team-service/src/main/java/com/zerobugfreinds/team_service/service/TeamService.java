@@ -13,7 +13,14 @@ import com.zerobugfreinds.team_service.entity.TeamEntity;
 import com.zerobugfreinds.team_service.entity.TeamApiKeyEntity;
 import com.zerobugfreinds.team_service.entity.TeamInvitationEntity;
 import com.zerobugfreinds.team_service.entity.TeamMemberEntity;
-import com.zerobugfreinds.team_service.event.TeamMemberAddedEvent;
+import com.zerobugfreinds.team_service.event.TeamDomainOutboundEvent;
+import com.zerobugfreinds.team_service.event.TeamDomainOutboundEvent.TeamCreatedEvent;
+import com.zerobugfreinds.team_service.event.TeamDomainOutboundEvent.TeamDeletedEvent;
+import com.zerobugfreinds.team_service.event.TeamDomainOutboundEvent.TeamInvitationAcceptedEvent;
+import com.zerobugfreinds.team_service.event.TeamDomainOutboundEvent.TeamInvitationRejectedEvent;
+import com.zerobugfreinds.team_service.event.TeamDomainOutboundEvent.TeamInviteCreatedEvent;
+import com.zerobugfreinds.team_service.event.TeamDomainOutboundEvent.TeamMemberJoinedEvent;
+import com.zerobugfreinds.team_service.event.TeamDomainOutboundEvent.TeamMemberRemovedEvent;
 import com.zerobugfreinds.team_service.exception.DuplicateTeamMemberException;
 import com.zerobugfreinds.team_service.exception.DuplicateTeamInvitationException;
 import com.zerobugfreinds.team_service.exception.ForbiddenTeamAccessException;
@@ -22,7 +29,6 @@ import com.zerobugfreinds.team_service.exception.OwnerPermissionRequiredExceptio
 import com.zerobugfreinds.team_service.exception.TeamDeletionBlockedException;
 import com.zerobugfreinds.team_service.exception.TeamNotFoundException;
 import com.zerobugfreinds.team_service.exception.TeamInvitationNotFoundException;
-import com.zerobugfreinds.team_service.event.TeamMemberInvitedEvent;
 import com.zerobugfreinds.team_service.repository.TeamApiKeyRepository;
 import com.zerobugfreinds.team_service.repository.TeamInvitationRepository;
 import com.zerobugfreinds.team_service.repository.TeamMemberRepository;
@@ -48,23 +54,23 @@ public class TeamService {
 	private final TeamMemberRepository teamMemberRepository;
 	private final TeamInvitationRepository teamInvitationRepository;
 	private final TeamApiKeyRepository teamApiKeyRepository;
-	private final TeamInvitationEventPublisher teamInvitationEventPublisher;
-	private final TeamMemberAddedEventPublisher teamMemberAddedEventPublisher;
+	private final TeamDomainEventPublisher teamDomainEventPublisher;
+	private final IdentityUserSyncService identityUserSyncService;
 
 	public TeamService(
 			TeamRepository teamRepository,
 			TeamMemberRepository teamMemberRepository,
 			TeamInvitationRepository teamInvitationRepository,
 			TeamApiKeyRepository teamApiKeyRepository,
-			TeamInvitationEventPublisher teamInvitationEventPublisher,
-			TeamMemberAddedEventPublisher teamMemberAddedEventPublisher
+			TeamDomainEventPublisher teamDomainEventPublisher,
+			IdentityUserSyncService identityUserSyncService
 	) {
 		this.teamRepository = teamRepository;
 		this.teamMemberRepository = teamMemberRepository;
 		this.teamInvitationRepository = teamInvitationRepository;
 		this.teamApiKeyRepository = teamApiKeyRepository;
-		this.teamInvitationEventPublisher = teamInvitationEventPublisher;
-		this.teamMemberAddedEventPublisher = teamMemberAddedEventPublisher;
+		this.teamDomainEventPublisher = teamDomainEventPublisher;
+		this.identityUserSyncService = identityUserSyncService;
 	}
 
 	@Transactional
@@ -78,6 +84,7 @@ public class TeamService {
 		}
 		TeamEntity saved = teamRepository.save(TeamEntity.create(trimmed, actorUserId));
 		teamMemberRepository.save(TeamMemberEntity.of(saved.getId(), actorUserId, TeamMemberRole.OWNER));
+		publish(TeamCreatedEvent.of(String.valueOf(saved.getId()), saved.getName(), actorUserId, saved.getCreatedAt()));
 		return new TeamSummaryResponse(String.valueOf(saved.getId()), saved.getName());
 	}
 
@@ -144,26 +151,14 @@ public class TeamService {
 		TeamInvitationEntity invitation = teamInvitationRepository.save(
 				TeamInvitationEntity.create(teamId, actorUserId.trim(), invitee)
 		);
-		teamInvitationEventPublisher.publish(
-				new TeamMemberInvitedEvent(
-						String.valueOf(invitation.getId()),
-						invitee,
-						actorUserId.trim(),
-						String.valueOf(team.getId()),
-						team.getName(),
-						invitation.getCreatedAt()
-				)
-		);
-		teamMemberRepository.save(TeamMemberEntity.of(teamId, invitee, TeamMemberRole.MEMBER));
-		teamMemberAddedEventPublisher.publish(
-				new TeamMemberAddedEvent(
-						invitee,
-						actorUserId.trim(),
-						String.valueOf(team.getId()),
-						team.getName(),
-						Instant.now()
-				)
-		);
+		publish(TeamInviteCreatedEvent.of(
+				String.valueOf(invitation.getId()),
+				invitee,
+				actorUserId.trim(),
+				team.getId(),
+				team.getName(),
+				invitation.getCreatedAt()
+		));
 		return new TeamSummaryResponse(String.valueOf(team.getId()), team.getName());
 	}
 
@@ -306,12 +301,28 @@ public class TeamService {
 
 		invitation.accept();
 		teamInvitationRepository.save(invitation);
+		Instant respondedAt = invitation.getRespondedAt();
+		publish(TeamInvitationAcceptedEvent.of(
+				String.valueOf(invitation.getId()),
+				actorUserId,
+				invitation.getInviterId(),
+				invitation.getTeamId(),
+				team.getName(),
+				respondedAt
+		));
+		publish(TeamMemberJoinedEvent.of(
+				actorUserId,
+				invitation.getInviterId(),
+				invitation.getTeamId(),
+				team.getName(),
+				respondedAt
+		));
 		return new TeamInvitationActionResponse(
 				String.valueOf(invitation.getId()),
 				String.valueOf(invitation.getTeamId()),
 				team.getName(),
 				invitation.getStatus().name(),
-				invitation.getRespondedAt()
+				respondedAt
 		);
 	}
 
@@ -327,12 +338,21 @@ public class TeamService {
 
 		invitation.reject();
 		teamInvitationRepository.save(invitation);
+		Instant respondedAt = invitation.getRespondedAt();
+		publish(TeamInvitationRejectedEvent.of(
+				String.valueOf(invitation.getId()),
+				actorUserId,
+				invitation.getInviterId(),
+				invitation.getTeamId(),
+				team.getName(),
+				respondedAt
+		));
 		return new TeamInvitationActionResponse(
 				String.valueOf(invitation.getId()),
 				String.valueOf(invitation.getTeamId()),
 				team.getName(),
 				invitation.getStatus().name(),
-				invitation.getRespondedAt()
+				respondedAt
 		);
 	}
 
@@ -351,6 +371,7 @@ public class TeamService {
 			throw new IllegalArgumentException("팀장은 삭제할 수 없습니다");
 		}
 		teamMemberRepository.delete(targetMembership);
+		publish(TeamMemberRemovedEvent.of(actorUserId, targetUserId, teamId, team.getName(), Instant.now()));
 		return new TeamSummaryResponse(String.valueOf(team.getId()), team.getName());
 	}
 
@@ -366,9 +387,21 @@ public class TeamService {
 		if (teamApiKeyRepository.existsByTeamId(teamId)) {
 			throw new TeamDeletionBlockedException("팀 API 키를 모두 삭제한 뒤 팀을 삭제할 수 있습니다");
 		}
+		List<String> memberSnapshot = teamMemberRepository.findAllByTeamId(teamId).stream()
+				.map(TeamMemberEntity::getUserId)
+				.filter(StringUtils::hasText)
+				.map(String::trim)
+				.sorted()
+				.toList();
+		Instant deletedAt = Instant.now();
+		publish(TeamDeletedEvent.of(actorUserId, teamId, team.getName(), memberSnapshot, deletedAt));
 		teamInvitationRepository.deleteAllByTeamId(teamId);
 		teamMemberRepository.deleteAllByTeamId(teamId);
 		teamRepository.delete(team);
+	}
+
+	private void publish(TeamDomainOutboundEvent event) {
+		teamDomainEventPublisher.publish(event);
 	}
 
 	private TeamInvitationEntity findInvitationForInvitee(String actorUserId, Long invitationId) {
@@ -379,8 +412,9 @@ public class TeamService {
 				.orElseThrow(() -> new TeamInvitationNotFoundException("초대를 찾을 수 없습니다"));
 	}
 
-	private boolean existsUserInTeamDb(String userId) {
-		return teamMemberRepository.existsByUserId(userId)
-				|| teamInvitationRepository.existsByInviteeIdOrInviterId(userId, userId);
+	private boolean existsUserInTeamDb(String userIdOrEmail) {
+		return teamMemberRepository.existsByUserId(userIdOrEmail)
+				|| teamInvitationRepository.existsByInviteeIdOrInviterId(userIdOrEmail, userIdOrEmail)
+				|| identityUserSyncService.existsUser(userIdOrEmail);
 	}
 }
