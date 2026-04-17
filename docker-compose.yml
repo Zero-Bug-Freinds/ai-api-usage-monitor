@@ -116,6 +116,12 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   redis:
     image: redis:7-alpine
@@ -131,8 +137,10 @@ services:
       args:
         BACKEND_NODE_DEPS_IMAGE: ${BACKEND_NODE_DEPS_IMAGE:-backend-node-deps:local}
     depends_on:
-      - postgres-notification
-      - rabbitmq
+      postgres-notification:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
     environment:
       DATABASE_URL: postgresql://${NOTIFICATION_POSTGRES_USER:-notification_app}:${NOTIFICATION_POSTGRES_PASSWORD:-notification_app}@postgres-notification:5432/${NOTIFICATION_POSTGRES_DB:-notification_db}
       PORT: 8096
@@ -151,7 +159,8 @@ services:
     build:
       context: ./services/proxy-service
     depends_on:
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: docker
       PROXY_KEY_SERVICE_BASE_URL: ${PROXY_KEY_SERVICE_BASE_URL:-http://host.docker.internal:8090}
@@ -303,7 +312,7 @@ services:
       postgres-team:
         condition: service_healthy
       rabbitmq:
-        condition: service_started
+        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # Published host port: TEAM_SERVICE_HOST_PORT (not TEAM_SERVICE_PORT — see .env.example).
