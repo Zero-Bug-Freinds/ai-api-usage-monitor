@@ -79,7 +79,7 @@ public class ExternalApiKeyController {
 	}
 
 	/**
-	 * 삭제 요청: 유예 기간(기본 7일, 쿼리 {@code gracePeriodDays}) 후 스케줄러가 행을 제거한다. 유예 중에는 취소 가능.
+	 * 삭제 요청: {@code gracePeriodDays=0}이면 즉시 물리 삭제. 그 외에는 유예(기본 7일) 후 스케줄러가 행을 제거하며 유예 중 취소 가능.
 	 */
 	@DeleteMapping("/external-keys/{id}")
 	public ResponseEntity<ApiResponse<ExternalApiKeyRegisterResponse>> requestDeletion(
@@ -88,10 +88,11 @@ public class ExternalApiKeyController {
 			@RequestParam(name = "gracePeriodDays", required = false) Integer gracePeriodDays
 	) {
 		ExternalApiKeyEntity saved = externalApiKeyService.requestDeletion(principal.userId(), id, gracePeriodDays);
-		return ResponseEntity.ok(ApiResponse.ok(
-				"삭제가 예약되었습니다. 일주일 이내에 취소할 수 있으며, 이후에는 키가 영구 삭제됩니다.",
-				toResponse(saved)
-		));
+		boolean immediate = gracePeriodDays != null && gracePeriodDays == 0;
+		String message = immediate
+				? "API 키가 즉시 영구 삭제되었습니다."
+				: "삭제가 예약되었습니다. 유예 기간 안에 취소할 수 있으며, 종료 후에는 키가 영구 삭제됩니다.";
+		return ResponseEntity.ok(ApiResponse.ok(message, toResponse(saved)));
 	}
 
 	@PostMapping("/external-keys/{id}/deletion-cancel")

@@ -6,7 +6,7 @@ package com.zerobugfreinds.identity_service.domain;
 public final class ExternalApiKeyDeletionPolicy {
 
 	public static final int DEFAULT_GRACE_DAYS = 7;
-	public static final int MIN_GRACE_DAYS = 1;
+	public static final int MIN_GRACE_DAYS = 0;
 	public static final int MAX_GRACE_DAYS = 365;
 
 	private ExternalApiKeyDeletionPolicy() {

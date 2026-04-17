@@ -102,6 +102,23 @@ const BUDGET_STEP = 0.01
 const DEFAULT_DELETION_GRACE_DAYS = 7
 const MIN_DELETION_GRACE_DAYS = 0
 const MAX_DELETION_GRACE_DAYS = 365
+const GRACE_PERIOD_DELETION_HINT =
+  "유예 기간은 0~365일 사이의 정수로 입력해 주세요. (0 입력 시 즉시 삭제)"
+
+function parseTeamApiKeyDeletionGraceInput(raw: string):
+  | { valid: true; graceDays: number; immediate: boolean }
+  | { valid: false } {
+  const trimmed = raw.trim()
+  if (trimmed === "") {
+    return { valid: true, graceDays: DEFAULT_DELETION_GRACE_DAYS, immediate: false }
+  }
+  const n = Number.parseInt(trimmed, 10)
+  if (!Number.isFinite(n) || n < MIN_DELETION_GRACE_DAYS || n > MAX_DELETION_GRACE_DAYS) {
+    return { valid: false }
+  }
+  return { valid: true, graceDays: n, immediate: n === 0 }
+}
+
 const TEAM_WEB_BASE_PATH = "/teams"
 
 type InviteeFieldRow = { id: string; value: string }
@@ -175,6 +192,12 @@ export function TeamManagementView() {
   const [editTeamApiKeyBudget, setEditTeamApiKeyBudget] = React.useState("")
   const [teamApiKeyUpdateLoading, setTeamApiKeyUpdateLoading] = React.useState<string | null>(null)
   const [deleteLoadingKey, setDeleteLoadingKey] = React.useState<string | null>(null)
+  const [teamApiKeyDeletionModal, setTeamApiKeyDeletionModal] = React.useState<{
+    teamId: string
+    keyId: number
+    graceDaysInput: string
+  } | null>(null)
+  const [teamApiKeyDeletionGraceError, setTeamApiKeyDeletionGraceError] = React.useState<string | null>(null)
   const [cancelDeleteLoadingKey, setCancelDeleteLoadingKey] = React.useState<string | null>(null)
   const [removeMemberLoadingKey, setRemoveMemberLoadingKey] = React.useState<string | null>(null)
   const [deleteTeamLoadingId, setDeleteTeamLoadingId] = React.useState<string | null>(null)
@@ -578,26 +601,32 @@ export function TeamManagementView() {
     }
   }
 
-  async function deleteTeamApiKey(teamId: string, keyId: number) {
-    const confirmed = window.confirm("팀 API Key 삭제를 진행할까요? (0일=즉시 삭제, 1일 이상=삭제 예약)")
-    if (!confirmed) return
-    const raw = window.prompt(
-      `유예 기간(일) ${MIN_DELETION_GRACE_DAYS}~${MAX_DELETION_GRACE_DAYS} (기본 ${DEFAULT_DELETION_GRACE_DAYS})`,
-      String(DEFAULT_DELETION_GRACE_DAYS),
-    )
-    if (raw === null) return
-    const trimmed = raw.trim()
-    let graceDays = DEFAULT_DELETION_GRACE_DAYS
-    if (trimmed !== "") {
-      const n = Number.parseInt(trimmed, 10)
-      if (!Number.isFinite(n) || n < MIN_DELETION_GRACE_DAYS || n > MAX_DELETION_GRACE_DAYS) {
-        setMessage({ kind: "error", text: `유예 기간은 ${MIN_DELETION_GRACE_DAYS}~${MAX_DELETION_GRACE_DAYS} 정수여야 합니다` })
-        return
-      }
-      graceDays = n
-    }
+  function openTeamApiKeyDeletionModal(teamId: string, keyId: number) {
+    setMessage(null)
+    setTeamApiKeyDeletionGraceError(null)
+    setTeamApiKeyDeletionModal({
+      teamId,
+      keyId,
+      graceDaysInput: String(DEFAULT_DELETION_GRACE_DAYS),
+    })
+  }
 
+  function closeTeamApiKeyDeletionModal() {
+    setTeamApiKeyDeletionModal(null)
+    setTeamApiKeyDeletionGraceError(null)
+  }
+
+  async function confirmTeamApiKeyDeletion() {
+    if (!teamApiKeyDeletionModal) return
+    const parsed = parseTeamApiKeyDeletionGraceInput(teamApiKeyDeletionModal.graceDaysInput)
+    if (!parsed.valid) {
+      setTeamApiKeyDeletionGraceError(GRACE_PERIOD_DELETION_HINT)
+      return
+    }
+    const { teamId, keyId } = teamApiKeyDeletionModal
+    const { graceDays } = parsed
     const loadingKey = `${teamId}:${keyId}`
+    setTeamApiKeyDeletionGraceError(null)
     setDeleteLoadingKey(loadingKey)
     setMessage(null)
     try {
@@ -610,6 +639,7 @@ export function TeamManagementView() {
         setMessage({ kind: "error", text: body?.message ?? "팀 API Key 삭제에 실패했습니다" })
         return
       }
+      closeTeamApiKeyDeletionModal()
       setMessage({ kind: "success", text: "팀 API Key 삭제 요청이 처리되었습니다" })
       await loadTeamApiKeys(teamId)
     } catch {
@@ -686,8 +716,96 @@ export function TeamManagementView() {
 
   const selectedTeam = selectedTeamId ? teams.find((team) => team.id === selectedTeamId) ?? null : null
 
+  const teamDeletionModalParsed = teamApiKeyDeletionModal
+    ? parseTeamApiKeyDeletionGraceInput(teamApiKeyDeletionModal.graceDaysInput)
+    : null
+
   return (
     <main className="flex min-h-screen overflow-hidden bg-white">
+      {teamApiKeyDeletionModal ? (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4 py-6"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeTeamApiKeyDeletionModal()
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="team-api-key-delete-title"
+            className="w-full max-w-md rounded-lg border border-zinc-200 bg-white p-5 shadow-lg"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <h3 id="team-api-key-delete-title" className="text-sm font-semibold text-zinc-900">
+              팀 API Key 삭제
+            </h3>
+            <p className="mt-2 text-sm text-zinc-600">
+              {teamDeletionModalParsed?.valid && teamDeletionModalParsed.immediate
+                ? null
+                : "유예 기간이 지나면 키가 영구 삭제됩니다. 유예 중에는 삭제 취소를 할 수 있습니다."}
+            </p>
+            {teamDeletionModalParsed?.valid && teamDeletionModalParsed.immediate ? (
+              <p className="mt-2 text-sm font-medium text-red-600">이 API Key는 즉시 영구 삭제됩니다.</p>
+            ) : null}
+            <div className="mt-4 space-y-1.5">
+              <label className="text-xs font-medium text-zinc-800" htmlFor="team-api-key-delete-grace">
+                유예 기간(일)
+              </label>
+              <input
+                id="team-api-key-delete-grace"
+                type="text"
+                inputMode="numeric"
+                className="h-10 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm tabular-nums"
+                value={teamApiKeyDeletionModal.graceDaysInput}
+                onChange={(e) => {
+                  setTeamApiKeyDeletionGraceError(null)
+                  setTeamApiKeyDeletionModal((prev) =>
+                    prev ? { ...prev, graceDaysInput: e.target.value } : prev
+                  )
+                }}
+                autoComplete="off"
+                disabled={deleteLoadingKey === `${teamApiKeyDeletionModal.teamId}:${teamApiKeyDeletionModal.keyId}`}
+              />
+              <p className="text-xs text-zinc-500">{GRACE_PERIOD_DELETION_HINT}</p>
+              {teamApiKeyDeletionGraceError ? (
+                <p className="text-xs text-red-600">{teamApiKeyDeletionGraceError}</p>
+              ) : null}
+            </div>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                className="h-9 rounded-md border border-zinc-300 bg-white px-3 text-xs font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-50"
+                disabled={
+                  deleteLoadingKey === `${teamApiKeyDeletionModal.teamId}:${teamApiKeyDeletionModal.keyId}`
+                }
+                onClick={closeTeamApiKeyDeletionModal}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                className={
+                  teamDeletionModalParsed?.valid && teamDeletionModalParsed.immediate
+                    ? "h-9 rounded-md bg-red-600 px-3 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                    : "h-9 rounded-md border border-red-300 bg-white px-3 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                }
+                disabled={
+                  !teamDeletionModalParsed?.valid ||
+                  deleteLoadingKey === `${teamApiKeyDeletionModal.teamId}:${teamApiKeyDeletionModal.keyId}`
+                }
+                onClick={() => void confirmTeamApiKeyDeletion()}
+              >
+                {deleteLoadingKey === `${teamApiKeyDeletionModal.teamId}:${teamApiKeyDeletionModal.keyId}`
+                  ? "처리 중…"
+                  : teamDeletionModalParsed?.valid && teamDeletionModalParsed.immediate
+                    ? "즉시 삭제"
+                    : "삭제 예약"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <aside className="w-72 shrink-0 border-r border-zinc-200 bg-gray-50">
         <div className="flex h-full flex-col">
           <div className="border-b border-zinc-200 px-4 py-4">
@@ -1076,8 +1194,8 @@ export function TeamManagementView() {
                         className="rounded border border-zinc-200 bg-white px-2 py-2"
                       >
                         {!isEditing ? (
-                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                            <div>
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                            <div className="min-w-0 flex-1">
                               <p>
                                 {apiKey.provider} · {apiKey.alias}
                                 {keyPendingDeletion ? (
@@ -1099,36 +1217,38 @@ export function TeamManagementView() {
                                 </p>
                               ) : null}
                             </div>
-                            <button
-                              type="button"
-                              className="h-8 shrink-0 rounded-md border border-zinc-300 bg-white px-2 text-[11px] font-medium disabled:cursor-not-allowed disabled:opacity-50"
-                              disabled={keyPendingDeletion}
-                              title={keyPendingDeletion ? "삭제 예정인 키는 수정할 수 없습니다" : undefined}
-                              onClick={() => startEditTeamApiKey(selectedTeam.id, apiKey)}
-                            >
-                              수정
-                            </button>
-                            {isTeamOwnerByTeamId[selectedTeam.id] ? (
-                              keyPendingDeletion ? (
-                                <button
-                                  type="button"
-                                  className="h-8 shrink-0 rounded-md border border-zinc-300 bg-white px-2 text-[11px] font-medium disabled:opacity-50"
-                                  disabled={cancelDeleteLoadingKey === `${selectedTeam.id}:${apiKey.id}`}
-                                  onClick={() => void cancelTeamApiKeyDeletion(selectedTeam.id, apiKey.id)}
-                                >
-                                  {cancelDeleteLoadingKey === `${selectedTeam.id}:${apiKey.id}` ? "처리 중…" : "삭제 취소"}
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  className="h-8 shrink-0 rounded-md border border-red-300 bg-white px-2 text-[11px] font-medium text-red-600 disabled:opacity-50"
-                                  disabled={deleteLoadingKey === `${selectedTeam.id}:${apiKey.id}`}
-                                  onClick={() => void deleteTeamApiKey(selectedTeam.id, apiKey.id)}
-                                >
-                                  {deleteLoadingKey === `${selectedTeam.id}:${apiKey.id}` ? "처리 중…" : "삭제"}
-                                </button>
-                              )
-                            ) : null}
+                            <div className="flex shrink-0 items-center gap-2">
+                              <button
+                                type="button"
+                                className="h-8 shrink-0 rounded-md border border-zinc-300 bg-white px-2 text-[11px] font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                                disabled={keyPendingDeletion}
+                                title={keyPendingDeletion ? "삭제 예정인 키는 수정할 수 없습니다" : undefined}
+                                onClick={() => startEditTeamApiKey(selectedTeam.id, apiKey)}
+                              >
+                                수정
+                              </button>
+                              {isTeamOwnerByTeamId[selectedTeam.id] ? (
+                                keyPendingDeletion ? (
+                                  <button
+                                    type="button"
+                                    className="h-8 shrink-0 rounded-md border border-zinc-300 bg-white px-2 text-[11px] font-medium disabled:opacity-50"
+                                    disabled={cancelDeleteLoadingKey === `${selectedTeam.id}:${apiKey.id}`}
+                                    onClick={() => void cancelTeamApiKeyDeletion(selectedTeam.id, apiKey.id)}
+                                  >
+                                    {cancelDeleteLoadingKey === `${selectedTeam.id}:${apiKey.id}` ? "처리 중…" : "삭제 취소"}
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="h-8 shrink-0 rounded-md border border-red-300 bg-white px-2 text-[11px] font-medium text-red-600 disabled:opacity-50"
+                                    disabled={deleteLoadingKey === `${selectedTeam.id}:${apiKey.id}`}
+                                    onClick={() => openTeamApiKeyDeletionModal(selectedTeam.id, apiKey.id)}
+                                  >
+                                    {deleteLoadingKey === `${selectedTeam.id}:${apiKey.id}` ? "처리 중…" : "삭제"}
+                                  </button>
+                                )
+                              ) : null}
+                            </div>
                           </div>
                         ) : (
                           <div className="flex flex-col gap-2">
