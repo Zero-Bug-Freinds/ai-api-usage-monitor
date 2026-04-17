@@ -19,13 +19,13 @@ public final class OfficialProviderModelPriceCatalog {
     /**
      * Calendar date when the numbers below were checked against the official pages (YYYY-MM-DD).
      */
-    public static final String DOCUMENTED_AS_OF = "2026-04-11";
+    public static final String DOCUMENTED_AS_OF = "2026-04-17";
 
     /** Google AI Gemini API pricing (Korean page). */
     public static final String REFERENCE_URL_GOOGLE_GEMINI = "https://ai.google.dev/gemini-api/docs/pricing?hl=ko";
 
-    /** OpenAI consumer API pricing (Korean). */
-    public static final String REFERENCE_URL_OPENAI = "https://openai.com/ko-KR/api/pricing/";
+    /** OpenAI API pricing table. */
+    public static final String REFERENCE_URL_OPENAI = "https://openai.com/api/pricing";
 
     /**
      * OpenAI model matrix with per-model input/output USD (Standard tier, per 1M tokens).
@@ -112,8 +112,62 @@ public final class OfficialProviderModelPriceCatalog {
                         new BigDecimal("0.15"),
                         new BigDecimal("0.60"),
                         DEFAULT_VALID_FROM,
-                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
-                        "gpt-4o-mini: Standard tier, input/output USD per 1M tokens (platform pricing table)"
+                        REFERENCE_URL_OPENAI,
+                        "gpt-4o-mini: Standard tier, input/output USD per 1M tokens (OpenAI API pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "gpt-4o",
+                        new BigDecimal("2.50"),
+                        new BigDecimal("10.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI,
+                        "gpt-4o: Standard tier, input/output USD per 1M tokens (OpenAI API pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "gpt-4.1",
+                        new BigDecimal("5.00"),
+                        new BigDecimal("15.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI,
+                        "gpt-4.1: Standard tier, input/output USD per 1M tokens (OpenAI API pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "gpt-4.1-mini",
+                        new BigDecimal("0.30"),
+                        new BigDecimal("1.20"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI,
+                        "gpt-4.1-mini: Standard tier, input/output USD per 1M tokens (OpenAI API pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "gpt-4.1-nano",
+                        new BigDecimal("0.10"),
+                        new BigDecimal("0.40"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI,
+                        "gpt-4.1-nano: Standard tier, input/output USD per 1M tokens (OpenAI API pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "gpt-5.4",
+                        new BigDecimal("2.50"),
+                        new BigDecimal("15.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI,
+                        "gpt-5.4: Standard tier, input/output USD per 1M tokens (OpenAI API pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "gpt-5.4-mini",
+                        new BigDecimal("0.75"),
+                        new BigDecimal("4.50"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI,
+                        "gpt-5.4-mini: Standard tier, input/output USD per 1M tokens (OpenAI API pricing table)"
                 ),
                 new CatalogRow(
                         AiProvider.OPENAI,
@@ -122,7 +176,7 @@ public final class OfficialProviderModelPriceCatalog {
                         new BigDecimal("1.25"),
                         DEFAULT_VALID_FROM,
                         REFERENCE_URL_OPENAI,
-                        "GPT-5.4 nano: input/output USD per 1M tokens (openai.com API pricing, Standard)"
+                        "gpt-5.4-nano: Standard tier, input/output USD per 1M tokens (OpenAI API pricing table)"
                 ),
                 new CatalogRow(
                         AiProvider.ANTHROPIC,

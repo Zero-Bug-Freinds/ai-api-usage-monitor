@@ -85,6 +85,11 @@ public class ExpenditureController {
         return expenditureQueryService.listApiKeys(userId, provider);
     }
 
+    @GetMapping("/me")
+    public MeResponse me(HttpServletRequest request) {
+        return new MeResponse(currentUser(request));
+    }
+
     /**
      * Team (or admin) view: sum {@code monthly_expenditure_agg} for many platform user ids for one calendar month.
      * Caller must only pass ids the user is allowed to see (enforced at BFF/Gateway in production).
@@ -106,5 +111,8 @@ public class ExpenditureController {
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<String> badRequest(IllegalArgumentException ex, WebRequest req) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ex.getMessage());
+    }
+
+    public record MeResponse(String userId) {
     }
 }
