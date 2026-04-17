@@ -180,6 +180,7 @@
 - 주요 `eventType` 값: `TEAM_CREATED`, `TEAM_INVITE_CREATED`, `TEAM_INVITATION_ACCEPTED`, `TEAM_INVITATION_REJECTED`, `TEAM_MEMBER_JOINED`, `TEAM_MEMBER_REMOVED`, `TEAM_DELETED`, `TEAM_API_KEY_REGISTERED`, `TEAM_API_KEY_UPDATED`, `TEAM_API_KEY_DELETED`, `TEAM_API_KEY_DELETION_SCHEDULED`, `TEAM_API_KEY_DELETION_CANCELLED`.
 - 하위 호환: `TEAM_INVITE_CREATED` 페이로드에 기존 `invitationId`, `receiverId`, `inviterId`, `createdAt` 필드가 유지된다. `TEAM_MEMBER_JOINED`에 `receiverId`, `inviterId`, `createdAt`(레거시)가 유지된다.
 - 목적: notification 등이 알림·감사 로그를 비동기로 처리할 수 있도록 전달
+- **소비(인앱):** **notification-service**(`services/notification-service/src/team-events/`)가 RabbitMQ 큐를 구독해 위 이벤트별로 `InAppNotification`을 생성하고, `NotificationDelivery.dedupeKey`로 멱등을 보장한다. `TEAM_MEMBER_JOINED`는 제품 규칙상 **참여 사용자(`receiverId`)에게만** 인앱을 생성한다(초대자는 `TEAM_INVITATION_ACCEPTED`로 별도 통지). 상세·환경 변수는 [`services/notification-service/README.md`](../../services/notification-service/README.md), 아키텍처 요약은 [`architecture.md`](../architecture.md) §4.9·§6.
 
 ---
 

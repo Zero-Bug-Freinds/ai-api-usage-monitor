@@ -1,7 +1,7 @@
 # Web(Next.js) ↔ Notification Service — Notification BFF 계약
 
-버전: 1.0  
-관련: [web-split-boundary.md](./web-split-boundary.md), [web-identity-bff.md](./web-identity-bff.md)(세션), [`docker/web-edge/nginx.conf`](../../docker/web-edge/nginx.conf), [architecture.md](../architecture.md) §4.9·§10.2·§13
+버전: 1.1  
+관련: [web-split-boundary.md](./web-split-boundary.md), [web-identity-bff.md](./web-identity-bff.md)(세션), [`docker/web-edge/nginx.conf`](../../docker/web-edge/nginx.conf), [architecture.md](../architecture.md) §4.9·§6·§10.2·§13, [web-team-bff.md](./web-team-bff.md) §6.2(팀 도메인 이벤트 스키마)
 
 **소스 트리:** Notification `web`(UI+BFF)의 **정본**은 `services/notification-service/web/` 이다. Notification 백엔드(Nest+Prisma)는 `services/notification-service/` 이다.
 
@@ -79,4 +79,12 @@ Notification `web`은 Next `basePath=/notifications`를 사용한다.
 
 - Notification 백엔드(Nest) 엔드포인트/헤더 계약을 바꾸면 **본 문서**와 `web-split-boundary.md`를 함께 갱신한다.
 - 단일 도메인 라우팅 규칙 변경(접두 추가/변경)은 `docker/web-edge/nginx.conf`와 `docs/architecture.md` §10.2를 함께 갱신한다.
+
+---
+
+## 6. 인앱 데이터의 다른 유입 경로(비동기)
+
+- 본 문서 §1~§4는 **브라우저 → BFF → notification-service HTTP** 경로만 다룬다.
+- **팀 도메인 이벤트**는 team-service가 RabbitMQ로 발행하고, notification-service가 **별도 소비자**로 큐에서 받아 `InAppNotification`을 추가한다(페이로드·`eventType` 정본은 [web-team-bff.md](./web-team-bff.md) §6.2). UI는 동일 `in-app-notifications` API로 목록을 조회하면 된다.
+- 아키텍처 요약: [`architecture.md`](../architecture.md) §4.9·§6.
 

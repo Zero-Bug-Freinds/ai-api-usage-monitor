@@ -14,6 +14,8 @@
 
 Cursor 규칙: `.cursor/rules/notification-backend-node.mdc`
 
+문서 연계: 팀 이벤트 스키마·exchange 요약은 [`docs/contracts/web-team-bff.md`](../../docs/contracts/web-team-bff.md) §6.2, 플랫폼 아키텍처·브로커 토폴로지는 [`docs/architecture.md`](../../docs/architecture.md) §4.9·§6.
+
 ## 팀 도메인 이벤트 (RabbitMQ)
 
 notification-service는 선택적으로 **팀 도메인 이벤트**(`TEAM_CREATED`, `TEAM_INVITE_CREATED` 등)를 소비해 **인앱 알림**을 만든다. 저장소 밖에서 배포하는 경우 다음을 인프라/플랫폼 팀과 맞춘다.
