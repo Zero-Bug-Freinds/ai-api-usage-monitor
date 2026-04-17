@@ -8,9 +8,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.math.BigDecimal;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
 /**
@@ -38,12 +40,18 @@ public class IdentityBudgetClient {
         if (base == null || base.isBlank() || template == null || template.isBlank()) {
             return Optional.empty();
         }
-        String path = template.contains("{userId}")
-                ? template.replace("{userId}", userId)
-                : template;
         String normalizedBase = base.endsWith("/") ? base.substring(0, base.length() - 1) : base;
-        String normalizedPath = path.startsWith("/") ? path : "/" + path;
-        URI uri = URI.create(normalizedBase + normalizedPath);
+        String normalizedTemplate = template.startsWith("/") ? template : "/" + template;
+        String uriTemplate = normalizedBase + normalizedTemplate;
+        URI uri = template.contains("{userId}")
+                ? UriComponentsBuilder.fromUriString(uriTemplate)
+                .buildAndExpand(userId)
+                .encode(StandardCharsets.UTF_8)
+                .toUri()
+                : UriComponentsBuilder.fromUriString(uriTemplate)
+                .build()
+                .encode(StandardCharsets.UTF_8)
+                .toUri();
 
         try {
             String body = RestClient.create()
