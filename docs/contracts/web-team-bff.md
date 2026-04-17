@@ -162,9 +162,9 @@
 ### 6.2 RabbitMQ 이벤트 (`team.events`)
 
 - 설정 정본: `services/team-service/src/main/resources/application.properties` — `team.member-added-event.exchange`, `team.member-added-event.routing-key`(기본값 `team-member-added`), `spring.rabbitmq.*`.
-- **동일 익스체인지·라우팅 키**로 두 종류의 JSON 메시지가 발행될 수 있다. 구독자는 본문 필드로 구분한다(예: `invitationId` 유무).
-  - **초대 생성 시** (`TeamMemberInvitedEvent`): `invitationId`, `receiverId`, `inviterId`, `teamId`, `teamName`, `createdAt`
-  - **멤버 추가 시** (`TeamMemberAddedEvent`): `receiverId`, `inviterId`, `teamId`, `teamName`, `createdAt` (`invitationId` 없음)
+- **동일 TopicExchange·라우팅 키**로 팀 도메인 이벤트 JSON이 발행된다. 각 메시지 본문에 **`eventType`**(필수)과 공통 필드(`teamId`, `teamName`, `actorUserId`, `occurredAt`, `recipientUserIds` 등)가 포함되며, AMQP **헤더 `eventType`**에도 동일 문자열이 실린다. 구독자는 헤더 또는 본문 `eventType`으로 분기한다.
+- 주요 `eventType` 값: `TEAM_CREATED`, `TEAM_INVITE_CREATED`, `TEAM_INVITATION_ACCEPTED`, `TEAM_INVITATION_REJECTED`, `TEAM_MEMBER_JOINED`, `TEAM_MEMBER_REMOVED`, `TEAM_DELETED`, `TEAM_API_KEY_REGISTERED`, `TEAM_API_KEY_UPDATED`, `TEAM_API_KEY_DELETED`, `TEAM_API_KEY_DELETION_SCHEDULED`, `TEAM_API_KEY_DELETION_CANCELLED`.
+- 하위 호환: `TEAM_INVITE_CREATED` 페이로드에 기존 `invitationId`, `receiverId`, `inviterId`, `createdAt` 필드가 유지된다. `TEAM_MEMBER_JOINED`에 `receiverId`, `inviterId`, `createdAt`(레거시)가 유지된다.
 - 목적: notification 등이 알림·감사 로그를 비동기로 처리할 수 있도록 전달
 
 ---

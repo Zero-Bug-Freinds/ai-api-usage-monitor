@@ -1063,6 +1063,25 @@ export function TeamManagementView() {
                         autoComplete="off"
                         disabled={inviteLoadingTeamId === selectedTeam.id}
                       />
+                      {(inviteInputsByTeamId[selectedTeam.id] ?? []).length > 1 ? (
+                        <button
+                          type="button"
+                          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                          aria-label="이 초대 행 삭제"
+                          disabled={inviteLoadingTeamId === selectedTeam.id}
+                          onClick={() =>
+                            setInviteInputsByTeamId((prev) => {
+                              const list = prev[selectedTeam.id] ?? []
+                              return {
+                                ...prev,
+                                [selectedTeam.id]: list.filter((r) => r.id !== row.id),
+                              }
+                            })
+                          }
+                        >
+                          <Minus className="h-4 w-4" aria-hidden />
+                        </button>
+                      ) : null}
                     </div>
                   ))}
                   <button
