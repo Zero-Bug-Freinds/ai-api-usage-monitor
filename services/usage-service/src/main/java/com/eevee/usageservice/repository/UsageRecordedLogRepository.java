@@ -34,6 +34,11 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
                     and (:apiKeyId is null or :apiKeyId = '' or u.apiKeyId = :apiKeyId)
                     and (:requestSuccessful is null or u.requestSuccessful = :requestSuccessful)
                     and (:modelMask is null or :modelMask = '' or lower(coalesce(u.model, '')) like lower(concat('%', :modelMask, '%')))
+                    and (
+                        :reasoningPresence is null or :reasoningPresence = ''
+                        or (:reasoningPresence = 'present' and u.estimatedReasoningTokens is not null and u.estimatedReasoningTokens > 0)
+                        or (:reasoningPresence = 'absent' and (u.estimatedReasoningTokens is null or u.estimatedReasoningTokens <= 0))
+                    )
                     order by u.occurredAt desc
                     """,
             countQuery = """
@@ -45,6 +50,11 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
                     and (:apiKeyId is null or :apiKeyId = '' or u.apiKeyId = :apiKeyId)
                     and (:requestSuccessful is null or u.requestSuccessful = :requestSuccessful)
                     and (:modelMask is null or :modelMask = '' or lower(coalesce(u.model, '')) like lower(concat('%', :modelMask, '%')))
+                    and (
+                        :reasoningPresence is null or :reasoningPresence = ''
+                        or (:reasoningPresence = 'present' and u.estimatedReasoningTokens is not null and u.estimatedReasoningTokens > 0)
+                        or (:reasoningPresence = 'absent' and (u.estimatedReasoningTokens is null or u.estimatedReasoningTokens <= 0))
+                    )
                     """
     )
     Page<UsageRecordedLogEntity> pageLogs(
@@ -55,6 +65,7 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
             @Param("apiKeyId") String apiKeyId,
             @Param("requestSuccessful") Boolean requestSuccessful,
             @Param("modelMask") String modelMask,
+            @Param("reasoningPresence") String reasoningPresence,
             Pageable pageable
     );
 

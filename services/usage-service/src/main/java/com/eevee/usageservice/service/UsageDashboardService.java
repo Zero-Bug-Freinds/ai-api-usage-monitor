@@ -135,6 +135,7 @@ public class UsageDashboardService {
             String apiKeyId,
             Boolean requestSuccessful,
             String modelMask,
+            String reasoningPresence,
             int page,
             int size
     ) {
@@ -142,6 +143,7 @@ public class UsageDashboardService {
         int pageIndex = Math.max(0, page);
         int pageSize = Math.min(200, Math.max(1, size));
         String keyFilter = apiKeyId != null && apiKeyId.isBlank() ? null : apiKeyId;
+        String reasoningFilter = normalizeReasoningPresence(reasoningPresence);
         Page<UsageRecordedLogEntity> p = logRepository.pageLogs(
                 userId,
                 r.from(),
@@ -150,6 +152,7 @@ public class UsageDashboardService {
                 keyFilter,
                 requestSuccessful,
                 modelMask,
+                reasoningFilter,
                 PageRequest.of(pageIndex, pageSize, Sort.by(Sort.Direction.DESC, "occurredAt"))
         );
         List<UsageLogEntryResponse> content = p.getContent().stream().map(this::toLogDto).toList();
@@ -263,5 +266,20 @@ public class UsageDashboardService {
     }
 
     private record Range(Instant from, Instant toExclusive) {
+    }
+
+    /**
+     * Logs query: optional filter by whether estimated reasoning tokens are present ({@code > 0}).
+     * Allowed: {@code present}, {@code absent}; anything else is treated as no filter.
+     */
+    private static String normalizeReasoningPresence(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String v = raw.trim().toLowerCase();
+        if ("present".equals(v) || "absent".equals(v)) {
+            return v;
+        }
+        return null;
     }
 }
