@@ -3,6 +3,7 @@ package com.zerobugfreinds.identity_service.mq;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.zerobugfreinds.identity.events.ExternalApiKeyDeletedEvent;
 import com.zerobugfreinds.identity.events.ExternalApiKeyStatusChangedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,7 +14,11 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
- * Publishes external API key status events to RabbitMQ only after transaction commit.
+ * Publishes identity external API key messages to RabbitMQ only after transaction commit.
+ * <ul>
+ *     <li>{@link ExternalApiKeyStatusChangedEvent} — 등록·수정·삭제 예약·취소 등 상태 동기화</li>
+ *     <li>{@link ExternalApiKeyDeletedEvent} — 물리 삭제(즉시 또는 유예 만료), usage 로그 보존 여부 포함</li>
+ * </ul>
  */
 @Component
 public class ExternalApiKeyStatusChangedEventPublisher {
@@ -37,23 +42,35 @@ public class ExternalApiKeyStatusChangedEventPublisher {
 
 	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
 	public void onExternalApiKeyStatusChanged(ExternalApiKeyStatusChangedEvent event) {
-		publish(event);
+		publishJson(event, "ExternalApiKeyStatusChangedEvent", event.keyId(), event.userId(), event.status());
 	}
 
-	void publish(ExternalApiKeyStatusChangedEvent event) {
+	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+	public void onExternalApiKeyDeleted(ExternalApiKeyDeletedEvent event) {
+		publishJson(
+				event,
+				"ExternalApiKeyDeletedEvent",
+				event.apiKeyId(),
+				event.userId(),
+				event.retainLogs()
+		);
+	}
+
+	private void publishJson(Object payload, String label, Object apiKeyOrKeyId, Long userId, Object statusOrRetain) {
 		try {
-			String json = EVENT_JSON.writeValueAsString(event);
+			String json = EVENT_JSON.writeValueAsString(payload);
 			rabbitTemplate.convertAndSend(exchange, routingKey, json);
 			log.info(
-					"Published ExternalApiKeyStatusChangedEvent keyId={} userId={} status={} exchange={} routingKey={}",
-					event.keyId(),
-					event.userId(),
-					event.status(),
+					"Published {} apiKeyIdOrKeyId={} userId={} detail={} exchange={} routingKey={}",
+					label,
+					apiKeyOrKeyId,
+					userId,
+					statusOrRetain,
 					exchange,
 					routingKey
 			);
 		} catch (JsonProcessingException e) {
-			throw new IllegalStateException("ExternalApiKeyStatusChangedEvent serialization failed", e);
+			throw new IllegalStateException(label + " serialization failed", e);
 		}
 	}
 }

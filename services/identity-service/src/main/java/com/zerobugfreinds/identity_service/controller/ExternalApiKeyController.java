@@ -80,14 +80,16 @@ public class ExternalApiKeyController {
 
 	/**
 	 * 삭제 요청: {@code gracePeriodDays=0}이면 즉시 물리 삭제. 그 외에는 유예(기본 7일) 후 스케줄러가 행을 제거하며 유예 중 취소 가능.
+	 * 즉시 삭제 시 {@code retainLogs=false}이면 usage 쪽에 해당 키의 사용 로그·메타데이터 정리를 요청한다(미지정 시 보존).
 	 */
 	@DeleteMapping("/external-keys/{id}")
 	public ResponseEntity<ApiResponse<ExternalApiKeyRegisterResponse>> requestDeletion(
 			@AuthenticationPrincipal IdentityUserPrincipal principal,
 			@PathVariable("id") Long id,
-			@RequestParam(name = "gracePeriodDays", required = false) Integer gracePeriodDays
+			@RequestParam(name = "gracePeriodDays", required = false) Integer gracePeriodDays,
+			@RequestParam(name = "retainLogs", defaultValue = "true") boolean retainLogs
 	) {
-		ExternalApiKeyEntity saved = externalApiKeyService.requestDeletion(principal.userId(), id, gracePeriodDays);
+		ExternalApiKeyEntity saved = externalApiKeyService.requestDeletion(principal.userId(), id, gracePeriodDays, retainLogs);
 		boolean immediate = gracePeriodDays != null && gracePeriodDays == 0;
 		String message = immediate
 				? "API 키가 즉시 영구 삭제되었습니다."
