@@ -1,11 +1,11 @@
 {
   "model": "gpt-5.4-nano",
-  "reasoning": { "effort": "low" },
-  "max_output_tokens": 220,
-  "input": [
+  "messages": [
     {
       "role": "user",
-      "content": "서로 다른 6개의 한 자리 자연수 중 합이 24이고 곱이 360이 되도록 하는 한 조합을 찾아라. 풀이를 4문장 이내로 설명하고 마지막 줄에 조합만 출력해라."
+      "content": "서로 다른 한 자리 자연수 여섯 개의 합이 24이고 곱이 360이 되는 한 조합을 찾아라. 중간 추론을 짧게 적고, 마지막 줄에 여섯 수만 오름차순으로 출력해라."
     }
-  ]
+  ],
+  "max_completion_tokens": 300,
+  "reasoning_effort": "low"
 }

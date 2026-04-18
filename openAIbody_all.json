@@ -1,15 +1,10 @@
 {
   "model": "gpt-5.4-nano",
-  "reasoning": { "effort": "medium" },
-  "prediction": {
-    "type": "content",
-    "content": "결론: 정답은 7"
-  },
-  "max_output_tokens": 180,
-  "input": [
+  "messages": [
     {
       "role": "user",
-      "content": "2+5의 결과를 한 줄로만 답하고, 반드시 '결론:'으로 시작해라."
+      "content": "서로 다른 한 자리 자연수 여섯 개의 합이 24이고 곱이 360이 되도록 하는 한 조합을 찾아라. 풀이를 단계별로 짧게 쓰고, 마지막 줄에는 오름차순으로 정렬한 여섯 수만 공백으로 구분해 출력해라."
     }
-  ]
+  ],
+  "max_completion_tokens": 512
 }
