@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { Eye, EyeOff } from "lucide-react"
+import { Checkbox, Label } from "@ai-usage/ui"
 
 import { apiFetch } from "@/lib/api/client-fetch"
 import type {
@@ -123,6 +124,7 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
   const [externalKeyDeletionModal, setExternalKeyDeletionModal] = React.useState<{
     keyId: number
     graceDaysInput: string
+    retainLogs: boolean
   } | null>(null)
 
   const [deletePassword, _setDeletePassword] = React.useState("")
@@ -267,7 +269,11 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
 
   function openExternalKeyDeletionModal(keyId: number) {
     setKeysError(null)
-    setExternalKeyDeletionModal({ keyId, graceDaysInput: String(DEFAULT_DELETION_GRACE_DAYS) })
+    setExternalKeyDeletionModal({
+      keyId,
+      graceDaysInput: String(DEFAULT_DELETION_GRACE_DAYS),
+      retainLogs: true,
+    })
   }
 
   function closeExternalKeyDeletionModal() {
@@ -281,12 +287,15 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
       setKeysError(GRACE_PERIOD_DELETION_HINT)
       return
     }
-    const { keyId } = externalKeyDeletionModal
-    const { graceDays } = parsed
+    const { keyId, retainLogs } = externalKeyDeletionModal
+    const { graceDays, immediate } = parsed
     setKeysError(null)
     setKeyActionId(keyId)
     try {
       const q = new URLSearchParams({ gracePeriodDays: String(graceDays) })
+      if (immediate) {
+        q.set("retainLogs", String(retainLogs))
+      }
       const { response, json } = await apiFetch<unknown>(
         `/api/auth/external-keys/${keyId}?${q.toString()}`,
         { method: "DELETE", credentials: "include", cache: "no-store", headers: { Accept: "application/json" } },
@@ -486,6 +495,30 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
                 <p className="text-xs text-destructive">{keysError}</p>
               ) : null}
             </div>
+            {deletionModalParsed?.valid && deletionModalParsed.immediate ? (
+              <div className="mt-4 flex gap-3 rounded-md border border-border bg-muted/30 p-3">
+                <Checkbox
+                  id="external-key-retain-logs"
+                  checked={externalKeyDeletionModal.retainLogs}
+                  onCheckedChange={(v) => {
+                    setKeysError(null)
+                    setExternalKeyDeletionModal((prev) =>
+                      prev ? { ...prev, retainLogs: v === true } : prev
+                    )
+                  }}
+                  disabled={keyActionId === externalKeyDeletionModal.keyId}
+                  className="mt-0.5"
+                />
+                <div className="min-w-0 space-y-1">
+                  <Label htmlFor="external-key-retain-logs" className="text-sm font-medium leading-snug">
+                    기존 API 사용 기록 보존
+                  </Label>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    체크 해제 시, 이 API Key로 발생한 모든 호출 로그와 통계가 영구적으로 삭제됩니다.
+                  </p>
+                </div>
+              </div>
+            ) : null}
             <div className="mt-5 flex flex-wrap justify-end gap-2">
               <button
                 type="button"

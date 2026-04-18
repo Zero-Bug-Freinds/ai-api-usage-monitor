@@ -1,6 +1,7 @@
 package com.zerobugfreinds.identity_service.service;
 
 import com.zerobugfreinds.identity_service.domain.ExternalApiKeyProvider;
+import com.zerobugfreinds.identity.events.ExternalApiKeyDeletedEvent;
 import com.zerobugfreinds.identity.events.ExternalApiKeyStatus;
 import com.zerobugfreinds.identity.events.ExternalApiKeyStatusChangedEvent;
 import com.zerobugfreinds.identity_service.dto.InternalApiKeyResponse;
@@ -262,7 +263,7 @@ public class ExternalApiKeyService {
 	 * 삭제 요청: 유예 기간 후 {@link #purgeExpiredKeys()} 가 행을 제거한다.
 	 */
 	@Transactional
-	public ExternalApiKeyEntity requestDeletion(Long userId, Long externalKeyId, Integer gracePeriodDays) {
+	public ExternalApiKeyEntity requestDeletion(Long userId, Long externalKeyId, Integer gracePeriodDays, boolean retainLogs) {
 		if (userId == null || externalKeyId == null) {
 			throw new IllegalArgumentException("userId와 externalKeyId는 필수입니다");
 		}
@@ -275,7 +276,7 @@ public class ExternalApiKeyService {
 		Instant now = Instant.now();
 		if (days == 0) {
 			log.info("[AUDIT] external_api_key_immediately_deleted userId={} keyId={}", userId, entity.getId());
-			publishExternalApiKeyStatusChanged(entity, ExternalApiKeyStatus.DELETED);
+			publishExternalApiKeyDeleted(entity, retainLogs);
 			externalApiKeyRepository.delete(entity);
 			return entity;
 		}
@@ -320,7 +321,7 @@ public class ExternalApiKeyService {
 					e.getId(),
 					e.getProvider().name()
 			);
-			publishExternalApiKeyStatusChanged(e, ExternalApiKeyStatus.DELETED);
+			publishExternalApiKeyDeleted(e, true);
 		}
 		externalApiKeyRepository.deleteAll(expired);
 		return expired.size();
@@ -333,6 +334,18 @@ public class ExternalApiKeyService {
 				entity.getUserId(),
 				entity.getProvider().name(),
 				status
+		);
+		applicationEventPublisher.publishEvent(event);
+	}
+
+	private void publishExternalApiKeyDeleted(ExternalApiKeyEntity entity, boolean retainLogs) {
+		ExternalApiKeyDeletedEvent event = ExternalApiKeyDeletedEvent.of(
+				entity.getUserId(),
+				entity.getId(),
+				Instant.now(),
+				retainLogs,
+				entity.getProvider().name(),
+				entity.getKeyAlias()
 		);
 		applicationEventPublisher.publishEvent(event);
 	}

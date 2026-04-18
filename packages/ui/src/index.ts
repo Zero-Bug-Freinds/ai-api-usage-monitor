@@ -1,5 +1,6 @@
 export { cn } from "./cn"
 export { Button, buttonVariants } from "./components/button"
+export { Checkbox } from "./components/checkbox"
 export { Input } from "./components/input"
 export { Label } from "./components/label"
 export {

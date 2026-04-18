@@ -6,7 +6,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.Instant;
 
 /**
- * Event published when external API key metadata or lifecycle status changes.
+ * Event published when external API key metadata or lifecycle status changes
+ * (등록·수정·삭제 예약·취소). 물리 삭제 완료는 {@link ExternalApiKeyDeletedEvent} 로 별도 발행한다.
  * Budget fields are intentionally excluded.
  */
 public record ExternalApiKeyStatusChangedEvent(
