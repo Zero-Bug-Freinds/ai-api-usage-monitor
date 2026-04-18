@@ -30,6 +30,7 @@ import { addKstDays, formatKstIsoDate } from "@/lib/usage/kst-dates"
 const LOGS_PAGE_SIZE = 20
 const LOG_PROVIDER_ALL = "__all__"
 const LOG_API_KEY_ALL = "__all__"
+const LOG_REASONING_ALL = "__all__"
 const LOG_SUCCESS_ALL = "__all__"
 
 function toApiKeyLabel(item: UsageLogApiKeyItemResponse): string {
@@ -53,6 +54,20 @@ function openAiDetailsSum(row: UsageLogEntryResponse): number {
   )
 }
 
+function reasoningTokensTooltipContent() {
+  return (
+    <div className="space-y-1">
+      <p className="font-medium text-foreground">추론 토큰 산출</p>
+      <p>
+        Google / Anthropic 공급사의 추론 토큰은 총 토큰에서 입력·출력을 제외해 계산한{" "}
+        <span className="font-medium">추정된</span> 추론 토큰입니다.
+      </p>
+      <p>OpenAI: 모델이 직접 응답 전문에 포함하여 제공한 실제 추론 수치입니다.</p>
+      <p>공통: 모델의 사고 과정(Reasoning) 및 시스템 처리 비용을 포함합니다.</p>
+    </div>
+  )
+}
+
 export function UsageLogPanel() {
   const [logs, setLogs] = React.useState<PagedLogsResponse | null>(null)
   const [logsLoading, setLogsLoading] = React.useState(true)
@@ -60,6 +75,7 @@ export function UsageLogPanel() {
   const [logsPage, setLogsPage] = React.useState(0)
   const [logProvider, setLogProvider] = React.useState<string>(LOG_PROVIDER_ALL)
   const [apiKeyFilter, setApiKeyFilter] = React.useState<string>(LOG_API_KEY_ALL)
+  const [reasoningFilter, setReasoningFilter] = React.useState<string>(LOG_REASONING_ALL)
   const [successFilter, setSuccessFilter] = React.useState<string>(LOG_SUCCESS_ALL)
   const [apiKeyOptions, setApiKeyOptions] = React.useState<UsageLogApiKeyItemResponse[]>([])
   const [modelDraft, setModelDraft] = React.useState("")
@@ -87,6 +103,8 @@ export function UsageLogPanel() {
     logProvider !== LOG_PROVIDER_ALL ? (logProvider as UsageProviderFilter) : undefined
   const requestSuccessfulParam =
     successFilter === "true" ? "true" : successFilter === "false" ? "false" : undefined
+  const reasoningPresenceParam =
+    reasoningFilter === "present" ? "present" : reasoningFilter === "absent" ? "absent" : undefined
 
   React.useEffect(() => {
     let cancelled = false
@@ -122,6 +140,7 @@ export function UsageLogPanel() {
           provider: providerParam,
           apiKeyId:
             apiKeyFilter !== LOG_API_KEY_ALL && apiKeyFilter ? apiKeyFilter : undefined,
+          reasoningPresence: reasoningPresenceParam,
           requestSuccessful: requestSuccessfulParam,
           model: appliedModelMask || undefined,
         })
@@ -138,7 +157,16 @@ export function UsageLogPanel() {
     return () => {
       cancelled = true
     }
-  }, [logsPage, appliedModelMask, logProvider, providerParam, apiKeyFilter, requestSuccessfulParam, logRefresh])
+  }, [
+    logsPage,
+    appliedModelMask,
+    logProvider,
+    providerParam,
+    apiKeyFilter,
+    reasoningPresenceParam,
+    requestSuccessfulParam,
+    logRefresh,
+  ])
 
   return (
     <div className="rounded-lg border border-border p-4 shadow-sm">
@@ -150,7 +178,7 @@ export function UsageLogPanel() {
       </div>
 
       <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
-        <div className="space-y-2 sm:w-48">
+        <div className="space-y-2 sm:w-40">
           <Label htmlFor="log-provider">공급자</Label>
           <Select
             value={logProvider}
@@ -185,6 +213,47 @@ export function UsageLogPanel() {
                   {toApiKeyLabel(item)}
                 </SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2 sm:w-40">
+          <div className="flex items-center gap-1">
+            <Label htmlFor="log-reasoning" className="mb-0">
+              추론 토큰
+            </Label>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    id="log-reasoning-help"
+                    className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-muted-foreground/40 text-[10px] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                    aria-label="추론 토큰 설명"
+                  >
+                    <CircleHelp className="h-3 w-3" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top" align="start">
+                  {reasoningTokensTooltipContent()}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+          <Select
+            value={reasoningFilter}
+            onValueChange={(v) => {
+              setLogsPage(0)
+              setReasoningFilter(v)
+            }}
+          >
+            <SelectTrigger id="log-reasoning" className="w-full">
+              <SelectValue placeholder="전체" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={LOG_REASONING_ALL}>전체</SelectItem>
+              <SelectItem value="present">있음</SelectItem>
+              <SelectItem value="absent">없음</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -243,25 +312,20 @@ export function UsageLogPanel() {
                   <th className="px-3 py-2 font-medium">입력 토큰</th>
                   <th className="px-3 py-2 font-medium">
                     <span className="inline-flex items-center gap-1">
-                      추정 추론 토큰
+                      추론 토큰
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <button
                               type="button"
                               className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-muted-foreground/40 text-[10px] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                              aria-label="추정 추론 토큰 설명"
+                              aria-label="추론 토큰 설명"
                             >
                               <CircleHelp className="h-3 w-3" />
                             </button>
                           </TooltipTrigger>
                           <TooltipContent side="top" align="start">
-                            <div className="space-y-1">
-                              <p className="font-medium text-foreground">추정 추론 토큰 산출</p>
-                              <p>Google / Claude: 모델 응답 총량에서 입력/출력을 제외한 계산된 추정치입니다.</p>
-                              <p>OpenAI: 모델이 직접 응답 전문에 포함하여 제공한 실제 추론 수치입니다.</p>
-                              <p>공통: 모델의 사고 과정(Reasoning) 및 시스템 처리 비용을 포함합니다.</p>
-                            </div>
+                            {reasoningTokensTooltipContent()}
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
@@ -276,6 +340,9 @@ export function UsageLogPanel() {
                 {logs.content.map((row: UsageLogEntryResponse) => {
                   const isOpenAi = row.provider === "OPENAI"
                   const hasOpenAiDetails = isOpenAi && openAiDetailsSum(row) > 0
+                  const ert = row.estimatedReasoningTokens
+                  const showReasoningBadge =
+                    typeof ert === "number" && Number.isFinite(ert) && ert > 0
                   return (
                     <tr
                       key={row.eventId}
@@ -305,16 +372,20 @@ export function UsageLogPanel() {
                     <td className="px-3 py-2 tabular-nums">{row.promptTokens ?? "—"}</td>
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-2">
-                        {row.provider === "OPENAI" ? (
-                          <span className="inline-flex items-center rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
-                            실제값
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                            추정치
-                          </span>
-                        )}
-                        <span className="tabular-nums">{row.estimatedReasoningTokens ?? "—"}</span>
+                        {showReasoningBadge ? (
+                          row.provider === "OPENAI" ? (
+                            <span className="inline-flex items-center rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
+                              실제값
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                              추정치
+                            </span>
+                          )
+                        ) : null}
+                        <span className="tabular-nums">
+                          {typeof ert === "number" && Number.isFinite(ert) ? ert : "—"}
+                        </span>
                       </div>
                     </td>
                     <td className="px-3 py-2 tabular-nums">{row.completionTokens ?? "—"}</td>
