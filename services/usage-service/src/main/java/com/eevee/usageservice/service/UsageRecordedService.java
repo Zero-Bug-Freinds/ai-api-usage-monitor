@@ -67,12 +67,21 @@ public class UsageRecordedService {
         model = effectiveModelName(model, event.provider());
         Long estimatedReasoningTokens;
         if (event.provider() == AiProvider.OPENAI && tu != null) {
-            // OpenAI: reasoning token breakdown is provided in response.
-            estimatedReasoningTokens =
-                    safeLong(completionReasoningTokens)
-                            + safeLong(completionAudioTokens)
-                            + safeLong(completionAcceptedPredictionTokens)
-                            + safeLong(completionRejectedPredictionTokens);
+            boolean anyOpenAiBreakdownDetail =
+                    completionReasoningTokens != null
+                            || completionAudioTokens != null
+                            || completionAcceptedPredictionTokens != null
+                            || completionRejectedPredictionTokens != null;
+            if (anyOpenAiBreakdownDetail) {
+                estimatedReasoningTokens =
+                        safeLong(completionReasoningTokens)
+                                + safeLong(completionAudioTokens)
+                                + safeLong(completionAcceptedPredictionTokens)
+                                + safeLong(completionRejectedPredictionTokens);
+            } else {
+                // Avoid storing 0 when no breakdown was sent — SQL aggregates use COALESCE(estimated, total-prompt-completion).
+                estimatedReasoningTokens = estimateReasoningTokens(total, prompt, completion);
+            }
         } else {
             // Google/Claude: estimate derived from total - input - output.
             estimatedReasoningTokens = estimateReasoningTokens(total, prompt, completion);

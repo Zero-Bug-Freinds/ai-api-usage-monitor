@@ -52,7 +52,7 @@ public class OpenAiProviderHandler implements ProviderHandler {
 
     @Override
     public TokenUsage parseUsageFromSse(String accumulatedSse) {
-        TokenUsage last = null;
+        TokenUsage merged = null;
         Matcher m = SSE_DATA_LINE.matcher(accumulatedSse);
         while (m.find()) {
             String payload = m.group(1).trim();
@@ -63,13 +63,43 @@ public class OpenAiProviderHandler implements ProviderHandler {
                 JsonNode root = objectMapper.readTree(payload);
                 TokenUsage u = extractUsage(root);
                 if (u != null) {
-                    last = u;
+                    merged = mergeTokenUsage(merged, u);
                 }
             } catch (IOException ignored) {
                 // skip non-json lines
             }
         }
-        return last;
+        return merged;
+    }
+
+    /**
+     * Later SSE chunks may repeat usage with only {@code total_tokens}, which would erase
+     * input/output and breakdown from an earlier chunk if we took the last chunk only.
+     * Non-null fields from {@code next} win; nulls keep {@code previous}.
+     */
+    static TokenUsage mergeTokenUsage(TokenUsage previous, TokenUsage next) {
+        if (next == null) {
+            return previous;
+        }
+        if (previous == null) {
+            return next;
+        }
+        return new TokenUsage(
+                coalesce(next.model(), previous.model()),
+                coalesce(next.promptTokens(), previous.promptTokens()),
+                coalesce(next.completionTokens(), previous.completionTokens()),
+                coalesce(next.totalTokens(), previous.totalTokens()),
+                coalesce(next.promptCachedTokens(), previous.promptCachedTokens()),
+                coalesce(next.promptAudioTokens(), previous.promptAudioTokens()),
+                coalesce(next.completionReasoningTokens(), previous.completionReasoningTokens()),
+                coalesce(next.completionAudioTokens(), previous.completionAudioTokens()),
+                coalesce(next.completionAcceptedPredictionTokens(), previous.completionAcceptedPredictionTokens()),
+                coalesce(next.completionRejectedPredictionTokens(), previous.completionRejectedPredictionTokens())
+        );
+    }
+
+    private static <T> T coalesce(T preferred, T fallback) {
+        return preferred != null ? preferred : fallback;
     }
 
     private TokenUsage extractUsage(JsonNode root) {
@@ -78,17 +108,25 @@ public class OpenAiProviderHandler implements ProviderHandler {
             return null;
         }
         String model = text(root.get("model"));
-        Long prompt = longVal(usage.get("prompt_tokens"));
-        Long completion = longVal(usage.get("completion_tokens"));
+        Long prompt = firstLong(usage.get("prompt_tokens"), usage.get("input_tokens"));
+        Long completion = firstLong(usage.get("completion_tokens"), usage.get("output_tokens"));
         Long total = longVal(usage.get("total_tokens"));
-        // OpenAI provides nested token details for prompt/completion.
-        // For non-streaming JSON this comes from `usage.prompt_tokens_details` and
-        // `usage.completion_tokens_details`.
-        JsonNode promptDetails = usage.get("prompt_tokens_details");
+        if (total == null && prompt != null && completion != null) {
+            total = prompt + completion;
+        }
+        // Chat Completions: `prompt_tokens_details` / `completion_tokens_details`.
+        // Responses API: `input_tokens_details` / `output_tokens_details` (same inner keys).
+        JsonNode promptDetails = firstNode(
+                usage.get("prompt_tokens_details"),
+                usage.get("input_tokens_details")
+        );
         Long promptCachedTokens = longVal(promptDetails != null ? promptDetails.get("cached_tokens") : null);
         Long promptAudioTokens = longVal(promptDetails != null ? promptDetails.get("audio_tokens") : null);
 
-        JsonNode completionDetails = usage.get("completion_tokens_details");
+        JsonNode completionDetails = firstNode(
+                usage.get("completion_tokens_details"),
+                usage.get("output_tokens_details")
+        );
         Long completionReasoningTokens = longVal(completionDetails != null ? completionDetails.get("reasoning_tokens") : null);
         Long completionAudioTokens = longVal(completionDetails != null ? completionDetails.get("audio_tokens") : null);
         Long completionAcceptedPredictionTokens = longVal(
@@ -120,6 +158,18 @@ public class OpenAiProviderHandler implements ProviderHandler {
 
     private static Long longVal(JsonNode n) {
         return n == null || n.isNull() ? null : n.asLong();
+    }
+
+    private static Long firstLong(JsonNode primary, JsonNode fallback) {
+        Long v = longVal(primary);
+        return v != null ? v : longVal(fallback);
+    }
+
+    private static JsonNode firstNode(JsonNode primary, JsonNode fallback) {
+        if (primary != null && !primary.isNull()) {
+            return primary;
+        }
+        return fallback;
     }
 
     @Override

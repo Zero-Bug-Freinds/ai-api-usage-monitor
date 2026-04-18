@@ -135,6 +135,70 @@ class UsageRecordedServiceTest {
     }
 
     @Test
+    void openAi_whenNoBreakdownDetails_estimatesReasoningFromTotalMinusPromptMinusCompletion() {
+        UUID eventId = UUID.randomUUID();
+        UsageRecordedEvent event = new UsageRecordedEvent(
+                eventId,
+                Instant.parse("2025-01-01T00:00:00Z"),
+                "corr-1",
+                "user-1",
+                null,
+                null,
+                "key-1",
+                "deadbeef00112233",
+                "managed",
+                AiProvider.OPENAI,
+                "gpt-4o-mini",
+                new TokenUsage("gpt-4o-mini", 10L, 20L, 50L, null, null, null, null, null, null),
+                BigDecimal.ZERO,
+                "/proxy/openai/v1/chat/completions",
+                "api.openai.com",
+                false,
+                true,
+                200
+        );
+        when(repository.existsByEventId(eventId)).thenReturn(false);
+
+        usageRecordedService.persist(event);
+
+        ArgumentCaptor<UsageRecordedLogEntity> captor = ArgumentCaptor.forClass(UsageRecordedLogEntity.class);
+        verify(repository).save(captor.capture());
+        assertThat(captor.getValue().getEstimatedReasoningTokens()).isEqualTo(20L);
+    }
+
+    @Test
+    void openAi_whenNoBreakdownAndIncompleteTokenUsage_estimatedReasoningIsNull() {
+        UUID eventId = UUID.randomUUID();
+        UsageRecordedEvent event = new UsageRecordedEvent(
+                eventId,
+                Instant.parse("2025-01-01T00:00:00Z"),
+                "corr-1",
+                "user-1",
+                null,
+                null,
+                "key-1",
+                "deadbeef00112233",
+                "managed",
+                AiProvider.OPENAI,
+                "gpt-5.4-nano",
+                new TokenUsage("gpt-5.4-nano", null, null, 280L, null, null, null, null, null, null),
+                BigDecimal.ZERO,
+                "/proxy/openai/v1/responses",
+                "api.openai.com",
+                false,
+                true,
+                200
+        );
+        when(repository.existsByEventId(eventId)).thenReturn(false);
+
+        usageRecordedService.persist(event);
+
+        ArgumentCaptor<UsageRecordedLogEntity> captor = ArgumentCaptor.forClass(UsageRecordedLogEntity.class);
+        verify(repository).save(captor.capture());
+        assertThat(captor.getValue().getEstimatedReasoningTokens()).isNull();
+    }
+
+    @Test
     void google_reasoningTokens_keepEstimateFormula() {
         UUID eventId = UUID.randomUUID();
         UsageRecordedEvent event = new UsageRecordedEvent(

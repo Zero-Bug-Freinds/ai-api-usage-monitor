@@ -1,5 +1,6 @@
 package com.eevee.usage.events;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 import java.math.BigDecimal;
@@ -23,7 +24,7 @@ public record UsageRecordedEvent(
         String apiKeySource,
         AiProvider provider,
         String model,
-        TokenUsage tokenUsage,
+        @JsonAlias({"token_usage"}) TokenUsage tokenUsage,
         BigDecimal estimatedCost,
         String requestPath,
         String upstreamHost,
