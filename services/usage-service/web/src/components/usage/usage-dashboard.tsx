@@ -28,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@ai-usage/ui"
+import { loadDashboardSummaryCache, saveDashboardSummaryCache } from "@/lib/usage/dashboard-summary-cache"
 import { buildUsageQuery, fetchUsageJson } from "@/lib/usage/fetch-usage"
 import { formatOccurredAtKst } from "@/lib/usage/format-occurred-at-kst"
 import { formatRequestCount, formatTokenCount, formatUsd, toNumber } from "@/lib/usage/format"
@@ -48,7 +49,7 @@ const AnyLegend = Legend as any
 /** 공급사별 기본 색 — 모든 차트에서 동일 키에 동일 색 */
 const PROVIDER_COLOR: Record<string, string> = {
   GOOGLE: "#F97316",
-  OPENAI: "#0a0a0a",
+  OPENAI: "#2563eb",
   ANTHROPIC: "#c2410c",
 }
 
@@ -180,13 +181,37 @@ function costCompareLabel(mode: PeriodMode, fromIso: string, toIso: string): str
 }
 
 /**
- * 이전 기간 대비 비용 증감률(%). 기준 비용 ≤ 0이면 0%로 표시해 '비교 불가' 문구를 쓰지 않음.
+ * 이전 기간 대비 비용 증감률(%). 기준 비용이 0 이하이고 현재 비용이 양수이면 +100%로 표시(신규 비용).
  */
 function percentCostChangeVsPrevious(current: number, previous: number): number {
   if (previous > 0) {
     return ((current - previous) / previous) * 100
   }
+  if (previous <= 0 && current > 0) {
+    return 100
+  }
   return 0
+}
+
+function dashboardProviderCacheKey(providerSelect: string): string {
+  return providerSelect === DASHBOARD_PROVIDER_ALL ? "ALL" : providerSelect
+}
+
+async function fetchDashboardSummaryCached(
+  fromIso: string,
+  toIso: string,
+  providerSelect: string,
+  queryWithLeadingQuestion: string,
+  signal: AbortSignal
+): Promise<UsageSummaryResponse> {
+  const key = dashboardProviderCacheKey(providerSelect)
+  const hit = loadDashboardSummaryCache(fromIso, toIso, key)
+  if (hit) return hit
+  const data = await fetchUsageJson<UsageSummaryResponse>(`dashboard/summary${queryWithLeadingQuestion}`, {
+    signal,
+  })
+  saveDashboardSummaryCache(fromIso, toIso, key, data)
+  return data
 }
 
 function hashToUint(str: string): number {
@@ -625,8 +650,8 @@ export function UsageDashboard() {
         })
 
         const opt = { signal }
-        const summaryP = fetchUsageJson<UsageSummaryResponse>(`dashboard/summary${qRange}`, opt)
-        const summaryPrevP = fetchUsageJson<UsageSummaryResponse>(`dashboard/summary${qPrev}`, opt)
+        const summaryP = fetchDashboardSummaryCached(rf, rt, dashProvider, qRange, signal)
+        const summaryPrevP = fetchDashboardSummaryCached(pf, pt, dashProvider, qPrev, signal)
         const dailyP = fetchUsageJson<DailyUsagePoint[]>(`dashboard/series/daily${qRange}`, opt)
         const monthlyP = fetchUsageJson<MonthlyUsagePoint[]>(
           `dashboard/series/monthly${buildUsageQuery({ from: fy, to: rt, provider: providerParam(dashProvider) })}`,
@@ -959,6 +984,9 @@ export function UsageDashboard() {
   const compareCostLabel = costCompareLabel(periodMode, rangeFrom, rangeTo)
 
   const rangeCost = kpiSummary ? toNumber(kpiSummary.totalEstimatedCost) : 0
+  /** 오늘 선택 시 카드 금액은 intraday KPI와 동일 기준(전일 동시창 비교와 일치). */
+  const displayedTotalCostUsd =
+    periodMode === "today" && costKpi != null ? toNumber(costKpi.todayEstimatedCostUsd) : rangeCost
   const rangeRequests = kpiSummary?.totalRequests ?? 0
   const rangeTokens = kpiSummary?.totalInputTokens ?? 0
   const rangeErrors = kpiSummary?.totalErrors ?? 0
@@ -970,9 +998,14 @@ export function UsageDashboard() {
   const prevCostForCompare = prevPeriodSummary ? toNumber(prevPeriodSummary.totalEstimatedCost) : 0
 
   const costChangePercent = React.useMemo(() => {
-    if (periodMode === "today") {
-      if (costKpi?.changeRatePercent == null) return 0
-      return toNumber(costKpi.changeRatePercent)
+    if (periodMode === "today" && costKpi != null) {
+      const apiRate = costKpi.changeRatePercent
+      if (apiRate != null && apiRate !== "") {
+        return toNumber(apiRate)
+      }
+      const todayWindow = toNumber(costKpi.todayEstimatedCostUsd)
+      const yesterdayWindow = toNumber(costKpi.yesterdaySameWindowEstimatedCostUsd)
+      return percentCostChangeVsPrevious(todayWindow, yesterdayWindow)
     }
     return percentCostChangeVsPrevious(rangeCost, prevCostForCompare)
   }, [periodMode, costKpi, rangeCost, prevCostForCompare])
@@ -1098,7 +1131,7 @@ export function UsageDashboard() {
               <p className="text-xs font-medium text-muted-foreground">
                 {periodPrefix} 총 비용 (USD)
               </p>
-              <p className="mt-1 text-2xl font-semibold tabular-nums">{formatUsd(rangeCost)}</p>
+              <p className="mt-1 text-2xl font-semibold tabular-nums">{formatUsd(displayedTotalCostUsd)}</p>
               <p className="mt-2 text-xs text-muted-foreground">
                 {compareCostLabel}{" "}
                 <span className="font-medium text-foreground tabular-nums">
@@ -1210,11 +1243,7 @@ export function UsageDashboard() {
                       outerRadius="80%"
                       paddingAngle={2}
                       isAnimationActive={!isModelPiePlaceholder}
-                      label={
-                        isModelPiePlaceholder
-                          ? false
-                          : ({ name, percent }) => `${name} (${((percent ?? 0) * 100).toFixed(0)}%)`
-                      }
+                      label={false}
                     >
                       {modelPieChartData.map((entry, i) => (
                         <Cell
@@ -1254,11 +1283,7 @@ export function UsageDashboard() {
                       outerRadius="80%"
                       paddingAngle={2}
                       isAnimationActive={!isProviderPiePlaceholder}
-                      label={
-                        isProviderPiePlaceholder
-                          ? false
-                          : ({ name, percent }) => `${name} (${((percent ?? 0) * 100).toFixed(0)}%)`
-                      }
+                      label={false}
                     >
                       {providerPieChartData.map((entry, i) => (
                         <Cell
