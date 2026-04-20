@@ -1,8 +1,13 @@
 package com.eevee.usageservice.integration;
 
+import com.eevee.usage.events.AiProvider;
+import com.eevee.usageservice.domain.UsageRecordedLogEntity;
+import com.eevee.usageservice.mq.ExternalApiKeyDeletedEvent;
 import com.eevee.usageservice.mq.ExternalApiKeyStatus;
 import com.eevee.usageservice.mq.ExternalApiKeyStatusChangedEvent;
+import com.eevee.usageservice.mq.IdentityExternalApiKeyEventTypes;
 import com.eevee.usageservice.repository.ApiKeyMetadataRepository;
+import com.eevee.usageservice.repository.UsageRecordedLogRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,7 +24,9 @@ import org.testcontainers.containers.RabbitMQContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.UUID;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -60,6 +67,9 @@ class ExternalApiKeyStatusChangedPipelineIntegrationTest {
 
     @Autowired
     private ApiKeyMetadataRepository repository;
+
+    @Autowired
+    private UsageRecordedLogRepository usageRecordedLogRepository;
 
     @Autowired
     private AmqpAdmin amqpAdmin;
@@ -119,14 +129,14 @@ class ExternalApiKeyStatusChangedPipelineIntegrationTest {
                     assertThat(updated.getStatus().name()).isEqualTo("ACTIVE");
                 });
 
-        ExternalApiKeyStatusChangedEvent deleted = new ExternalApiKeyStatusChangedEvent(
-                1,
-                Instant.parse("2026-04-15T10:02:00Z"),
-                101L,
-                "GoogleTestKey1-Renamed",
+        ExternalApiKeyDeletedEvent deleted = new ExternalApiKeyDeletedEvent(
+                IdentityExternalApiKeyEventTypes.EXTERNAL_API_KEY_DELETED,
                 7L,
+                101L,
+                Instant.parse("2026-04-15T10:02:00Z"),
+                true,
                 "GOOGLE",
-                ExternalApiKeyStatus.DELETED
+                "GoogleTestKey1-Renamed"
         );
         rabbitTemplate.convertAndSend(
                 "identity.events",
@@ -139,6 +149,75 @@ class ExternalApiKeyStatusChangedPipelineIntegrationTest {
                     var deletedRow = repository.findById("101").orElseThrow();
                     assertThat(deletedRow.getAlias()).isEqualTo("GoogleTestKey1-Renamed");
                     assertThat(deletedRow.getStatus().name()).isEqualTo("DELETED");
+                });
+    }
+
+    @Test
+    void deletedEvent_retainLogsFalse_removesUsageLogsAndMetadata() throws Exception {
+        ExternalApiKeyStatusChangedEvent registered = new ExternalApiKeyStatusChangedEvent(
+                1,
+                Instant.parse("2026-04-16T10:00:00Z"),
+                303L,
+                "KeyToPurge",
+                9L,
+                "GOOGLE",
+                ExternalApiKeyStatus.ACTIVE
+        );
+        rabbitTemplate.convertAndSend(
+                "identity.events",
+                "identity.external-api-key.status-changed",
+                objectMapper.writeValueAsString(registered)
+        );
+        await().atMost(30, SECONDS).pollInterval(100, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .until(() -> repository.findById("303").isPresent());
+
+        UsageRecordedLogEntity log = new UsageRecordedLogEntity(
+                UUID.randomUUID(),
+                Instant.parse("2026-04-16T09:00:00Z"),
+                null,
+                "9",
+                null,
+                null,
+                "303",
+                "fp",
+                "managed",
+                AiProvider.GOOGLE,
+                "gemini",
+                1L,
+                1L,
+                2L,
+                0L,
+                null,
+                BigDecimal.ZERO,
+                "/p",
+                "h.example",
+                false,
+                true,
+                200,
+                Instant.now()
+        );
+        usageRecordedLogRepository.save(log);
+        assertThat(usageRecordedLogRepository.countByApiKeyId("303")).isEqualTo(1L);
+
+        ExternalApiKeyDeletedEvent purge = new ExternalApiKeyDeletedEvent(
+                IdentityExternalApiKeyEventTypes.EXTERNAL_API_KEY_DELETED,
+                9L,
+                303L,
+                Instant.parse("2026-04-16T12:00:00Z"),
+                false,
+                "GOOGLE",
+                "KeyToPurge"
+        );
+        rabbitTemplate.convertAndSend(
+                "identity.events",
+                "identity.external-api-key.status-changed",
+                objectMapper.writeValueAsString(purge)
+        );
+
+        await().atMost(30, SECONDS).pollInterval(100, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .untilAsserted(() -> {
+                    assertThat(repository.findById("303")).isEmpty();
+                    assertThat(usageRecordedLogRepository.countByApiKeyId("303")).isEqualTo(0L);
                 });
     }
 }
