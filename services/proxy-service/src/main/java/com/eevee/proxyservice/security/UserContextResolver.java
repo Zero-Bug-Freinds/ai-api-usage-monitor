@@ -34,15 +34,13 @@ public class UserContextResolver {
             String correlationId
     ) {
         String platformUserId = firstNonBlankHeader(exchange, HDR_PLATFORM_USER);
+        String org = firstNonBlankHeader(exchange, HDR_ORG);
+        String team = firstNonBlankHeader(exchange, HDR_TEAM);
         if (auth != null && auth.isAuthenticated() && auth.getPrincipal() instanceof String userId) {
-            String org = exchange.getRequest().getHeaders().getFirst(HDR_ORG);
-            String team = exchange.getRequest().getHeaders().getFirst(HDR_TEAM);
             return Mono.just(new UserContext(userId, platformUserId, org, team, correlationId));
         }
         String userId = exchange.getRequest().getHeaders().getFirst(HDR_USER);
         if (userId != null && !userId.isBlank()) {
-            String org = exchange.getRequest().getHeaders().getFirst(HDR_ORG);
-            String team = exchange.getRequest().getHeaders().getFirst(HDR_TEAM);
             return Mono.just(new UserContext(userId, platformUserId, org, team, correlationId));
         }
         return Mono.error(new IllegalStateException("Missing X-User-Id (from Gateway)"));

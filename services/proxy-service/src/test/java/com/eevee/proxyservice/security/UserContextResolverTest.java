@@ -42,4 +42,21 @@ class UserContextResolverTest {
                 })
                 .verifyComplete();
     }
+
+    @Test
+    void blankOrgAndTeamHeaders_areNormalizedToNull() {
+        MockServerHttpRequest request = MockServerHttpRequest.get("/proxy/google/")
+                .header("X-User-Id", "a@b.com")
+                .header("X-Org-Id", "   ")
+                .header("X-Team-Id", "")
+                .build();
+        MockServerWebExchange exchange = MockServerWebExchange.from(request);
+
+        StepVerifier.create(resolver.fromExchange(exchange))
+                .assertNext(ctx -> {
+                    assertThat(ctx.organizationId()).isNull();
+                    assertThat(ctx.teamId()).isNull();
+                })
+                .verifyComplete();
+    }
 }
