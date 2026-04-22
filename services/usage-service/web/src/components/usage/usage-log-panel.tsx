@@ -9,7 +9,10 @@ import {
   Label,
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
   Tooltip,
@@ -37,6 +40,10 @@ function toApiKeyLabel(item: UsageLogApiKeyItemResponse): string {
   const alias = item.alias?.trim()
   if (!alias) return "별칭 없음"
   return item.status === "DELETED" ? `${alias} (삭제)` : alias
+}
+
+function isDeletedApiKeyItem(item: UsageLogApiKeyItemResponse): boolean {
+  return item.status === "DELETED"
 }
 
 function toLongOrZero(v: number | null | undefined): number {
@@ -105,6 +112,15 @@ export function UsageLogPanel() {
     successFilter === "true" ? "true" : successFilter === "false" ? "false" : undefined
   const reasoningPresenceParam =
     reasoningFilter === "present" ? "present" : reasoningFilter === "absent" ? "absent" : undefined
+
+  const activeApiKeyOptions = React.useMemo(
+    () => apiKeyOptions.filter((x) => !isDeletedApiKeyItem(x)),
+    [apiKeyOptions]
+  )
+  const deletedApiKeyOptions = React.useMemo(
+    () => apiKeyOptions.filter((x) => isDeletedApiKeyItem(x)),
+    [apiKeyOptions]
+  )
 
   React.useEffect(() => {
     let cancelled = false
@@ -206,13 +222,31 @@ export function UsageLogPanel() {
             <SelectTrigger id="log-apikey" className="w-full">
               <SelectValue placeholder="전체" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="max-h-[min(70vh,26rem)]">
               <SelectItem value={LOG_API_KEY_ALL}>전체</SelectItem>
-              {apiKeyOptions.map((item) => (
-                <SelectItem key={item.apiKeyId} value={item.apiKeyId}>
-                  {toApiKeyLabel(item)}
-                </SelectItem>
-              ))}
+              {activeApiKeyOptions.length > 0 ? (
+                <SelectGroup>
+                  <SelectLabel>사용 중</SelectLabel>
+                  {activeApiKeyOptions.map((item) => (
+                    <SelectItem key={item.apiKeyId} value={item.apiKeyId}>
+                      {toApiKeyLabel(item)}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              ) : null}
+              {deletedApiKeyOptions.length > 0 ? (
+                <>
+                  {activeApiKeyOptions.length > 0 ? <SelectSeparator /> : null}
+                  <SelectGroup>
+                    <SelectLabel>삭제됨 (로그 보존)</SelectLabel>
+                    {deletedApiKeyOptions.map((item) => (
+                      <SelectItem key={item.apiKeyId} value={item.apiKeyId}>
+                        {toApiKeyLabel(item)}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </>
+              ) : null}
             </SelectContent>
           </Select>
         </div>
@@ -303,11 +337,12 @@ export function UsageLogPanel() {
       ) : (
         <>
           <div className="overflow-x-auto rounded-md border border-border">
-            <table className="w-full min-w-[980px] text-left text-sm">
+            <table className="w-full min-w-[1060px] text-left text-sm">
               <thead className="border-b border-border bg-muted/40">
                 <tr>
                   <th className="px-3 py-2 font-medium">시각 (KST)</th>
                   <th className="px-3 py-2 font-medium">공급자</th>
+                  <th className="px-3 py-2 font-medium">별칭</th>
                   <th className="px-3 py-2 font-medium">모델</th>
                   <th className="px-3 py-2 font-medium">입력 토큰</th>
                   <th className="px-3 py-2 font-medium">
@@ -368,6 +403,9 @@ export function UsageLogPanel() {
                       {formatOccurredAtKst(row.occurredAt)}
                     </td>
                     <td className="px-3 py-2">{row.provider}</td>
+                    <td className="px-3 py-2 max-w-[200px] truncate" title={row.apiKeyAlias ?? undefined}>
+                      {row.apiKeyAlias ?? "—"}
+                    </td>
                     <td className="px-3 py-2 font-mono text-xs">{row.model}</td>
                     <td className="px-3 py-2 tabular-nums">{row.promptTokens ?? "—"}</td>
                     <td className="px-3 py-2">

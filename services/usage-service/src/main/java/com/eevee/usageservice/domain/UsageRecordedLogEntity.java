@@ -9,6 +9,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.ForeignKey;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
@@ -22,7 +23,13 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "usage_recorded_log")
+@Table(
+        name = "usage_recorded_log",
+        indexes = {
+                @Index(name = "idx_url_team_occurred", columnList = "team_id, occurred_at"),
+                @Index(name = "idx_url_user_team_occurred", columnList = "user_id, team_id, occurred_at")
+        }
+)
 public class UsageRecordedLogEntity {
 
     @Id

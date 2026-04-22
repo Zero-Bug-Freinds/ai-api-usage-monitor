@@ -17,11 +17,17 @@ import java.util.UUID;
 
 public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedLogEntity, UUID> {
 
+    long countByApiKeyId(String apiKeyId);
+
     boolean existsByEventId(UUID eventId);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("update UsageRecordedLogEntity u set u.estimatedCost = :cost where u.eventId = :eventId")
     int updateEstimatedCostByEventId(@Param("eventId") UUID eventId, @Param("cost") BigDecimal cost);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("delete from UsageRecordedLogEntity u where u.apiKeyId = :apiKeyId")
+    int deleteByApiKeyId(@Param("apiKeyId") String apiKeyId);
 
     @Query(
             value = """
