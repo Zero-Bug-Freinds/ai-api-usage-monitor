@@ -64,6 +64,8 @@ const MAX_RANGE_DAYS = 366
 const HISTORY_CACHE_TTL_MS = 60 * 60 * 1000
 
 const DASHBOARD_PROVIDER_ALL = "__ALL__"
+const DASHBOARD_PROVIDER_STORAGE_KEY = "usage-dashboard:provider:v1"
+const DASHBOARD_PERIOD_STORAGE_KEY = "usage-dashboard:period:v1"
 const MODEL_REQUESTS_TOP_N = 10
 const OTHERS_LABEL = "기타 (Others)"
 const OTHERS_BAR_COLOR = "#94a3b8"
@@ -100,6 +102,43 @@ function isProviderUnknownPlaceholderModel(model: string, provider: string): boo
 }
 
 type PeriodMode = "today" | "7d" | "30d" | "custom"
+type StoredDashboardPeriod = {
+  mode: PeriodMode
+  from: string
+  to: string
+}
+
+function isPeriodMode(v: unknown): v is PeriodMode {
+  return v === "today" || v === "7d" || v === "30d" || v === "custom"
+}
+
+function readStoredDashboardPeriod(todayIso: string): StoredDashboardPeriod {
+  if (typeof sessionStorage === "undefined") {
+    return { mode: "today", from: todayIso, to: todayIso }
+  }
+  try {
+    const raw = sessionStorage.getItem(DASHBOARD_PERIOD_STORAGE_KEY)
+    if (!raw) return { mode: "today", from: todayIso, to: todayIso }
+    const parsed = JSON.parse(raw) as Partial<StoredDashboardPeriod>
+    const mode = isPeriodMode(parsed.mode) ? parsed.mode : "today"
+    const from = typeof parsed.from === "string" && parsed.from.length > 0 ? parsed.from : todayIso
+    const to = typeof parsed.to === "string" && parsed.to.length > 0 ? parsed.to : todayIso
+    return { mode, from, to }
+  } catch {
+    return { mode: "today", from: todayIso, to: todayIso }
+  }
+}
+
+function readStoredDashboardProvider(): string {
+  if (typeof sessionStorage === "undefined") return DASHBOARD_PROVIDER_ALL
+  try {
+    const raw = sessionStorage.getItem(DASHBOARD_PROVIDER_STORAGE_KEY)
+    if (!raw) return DASHBOARD_PROVIDER_ALL
+    return raw
+  } catch {
+    return DASHBOARD_PROVIDER_ALL
+  }
+}
 
 function tooltipNumericValue(value: unknown): number {
   if (typeof value === "number") return value
@@ -563,10 +602,19 @@ const TOKEN_CHART_MIN_H = 280
 const TOKEN_CHART_MAX_H = 520
 
 export function UsageDashboard() {
-  const [periodMode, setPeriodMode] = React.useState<PeriodMode>("today")
-  const [customFrom, setCustomFrom] = React.useState(formatKstIsoDate())
-  const [customTo, setCustomTo] = React.useState(formatKstIsoDate())
-  const [dashProvider, setDashProvider] = React.useState<string>(DASHBOARD_PROVIDER_ALL)
+  const [periodMode, setPeriodMode] = React.useState<PeriodMode>(() => {
+    const t = formatKstIsoDate()
+    return readStoredDashboardPeriod(t).mode
+  })
+  const [customFrom, setCustomFrom] = React.useState(() => {
+    const t = formatKstIsoDate()
+    return readStoredDashboardPeriod(t).from
+  })
+  const [customTo, setCustomTo] = React.useState(() => {
+    const t = formatKstIsoDate()
+    return readStoredDashboardPeriod(t).to
+  })
+  const [dashProvider, setDashProvider] = React.useState<string>(() => readStoredDashboardProvider())
 
   const [mainLoading, setMainLoading] = React.useState(true)
   const [mainError, setMainError] = React.useState<string | null>(null)
@@ -596,6 +644,29 @@ export function UsageDashboard() {
     setCustomFrom(from)
     setCustomTo(to)
   }, [clientReady, periodMode])
+
+  React.useEffect(() => {
+    if (!clientReady || typeof sessionStorage === "undefined") return
+    try {
+      sessionStorage.setItem(DASHBOARD_PROVIDER_STORAGE_KEY, dashProvider)
+    } catch {
+      /* ignore quota/private mode */
+    }
+  }, [clientReady, dashProvider])
+
+  React.useEffect(() => {
+    if (!clientReady || typeof sessionStorage === "undefined") return
+    try {
+      const payload: StoredDashboardPeriod = {
+        mode: periodMode,
+        from: customFrom,
+        to: customTo,
+      }
+      sessionStorage.setItem(DASHBOARD_PERIOD_STORAGE_KEY, JSON.stringify(payload))
+    } catch {
+      /* ignore quota/private mode */
+    }
+  }, [clientReady, periodMode, customFrom, customTo])
 
   const kstTodayFallback = formatKstIsoDate()
   const rangeFrom = loadedRange?.from ?? kstTodayFallback
