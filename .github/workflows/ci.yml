@@ -634,12 +634,16 @@ jobs:
   web-mfe:
     name: Build web-mfe remotes (usage/team)
     runs-on: ubuntu-latest
-    needs: changes
+    needs:
+      - changes
+      - build-common-node
+      - build-common-docker
     if: needs.changes.outputs.web_mfe == 'true' || needs.changes.outputs.web_shared == 'true' || needs.changes.outputs.workflows == 'true'
     env:
       NEXT_PRIVATE_LOCAL_WEBPACK: "true"
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -650,6 +654,13 @@ jobs:
         run: pnpm store prune
       - name: Install workspace
         run: pnpm install --frozen-lockfile
+      - name: Download common docker base images
+        uses: actions/download-artifact@v4
+        with:
+          name: common-base-images
+          path: .ci-artifacts
+      - name: Load common docker base images
+        run: docker load -i .ci-artifacts/common-base-images.tar
       - name: Verify MF plugin settings (usage/team remotes)
         run: |
           node -e "const fs=require('node:fs');const checks=[['services/usage-service/web-mfe/next.config.ts',['NextFederationPlugin','name: \"usage\"','filename: \"static/chunks/remoteEntry.js\"']],['services/team-service/web-mfe/next.config.ts',['NextFederationPlugin','name: \"team\"','filename: \"static/chunks/remoteEntry.js\"']]];for(const [p,needles] of checks){const c=fs.readFileSync(p,'utf8');for(const n of needles){if(!c.includes(n)){throw new Error('missing '+n+' in '+p)}}}"
@@ -663,9 +674,27 @@ jobs:
           pnpm --filter usage-web-mfe run build
           pnpm --filter team-web-mfe run build
       - name: Docker image (usage-web-mfe, standalone)
-        run: docker build -f docker/web-node-deps.Dockerfile -t web-node-deps:ci . && docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/usage-service/web-mfe/Dockerfile -t usage-web-mfe:ci .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/usage-service/web-mfe/Dockerfile
+          build-args: |
+            WEB_NODE_DEPS_IMAGE=web-node-deps:ci
+          tags: usage-web-mfe:ci
+          load: true
+          cache-from: type=gha,scope=usage-web-mfe-image
+          cache-to: type=gha,mode=max,scope=usage-web-mfe-image
       - name: Docker image (team-web-mfe, standalone)
-        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/team-service/web-mfe/Dockerfile -t team-web-mfe:ci .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/team-service/web-mfe/Dockerfile
+          build-args: |
+            WEB_NODE_DEPS_IMAGE=web-node-deps:ci
+          tags: team-web-mfe:ci
+          load: true
+          cache-from: type=gha,scope=team-web-mfe-image
+          cache-to: type=gha,mode=max,scope=team-web-mfe-image
 
   # Single required check for branch protection.
   # Skipped Java/Compose jobs (path filter) do not fail the workflow.
@@ -708,6 +737,7 @@ jobs:
           echo "- setup-node cache-hit 값은 Stage A build-common-node 로그를 참고" >> "$GITHUB_STEP_SUMMARY"
           echo "- Docker 단계 시간은 각 Job step duration(표)에서 Docker step 포함 Job을 비교" >> "$GITHUB_STEP_SUMMARY"
           echo "- usage 통합테스트 컨테이너 기동 여유는 withStartupTimeout(5m) 적용 상태" >> "$GITHUB_STEP_SUMMARY"
+          echo "- web-mfe Docker cache hit 여부는 build-push-action 로그의 CACHED 레이어 비율로 확인" >> "$GITHUB_STEP_SUMMARY"
 
   ci-summary:
     name: CI summary
