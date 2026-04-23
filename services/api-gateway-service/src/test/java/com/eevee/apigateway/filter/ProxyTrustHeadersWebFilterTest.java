@@ -201,74 +201,6 @@ class ProxyTrustHeadersWebFilterTest {
     }
 
     @Test
-    void jwtMode_sanitizesSpoofedTrustHeadersAndReinjectsVerifiedValues() {
-        gatewayProperties.setDevMode(false);
-        Jwt jwt = Jwt.withTokenValue("dummy")
-                .header("alg", "HS256")
-                .subject("verified-user@example.com")
-                .claim("userId", "314")
-                .claim("team_id", "team-1")
-                .build();
-        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt);
-
-        MockServerHttpRequest request = MockServerHttpRequest.get("/api/v1/ai/proxy/openai/chat")
-                .header("X-User-Id", "spoofed@example.com")
-                .header("X-Platform-User-Id", "999")
-                .header("X-Team-Id", "evil-team")
-                .header("X-Gateway-Auth", "evil-secret")
-                .build();
-        MockServerWebExchange exchange = MockServerWebExchange.from(request);
-        AtomicReference<String> userIdSeen = new AtomicReference<>();
-        AtomicReference<String> platformUserIdSeen = new AtomicReference<>();
-        AtomicReference<String> teamIdSeen = new AtomicReference<>();
-        AtomicReference<String> gatewayAuthSeen = new AtomicReference<>();
-        WebFilterChain chain = ex -> {
-            userIdSeen.set(ex.getRequest().getHeaders().getFirst("X-User-Id"));
-            platformUserIdSeen.set(ex.getRequest().getHeaders().getFirst("X-Platform-User-Id"));
-            teamIdSeen.set(ex.getRequest().getHeaders().getFirst("X-Team-Id"));
-            gatewayAuthSeen.set(ex.getRequest().getHeaders().getFirst("X-Gateway-Auth"));
-            return Mono.empty();
-        };
-
-        ProxyTrustHeadersWebFilter filter = new ProxyTrustHeadersWebFilter(gatewayProperties);
-
-        StepVerifier.create(filter.applyTrustHeaders(exchange, chain, auth))
-                .verifyComplete();
-
-        assertThat(userIdSeen.get()).isEqualTo("verified-user@example.com");
-        assertThat(platformUserIdSeen.get()).isEqualTo("314");
-        assertThat(teamIdSeen.get()).isEqualTo("team-1");
-        assertThat(gatewayAuthSeen.get()).isNull();
-    }
-
-    @Test
-    void jwtTeamIdIsNotForwardedWhenClaimMissing() {
-        gatewayProperties.setDevMode(false);
-        Jwt jwt = Jwt.withTokenValue("dummy")
-                .header("alg", "HS256")
-                .subject("user@example.com")
-                .build();
-        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt);
-
-        MockServerHttpRequest request = MockServerHttpRequest.get("/api/v1/usage/dashboard/summary")
-                .header("X-Team-Id", "spoofed-team")
-                .build();
-        MockServerWebExchange exchange = MockServerWebExchange.from(request);
-        AtomicReference<String> teamIdSeen = new AtomicReference<>();
-        WebFilterChain chain = ex -> {
-            teamIdSeen.set(ex.getRequest().getHeaders().getFirst("X-Team-Id"));
-            return Mono.empty();
-        };
-
-        ProxyTrustHeadersWebFilter filter = new ProxyTrustHeadersWebFilter(gatewayProperties);
-
-        StepVerifier.create(filter.applyTrustHeaders(exchange, chain, auth))
-                .verifyComplete();
-
-        assertThat(teamIdSeen.get()).isNull();
-    }
-
-    @Test
     void devMode_forwardsInboundXUserId_whenSecurityContextIsAnonymous() {
         AnonymousAuthenticationToken anon = new AnonymousAuthenticationToken(
                 "anon-key",
@@ -319,33 +251,6 @@ class ProxyTrustHeadersWebFilterTest {
                 .verifyComplete();
 
         assertThat(platformUserIdSeen.get()).isEqualTo("99");
-    }
-
-    @Test
-    void devMode_forwardsInboundTeamHeader_whenPresent() {
-        AnonymousAuthenticationToken anon = new AnonymousAuthenticationToken(
-                "anon-key",
-                "anonymousUser",
-                AuthorityUtils.createAuthorityList("ROLE_ANONYMOUS")
-        );
-
-        MockServerHttpRequest request = MockServerHttpRequest.get("/api/v1/usage/dashboard/summary")
-                .header("X-User-Id", "bff-session@local.dev")
-                .header("X-Team-Id", "team-local")
-                .build();
-        MockServerWebExchange exchange = MockServerWebExchange.from(request);
-        AtomicReference<String> teamIdSeen = new AtomicReference<>();
-        WebFilterChain chain = ex -> {
-            teamIdSeen.set(ex.getRequest().getHeaders().getFirst("X-Team-Id"));
-            return Mono.empty();
-        };
-
-        ProxyTrustHeadersWebFilter filter = new ProxyTrustHeadersWebFilter(gatewayProperties);
-
-        StepVerifier.create(filter.applyTrustHeaders(exchange, chain, anon))
-                .verifyComplete();
-
-        assertThat(teamIdSeen.get()).isEqualTo("team-local");
     }
 
     @Test

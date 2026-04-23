@@ -26,7 +26,6 @@ public class UsageRabbitProperties {
      * {@link UsageCostEventAmqp#TOPIC_EXCHANGE_NAME} / {@link UsageCostEventAmqp#ROUTING_KEY_COST_FINALIZED}.
      */
     private IdentityApiKey identityApiKey = new IdentityApiKey();
-    private TeamApiKey teamApiKey = new TeamApiKey();
 
     private CostFinalized costFinalized = new CostFinalized();
 
@@ -65,16 +64,6 @@ public class UsageRabbitProperties {
     public void setIdentityApiKey(IdentityApiKey identityApiKey) {
         if (identityApiKey != null) {
             this.identityApiKey = identityApiKey;
-        }
-    }
-
-    public TeamApiKey getTeamApiKey() {
-        return teamApiKey;
-    }
-
-    public void setTeamApiKey(TeamApiKey teamApiKey) {
-        if (teamApiKey != null) {
-            this.teamApiKey = teamApiKey;
         }
     }
 
@@ -129,45 +118,6 @@ public class UsageRabbitProperties {
         private String exchange = UsageCostEventAmqp.TOPIC_EXCHANGE_NAME;
         private String routingKey = UsageCostEventAmqp.ROUTING_KEY_COST_FINALIZED;
         private String queue = UsageCostEventAmqp.SUGGESTED_USAGE_SERVICE_QUEUE;
-
-        public boolean isEnabled() {
-            return enabled;
-        }
-
-        public void setEnabled(boolean enabled) {
-            this.enabled = enabled;
-        }
-
-        public String getExchange() {
-            return exchange;
-        }
-
-        public void setExchange(String exchange) {
-            this.exchange = exchange;
-        }
-
-        public String getRoutingKey() {
-            return routingKey;
-        }
-
-        public void setRoutingKey(String routingKey) {
-            this.routingKey = routingKey;
-        }
-
-        public String getQueue() {
-            return queue;
-        }
-
-        public void setQueue(String queue) {
-            this.queue = queue;
-        }
-    }
-
-    public static class TeamApiKey {
-        private boolean enabled = true;
-        private String exchange = "team.events";
-        private String routingKey = "team-member-added";
-        private String queue = "usage-service.team.api-key.queue";
 
         public boolean isEnabled() {
             return enabled;
