@@ -227,16 +227,11 @@ jobs:
   identity-service:
     name: Build identity-service
     runs-on: ubuntu-latest
-<<<<<<< HEAD
     needs:
       - changes
       - build-common-node
       - build-common-docker
     if: needs.changes.outputs.identity == 'true' || needs.changes.outputs.web_shared == 'true' || needs.changes.outputs.workflows == 'true'
-=======
-    needs: changes
-    if: needs.changes.outputs.identity == 'true' || needs.changes.outputs.workflows == 'true'
->>>>>>> origin/develop
     defaults:
       run:
         working-directory: services/identity-service
@@ -253,7 +248,6 @@ jobs:
         run: chmod +x ./gradlew
       - name: Build and test
         run: ./gradlew build --no-daemon
-<<<<<<< HEAD
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -294,8 +288,6 @@ jobs:
             type=gha,scope=web-node-deps
             type=gha,scope=identity-web-image
           cache-to: type=gha,mode=max,scope=identity-web-image
-=======
->>>>>>> origin/develop
 
   proxy-gateway-service:
     name: Build proxy-gateway-service
@@ -334,7 +326,6 @@ jobs:
   usage-service:
     name: Build usage-service
     runs-on: ubuntu-latest
-<<<<<<< HEAD
     needs:
       - changes
       - build-common-java
@@ -367,10 +358,6 @@ jobs:
           && needs.notification-service.result != 'failure'
           && needs.notification-service.result != 'cancelled'
        }}
-=======
-    needs: changes
-    if: needs.changes.outputs.usage == 'true' || needs.changes.outputs.workflows == 'true'
->>>>>>> origin/develop
     defaults:
       run:
         working-directory: services/usage-service
@@ -392,7 +379,6 @@ jobs:
         run: chmod +x ./gradlew
       - name: Build and test
         run: ./gradlew build --no-daemon
-<<<<<<< HEAD
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -433,23 +419,16 @@ jobs:
             type=gha,scope=web-node-deps
             type=gha,scope=usage-web-image
           cache-to: type=gha,mode=max,scope=usage-web-image
-=======
->>>>>>> origin/develop
 
   billing-service:
     name: Build billing-service
     runs-on: ubuntu-latest
-<<<<<<< HEAD
     needs:
       - changes
       - build-common-java
       - build-common-node
       - build-common-docker
     if: needs.changes.outputs.billing == 'true' || needs.changes.outputs.web_shared == 'true' || needs.changes.outputs.workflows == 'true'
-=======
-    needs: changes
-    if: needs.changes.outputs.billing == 'true' || needs.changes.outputs.workflows == 'true'
->>>>>>> origin/develop
     defaults:
       run:
         working-directory: services/billing-service
@@ -471,7 +450,6 @@ jobs:
         run: chmod +x ./gradlew
       - name: Build and test
         run: ./gradlew build --no-daemon
-<<<<<<< HEAD
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -512,22 +490,15 @@ jobs:
             type=gha,scope=web-node-deps
             type=gha,scope=billing-web-image
           cache-to: type=gha,mode=max,scope=billing-web-image
-=======
->>>>>>> origin/develop
 
   team-service:
     name: Build team-service
     runs-on: ubuntu-latest
-<<<<<<< HEAD
     needs:
       - changes
       - build-common-node
       - build-common-docker
     if: needs.changes.outputs.team == 'true' || needs.changes.outputs.web_shared == 'true' || needs.changes.outputs.workflows == 'true'
-=======
-    needs: changes
-    if: needs.changes.outputs.team == 'true' || needs.changes.outputs.workflows == 'true'
->>>>>>> origin/develop
     defaults:
       run:
         working-directory: services/team-service
@@ -544,7 +515,6 @@ jobs:
         run: chmod +x ./gradlew
       - name: Build and test
         run: ./gradlew build --no-daemon
-<<<<<<< HEAD
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -585,22 +555,15 @@ jobs:
             type=gha,scope=web-node-deps
             type=gha,scope=team-web-image
           cache-to: type=gha,mode=max,scope=team-web-image
-=======
->>>>>>> origin/develop
 
   notification-service:
     name: Build notification-service
     runs-on: ubuntu-latest
-<<<<<<< HEAD
     needs:
       - changes
       - build-common-node
       - build-common-docker
     if: needs.changes.outputs.notification == 'true' || needs.changes.outputs.web_shared == 'true' || needs.changes.outputs.workflows == 'true'
-=======
-    needs: changes
-    if: needs.changes.outputs.notification == 'true' || needs.changes.outputs.workflows == 'true'
->>>>>>> origin/develop
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -616,7 +579,6 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build (Nest)
         run: pnpm --filter notification-service run build
-<<<<<<< HEAD
       - name: Download common docker base images
         uses: actions/download-artifact@v4
         with:
@@ -656,12 +618,6 @@ jobs:
             type=gha,scope=web-node-deps
             type=gha,scope=notification-web-image
           cache-to: type=gha,mode=max,scope=notification-web-image
-=======
-      - name: Docker deps base image (notification backend)
-        run: docker build -f docker/backend-node-deps.Dockerfile -t backend-node-deps:ci .
-      - name: Docker image (notification-service)
-        run: docker build --build-arg BACKEND_NODE_DEPS_IMAGE=backend-node-deps:ci -f services/notification-service/Dockerfile -t notification-service:ci .
->>>>>>> origin/develop
 
   web-host:
     name: Build web-host (apps/web)
@@ -892,11 +848,7 @@ jobs:
             echo "compose-validate did not succeed: ${{ needs.compose-validate.result }}"
             exit 1
           fi
-<<<<<<< HEAD
           for name in build-common-java build-common-node build-common-docker identity-service proxy-gateway-service usage-service billing-service team-service notification-service web-host web-mfe ci-observability; do
-=======
-          for name in identity-service proxy-gateway-service usage-service billing-service team-service notification-service web-host web-apps web-mfe; do
->>>>>>> origin/develop
             case "$name" in
               build-common-java) v="${{ needs['build-common-java'].result }}" ;;
               build-common-node) v="${{ needs['build-common-node'].result }}" ;;
@@ -908,7 +860,6 @@ jobs:
               team-service) v="${{ needs.team-service.result }}" ;;
               notification-service) v="${{ needs.notification-service.result }}" ;;
               web-host) v="${{ needs['web-host'].result }}" ;;
-              web-apps) v="${{ needs['web-apps'].result }}" ;;
               web-mfe) v="${{ needs['web-mfe'].result }}" ;;
               ci-observability) v="${{ needs['ci-observability'].result }}" ;;
             esac
