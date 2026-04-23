@@ -230,6 +230,7 @@ jobs:
         working-directory: services/identity-service
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -276,7 +277,9 @@ jobs:
             WEB_NODE_DEPS_IMAGE=web-node-deps:ci
           tags: identity-web:ci
           load: true
-          cache-from: type=gha,scope=identity-web-image
+          cache-from: |
+            type=gha,scope=web-node-deps
+            type=gha,scope=identity-web-image
           cache-to: type=gha,mode=max,scope=identity-web-image
 
   proxy-gateway-service:
@@ -405,7 +408,9 @@ jobs:
             WEB_NODE_DEPS_IMAGE=web-node-deps:ci
           tags: usage-web:ci
           load: true
-          cache-from: type=gha,scope=usage-web-image
+          cache-from: |
+            type=gha,scope=web-node-deps
+            type=gha,scope=usage-web-image
           cache-to: type=gha,mode=max,scope=usage-web-image
 
   billing-service:
@@ -474,7 +479,9 @@ jobs:
             WEB_NODE_DEPS_IMAGE=web-node-deps:ci
           tags: billing-web:ci
           load: true
-          cache-from: type=gha,scope=billing-web-image
+          cache-from: |
+            type=gha,scope=web-node-deps
+            type=gha,scope=billing-web-image
           cache-to: type=gha,mode=max,scope=billing-web-image
 
   team-service:
@@ -537,7 +544,9 @@ jobs:
             WEB_NODE_DEPS_IMAGE=web-node-deps:ci
           tags: team-web:ci
           load: true
-          cache-from: type=gha,scope=team-web-image
+          cache-from: |
+            type=gha,scope=web-node-deps
+            type=gha,scope=team-web-image
           cache-to: type=gha,mode=max,scope=team-web-image
 
   notification-service:
@@ -585,7 +594,9 @@ jobs:
             BACKEND_NODE_DEPS_IMAGE=backend-node-deps:ci
           tags: notification-service:ci
           load: true
-          cache-from: type=gha,scope=notification-service-image
+          cache-from: |
+            type=gha,scope=backend-node-deps
+            type=gha,scope=notification-service-image
           cache-to: type=gha,mode=max,scope=notification-service-image
       - name: Docker image (notification-web, standalone)
         uses: docker/build-push-action@v6
@@ -596,7 +607,9 @@ jobs:
             WEB_NODE_DEPS_IMAGE=web-node-deps:ci
           tags: notification-web:ci
           load: true
-          cache-from: type=gha,scope=notification-web-image
+          cache-from: |
+            type=gha,scope=web-node-deps
+            type=gha,scope=notification-web-image
           cache-to: type=gha,mode=max,scope=notification-web-image
 
   web-host:
@@ -609,6 +622,7 @@ jobs:
       NEXT_PRIVATE_LOCAL_WEBPACK: "true"
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -682,7 +696,9 @@ jobs:
             WEB_NODE_DEPS_IMAGE=web-node-deps:ci
           tags: usage-web-mfe:ci
           load: true
-          cache-from: type=gha,scope=usage-web-mfe-image
+          cache-from: |
+            type=gha,scope=web-node-deps
+            type=gha,scope=usage-web-mfe-image
           cache-to: type=gha,mode=max,scope=usage-web-mfe-image
       - name: Docker image (team-web-mfe, standalone)
         uses: docker/build-push-action@v6
@@ -693,7 +709,9 @@ jobs:
             WEB_NODE_DEPS_IMAGE=web-node-deps:ci
           tags: team-web-mfe:ci
           load: true
-          cache-from: type=gha,scope=team-web-mfe-image
+          cache-from: |
+            type=gha,scope=web-node-deps
+            type=gha,scope=team-web-mfe-image
           cache-to: type=gha,mode=max,scope=team-web-mfe-image
 
   # Single required check for branch protection.
