@@ -30,6 +30,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   changes:
@@ -103,8 +104,8 @@ jobs:
       - uses: actions/checkout@v4
       - run: docker compose -f docker-compose.yml config
 
-  build-common:
-    name: Build common artifacts and base layers (Stage A)
+  build-common-java:
+    name: Build common Java artifacts (Stage A)
     runs-on: ubuntu-latest
     needs: changes
     if: >-
@@ -118,6 +119,7 @@ jobs:
       needs.changes.outputs.workflows == 'true'
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -138,18 +140,74 @@ jobs:
           path: libs/usage-events/build/libs/*.jar
           if-no-files-found: error
           retention-days: 1
+
+  build-common-node:
+    name: Warm Node workspace cache (Stage A)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: >-
+      needs.changes.outputs.identity == 'true' ||
+      needs.changes.outputs.usage == 'true' ||
+      needs.changes.outputs.billing == 'true' ||
+      needs.changes.outputs.team == 'true' ||
+      needs.changes.outputs.notification == 'true' ||
+      needs.changes.outputs.web_host == 'true' ||
+      needs.changes.outputs.web_mfe == 'true' ||
+      needs.changes.outputs.web_shared == 'true' ||
+      needs.changes.outputs.workflows == 'true'
+    steps:
+      - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - id: setup-node
+        uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - name: Install workspace
         run: pnpm install --frozen-lockfile
-      - name: Build common docker base images once
+      - name: Node cache status
+        run: echo "setup-node cache-hit=${{ steps.setup-node.outputs.cache-hit }}"
+
+  build-common-docker:
+    name: Build common docker base layers (Stage A)
+    runs-on: ubuntu-latest
+    needs:
+      - changes
+      - build-common-node
+    if: >-
+      needs.changes.outputs.identity == 'true' ||
+      needs.changes.outputs.usage == 'true' ||
+      needs.changes.outputs.billing == 'true' ||
+      needs.changes.outputs.team == 'true' ||
+      needs.changes.outputs.notification == 'true' ||
+      needs.changes.outputs.web_host == 'true' ||
+      needs.changes.outputs.web_mfe == 'true' ||
+      needs.changes.outputs.web_shared == 'true' ||
+      needs.changes.outputs.workflows == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build web-node-deps base (cache gha)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/web-node-deps.Dockerfile
+          tags: web-node-deps:ci
+          load: true
+          cache-from: type=gha,scope=web-node-deps
+          cache-to: type=gha,mode=max,scope=web-node-deps
+      - name: Build backend-node-deps base (cache gha)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/backend-node-deps.Dockerfile
+          tags: backend-node-deps:ci
+          load: true
+          cache-from: type=gha,scope=backend-node-deps
+          cache-to: type=gha,mode=max,scope=backend-node-deps
+      - name: Export common docker base images
         run: |
-          docker build -f docker/web-node-deps.Dockerfile -t web-node-deps:ci .
-          docker build -f docker/backend-node-deps.Dockerfile -t backend-node-deps:ci .
           docker save web-node-deps:ci backend-node-deps:ci -o /tmp/common-base-images.tar
       - name: Upload docker base image bundle
         uses: actions/upload-artifact@v4
@@ -164,7 +222,8 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - changes
-      - build-common
+      - build-common-node
+      - build-common-docker
     if: needs.changes.outputs.identity == 'true' || needs.changes.outputs.web_shared == 'true' || needs.changes.outputs.workflows == 'true'
     defaults:
       run:
@@ -209,15 +268,23 @@ jobs:
         run: docker load -i .ci-artifacts/common-base-images.tar
         working-directory: .
       - name: Docker image (identity-web, standalone)
-        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/identity-service/web/Dockerfile -t identity-web:ci .
-        working-directory: .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/identity-service/web/Dockerfile
+          build-args: |
+            WEB_NODE_DEPS_IMAGE=web-node-deps:ci
+          tags: identity-web:ci
+          load: true
+          cache-from: type=gha,scope=identity-web-image
+          cache-to: type=gha,mode=max,scope=identity-web-image
 
   proxy-gateway-service:
     name: Build proxy-gateway-service
     runs-on: ubuntu-latest
     needs:
       - changes
-      - build-common
+      - build-common-java
     if: needs.changes.outputs.proxy == 'true' || needs.changes.outputs.workflows == 'true'
     defaults:
       run:
@@ -251,7 +318,9 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - changes
-      - build-common
+      - build-common-java
+      - build-common-node
+      - build-common-docker
       # Testcontainers 통합 테스트가 다른 서비스 Job과 동시에 Docker를 몰아쓰지 않도록 순차 실행
       - identity-service
       - billing-service
@@ -266,6 +335,12 @@ jobs:
              )
           && needs.identity-service.result != 'failure'
           && needs.identity-service.result != 'cancelled'
+          && needs.build-common-java.result != 'failure'
+          && needs.build-common-java.result != 'cancelled'
+          && needs.build-common-node.result != 'failure'
+          && needs.build-common-node.result != 'cancelled'
+          && needs.build-common-docker.result != 'failure'
+          && needs.build-common-docker.result != 'cancelled'
           && needs.billing-service.result != 'failure'
           && needs.billing-service.result != 'cancelled'
           && needs.team-service.result != 'failure'
@@ -278,6 +353,7 @@ jobs:
         working-directory: services/usage-service
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -321,21 +397,32 @@ jobs:
         run: docker load -i .ci-artifacts/common-base-images.tar
         working-directory: .
       - name: Docker image (usage-web, standalone)
-        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/usage-service/web/Dockerfile -t usage-web:ci .
-        working-directory: .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/usage-service/web/Dockerfile
+          build-args: |
+            WEB_NODE_DEPS_IMAGE=web-node-deps:ci
+          tags: usage-web:ci
+          load: true
+          cache-from: type=gha,scope=usage-web-image
+          cache-to: type=gha,mode=max,scope=usage-web-image
 
   billing-service:
     name: Build billing-service
     runs-on: ubuntu-latest
     needs:
       - changes
-      - build-common
+      - build-common-java
+      - build-common-node
+      - build-common-docker
     if: needs.changes.outputs.billing == 'true' || needs.changes.outputs.web_shared == 'true' || needs.changes.outputs.workflows == 'true'
     defaults:
       run:
         working-directory: services/billing-service
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
       - name: Download usage-events artifact
         uses: actions/download-artifact@v4
         with:
@@ -379,21 +466,31 @@ jobs:
         run: docker load -i .ci-artifacts/common-base-images.tar
         working-directory: .
       - name: Docker image (billing-web, standalone)
-        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/billing-service/web/Dockerfile -t billing-web:ci .
-        working-directory: .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/billing-service/web/Dockerfile
+          build-args: |
+            WEB_NODE_DEPS_IMAGE=web-node-deps:ci
+          tags: billing-web:ci
+          load: true
+          cache-from: type=gha,scope=billing-web-image
+          cache-to: type=gha,mode=max,scope=billing-web-image
 
   team-service:
     name: Build team-service
     runs-on: ubuntu-latest
     needs:
       - changes
-      - build-common
+      - build-common-node
+      - build-common-docker
     if: needs.changes.outputs.team == 'true' || needs.changes.outputs.web_shared == 'true' || needs.changes.outputs.workflows == 'true'
     defaults:
       run:
         working-directory: services/team-service
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -432,18 +529,28 @@ jobs:
         run: docker load -i .ci-artifacts/common-base-images.tar
         working-directory: .
       - name: Docker image (team-web, standalone)
-        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/team-service/web/Dockerfile -t team-web:ci .
-        working-directory: .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/team-service/web/Dockerfile
+          build-args: |
+            WEB_NODE_DEPS_IMAGE=web-node-deps:ci
+          tags: team-web:ci
+          load: true
+          cache-from: type=gha,scope=team-web-image
+          cache-to: type=gha,mode=max,scope=team-web-image
 
   notification-service:
     name: Build notification-service
     runs-on: ubuntu-latest
     needs:
       - changes
-      - build-common
+      - build-common-node
+      - build-common-docker
     if: needs.changes.outputs.notification == 'true' || needs.changes.outputs.web_shared == 'true' || needs.changes.outputs.workflows == 'true'
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -470,9 +577,27 @@ jobs:
           pnpm --filter notification-web test
           pnpm --filter notification-web run build
       - name: Docker image (notification-service)
-        run: docker build --build-arg BACKEND_NODE_DEPS_IMAGE=backend-node-deps:ci -f services/notification-service/Dockerfile -t notification-service:ci .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/notification-service/Dockerfile
+          build-args: |
+            BACKEND_NODE_DEPS_IMAGE=backend-node-deps:ci
+          tags: notification-service:ci
+          load: true
+          cache-from: type=gha,scope=notification-service-image
+          cache-to: type=gha,mode=max,scope=notification-service-image
       - name: Docker image (notification-web, standalone)
-        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/notification-service/web/Dockerfile -t notification-web:ci .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/notification-service/web/Dockerfile
+          build-args: |
+            WEB_NODE_DEPS_IMAGE=web-node-deps:ci
+          tags: notification-web:ci
+          load: true
+          cache-from: type=gha,scope=notification-web-image
+          cache-to: type=gha,mode=max,scope=notification-web-image
 
   web-host:
     name: Build web-host (apps/web)
@@ -544,14 +669,16 @@ jobs:
 
   # Single required check for branch protection.
   # Skipped Java/Compose jobs (path filter) do not fail the workflow.
-  ci-summary:
-    name: CI summary
+  ci-observability:
+    name: CI observability metrics
     runs-on: ubuntu-latest
     needs:
       - changes
       - gitleaks
       - compose-validate
-      - build-common
+      - build-common-java
+      - build-common-node
+      - build-common-docker
       - identity-service
       - proxy-gateway-service
       - usage-service
@@ -560,6 +687,47 @@ jobs:
       - notification-service
       - web-host
       - web-mfe
+    if: always()
+    steps:
+      - name: Collect job metrics from Actions API
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          curl -sS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs?per_page=100" > jobs.json
+          echo "## CI Job Duration Metrics" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Job | Result | Duration(s) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---:|---:|" >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.jobs[] | [.name, .conclusion, ((.completed_at|fromdateiso8601) - (.started_at|fromdateiso8601)|tostring)] | @tsv' jobs.json \
+            | while IFS=$'\t' read -r name result dur; do
+                echo "| $name | $result | $dur |" >> "$GITHUB_STEP_SUMMARY"
+              done
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Cache/Container observation notes" >> "$GITHUB_STEP_SUMMARY"
+          echo "- setup-node cache-hit 값은 Stage A build-common-node 로그를 참고" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Docker 단계 시간은 각 Job step duration(표)에서 Docker step 포함 Job을 비교" >> "$GITHUB_STEP_SUMMARY"
+          echo "- usage 통합테스트 컨테이너 기동 여유는 withStartupTimeout(5m) 적용 상태" >> "$GITHUB_STEP_SUMMARY"
+
+  ci-summary:
+    name: CI summary
+    runs-on: ubuntu-latest
+    needs:
+      - changes
+      - gitleaks
+      - compose-validate
+      - build-common-java
+      - build-common-node
+      - build-common-docker
+      - identity-service
+      - proxy-gateway-service
+      - usage-service
+      - billing-service
+      - team-service
+      - notification-service
+      - web-host
+      - web-mfe
+      - ci-observability
     if: always()
     steps:
       - name: Assert required jobs
@@ -576,9 +744,11 @@ jobs:
             echo "compose-validate did not succeed: ${{ needs.compose-validate.result }}"
             exit 1
           fi
-          for name in build-common identity-service proxy-gateway-service usage-service billing-service team-service notification-service web-host web-mfe; do
+          for name in build-common-java build-common-node build-common-docker identity-service proxy-gateway-service usage-service billing-service team-service notification-service web-host web-mfe ci-observability; do
             case "$name" in
-              build-common) v="${{ needs.build-common.result }}" ;;
+              build-common-java) v="${{ needs['build-common-java'].result }}" ;;
+              build-common-node) v="${{ needs['build-common-node'].result }}" ;;
+              build-common-docker) v="${{ needs['build-common-docker'].result }}" ;;
               identity-service) v="${{ needs.identity-service.result }}" ;;
               proxy-gateway-service) v="${{ needs.proxy-gateway-service.result }}" ;;
               usage-service) v="${{ needs.usage-service.result }}" ;;
@@ -587,6 +757,7 @@ jobs:
               notification-service) v="${{ needs.notification-service.result }}" ;;
               web-host) v="${{ needs['web-host'].result }}" ;;
               web-mfe) v="${{ needs['web-mfe'].result }}" ;;
+              ci-observability) v="${{ needs['ci-observability'].result }}" ;;
             esac
             if [[ "$v" == "failure" || "$v" == "cancelled" ]]; then
               echo "$name ended with $v"
