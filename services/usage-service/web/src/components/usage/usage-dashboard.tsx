@@ -33,11 +33,12 @@ import { formatOccurredAtKst } from "@/lib/usage/format-occurred-at-kst"
 import { formatRequestCount, formatTokenCount, formatUsd, toNumber } from "@/lib/usage/format"
 import type {
   DailyUsagePoint,
-  HourlyUsagePoint,
   ModelUsageAggregate,
   MonthlyUsagePoint,
   UsageCostIntradayKpiResponse,
   UsageProviderFilter,
+  UsageSeriesPoint,
+  UsageSeriesUnit,
   UsageSummaryResponse,
 } from "@/lib/usage/types"
 import { addKstDays, formatKstIsoDate } from "@/lib/usage/kst-dates"
@@ -59,6 +60,8 @@ const PROVIDER_LABEL: Record<string, string> = {
 }
 
 const MONTHLY_LOOKBACK_DAYS = 365
+const MAX_RANGE_DAYS = 366
+const HISTORY_CACHE_TTL_MS = 60 * 60 * 1000
 
 const DASHBOARD_PROVIDER_ALL = "__ALL__"
 const MODEL_REQUESTS_TOP_N = 10
@@ -114,7 +117,7 @@ function providerParam(v: string): UsageProviderFilter | undefined {
   return v as UsageProviderFilter
 }
 
-function rangeForPeriod(mode: PeriodMode, todayKst: string, customFrom: string, customTo: string) {
+function presetRangeForMode(mode: PeriodMode, todayKst: string) {
   switch (mode) {
     case "today":
       return { from: todayKst, to: todayKst }
@@ -122,8 +125,6 @@ function rangeForPeriod(mode: PeriodMode, todayKst: string, customFrom: string, 
       return { from: addKstDays(todayKst, -6), to: todayKst }
     case "30d":
       return { from: addKstDays(todayKst, -29), to: todayKst }
-    case "custom":
-      return { from: customFrom || todayKst, to: customTo || todayKst }
     default:
       return { from: todayKst, to: todayKst }
   }
@@ -145,38 +146,29 @@ function previousPeriodBounds(fromIso: string, toIso: string): { prevFrom: strin
   return { prevFrom, prevTo }
 }
 
-function kpiPeriodPrefix(mode: PeriodMode, fromIso: string, toIso: string): string {
-  switch (mode) {
-    case "today":
-      return "오늘의"
-    case "7d":
-      return "7일간"
-    case "30d":
-      return "30일간"
-    case "custom": {
-      const n = kstDaysInclusive(fromIso, toIso)
-      return `${n}일간`
-    }
-    default:
-      return "선택 기간"
-  }
+function kpiPeriodPrefix(fromIso: string, toIso: string, todayIso: string): string {
+  const n = kstDaysInclusive(fromIso, toIso)
+  if (n === 1 && fromIso === todayIso && toIso === todayIso) return "오늘의"
+  if (n === 7) return "7일간"
+  if (n === 30) return "30일간"
+  return `${n}일간`
 }
 
-function costCompareLabel(mode: PeriodMode, fromIso: string, toIso: string): string {
-  switch (mode) {
-    case "today":
-      return "전일 동기 대비"
-    case "7d":
-      return "이전 7일 대비"
-    case "30d":
-      return "이전 30일 대비"
-    case "custom": {
-      const n = kstDaysInclusive(fromIso, toIso)
-      return `이전 ${n}일 대비`
-    }
-    default:
-      return "이전 동일 기간 대비"
-  }
+function costCompareLabel(fromIso: string, toIso: string, todayIso: string): string {
+  const n = kstDaysInclusive(fromIso, toIso)
+  if (n === 1 && fromIso === todayIso && toIso === todayIso) return "전일 동기 대비"
+  return `이전 ${n}일 대비`
+}
+
+function diffDays(fromIso: string, toIso: string): number {
+  return Math.max(0, kstDaysInclusive(fromIso, toIso) - 1)
+}
+
+function resolveSeriesUnit(fromIso: string, toIso: string): UsageSeriesUnit {
+  const d = diffDays(fromIso, toIso)
+  if (d === 0) return "HOUR"
+  if (d <= 30) return "DAY"
+  return "MONTH"
 }
 
 /**
@@ -572,8 +564,8 @@ const TOKEN_CHART_MAX_H = 520
 
 export function UsageDashboard() {
   const [periodMode, setPeriodMode] = React.useState<PeriodMode>("today")
-  const [customFrom, setCustomFrom] = React.useState("")
-  const [customTo, setCustomTo] = React.useState("")
+  const [customFrom, setCustomFrom] = React.useState(formatKstIsoDate())
+  const [customTo, setCustomTo] = React.useState(formatKstIsoDate())
   const [dashProvider, setDashProvider] = React.useState<string>(DASHBOARD_PROVIDER_ALL)
 
   const [mainLoading, setMainLoading] = React.useState(true)
@@ -581,7 +573,7 @@ export function UsageDashboard() {
   const [mainRefresh, setMainRefresh] = React.useState(0)
 
   const [costKpi, setCostKpi] = React.useState<UsageCostIntradayKpiResponse | null>(null)
-  const [hourly, setHourly] = React.useState<HourlyUsagePoint[] | null>(null)
+  const [mainSeries, setMainSeries] = React.useState<UsageSeriesPoint[]>([])
   const [kpiSummary, setKpiSummary] = React.useState<UsageSummaryResponse | null>(null)
   const [prevPeriodSummary, setPrevPeriodSummary] = React.useState<UsageSummaryResponse | null>(null)
   const [daily, setDaily] = React.useState<DailyUsagePoint[]>([])
@@ -597,6 +589,14 @@ export function UsageDashboard() {
     setClientReady(true)
   }, [])
 
+  React.useEffect(() => {
+    if (!clientReady || periodMode === "custom") return
+    const t = formatKstIsoDate()
+    const { from, to } = presetRangeForMode(periodMode, t)
+    setCustomFrom(from)
+    setCustomTo(to)
+  }, [clientReady, periodMode])
+
   const kstTodayFallback = formatKstIsoDate()
   const rangeFrom = loadedRange?.from ?? kstTodayFallback
   const rangeTo = loadedRange?.to ?? kstTodayFallback
@@ -611,8 +611,18 @@ export function UsageDashboard() {
     ;(async () => {
       try {
         const t = formatKstIsoDate()
-        const { from: rf, to: rt } = rangeForPeriod(periodMode, t, customFrom, customTo)
+        const rf = customFrom || t
+        const rt = customTo || t
+        if (Date.parse(`${rt}T12:00:00+09:00`) < Date.parse(`${rf}T12:00:00+09:00`)) {
+          throw new Error("종료일은 시작일보다 빠를 수 없습니다.")
+        }
+        const rangeDays = kstDaysInclusive(rf, rt)
+        if (rangeDays > MAX_RANGE_DAYS) {
+          throw new Error("조회 기간은 최대 1년(366일)까지 가능합니다.")
+        }
         const { prevFrom: pf, prevTo: pt } = previousPeriodBounds(rf, rt)
+        const seriesUnit = resolveSeriesUnit(rf, rt)
+        const isCurrentDayRange = rf === t && rt === t
 
         const fy = addKstDays(t, -MONTHLY_LOOKBACK_DAYS)
         const pq = buildUsageQuery({ provider: providerParam(dashProvider) })
@@ -626,58 +636,47 @@ export function UsageDashboard() {
           to: pt,
           provider: providerParam(dashProvider),
         })
+        const qMainSeries = buildUsageQuery({
+          from: rf,
+          to: rt,
+          unit: seriesUnit,
+          provider: providerParam(dashProvider),
+        })
 
-        const opt = { signal }
-        const summaryP = fetchUsageJson<UsageSummaryResponse>(`dashboard/summary${qRange}`, { signal })
-        const summaryPrevP = fetchUsageJson<UsageSummaryResponse>(`dashboard/summary${qPrev}`, { signal })
-        const dailyP = fetchUsageJson<DailyUsagePoint[]>(`dashboard/series/daily${qRange}`, opt)
+        const fetchPolicy = isCurrentDayRange
+          ? { signal, cacheMode: "no-store" as const, clientCacheTtlMs: 0 }
+          : { signal, cacheMode: "default" as const, clientCacheTtlMs: HISTORY_CACHE_TTL_MS }
+
+        const summaryP = fetchUsageJson<UsageSummaryResponse>(`dashboard/summary${qRange}`, fetchPolicy)
+        const summaryPrevP = fetchUsageJson<UsageSummaryResponse>(`dashboard/summary${qPrev}`, fetchPolicy)
+        const mainSeriesP = fetchUsageJson<UsageSeriesPoint[]>(`dashboard/series${qMainSeries}`, fetchPolicy)
+        const dailyP = fetchUsageJson<DailyUsagePoint[]>(`dashboard/series/daily${qRange}`, fetchPolicy)
         const monthlyP = fetchUsageJson<MonthlyUsagePoint[]>(
           `dashboard/series/monthly${buildUsageQuery({ from: fy, to: rt, provider: providerParam(dashProvider) })}`,
-          opt
+          fetchPolicy
         )
-        const byModelP = fetchUsageJson<ModelUsageAggregate[]>(`dashboard/by-model${qRange}`, opt)
+        const byModelP = fetchUsageJson<ModelUsageAggregate[]>(`dashboard/by-model${qRange}`, fetchPolicy)
 
-        if (periodMode === "today") {
-          const [kpi, h, cur, prev, d, m, bm] = await Promise.all([
-            fetchUsageJson<UsageCostIntradayKpiResponse>(`dashboard/kpi/cost-intraday${pq}`, opt),
-            fetchUsageJson<HourlyUsagePoint[]>(
-              `dashboard/series/hourly${buildUsageQuery({ date: t, provider: providerParam(dashProvider) })}`,
-              opt
-            ),
-            summaryP,
-            summaryPrevP,
-            dailyP,
-            monthlyP,
-            byModelP,
-          ])
-          if (!cancelled) {
-            setLoadedRange({ from: rf, to: rt })
-            setCostKpi(kpi)
-            setHourly(Array.isArray(h) ? h : [])
-            setKpiSummary(cur)
-            setPrevPeriodSummary(prev)
-            setDaily(Array.isArray(d) ? d : [])
-            setMonthly(Array.isArray(m) ? m : [])
-            setByModel(Array.isArray(bm) ? bm : [])
-          }
-        } else {
-          const [cur, prev, d, m, bm] = await Promise.all([
-            summaryP,
-            summaryPrevP,
-            dailyP,
-            monthlyP,
-            byModelP,
-          ])
-          if (!cancelled) {
-            setLoadedRange({ from: rf, to: rt })
-            setCostKpi(null)
-            setHourly(null)
-            setKpiSummary(cur)
-            setPrevPeriodSummary(prev)
-            setDaily(Array.isArray(d) ? d : [])
-            setMonthly(Array.isArray(m) ? m : [])
-            setByModel(Array.isArray(bm) ? bm : [])
-          }
+        const [cur, prev, seriesRows, d, m, bm, maybeKpi] = await Promise.all([
+          summaryP,
+          summaryPrevP,
+          mainSeriesP,
+          dailyP,
+          monthlyP,
+          byModelP,
+          isCurrentDayRange
+            ? fetchUsageJson<UsageCostIntradayKpiResponse>(`dashboard/kpi/cost-intraday${pq}`, fetchPolicy)
+            : Promise.resolve(null),
+        ])
+        if (!cancelled) {
+          setLoadedRange({ from: rf, to: rt })
+          setCostKpi(maybeKpi)
+          setMainSeries(Array.isArray(seriesRows) ? seriesRows : [])
+          setKpiSummary(cur)
+          setPrevPeriodSummary(prev)
+          setDaily(Array.isArray(d) ? d : [])
+          setMonthly(Array.isArray(m) ? m : [])
+          setByModel(Array.isArray(bm) ? bm : [])
         }
       } catch (e) {
         if (isAbortError(e)) return
@@ -712,32 +711,32 @@ export function UsageDashboard() {
     [daily]
   )
 
-  const hourlyChart = React.useMemo(
-    (): MainStabilityRow[] =>
-      (hourly ?? []).map((row) => ({
-        label: `${row.hour}시`,
-        requestCount: row.requestCount,
-        successCount: Math.max(0, row.requestCount - row.errorCount),
-        errorCount: row.errorCount,
-        successRate: row.requestCount > 0 ? (100 * (row.requestCount - row.errorCount)) / row.requestCount : 0,
-        errorRate: row.requestCount > 0 ? (100 * row.errorCount) / row.requestCount : 0,
-      })),
-    [hourly]
-  )
+  const mainChartUnit = React.useMemo(() => resolveSeriesUnit(rangeFrom, rangeTo), [rangeFrom, rangeTo])
 
   const mainStabilitySeries = React.useMemo((): MainStabilityRow[] => {
-    if (periodMode === "today") {
-      return hourlyChart.length > 0 ? hourlyChart : emptyHourlyStabilityRows()
-    }
-    return dailyChart.length > 0 ? dailyChart : emptyDailyStabilityRows(rangeFrom, rangeTo)
-  }, [periodMode, hourlyChart, dailyChart, rangeFrom, rangeTo])
+    const fromSeries = mainSeries.map((row) => {
+      const successCount = Math.max(0, row.requestCount - row.errorCount)
+      const successRate = row.requestCount > 0 ? (100 * successCount) / row.requestCount : 0
+      const errorRate = row.requestCount > 0 ? (100 * row.errorCount) / row.requestCount : 0
+      const label = mainChartUnit === "HOUR" ? row.bucketLabel.replace(":00", "시") : row.bucketLabel
+      return {
+        label,
+        requestCount: row.requestCount,
+        successCount,
+        errorCount: row.errorCount,
+        successRate,
+        errorRate,
+      }
+    })
+    if (fromSeries.length > 0) return fromSeries
+    if (mainChartUnit === "HOUR") return emptyHourlyStabilityRows()
+    if (mainChartUnit === "DAY") return dailyChart.length > 0 ? dailyChart : emptyDailyStabilityRows(rangeFrom, rangeTo)
+    return []
+  }, [mainSeries, mainChartUnit, dailyChart, rangeFrom, rangeTo])
 
   const mainStabilityNoRequests = React.useMemo(() => {
-    if (periodMode === "today") {
-      return !(hourly ?? []).some((h) => h.requestCount > 0)
-    }
-    return !daily.some((d) => d.requestCount > 0)
-  }, [periodMode, hourly, daily])
+    return !mainSeries.some((row) => row.requestCount > 0)
+  }, [mainSeries])
 
   const monthlyChart = React.useMemo(
     () =>
@@ -956,15 +955,18 @@ export function UsageDashboard() {
     daily.length > 0 ||
     monthly.length > 0 ||
     byModel.some((m) => m.requestCount > 0) ||
-    (hourly && hourly.some((h) => h.requestCount > 0))
+    mainSeries.some((r) => r.requestCount > 0)
 
-  const periodPrefix = kpiPeriodPrefix(periodMode, rangeFrom, rangeTo)
-  const compareCostLabel = costCompareLabel(periodMode, rangeFrom, rangeTo)
+  const todayKst = formatKstIsoDate()
+  const periodPrefix = kpiPeriodPrefix(rangeFrom, rangeTo, todayKst)
+  const compareCostLabel = costCompareLabel(rangeFrom, rangeTo, todayKst)
 
   const rangeCost = kpiSummary ? toNumber(kpiSummary.totalEstimatedCost) : 0
   /** 오늘 선택 시 카드 금액은 intraday KPI와 동일 기준(전일 동시창 비교와 일치). */
   const displayedTotalCostUsd =
-    periodMode === "today" && costKpi != null ? toNumber(costKpi.todayEstimatedCostUsd) : rangeCost
+    mainChartUnit === "HOUR" && rangeFrom === todayKst && rangeTo === todayKst && costKpi != null
+      ? toNumber(costKpi.todayEstimatedCostUsd)
+      : rangeCost
   const rangeRequests = kpiSummary?.totalRequests ?? 0
   const rangeTokens = kpiSummary?.totalInputTokens ?? 0
   const rangeErrors = kpiSummary?.totalErrors ?? 0
@@ -976,7 +978,7 @@ export function UsageDashboard() {
   const prevCostForCompare = prevPeriodSummary ? toNumber(prevPeriodSummary.totalEstimatedCost) : 0
 
   const costChangePercent = React.useMemo(() => {
-    if (periodMode === "today" && costKpi != null) {
+    if (mainChartUnit === "HOUR" && rangeFrom === todayKst && rangeTo === todayKst && costKpi != null) {
       const apiRate = costKpi.changeRatePercent
       if (apiRate != null && apiRate !== "") {
         return toNumber(apiRate)
@@ -986,7 +988,7 @@ export function UsageDashboard() {
       return percentCostChangeVsPrevious(todayWindow, yesterdayWindow)
     }
     return percentCostChangeVsPrevious(rangeCost, prevCostForCompare)
-  }, [periodMode, costKpi, rangeCost, prevCostForCompare])
+  }, [mainChartUnit, rangeFrom, rangeTo, todayKst, costKpi, rangeCost, prevCostForCompare])
 
   const monthlyHasActivity = monthlyChart.some((r) => r.requestCount > 0)
 
@@ -999,7 +1001,11 @@ export function UsageDashboard() {
   )
 
   const mainChartTitle =
-    periodMode === "today" ? "시간별 요청·성공률·오류율 (오늘 KST)" : "일별 요청·성공률·오류율 (선택 기간)"
+    mainChartUnit === "HOUR"
+      ? "시간별 요청·성공률·오류율"
+      : mainChartUnit === "DAY"
+        ? "일별 요청·성공률·오류율"
+        : "월별 요청·성공률·오류율"
 
   const rateAxisDomain = React.useMemo(
     () => stabilityRateDomain(mainStabilitySeries),
@@ -1041,7 +1047,16 @@ export function UsageDashboard() {
           <Label htmlFor="dash-period">기간</Label>
           <Select
             value={periodMode}
-            onValueChange={(v) => setPeriodMode(v as PeriodMode)}
+            onValueChange={(v) => {
+              const nextMode = v as PeriodMode
+              setPeriodMode(nextMode)
+              if (nextMode !== "custom") {
+                const t = formatKstIsoDate()
+                const nextRange = presetRangeForMode(nextMode, t)
+                setCustomFrom(nextRange.from)
+                setCustomTo(nextRange.to)
+              }
+            }}
           >
             <SelectTrigger id="dash-period">
               <SelectValue />
@@ -1075,6 +1090,7 @@ export function UsageDashboard() {
                 onChange={(e) => setCustomTo(e.target.value)}
               />
             </div>
+            <p className="w-full text-xs text-muted-foreground">기간 지정 조회는 최대 1년(366일)까지 가능합니다.</p>
           </div>
         ) : null}
 
@@ -1117,7 +1133,7 @@ export function UsageDashboard() {
                   {costChangePercent.toFixed(1)}%
                 </span>
               </p>
-              {periodMode === "today" && costKpi ? (
+              {mainChartUnit === "HOUR" && rangeFrom === todayKst && rangeTo === todayKst && costKpi ? (
                 <p className="mt-1 text-[11px] text-muted-foreground leading-snug">
                   기준 {formatOccurredAtKst(costKpi.comparisonWindowEnd)} (KST)
                 </p>

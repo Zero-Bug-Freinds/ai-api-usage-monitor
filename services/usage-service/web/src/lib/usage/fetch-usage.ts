@@ -9,17 +9,35 @@ function usageBffPrefix(): string {
 
 export type FetchUsageJsonOptions = {
   signal?: AbortSignal
+  cacheMode?: RequestCache
+  clientCacheTtlMs?: number
 }
+
+type CachedPayload = {
+  savedAt: number
+  data: unknown
+}
+
+const usageClientCache = new Map<string, CachedPayload>()
 
 export async function fetchUsageJson<T>(
   pathAndQuery: string,
   options?: FetchUsageJsonOptions
 ): Promise<T> {
+  const ttlMs = options?.clientCacheTtlMs ?? 0
+  const cacheKey = pathAndQuery
+  if (ttlMs > 0) {
+    const hit = usageClientCache.get(cacheKey)
+    if (hit && Date.now() - hit.savedAt <= ttlMs) {
+      return hit.data as T
+    }
+  }
+
   const prefix = usageBffPrefix()
   const res = await fetch(`${prefix}/api/usage/${pathAndQuery}`, {
     credentials: "include",
     headers: { Accept: "application/json" },
-    cache: "no-store",
+    cache: options?.cacheMode ?? "no-store",
     signal: options?.signal,
   })
 
@@ -47,7 +65,11 @@ export async function fetchUsageJson<T>(
     throw new Error(message || `HTTP ${res.status}`)
   }
 
-  return res.json() as Promise<T>
+  const json = (await res.json()) as T
+  if (ttlMs > 0) {
+    usageClientCache.set(cacheKey, { savedAt: Date.now(), data: json })
+  }
+  return json
 }
 
 export function buildUsageQuery(params: Record<string, string | number | undefined | null>): string {
