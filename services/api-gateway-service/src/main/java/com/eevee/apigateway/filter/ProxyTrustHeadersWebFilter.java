@@ -143,7 +143,6 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
     private Mono<Void> forwardWithJwt(ServerWebExchange exchange, WebFilterChain chain, JwtAuthenticationToken jwtAuth) {
         Jwt jwt = jwtAuth.getToken();
         ServerHttpRequest.Builder req = exchange.getRequest().mutate();
-        sanitizeTrustHeaders(req);
         req.header(HDR_USER, jwt.getSubject());
         String platformUserId = jwt.getClaimAsString("userId");
         if (platformUserId != null && !platformUserId.isBlank()) {
@@ -168,33 +167,13 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
             return Mono.error(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing X-User-Id"));
         }
         ServerHttpRequest.Builder req = exchange.getRequest().mutate();
-        sanitizeTrustHeaders(req);
-        req.header(HDR_USER, userId);
         copyCorrelation(exchange, req);
         String platformUserId = exchange.getRequest().getHeaders().getFirst(HDR_PLATFORM_USER);
         if (platformUserId != null && !platformUserId.isBlank()) {
             req.header(HDR_PLATFORM_USER, platformUserId);
         }
-        String org = exchange.getRequest().getHeaders().getFirst(HDR_ORG);
-        if (org != null && !org.isBlank()) {
-            req.header(HDR_ORG, org);
-        }
-        String team = exchange.getRequest().getHeaders().getFirst(HDR_TEAM);
-        if (team != null && !team.isBlank()) {
-            req.header(HDR_TEAM, team);
-        }
         attachGatewayAuth(req);
         return chain.filter(exchange.mutate().request(req.build()).build());
-    }
-
-    private void sanitizeTrustHeaders(ServerHttpRequest.Builder req) {
-        req.headers(headers -> {
-            headers.remove(HDR_USER);
-            headers.remove(HDR_PLATFORM_USER);
-            headers.remove(HDR_ORG);
-            headers.remove(HDR_TEAM);
-            headers.remove(HDR_GATEWAY_AUTH);
-        });
     }
 
     private void copyCorrelation(ServerWebExchange exchange, ServerHttpRequest.Builder req) {
