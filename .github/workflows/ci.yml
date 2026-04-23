@@ -103,10 +103,68 @@ jobs:
       - uses: actions/checkout@v4
       - run: docker compose -f docker-compose.yml config
 
+  build-common:
+    name: Build common artifacts and base layers (Stage A)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: >-
+      needs.changes.outputs.identity == 'true' ||
+      needs.changes.outputs.proxy == 'true' ||
+      needs.changes.outputs.usage == 'true' ||
+      needs.changes.outputs.billing == 'true' ||
+      needs.changes.outputs.team == 'true' ||
+      needs.changes.outputs.notification == 'true' ||
+      needs.changes.outputs.web_shared == 'true' ||
+      needs.changes.outputs.workflows == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+          cache-dependency-path: |
+            services/usage-service/build.gradle
+            libs/usage-events/build.gradle
+      - name: Grant execute permission for gradlew (usage-service)
+        run: chmod +x services/usage-service/gradlew
+      - name: Build usage-events JAR
+        run: ./gradlew :usage-events:jar --no-daemon
+        working-directory: services/usage-service
+      - name: Upload usage-events artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: usage-events-jar
+          path: libs/usage-events/build/libs/*.jar
+          if-no-files-found: error
+          retention-days: 1
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install workspace
+        run: pnpm install --frozen-lockfile
+      - name: Build common docker base images once
+        run: |
+          docker build -f docker/web-node-deps.Dockerfile -t web-node-deps:ci .
+          docker build -f docker/backend-node-deps.Dockerfile -t backend-node-deps:ci .
+          docker save web-node-deps:ci backend-node-deps:ci -o /tmp/common-base-images.tar
+      - name: Upload docker base image bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: common-base-images
+          path: /tmp/common-base-images.tar
+          if-no-files-found: error
+          retention-days: 1
+
   identity-service:
     name: Build identity-service
     runs-on: ubuntu-latest
-    needs: changes
+    needs:
+      - changes
+      - build-common
     if: needs.changes.outputs.identity == 'true' || needs.changes.outputs.web_shared == 'true' || needs.changes.outputs.workflows == 'true'
     defaults:
       run:
@@ -142,8 +200,13 @@ jobs:
           pnpm --filter identity-web test
           pnpm run build:identity-web
         working-directory: .
-      - name: Docker deps base image (shared pnpm install layer)
-        run: docker build -f docker/web-node-deps.Dockerfile -t web-node-deps:ci .
+      - name: Download common docker base images
+        uses: actions/download-artifact@v4
+        with:
+          name: common-base-images
+          path: .ci-artifacts
+      - name: Load common docker base images
+        run: docker load -i .ci-artifacts/common-base-images.tar
         working-directory: .
       - name: Docker image (identity-web, standalone)
         run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/identity-service/web/Dockerfile -t identity-web:ci .
@@ -152,13 +215,20 @@ jobs:
   proxy-gateway-service:
     name: Build proxy-gateway-service
     runs-on: ubuntu-latest
-    needs: changes
+    needs:
+      - changes
+      - build-common
     if: needs.changes.outputs.proxy == 'true' || needs.changes.outputs.workflows == 'true'
     defaults:
       run:
         working-directory: services/proxy-service
     steps:
       - uses: actions/checkout@v4
+      - name: Download usage-events artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: usage-events-jar
+          path: .ci-artifacts/usage-events
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -181,6 +251,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - changes
+      - build-common
       # Testcontainers 통합 테스트가 다른 서비스 Job과 동시에 Docker를 몰아쓰지 않도록 순차 실행
       - identity-service
       - billing-service
@@ -213,6 +284,11 @@ jobs:
           java-version: '21'
           cache: gradle
           cache-dependency-path: services/usage-service/build.gradle
+      - name: Download usage-events artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: usage-events-jar
+          path: .ci-artifacts/usage-events
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
       - name: Build and test
@@ -236,8 +312,13 @@ jobs:
           pnpm --filter usage-web test
           pnpm run build:usage-web
         working-directory: .
-      - name: Docker deps base image (shared pnpm install layer)
-        run: docker build -f docker/web-node-deps.Dockerfile -t web-node-deps:ci .
+      - name: Download common docker base images
+        uses: actions/download-artifact@v4
+        with:
+          name: common-base-images
+          path: .ci-artifacts
+      - name: Load common docker base images
+        run: docker load -i .ci-artifacts/common-base-images.tar
         working-directory: .
       - name: Docker image (usage-web, standalone)
         run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/usage-service/web/Dockerfile -t usage-web:ci .
@@ -246,13 +327,20 @@ jobs:
   billing-service:
     name: Build billing-service
     runs-on: ubuntu-latest
-    needs: changes
+    needs:
+      - changes
+      - build-common
     if: needs.changes.outputs.billing == 'true' || needs.changes.outputs.web_shared == 'true' || needs.changes.outputs.workflows == 'true'
     defaults:
       run:
         working-directory: services/billing-service
     steps:
       - uses: actions/checkout@v4
+      - name: Download usage-events artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: usage-events-jar
+          path: .ci-artifacts/usage-events
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -282,8 +370,13 @@ jobs:
           pnpm --filter billing-web test
           pnpm run build:billing-web
         working-directory: .
-      - name: Docker deps base image (shared pnpm install layer)
-        run: docker build -f docker/web-node-deps.Dockerfile -t web-node-deps:ci .
+      - name: Download common docker base images
+        uses: actions/download-artifact@v4
+        with:
+          name: common-base-images
+          path: .ci-artifacts
+      - name: Load common docker base images
+        run: docker load -i .ci-artifacts/common-base-images.tar
         working-directory: .
       - name: Docker image (billing-web, standalone)
         run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/billing-service/web/Dockerfile -t billing-web:ci .
@@ -292,7 +385,9 @@ jobs:
   team-service:
     name: Build team-service
     runs-on: ubuntu-latest
-    needs: changes
+    needs:
+      - changes
+      - build-common
     if: needs.changes.outputs.team == 'true' || needs.changes.outputs.web_shared == 'true' || needs.changes.outputs.workflows == 'true'
     defaults:
       run:
@@ -328,8 +423,13 @@ jobs:
           pnpm --filter team-web test
           pnpm run build:team-web
         working-directory: .
-      - name: Docker deps base image (shared pnpm install layer)
-        run: docker build -f docker/web-node-deps.Dockerfile -t web-node-deps:ci .
+      - name: Download common docker base images
+        uses: actions/download-artifact@v4
+        with:
+          name: common-base-images
+          path: .ci-artifacts
+      - name: Load common docker base images
+        run: docker load -i .ci-artifacts/common-base-images.tar
         working-directory: .
       - name: Docker image (team-web, standalone)
         run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/team-service/web/Dockerfile -t team-web:ci .
@@ -338,7 +438,9 @@ jobs:
   notification-service:
     name: Build notification-service
     runs-on: ubuntu-latest
-    needs: changes
+    needs:
+      - changes
+      - build-common
     if: needs.changes.outputs.notification == 'true' || needs.changes.outputs.web_shared == 'true' || needs.changes.outputs.workflows == 'true'
     steps:
       - uses: actions/checkout@v4
@@ -354,18 +456,21 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build (Nest)
         run: pnpm --filter notification-service run build
+      - name: Download common docker base images
+        uses: actions/download-artifact@v4
+        with:
+          name: common-base-images
+          path: .ci-artifacts
+      - name: Load common docker base images
+        run: docker load -i .ci-artifacts/common-base-images.tar
       # ESLint: omit --max-warnings so only errors fail the step; warnings do not stop CI
       - name: Lint / test / build (notification-web)
         run: |
           pnpm --filter notification-web run lint
           pnpm --filter notification-web test
           pnpm --filter notification-web run build
-      - name: Docker deps base image (notification backend)
-        run: docker build -f docker/backend-node-deps.Dockerfile -t backend-node-deps:ci .
       - name: Docker image (notification-service)
         run: docker build --build-arg BACKEND_NODE_DEPS_IMAGE=backend-node-deps:ci -f services/notification-service/Dockerfile -t notification-service:ci .
-      - name: Docker deps base image (shared pnpm install layer)
-        run: docker build -f docker/web-node-deps.Dockerfile -t web-node-deps:ci .
       - name: Docker image (notification-web, standalone)
         run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/notification-service/web/Dockerfile -t notification-web:ci .
 
@@ -446,6 +551,7 @@ jobs:
       - changes
       - gitleaks
       - compose-validate
+      - build-common
       - identity-service
       - proxy-gateway-service
       - usage-service
@@ -470,8 +576,9 @@ jobs:
             echo "compose-validate did not succeed: ${{ needs.compose-validate.result }}"
             exit 1
           fi
-          for name in identity-service proxy-gateway-service usage-service billing-service team-service notification-service web-host web-mfe; do
+          for name in build-common identity-service proxy-gateway-service usage-service billing-service team-service notification-service web-host web-mfe; do
             case "$name" in
+              build-common) v="${{ needs.build-common.result }}" ;;
               identity-service) v="${{ needs.identity-service.result }}" ;;
               proxy-gateway-service) v="${{ needs.proxy-gateway-service.result }}" ;;
               usage-service) v="${{ needs.usage-service.result }}" ;;
