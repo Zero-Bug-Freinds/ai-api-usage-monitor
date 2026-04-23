@@ -44,7 +44,6 @@ jobs:
       team: ${{ steps.filter.outputs.team }}
       notification: ${{ steps.filter.outputs.notification }}
       web_host: ${{ steps.filter.outputs.web_host }}
-      web_apps: ${{ steps.filter.outputs.web_apps }}
       web_mfe: ${{ steps.filter.outputs.web_mfe }}
       web_shared: ${{ steps.filter.outputs.web_shared }}
       workflows: ${{ steps.filter.outputs.workflows }}
@@ -73,12 +72,6 @@ jobs:
               - 'docker/backend-node-deps.Dockerfile'
             web_host:
               - 'apps/web/**'
-            web_apps:
-              - 'services/identity-service/web/**'
-              - 'services/usage-service/web/**'
-              - 'services/billing-service/web/**'
-              - 'services/team-service/web/**'
-              - 'services/notification-service/web/**'
             web_mfe:
               - 'services/usage-service/web-mfe/**'
               - 'services/team-service/web-mfe/**'
@@ -652,54 +645,6 @@ jobs:
       - name: Docker image (web-host, standalone)
         run: docker build -f docker/web-node-deps.Dockerfile -t web-node-deps:ci . && docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f apps/web/Dockerfile -t web-host:ci .
 
-  web-apps:
-    name: Build web apps (services/*/web)
-    runs-on: ubuntu-latest
-    needs: changes
-    if: needs.changes.outputs.web_apps == 'true' || needs.changes.outputs.web_shared == 'true' || needs.changes.outputs.workflows == 'true'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-      - name: Reset pnpm store metadata
-        run: pnpm store prune
-      - name: Install workspace
-        run: pnpm install --frozen-lockfile
-      # ESLint: omit --max-warnings so only errors fail the step; warnings do not stop CI
-      - name: Lint / test / build (service web apps)
-        run: |
-          pnpm --filter identity-web run lint
-          pnpm --filter usage-web run lint
-          pnpm --filter billing-web run lint
-          pnpm --filter team-web run lint
-          pnpm --filter notification-web run lint
-          pnpm --filter identity-web test
-          pnpm --filter usage-web test
-          pnpm --filter billing-web test
-          pnpm --filter team-web test
-          pnpm --filter notification-web test
-          pnpm --filter notification-web run build
-          pnpm run build:identity-web
-          pnpm run build:usage-web
-          pnpm run build:billing-web
-          pnpm run build:team-web
-      - name: Docker deps base image (shared pnpm install layer)
-        run: docker build -f docker/web-node-deps.Dockerfile -t web-node-deps:ci .
-      - name: Docker image (identity-web, standalone)
-        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/identity-service/web/Dockerfile -t identity-web:ci .
-      - name: Docker image (usage-web, standalone)
-        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/usage-service/web/Dockerfile -t usage-web:ci .
-      - name: Docker image (billing-web, standalone)
-        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/billing-service/web/Dockerfile -t billing-web:ci .
-      - name: Docker image (team-web, standalone)
-        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/team-service/web/Dockerfile -t team-web:ci .
-      - name: Docker image (notification-web, standalone)
-        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/notification-service/web/Dockerfile -t notification-web:ci .
-
   web-mfe:
     name: Build web-mfe remotes (usage/team)
     runs-on: ubuntu-latest
@@ -788,7 +733,6 @@ jobs:
       - team-service
       - notification-service
       - web-host
-      - web-apps
       - web-mfe
     if: always()
     steps:
