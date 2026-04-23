@@ -42,25 +42,18 @@ public class ApiKeyClient {
      * @param keyLookupUserId numeric platform user id when available, else gateway subject (e.g. email)
      */
     public Mono<ResolvedApiKey> resolveApiKey(String keyLookupUserId, AiProvider provider) {
-        return resolveApiKey(keyLookupUserId, null, provider);
-    }
-
-    public Mono<ResolvedApiKey> resolveApiKey(String keyLookupUserId, String teamId, AiProvider provider) {
-        String scope = (teamId != null && !teamId.isBlank()) ? "team:" + teamId : "user:" + keyLookupUserId;
-        String cacheKey = scope + ":" + provider.pathSegment();
+        String cacheKey = keyLookupUserId + ":" + provider.pathSegment();
         return Mono.fromCallable(() -> cache.get(cacheKey))
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
     private ResolvedApiKey loadKeyBlocking(String cacheKey) {
-        int firstIdx = cacheKey.indexOf(':');
-        int secondIdx = cacheKey.indexOf(':', firstIdx + 1);
-        if (firstIdx <= 0 || secondIdx <= firstIdx + 1) {
+        int idx = cacheKey.indexOf(':');
+        if (idx <= 0) {
             throw new IllegalStateException("invalid cache key");
         }
-        String scope = cacheKey.substring(0, firstIdx);
-        String subjectId = cacheKey.substring(firstIdx + 1, secondIdx);
-        String segment = cacheKey.substring(secondIdx + 1);
+        String keyLookupUserId = cacheKey.substring(0, idx);
+        String segment = cacheKey.substring(idx + 1);
         AiProvider provider = AiProvider.fromPathSegment(segment);
 
         String mock = resolveMockKey(provider);
@@ -70,35 +63,19 @@ public class ApiKeyClient {
 
         String token = proxyProperties.getKeyService().getInternalToken();
         try {
-            KeyResponse body;
-            if ("team".equals(scope)) {
-                body = keyServiceWebClient.get()
-                        .uri(uriBuilder -> uriBuilder
-                                .path(proxyProperties.getKeyService().getTeamPath())
-                                .build(subjectId, provider.pathSegment()))
-                        .headers(h -> {
-                            if (token != null && !token.isBlank()) {
-                                h.setBearerAuth(token);
-                            }
-                        })
-                        .retrieve()
-                        .bodyToMono(KeyResponse.class)
-                        .block(Duration.ofSeconds(10));
-            } else {
-                body = keyServiceWebClient.get()
-                        .uri(uriBuilder -> uriBuilder
-                                .path("/internal/api-keys/{provider}")
-                                .queryParam("userId", subjectId)
-                                .build(provider.pathSegment()))
-                        .headers(h -> {
-                            if (token != null && !token.isBlank()) {
-                                h.setBearerAuth(token);
-                            }
-                        })
-                        .retrieve()
-                        .bodyToMono(KeyResponse.class)
-                        .block(Duration.ofSeconds(10));
-            }
+            KeyResponse body = keyServiceWebClient.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/internal/api-keys/{provider}")
+                            .queryParam("userId", keyLookupUserId)
+                            .build(provider.pathSegment()))
+                    .headers(h -> {
+                        if (token != null && !token.isBlank()) {
+                            h.setBearerAuth(token);
+                        }
+                    })
+                    .retrieve()
+                    .bodyToMono(KeyResponse.class)
+                    .block(Duration.ofSeconds(10));
             if (body == null || body.plainKey() == null || body.plainKey().isBlank()) {
                 throw new IllegalStateException("key service returned empty key");
             }

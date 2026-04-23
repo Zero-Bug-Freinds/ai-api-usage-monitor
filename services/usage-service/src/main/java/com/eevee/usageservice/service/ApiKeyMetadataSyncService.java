@@ -5,7 +5,6 @@ import com.eevee.usageservice.domain.ApiKeyStatus;
 import com.eevee.usageservice.mq.ExternalApiKeyDeletedEvent;
 import com.eevee.usageservice.mq.ExternalApiKeyStatus;
 import com.eevee.usageservice.mq.ExternalApiKeyStatusChangedEvent;
-import com.eevee.usageservice.mq.TeamApiKeyChangedEvent;
 import com.eevee.usageservice.repository.ApiKeyMetadataRepository;
 import com.eevee.usageservice.repository.UsageRecordedLogRepository;
 import org.slf4j.Logger;
@@ -50,30 +49,6 @@ public class ApiKeyMetadataSyncService {
                 event.provider(),
                 alias,
                 mapStatus(event.status()),
-                updatedAt
-        );
-        apiKeyMetadataRepository.save(entity);
-    }
-
-    @Transactional
-    public void upsertFromTeam(TeamApiKeyChangedEvent event, ApiKeyStatus status) {
-        if (event.apiKeyId() == null || !StringUtils.hasText(event.teamId()) || status == null) {
-            throw new IllegalArgumentException("apiKeyId, teamId, status are required");
-        }
-        String keyId = String.valueOf(event.apiKeyId());
-        String ownerRef = "team:" + event.teamId().trim();
-        Instant updatedAt = event.occurredAt() != null ? event.occurredAt() : Instant.now();
-
-        ApiKeyMetadataEntity entity = apiKeyMetadataRepository.findById(keyId)
-                .orElseGet(() -> ApiKeyMetadataEntity.create(keyId, ownerRef));
-
-        String alias = StringUtils.hasText(event.alias()) ? event.alias().trim() : entity.getAlias();
-        String provider = StringUtils.hasText(event.provider()) ? event.provider().trim() : entity.getProvider();
-        entity.apply(
-                ownerRef,
-                provider,
-                alias,
-                status,
                 updatedAt
         );
         apiKeyMetadataRepository.save(entity);
