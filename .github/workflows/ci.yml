@@ -269,18 +269,8 @@ jobs:
         run: docker load -i .ci-artifacts/common-base-images.tar
         working-directory: .
       - name: Docker image (identity-web, standalone)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: services/identity-service/web/Dockerfile
-          build-args: |
-            WEB_NODE_DEPS_IMAGE=web-node-deps:ci
-          tags: identity-web:ci
-          load: true
-          cache-from: |
-            type=gha,scope=web-node-deps
-            type=gha,scope=identity-web-image
-          cache-to: type=gha,mode=max,scope=identity-web-image
+        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/identity-service/web/Dockerfile -t identity-web:ci .
+        working-directory: .
 
   proxy-gateway-service:
     name: Build proxy-gateway-service
@@ -400,18 +390,8 @@ jobs:
         run: docker load -i .ci-artifacts/common-base-images.tar
         working-directory: .
       - name: Docker image (usage-web, standalone)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: services/usage-service/web/Dockerfile
-          build-args: |
-            WEB_NODE_DEPS_IMAGE=web-node-deps:ci
-          tags: usage-web:ci
-          load: true
-          cache-from: |
-            type=gha,scope=web-node-deps
-            type=gha,scope=usage-web-image
-          cache-to: type=gha,mode=max,scope=usage-web-image
+        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/usage-service/web/Dockerfile -t usage-web:ci .
+        working-directory: .
 
   billing-service:
     name: Build billing-service
@@ -471,18 +451,8 @@ jobs:
         run: docker load -i .ci-artifacts/common-base-images.tar
         working-directory: .
       - name: Docker image (billing-web, standalone)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: services/billing-service/web/Dockerfile
-          build-args: |
-            WEB_NODE_DEPS_IMAGE=web-node-deps:ci
-          tags: billing-web:ci
-          load: true
-          cache-from: |
-            type=gha,scope=web-node-deps
-            type=gha,scope=billing-web-image
-          cache-to: type=gha,mode=max,scope=billing-web-image
+        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/billing-service/web/Dockerfile -t billing-web:ci .
+        working-directory: .
 
   team-service:
     name: Build team-service
@@ -536,18 +506,8 @@ jobs:
         run: docker load -i .ci-artifacts/common-base-images.tar
         working-directory: .
       - name: Docker image (team-web, standalone)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: services/team-service/web/Dockerfile
-          build-args: |
-            WEB_NODE_DEPS_IMAGE=web-node-deps:ci
-          tags: team-web:ci
-          load: true
-          cache-from: |
-            type=gha,scope=web-node-deps
-            type=gha,scope=team-web-image
-          cache-to: type=gha,mode=max,scope=team-web-image
+        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/team-service/web/Dockerfile -t team-web:ci .
+        working-directory: .
 
   notification-service:
     name: Build notification-service
@@ -586,31 +546,9 @@ jobs:
           pnpm --filter notification-web test
           pnpm --filter notification-web run build
       - name: Docker image (notification-service)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: services/notification-service/Dockerfile
-          build-args: |
-            BACKEND_NODE_DEPS_IMAGE=backend-node-deps:ci
-          tags: notification-service:ci
-          load: true
-          cache-from: |
-            type=gha,scope=backend-node-deps
-            type=gha,scope=notification-service-image
-          cache-to: type=gha,mode=max,scope=notification-service-image
+        run: docker build --build-arg BACKEND_NODE_DEPS_IMAGE=backend-node-deps:ci -f services/notification-service/Dockerfile -t notification-service:ci .
       - name: Docker image (notification-web, standalone)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: services/notification-service/web/Dockerfile
-          build-args: |
-            WEB_NODE_DEPS_IMAGE=web-node-deps:ci
-          tags: notification-web:ci
-          load: true
-          cache-from: |
-            type=gha,scope=web-node-deps
-            type=gha,scope=notification-web-image
-          cache-to: type=gha,mode=max,scope=notification-web-image
+        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/notification-service/web/Dockerfile -t notification-web:ci .
 
   web-host:
     name: Build web-host (apps/web)
@@ -688,31 +626,9 @@ jobs:
           pnpm --filter usage-web-mfe run build
           pnpm --filter team-web-mfe run build
       - name: Docker image (usage-web-mfe, standalone)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: services/usage-service/web-mfe/Dockerfile
-          build-args: |
-            WEB_NODE_DEPS_IMAGE=web-node-deps:ci
-          tags: usage-web-mfe:ci
-          load: true
-          cache-from: |
-            type=gha,scope=web-node-deps
-            type=gha,scope=usage-web-mfe-image
-          cache-to: type=gha,mode=max,scope=usage-web-mfe-image
+        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/usage-service/web-mfe/Dockerfile -t usage-web-mfe:ci .
       - name: Docker image (team-web-mfe, standalone)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: services/team-service/web-mfe/Dockerfile
-          build-args: |
-            WEB_NODE_DEPS_IMAGE=web-node-deps:ci
-          tags: team-web-mfe:ci
-          load: true
-          cache-from: |
-            type=gha,scope=web-node-deps
-            type=gha,scope=team-web-mfe-image
-          cache-to: type=gha,mode=max,scope=team-web-mfe-image
+        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/team-service/web-mfe/Dockerfile -t team-web-mfe:ci .
 
   # Single required check for branch protection.
   # Skipped Java/Compose jobs (path filter) do not fail the workflow.
@@ -746,7 +662,7 @@ jobs:
           echo "## CI Job Duration Metrics" >> "$GITHUB_STEP_SUMMARY"
           echo "| Job | Result | Duration(s) |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---:|---:|" >> "$GITHUB_STEP_SUMMARY"
-          jq -r '.jobs[] | [.name, .conclusion, ((.completed_at|fromdateiso8601) - (.started_at|fromdateiso8601)|tostring)] | @tsv' jobs.json \
+          jq -r '.jobs[] | [.name, .conclusion, (if (.completed_at|type=="string" and .started_at|type=="string") then ((.completed_at|fromdateiso8601) - (.started_at|fromdateiso8601)|tostring) else "n/a" end)] | @tsv' jobs.json \
             | while IFS=$'\t' read -r name result dur; do
                 echo "| $name | $result | $dur |" >> "$GITHUB_STEP_SUMMARY"
               done
