@@ -3,8 +3,13 @@
   "messages": [
     {
       "role": "user",
-      "content": "서로 다른 한 자리 자연수 여섯 개의 합이 24이고 곱이 360이 되도록 하는 한 조합을 찾아라. 풀이를 단계별로 짧게 쓰고, 마지막 줄에는 오름차순으로 정렬한 여섯 수만 공백으로 구분해 출력해라."
+      "content": "영어로 정확히 한 문장만 출력하라. 반드시 'I drank '로 시작하고 'before work.'로 끝내라. 음료는 tea를 사용하라."
     }
   ],
-  "max_completion_tokens": 512
+  "prediction": {
+    "type": "content",
+    "content": "I drank coffee before work."
+  },
+  "max_completion_tokens": 96,
+  "reasoning_effort": "low"
 }
