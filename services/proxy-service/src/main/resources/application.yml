@@ -27,6 +27,7 @@ proxy:
   key-service:
     base-url: http://localhost:8090
     internal-token: ""
+    team-path: /internal/teams/{teamId}/api-keys/{provider}
     mock-key-openai: ${PROXY_OPENAI_TEST_API_KEY:}
     mock-key-google: ${PROXY_GOOGLE_TEST_API_KEY:}
     mock-key: ${PROXY_MOCK_KEY_FALLBACK:}

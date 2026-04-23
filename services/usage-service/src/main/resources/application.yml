@@ -44,6 +44,11 @@ usage:
       exchange: ${USAGE_RABBIT_IDENTITY_API_KEY_EXCHANGE:identity.events}
       routing-key: ${USAGE_RABBIT_IDENTITY_API_KEY_ROUTING_KEY:identity.external-api-key.status-changed}
       queue: ${USAGE_RABBIT_IDENTITY_API_KEY_QUEUE:usage-service.identity.external-api-key.queue}
+    team-api-key:
+      enabled: ${USAGE_RABBIT_TEAM_API_KEY_ENABLED:true}
+      exchange: ${USAGE_RABBIT_TEAM_API_KEY_EXCHANGE:team.events}
+      routing-key: ${USAGE_RABBIT_TEAM_API_KEY_ROUTING_KEY:team-member-added}
+      queue: ${USAGE_RABBIT_TEAM_API_KEY_QUEUE:usage-service.team.api-key.queue}
     cost-finalized:
       enabled: ${USAGE_RABBIT_COST_FINALIZED_ENABLED:true}
       exchange: ${USAGE_RABBIT_COST_FINALIZED_EXCHANGE:billing.events}

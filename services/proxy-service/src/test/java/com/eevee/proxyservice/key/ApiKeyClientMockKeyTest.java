@@ -53,6 +53,19 @@ class ApiKeyClientMockKeyTest {
         assertThat(google.plainKey()).isEqualTo("legacy-only");
     }
 
+    @Test
+    void resolveApiKey_acceptsTeamScope() {
+        ProxyProperties props = baseProps();
+        props.getKeyService().setMockKey("legacy-only");
+
+        ApiKeyClient client = new ApiKeyClient(props);
+        ApiKeyClient.ResolvedApiKey teamScoped = client.resolveApiKey("user-1", "team-22", AiProvider.OPENAI).block();
+
+        assertThat(teamScoped).isNotNull();
+        assertThat(teamScoped.plainKey()).isEqualTo("legacy-only");
+        assertThat(teamScoped.keySource()).isEqualTo("mock");
+    }
+
     private static ProxyProperties baseProps() {
         ProxyProperties props = new ProxyProperties();
         props.getKeyService().setBaseUrl("http://localhost:0");

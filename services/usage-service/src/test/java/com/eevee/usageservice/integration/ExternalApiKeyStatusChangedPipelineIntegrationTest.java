@@ -6,6 +6,7 @@ import com.eevee.usageservice.mq.ExternalApiKeyDeletedEvent;
 import com.eevee.usageservice.mq.ExternalApiKeyStatus;
 import com.eevee.usageservice.mq.ExternalApiKeyStatusChangedEvent;
 import com.eevee.usageservice.mq.IdentityExternalApiKeyEventTypes;
+import com.eevee.usageservice.mq.TeamApiKeyEventTypes;
 import com.eevee.usageservice.repository.ApiKeyMetadataRepository;
 import com.eevee.usageservice.repository.UsageRecordedLogRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -77,10 +78,15 @@ class ExternalApiKeyStatusChangedPipelineIntegrationTest {
     @Value("${usage.rabbit.identity-api-key.queue}")
     private String identityApiKeyQueueName;
 
+    @Value("${usage.rabbit.team-api-key.queue}")
+    private String teamApiKeyQueueName;
+
     @BeforeEach
     void waitForQueueDeclarations() {
         await().atMost(20, SECONDS).pollInterval(200, java.util.concurrent.TimeUnit.MILLISECONDS)
                 .until(() -> amqpAdmin.getQueueProperties(identityApiKeyQueueName) != null);
+        await().atMost(20, SECONDS).pollInterval(200, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .until(() -> amqpAdmin.getQueueProperties(teamApiKeyQueueName) != null);
     }
 
     @Test
@@ -218,6 +224,68 @@ class ExternalApiKeyStatusChangedPipelineIntegrationTest {
                 .untilAsserted(() -> {
                     assertThat(repository.findById("303")).isEmpty();
                     assertThat(usageRecordedLogRepository.countByApiKeyId("303")).isEqualTo(0L);
+                });
+    }
+
+    @Test
+    void teamApiKeyEvents_areConsumedAndMetadataStatusIsUpdated() throws Exception {
+        String registerPayload = """
+                {
+                  "eventType": "%s",
+                  "teamId": "22",
+                  "actorUserId": "owner-1",
+                  "occurredAt": "2026-04-17T10:00:00Z",
+                  "apiKeyId": 505,
+                  "provider": "OPENAI",
+                  "alias": "TeamOpenAiKey"
+                }
+                """.formatted(TeamApiKeyEventTypes.TEAM_API_KEY_REGISTERED);
+        rabbitTemplate.convertAndSend("team.events", "team-member-added", registerPayload);
+
+        await().atMost(30, SECONDS).pollInterval(100, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .untilAsserted(() -> {
+                    var active = repository.findById("505").orElseThrow();
+                    assertThat(active.getUserId()).isEqualTo("team:22");
+                    assertThat(active.getAlias()).isEqualTo("TeamOpenAiKey");
+                    assertThat(active.getStatus().name()).isEqualTo("ACTIVE");
+                });
+
+        String scheduledPayload = """
+                {
+                  "eventType": "%s",
+                  "teamId": "22",
+                  "actorUserId": "owner-1",
+                  "occurredAt": "2026-04-17T10:05:00Z",
+                  "apiKeyId": 505,
+                  "provider": "OPENAI",
+                  "alias": "TeamOpenAiKey"
+                }
+                """.formatted(TeamApiKeyEventTypes.TEAM_API_KEY_DELETION_SCHEDULED);
+        rabbitTemplate.convertAndSend("team.events", "team-member-added", scheduledPayload);
+
+        await().atMost(30, SECONDS).pollInterval(100, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .untilAsserted(() -> {
+                    var deletionRequested = repository.findById("505").orElseThrow();
+                    assertThat(deletionRequested.getStatus().name()).isEqualTo("DELETION_REQUESTED");
+                });
+
+        String deletedPayload = """
+                {
+                  "eventType": "%s",
+                  "teamId": "22",
+                  "actorUserId": "owner-1",
+                  "occurredAt": "2026-04-17T10:10:00Z",
+                  "apiKeyId": 505,
+                  "provider": "OPENAI",
+                  "alias": "TeamOpenAiKey"
+                }
+                """.formatted(TeamApiKeyEventTypes.TEAM_API_KEY_DELETED);
+        rabbitTemplate.convertAndSend("team.events", "team-member-added", deletedPayload);
+
+        await().atMost(30, SECONDS).pollInterval(100, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .untilAsserted(() -> {
+                    var deleted = repository.findById("505").orElseThrow();
+                    assertThat(deleted.getStatus().name()).isEqualTo("DELETED");
                 });
     }
 }
