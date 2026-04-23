@@ -28,7 +28,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@ai-usage/ui"
-import { loadDashboardSummaryCache, saveDashboardSummaryCache } from "@/lib/usage/dashboard-summary-cache"
 import { buildUsageQuery, fetchUsageJson } from "@/lib/usage/fetch-usage"
 import { formatOccurredAtKst } from "@/lib/usage/format-occurred-at-kst"
 import { formatRequestCount, formatTokenCount, formatUsd, toNumber } from "@/lib/usage/format"
@@ -191,27 +190,6 @@ function percentCostChangeVsPrevious(current: number, previous: number): number 
     return 100
   }
   return 0
-}
-
-function dashboardProviderCacheKey(providerSelect: string): string {
-  return providerSelect === DASHBOARD_PROVIDER_ALL ? "ALL" : providerSelect
-}
-
-async function fetchDashboardSummaryCached(
-  fromIso: string,
-  toIso: string,
-  providerSelect: string,
-  queryWithLeadingQuestion: string,
-  signal: AbortSignal
-): Promise<UsageSummaryResponse> {
-  const key = dashboardProviderCacheKey(providerSelect)
-  const hit = loadDashboardSummaryCache(fromIso, toIso, key)
-  if (hit) return hit
-  const data = await fetchUsageJson<UsageSummaryResponse>(`dashboard/summary${queryWithLeadingQuestion}`, {
-    signal,
-  })
-  saveDashboardSummaryCache(fromIso, toIso, key, data)
-  return data
 }
 
 function hashToUint(str: string): number {
@@ -650,8 +628,8 @@ export function UsageDashboard() {
         })
 
         const opt = { signal }
-        const summaryP = fetchDashboardSummaryCached(rf, rt, dashProvider, qRange, signal)
-        const summaryPrevP = fetchDashboardSummaryCached(pf, pt, dashProvider, qPrev, signal)
+        const summaryP = fetchUsageJson<UsageSummaryResponse>(`dashboard/summary${qRange}`, { signal })
+        const summaryPrevP = fetchUsageJson<UsageSummaryResponse>(`dashboard/summary${qPrev}`, { signal })
         const dailyP = fetchUsageJson<DailyUsagePoint[]>(`dashboard/series/daily${qRange}`, opt)
         const monthlyP = fetchUsageJson<MonthlyUsagePoint[]>(
           `dashboard/series/monthly${buildUsageQuery({ from: fy, to: rt, provider: providerParam(dashProvider) })}`,

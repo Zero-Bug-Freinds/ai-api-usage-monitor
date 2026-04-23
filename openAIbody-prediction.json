@@ -1,14 +1,14 @@
 {
-  "model": "gpt-5.4-nano",
+  "model": "gpt-4o-mini",
   "messages": [
     {
       "role": "user",
-      "content": "영어로 한 문장만 출력해라. 반드시 'I drank '로 시작하고, 마지막은 'before work.'로 끝나야 한다. 중간 음료는 coffee가 아니라 tea로 써라."
+      "content": "봉준호 감독이 영화 '기생충'으로 오스카상을 받을 때 수상소감에서 처음으로 언급한 인물이 누구인지 후보 중에서 골라봐. 인물의 이름만 출력해. 인물 후보는 '마틴 스콜세지, 쿠엔틴 타란티노, 토드 필립스, 샘 멘데스'"
     }
   ],
   "prediction": {
     "type": "content",
-    "content": "I drank juice before work."
+    "content": "마틴 스콜세지"
   },
-  "max_tokens": 90
+  "max_tokens": 200
 }
