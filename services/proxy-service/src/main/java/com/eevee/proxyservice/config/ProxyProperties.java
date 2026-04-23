@@ -56,7 +56,6 @@ public class ProxyProperties {
     public static class KeyService {
         private String baseUrl = "http://localhost:8090";
         private String internalToken = "";
-        private String teamPath = "/internal/teams/{teamId}/api-keys/{provider}";
         private String mockKey = "";
         private String mockKeyOpenai = "";
         private String mockKeyGoogle = "";
@@ -76,14 +75,6 @@ public class ProxyProperties {
 
         public void setInternalToken(String internalToken) {
             this.internalToken = internalToken;
-        }
-
-        public String getTeamPath() {
-            return teamPath;
-        }
-
-        public void setTeamPath(String teamPath) {
-            this.teamPath = teamPath;
         }
 
         public String getMockKey() {
