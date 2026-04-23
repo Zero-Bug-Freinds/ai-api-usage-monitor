@@ -1071,26 +1071,28 @@ export function UsageDashboard() {
         </div>
 
         {periodMode === "custom" ? (
-          <div className="flex flex-wrap gap-3">
-            <div className="space-y-2">
-              <Label htmlFor="custom-from">시작</Label>
-              <Input
-                id="custom-from"
-                type="date"
-                value={customFrom}
-                onChange={(e) => setCustomFrom(e.target.value)}
-              />
+          <div className="flex min-w-[18rem] flex-col gap-2 lg:pb-0.5">
+            <p className="text-xs text-muted-foreground">기간 지정 조회는 최대 1년(366일)까지 가능합니다.</p>
+            <div className="flex flex-wrap gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="custom-from">시작</Label>
+                <Input
+                  id="custom-from"
+                  type="date"
+                  value={customFrom}
+                  onChange={(e) => setCustomFrom(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="custom-to">종료</Label>
+                <Input
+                  id="custom-to"
+                  type="date"
+                  value={customTo}
+                  onChange={(e) => setCustomTo(e.target.value)}
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="custom-to">종료</Label>
-              <Input
-                id="custom-to"
-                type="date"
-                value={customTo}
-                onChange={(e) => setCustomTo(e.target.value)}
-              />
-            </div>
-            <p className="w-full text-xs text-muted-foreground">기간 지정 조회는 최대 1년(366일)까지 가능합니다.</p>
           </div>
         ) : null}
 
