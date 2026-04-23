@@ -1,5 +1,5 @@
 {
-  "model": "gpt-4o-mini",
+  "model": "gpt-5.4-nano",
   "messages": [
     {
       "role": "user",
@@ -8,7 +8,7 @@
   ],
   "prediction": {
     "type": "content",
-    "content": "I drank coffee before work."
+    "content": "I drank juice before work."
   },
-  "max_tokens": 80
+  "max_tokens": 90
 }

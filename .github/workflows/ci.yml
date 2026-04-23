@@ -179,8 +179,29 @@ jobs:
   usage-service:
     name: Build usage-service
     runs-on: ubuntu-latest
-    needs: changes
-    if: needs.changes.outputs.usage == 'true' || needs.changes.outputs.web_shared == 'true' || needs.changes.outputs.workflows == 'true'
+    needs:
+      - changes
+      # Testcontainers 통합 테스트가 다른 서비스 Job과 동시에 Docker를 몰아쓰지 않도록 순차 실행
+      - identity-service
+      - billing-service
+      - team-service
+      - notification-service
+    if: >-
+      ${{ always()
+          && (
+               needs.changes.outputs.usage == 'true'
+            || needs.changes.outputs.web_shared == 'true'
+            || needs.changes.outputs.workflows == 'true'
+             )
+          && needs.identity-service.result != 'failure'
+          && needs.identity-service.result != 'cancelled'
+          && needs.billing-service.result != 'failure'
+          && needs.billing-service.result != 'cancelled'
+          && needs.team-service.result != 'failure'
+          && needs.team-service.result != 'cancelled'
+          && needs.notification-service.result != 'failure'
+          && needs.notification-service.result != 'cancelled'
+       }}
     defaults:
       run:
         working-directory: services/usage-service

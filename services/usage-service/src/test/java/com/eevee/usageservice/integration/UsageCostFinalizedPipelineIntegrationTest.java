@@ -36,13 +36,10 @@ import static org.awaitility.Awaitility.await;
 class UsageCostFinalizedPipelineIntegrationTest {
 
     @Container
-    static RabbitMQContainer rabbit = new RabbitMQContainer("rabbitmq:3.13-alpine");
+    static RabbitMQContainer rabbit = UsageIntegrationContainers.rabbitMq();
 
     @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
-            .withDatabaseName("app")
-            .withUsername("app")
-            .withPassword("app");
+    static PostgreSQLContainer<?> postgres = UsageIntegrationContainers.postgres();
 
     @DynamicPropertySource
     static void registerProps(DynamicPropertyRegistry r) {
