@@ -65,27 +65,8 @@ public class UsageRecordedService {
             completionRejectedPredictionTokens = tu.completionRejectedPredictionTokens();
         }
         model = effectiveModelName(model, event.provider());
-        Long estimatedReasoningTokens;
-        if (event.provider() == AiProvider.OPENAI && tu != null) {
-            boolean anyOpenAiBreakdownDetail =
-                    completionReasoningTokens != null
-                            || completionAudioTokens != null
-                            || completionAcceptedPredictionTokens != null
-                            || completionRejectedPredictionTokens != null;
-            if (anyOpenAiBreakdownDetail) {
-                estimatedReasoningTokens =
-                        safeLong(completionReasoningTokens)
-                                + safeLong(completionAudioTokens)
-                                + safeLong(completionAcceptedPredictionTokens)
-                                + safeLong(completionRejectedPredictionTokens);
-            } else {
-                // Avoid storing 0 when no breakdown was sent — SQL aggregates use COALESCE(estimated, total-prompt-completion).
-                estimatedReasoningTokens = estimateReasoningTokens(total, prompt, completion);
-            }
-        } else {
-            // Google/Claude: estimate derived from total - input - output.
-            estimatedReasoningTokens = estimateReasoningTokens(total, prompt, completion);
-        }
+        Long estimatedReasoningTokens = resolveReasoningTokens(completionReasoningTokens);
+        Long normalizedCompletion = normalizeCompletionTokens(event.provider(), completion, prompt, total, estimatedReasoningTokens);
         String providerTokenDetailsJson = buildProviderTokenDetailsJson(event.provider(), promptCachedTokens, promptAudioTokens,
                 completionReasoningTokens, completionAudioTokens,
                 completionAcceptedPredictionTokens, completionRejectedPredictionTokens);
@@ -103,7 +84,7 @@ public class UsageRecordedService {
                 event.provider(),
                 model,
                 prompt,
-                completion,
+                normalizedCompletion,
                 total,
                 estimatedReasoningTokens,
                 providerTokenDetailsJson,
@@ -176,15 +157,29 @@ public class UsageRecordedService {
         return provider.pathSegment() + "_unknown";
     }
 
-    private static long safeLong(Long v) {
-        return v == null ? 0L : v;
-    }
-
-    private static Long estimateReasoningTokens(Long totalTokens, Long promptTokens, Long completionTokens) {
-        if (totalTokens == null || promptTokens == null || completionTokens == null) {
+    private static Long resolveReasoningTokens(Long completionReasoningTokens) {
+        if (completionReasoningTokens == null) {
             return null;
         }
-        long reasoning = totalTokens - promptTokens - completionTokens;
-        return Math.max(reasoning, 0L);
+        return Math.max(completionReasoningTokens, 0L);
+    }
+
+    private static Long normalizeCompletionTokens(
+            AiProvider provider,
+            Long completionTokens,
+            Long promptTokens,
+            Long totalTokens,
+            Long reasoningTokens
+    ) {
+        if (completionTokens == null) {
+            if (totalTokens == null || promptTokens == null || reasoningTokens == null) {
+                return null;
+            }
+            return Math.max(totalTokens - promptTokens - reasoningTokens, 0L);
+        }
+        if (provider != AiProvider.OPENAI || reasoningTokens == null) {
+            return Math.max(completionTokens, 0L);
+        }
+        return Math.max(completionTokens - reasoningTokens, 0L);
     }
 }

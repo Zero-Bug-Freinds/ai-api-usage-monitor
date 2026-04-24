@@ -66,11 +66,19 @@ function reasoningTokensTooltipContent() {
     <div className="space-y-1">
       <p className="font-medium text-foreground">추론 토큰 산출</p>
       <p>
-        Google / Anthropic 공급사의 추론 토큰은 총 토큰에서 입력·출력을 제외해 계산한{" "}
-        <span className="font-medium">추정된</span> 추론 토큰입니다.
+        Google / OpenAI: 모델이 직접 응답 전문에 포함하여 제공한 실제 추론 수치입니다.
       </p>
-      <p>OpenAI: 모델이 직접 응답 전문에 포함하여 제공한 실제 추론 수치입니다.</p>
+      <p>Anthropic: 현재 사용 기록이 없어 추론 토큰 상세값이 없는 경우가 있습니다.</p>
       <p>공통: 모델의 사고 과정(Reasoning) 및 시스템 처리 비용을 포함합니다.</p>
+    </div>
+  )
+}
+
+function outputTokensTooltipContent() {
+  return (
+    <div className="space-y-1">
+      <p className="font-medium text-foreground">출력 토큰 산출</p>
+      <p>출력 토큰에서는 추론 토큰을 제외한 순수 응답량만 표시합니다.</p>
     </div>
   )
 }
@@ -449,7 +457,27 @@ export function UsageLogPanel() {
                       </TooltipProvider>
                     </span>
                   </th>
-                  <th className="px-3 py-2 font-medium">출력 토큰</th>
+                  <th className="px-3 py-2 font-medium">
+                    <span className="inline-flex items-center gap-1">
+                      출력 토큰
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-muted-foreground/40 text-[10px] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                              aria-label="출력 토큰 설명"
+                            >
+                              <CircleHelp className="h-3 w-3" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" align="start">
+                            {outputTokensTooltipContent()}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </span>
+                  </th>
                   <th className="px-3 py-2 font-medium">합계</th>
                   <th className="px-3 py-2 font-medium text-right">상세</th>
                 </tr>
@@ -459,8 +487,11 @@ export function UsageLogPanel() {
                   const isOpenAi = row.provider === "OPENAI"
                   const hasOpenAiDetails = isOpenAi && openAiDetailsSum(row) > 0
                   const ert = row.estimatedReasoningTokens
-                  const showReasoningBadge =
-                    typeof ert === "number" && Number.isFinite(ert) && ert > 0
+                  const reasoningDisplay = !row.requestSuccessful
+                    ? "-"
+                    : typeof ert === "number" && Number.isFinite(ert)
+                      ? String(ert)
+                      : "0"
                   return (
                     <tr
                       key={row.eventId}
@@ -491,24 +522,7 @@ export function UsageLogPanel() {
                     </td>
                     <td className="px-3 py-2 font-mono text-xs">{row.model}</td>
                     <td className="px-3 py-2 tabular-nums">{row.promptTokens ?? "—"}</td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-2">
-                        {showReasoningBadge ? (
-                          row.provider === "OPENAI" ? (
-                            <span className="inline-flex items-center rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
-                              실제값
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                              추정치
-                            </span>
-                          )
-                        ) : null}
-                        <span className="tabular-nums">
-                          {typeof ert === "number" && Number.isFinite(ert) ? ert : "—"}
-                        </span>
-                      </div>
-                    </td>
+                    <td className="px-3 py-2 tabular-nums">{reasoningDisplay}</td>
                     <td className="px-3 py-2 tabular-nums">{row.completionTokens ?? "—"}</td>
                     <td className="px-3 py-2 tabular-nums">{row.totalTokens ?? "—"}</td>
                     <td className="px-3 py-2 text-right text-muted-foreground">

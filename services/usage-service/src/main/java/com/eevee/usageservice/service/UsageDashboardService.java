@@ -272,14 +272,7 @@ public class UsageDashboardService {
     }
 
     private static Long resolveEstimatedReasoningTokens(UsageRecordedLogEntity e) {
-        if (e.getEstimatedReasoningTokens() != null) {
-            return e.getEstimatedReasoningTokens();
-        }
-        if (e.getTotalTokens() == null || e.getPromptTokens() == null || e.getCompletionTokens() == null) {
-            return null;
-        }
-        long fallback = e.getTotalTokens() - e.getPromptTokens() - e.getCompletionTokens();
-        return Math.max(fallback, 0L);
+        return e.getEstimatedReasoningTokens();
     }
 
     private JsonNode parseProviderTokenDetails(String json) {

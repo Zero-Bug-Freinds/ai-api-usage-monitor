@@ -61,8 +61,9 @@ public class GoogleProviderHandler implements ProviderHandler {
             Long prompt = longVal(meta.get("promptTokenCount"));
             Long completion = longVal(meta.get("candidatesTokenCount"));
             Long total = longVal(meta.get("totalTokenCount"));
+            Long reasoning = firstLong(meta.get("thoughtsTokenCount"), meta.get("thoughtTokenCount"));
             return new TokenUsage(model, prompt, completion, total,
-                    null, null, null, null, null, null);
+                    null, null, reasoning, null, null, null);
         } catch (IOException e) {
             return null;
         }
@@ -84,6 +85,11 @@ public class GoogleProviderHandler implements ProviderHandler {
 
     private static Long longVal(JsonNode n) {
         return n == null || n.isNull() ? null : n.asLong();
+    }
+
+    private static Long firstLong(JsonNode primary, JsonNode fallback) {
+        Long v = longVal(primary);
+        return v != null ? v : longVal(fallback);
     }
 
     @Override

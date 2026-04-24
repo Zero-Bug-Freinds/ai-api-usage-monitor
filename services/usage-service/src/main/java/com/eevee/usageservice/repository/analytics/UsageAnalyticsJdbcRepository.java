@@ -179,15 +179,7 @@ public class UsageAnalyticsJdbcRepository {
                        provider,
                        COUNT(*)::bigint,
                        COALESCE(SUM(prompt_tokens), 0)::bigint,
-                       COALESCE(
-                         SUM(
-                           COALESCE(
-                             estimated_reasoning_tokens,
-                             GREATEST(COALESCE(total_tokens, 0) - COALESCE(prompt_tokens, 0) - COALESCE(completion_tokens, 0), 0)
-                           )
-                         ),
-                         0
-                       )::bigint,
+                       COALESCE(SUM(estimated_reasoning_tokens), 0)::bigint,
                        COALESCE(SUM(completion_tokens), 0)::bigint
                 FROM usage_recorded_log
                 WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ?%s
