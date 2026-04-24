@@ -14,11 +14,13 @@ import com.eevee.usageservice.api.dto.UsageSummaryResponse;
 import com.eevee.usageservice.security.UsageGatewayTrustFilter;
 import com.eevee.usageservice.service.UsageDashboardService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -139,6 +141,6 @@ public class UsageAnalyticsController {
         if (v instanceof String s && !s.isBlank()) {
             return s;
         }
-        throw new IllegalStateException("Missing authenticated user");
+        throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing authenticated user");
     }
 }
