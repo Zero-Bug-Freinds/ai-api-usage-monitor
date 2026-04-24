@@ -204,7 +204,7 @@ export function UsageLogPanel() {
   }, [])
 
   return (
-    <div className="rounded-lg border border-border p-4 shadow-sm">
+    <div className="mx-auto w-full max-w-[86rem] rounded-lg border border-border p-4 shadow-sm">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">발생 시각은 한국 표준시(KST)입니다.</p>
         <Button type="button" variant="outline" size="sm" onClick={() => setLogRefresh((n) => n + 1)}>
@@ -428,15 +428,15 @@ export function UsageLogPanel() {
       ) : (
         <>
           <div className="overflow-x-auto rounded-md border border-border">
-            <table className="w-full min-w-[1060px] text-left text-sm">
+            <table className="w-full min-w-[980px] table-auto text-left text-sm [&_th]:px-2.5 [&_td]:px-2.5">
               <thead className="border-b border-border bg-muted/40">
                 <tr>
-                  <th className="px-3 py-2 font-medium">시각 (KST)</th>
-                  <th className="px-3 py-2 font-medium">공급자</th>
-                  <th className="px-3 py-2 font-medium">별칭</th>
-                  <th className="px-3 py-2 font-medium">모델</th>
-                  <th className="px-3 py-2 font-medium">입력 토큰</th>
-                  <th className="px-3 py-2 font-medium">
+                  <th className="py-2 font-medium whitespace-nowrap">시각 (KST)</th>
+                  <th className="py-2 font-medium whitespace-nowrap">공급자</th>
+                  <th className="py-2 font-medium">별칭</th>
+                  <th className="py-2 font-medium">모델</th>
+                  <th className="py-2 font-medium whitespace-nowrap">입력 토큰</th>
+                  <th className="py-2 font-medium whitespace-nowrap">
                     <span className="inline-flex items-center gap-1">
                       추론 토큰
                       <TooltipProvider>
@@ -457,7 +457,7 @@ export function UsageLogPanel() {
                       </TooltipProvider>
                     </span>
                   </th>
-                  <th className="px-3 py-2 font-medium">
+                  <th className="py-2 font-medium whitespace-nowrap">
                     <span className="inline-flex items-center gap-1">
                       출력 토큰
                       <TooltipProvider>
@@ -478,8 +478,8 @@ export function UsageLogPanel() {
                       </TooltipProvider>
                     </span>
                   </th>
-                  <th className="px-3 py-2 font-medium">합계</th>
-                  <th className="px-3 py-2 font-medium text-right">상세</th>
+                  <th className="py-2 font-medium whitespace-nowrap">합계</th>
+                  <th className="py-2 font-medium text-right whitespace-nowrap">상세</th>
                 </tr>
               </thead>
               <tbody>
@@ -513,19 +513,21 @@ export function UsageLogPanel() {
                         }
                       }}
                     >
-                    <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">
+                    <td className="py-2 font-mono text-xs whitespace-nowrap">
                       {formatOccurredAtKst(row.occurredAt)}
                     </td>
-                    <td className="px-3 py-2">{row.provider}</td>
-                    <td className="px-3 py-2 max-w-[200px] truncate" title={row.apiKeyAlias ?? undefined}>
+                    <td className="py-2 whitespace-nowrap">{row.provider}</td>
+                    <td className="py-2 max-w-[180px] truncate" title={row.apiKeyAlias ?? undefined}>
                       {row.apiKeyAlias ?? "—"}
                     </td>
-                    <td className="px-3 py-2 font-mono text-xs">{row.model}</td>
-                    <td className="px-3 py-2 tabular-nums">{row.promptTokens ?? "—"}</td>
-                    <td className="px-3 py-2 tabular-nums">{reasoningDisplay}</td>
-                    <td className="px-3 py-2 tabular-nums">{row.completionTokens ?? "—"}</td>
-                    <td className="px-3 py-2 tabular-nums">{row.totalTokens ?? "—"}</td>
-                    <td className="px-3 py-2 text-right text-muted-foreground">
+                    <td className="py-2 max-w-[220px] truncate font-mono text-xs" title={row.model}>
+                      {row.model}
+                    </td>
+                    <td className="py-2 tabular-nums whitespace-nowrap">{row.promptTokens ?? "—"}</td>
+                    <td className="py-2 tabular-nums whitespace-nowrap">{reasoningDisplay}</td>
+                    <td className="py-2 tabular-nums whitespace-nowrap">{row.completionTokens ?? "—"}</td>
+                    <td className="py-2 tabular-nums whitespace-nowrap">{row.totalTokens ?? "—"}</td>
+                    <td className="py-2 text-right text-muted-foreground">
                       {isOpenAi && hasOpenAiDetails ? (
                         <ChevronRight className="inline-block h-4 w-4" aria-label="상세보기" />
                       ) : (
