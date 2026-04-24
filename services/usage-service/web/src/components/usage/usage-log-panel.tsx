@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { CircleHelp, ChevronRight } from "lucide-react"
+import { CircleHelp, ChevronDown, ChevronRight, Filter, RotateCcw, X } from "lucide-react"
 
 import {
   Button,
@@ -86,14 +86,11 @@ export function UsageLogPanel() {
   const [successFilter, setSuccessFilter] = React.useState<string>(LOG_SUCCESS_ALL)
   const [apiKeyOptions, setApiKeyOptions] = React.useState<UsageLogApiKeyItemResponse[]>([])
   const [modelDraft, setModelDraft] = React.useState("")
-  const [appliedModelMask, setAppliedModelMask] = React.useState("")
   const [logRefresh, setLogRefresh] = React.useState(0)
   const [openAiDetailsRow, setOpenAiDetailsRow] = React.useState<UsageLogEntryResponse | null>(null)
+  const [showAdvancedFilters, setShowAdvancedFilters] = React.useState(false)
 
-  const applyLogFilters = React.useCallback(() => {
-    setLogsPage(0)
-    setAppliedModelMask(modelDraft.trim())
-  }, [modelDraft])
+  const appliedModelMask = modelDraft.trim()
 
   React.useEffect(() => {
     if (!openAiDetailsRow) return
@@ -175,7 +172,7 @@ export function UsageLogPanel() {
     }
   }, [
     logsPage,
-    appliedModelMask,
+    modelDraft,
     logProvider,
     providerParam,
     apiKeyFilter,
@@ -183,6 +180,20 @@ export function UsageLogPanel() {
     requestSuccessfulParam,
     logRefresh,
   ])
+
+  const hasAdvancedReasoning = reasoningFilter !== LOG_REASONING_ALL
+  const hasAdvancedSuccess = successFilter !== LOG_SUCCESS_ALL
+  const hasAnyAdvancedFilter = hasAdvancedReasoning || hasAdvancedSuccess
+
+  const resetAllFilters = React.useCallback(() => {
+    setLogsPage(0)
+    setLogProvider(LOG_PROVIDER_ALL)
+    setApiKeyFilter(LOG_API_KEY_ALL)
+    setReasoningFilter(LOG_REASONING_ALL)
+    setSuccessFilter(LOG_SUCCESS_ALL)
+    setModelDraft("")
+    setLogRefresh((n) => n + 1)
+  }, [])
 
   return (
     <div className="rounded-lg border border-border p-4 shadow-sm">
@@ -251,80 +262,152 @@ export function UsageLogPanel() {
           </Select>
         </div>
 
-        <div className="space-y-2 sm:w-40">
-          <div className="flex items-center gap-1">
-            <Label htmlFor="log-reasoning" className="mb-0">
-              추론 토큰
-            </Label>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    id="log-reasoning-help"
-                    className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-muted-foreground/40 text-[10px] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                    aria-label="추론 토큰 설명"
-                  >
-                    <CircleHelp className="h-3 w-3" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="top" align="start">
-                  {reasoningTokensTooltipContent()}
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </div>
-          <Select
-            value={reasoningFilter}
-            onValueChange={(v) => {
-              setLogsPage(0)
-              setReasoningFilter(v)
-            }}
-          >
-            <SelectTrigger id="log-reasoning" className="w-full">
-              <SelectValue placeholder="전체" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={LOG_REASONING_ALL}>전체</SelectItem>
-              <SelectItem value="present">있음</SelectItem>
-              <SelectItem value="absent">없음</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-2 sm:w-40">
-          <Label htmlFor="log-success">성공</Label>
-          <Select value={successFilter} onValueChange={(v) => { setLogsPage(0); setSuccessFilter(v) }}>
-            <SelectTrigger id="log-success" className="w-full">
-              <SelectValue placeholder="전체" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={LOG_SUCCESS_ALL}>전체</SelectItem>
-              <SelectItem value="true">예</SelectItem>
-              <SelectItem value="false">아니오</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
         <div className="space-y-2 sm:w-56">
           <Label htmlFor="log-model">모델 (부분 일치)</Label>
           <Input
             id="log-model"
             value={modelDraft}
-            onChange={(e) => setModelDraft(e.target.value)}
-            onBlur={applyLogFilters}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") applyLogFilters()
+            onChange={(e) => {
+              setLogsPage(0)
+              setModelDraft(e.target.value)
             }}
             placeholder="예: gpt-4"
             autoComplete="off"
           />
         </div>
 
-        <Button type="button" variant="secondary" size="sm" className="sm:self-end" onClick={applyLogFilters}>
-          필터 적용
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="gap-1.5 sm:self-end"
+          onClick={() => setShowAdvancedFilters((v) => !v)}
+        >
+          <Filter className="h-4 w-4" />
+          상세 필터
+          <ChevronDown className={`h-4 w-4 transition-transform ${showAdvancedFilters ? "rotate-180" : ""}`} />
+        </Button>
+
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="sm:self-end"
+          onClick={resetAllFilters}
+          aria-label="필터링 조건 해제"
+          title="필터링 조건 해제"
+        >
+          <RotateCcw className="h-4 w-4" />
         </Button>
       </div>
+
+      <div
+        className={[
+          "mb-4 overflow-hidden transition-all duration-300 ease-out",
+          showAdvancedFilters ? "max-h-40 opacity-100" : "max-h-0 opacity-0",
+        ].join(" ")}
+      >
+        <div className="flex flex-wrap gap-4">
+          <div className="space-y-2 sm:w-40">
+            <div className="flex items-center gap-1">
+              <Label htmlFor="log-reasoning" className="mb-0">
+                추론 토큰
+              </Label>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      id="log-reasoning-help"
+                      className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-muted-foreground/40 text-[10px] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                      aria-label="추론 토큰 설명"
+                    >
+                      <CircleHelp className="h-3 w-3" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" align="start">
+                    {reasoningTokensTooltipContent()}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+            <Select
+              value={reasoningFilter}
+              onValueChange={(v) => {
+                setLogsPage(0)
+                setReasoningFilter(v)
+              }}
+            >
+              <SelectTrigger id="log-reasoning" className="w-full">
+                <SelectValue placeholder="전체" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={LOG_REASONING_ALL}>전체</SelectItem>
+                <SelectItem value="present">있음</SelectItem>
+                <SelectItem value="absent">없음</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2 sm:w-40">
+            <Label htmlFor="log-success">성공</Label>
+            <Select
+              value={successFilter}
+              onValueChange={(v) => {
+                setLogsPage(0)
+                setSuccessFilter(v)
+              }}
+            >
+              <SelectTrigger id="log-success" className="w-full">
+                <SelectValue placeholder="전체" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={LOG_SUCCESS_ALL}>전체</SelectItem>
+                <SelectItem value="true">예</SelectItem>
+                <SelectItem value="false">아니오</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </div>
+
+      {hasAnyAdvancedFilter ? (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <p className="text-xs text-muted-foreground">적용된 필터링 조건</p>
+          {hasAdvancedSuccess ? (
+            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2.5 py-1 text-xs">
+              성공: {successFilter === "true" ? "예" : "아니오"}
+              <button
+                type="button"
+                className="inline-flex h-4 w-4 items-center justify-center rounded-full hover:bg-background"
+                onClick={() => {
+                  setLogsPage(0)
+                  setSuccessFilter(LOG_SUCCESS_ALL)
+                }}
+                aria-label="성공 필터 해제"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ) : null}
+          {hasAdvancedReasoning ? (
+            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2.5 py-1 text-xs">
+              추론 토큰: {reasoningFilter === "present" ? "있음" : "없음"}
+              <button
+                type="button"
+                className="inline-flex h-4 w-4 items-center justify-center rounded-full hover:bg-background"
+                onClick={() => {
+                  setLogsPage(0)
+                  setReasoningFilter(LOG_REASONING_ALL)
+                }}
+                aria-label="추론 토큰 필터 해제"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ) : null}
+        </div>
+      ) : null}
 
       {logsError ? (
         <p className="mb-4 text-sm text-destructive">{logsError}</p>
