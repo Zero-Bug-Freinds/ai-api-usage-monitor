@@ -102,7 +102,7 @@ class UsageRecordedServiceTest {
     }
 
     @Test
-    void openAi_reasoningTokens_areDerivedFromDetailedFields() {
+    void openAi_reasoningTokens_useOnlyReasoningFieldValue() {
         UUID eventId = UUID.randomUUID();
         UsageRecordedEvent event = new UsageRecordedEvent(
                 eventId,
@@ -130,12 +130,12 @@ class UsageRecordedServiceTest {
 
         ArgumentCaptor<UsageRecordedLogEntity> captor = ArgumentCaptor.forClass(UsageRecordedLogEntity.class);
         verify(repository).save(captor.capture());
-        // OPENAI = reasoning + audio + accepted + rejected
-        assertThat(captor.getValue().getEstimatedReasoningTokens()).isEqualTo(26L);
+        // OPENAI: reasoning 토큰은 completion_reasoning_tokens 실측값만 사용한다.
+        assertThat(captor.getValue().getEstimatedReasoningTokens()).isEqualTo(11L);
     }
 
     @Test
-    void openAi_whenNoBreakdownDetails_estimatesReasoningFromTotalMinusPromptMinusCompletion() {
+    void openAi_whenNoBreakdownDetails_reasoningIsNull() {
         UUID eventId = UUID.randomUUID();
         UsageRecordedEvent event = new UsageRecordedEvent(
                 eventId,
@@ -163,7 +163,7 @@ class UsageRecordedServiceTest {
 
         ArgumentCaptor<UsageRecordedLogEntity> captor = ArgumentCaptor.forClass(UsageRecordedLogEntity.class);
         verify(repository).save(captor.capture());
-        assertThat(captor.getValue().getEstimatedReasoningTokens()).isEqualTo(20L);
+        assertThat(captor.getValue().getEstimatedReasoningTokens()).isNull();
     }
 
     @Test
@@ -199,7 +199,7 @@ class UsageRecordedServiceTest {
     }
 
     @Test
-    void google_reasoningTokens_keepEstimateFormula() {
+    void google_reasoningTokens_withoutExplicitReasoning_isNull() {
         UUID eventId = UUID.randomUUID();
         UsageRecordedEvent event = new UsageRecordedEvent(
                 eventId,
@@ -227,8 +227,8 @@ class UsageRecordedServiceTest {
 
         ArgumentCaptor<UsageRecordedLogEntity> captor = ArgumentCaptor.forClass(UsageRecordedLogEntity.class);
         verify(repository).save(captor.capture());
-        // GOOGLE/ANTHROPIC = max(total - prompt - completion, 0)
-        assertThat(captor.getValue().getEstimatedReasoningTokens()).isEqualTo(20L);
+        // GOOGLE도 실측 reasoning 필드가 없으면 추정하지 않고 null로 저장한다.
+        assertThat(captor.getValue().getEstimatedReasoningTokens()).isNull();
     }
 
     @Test
