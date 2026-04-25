@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { ChevronDown, ChevronUp } from "lucide-react"
 import {
   Bar,
   BarChart,
@@ -627,7 +628,7 @@ export function UsageDashboard() {
   const [daily, setDaily] = React.useState<DailyUsagePoint[]>([])
   const [monthly, setMonthly] = React.useState<MonthlyUsagePoint[]>([])
   const [byModel, setByModel] = React.useState<ModelUsageAggregate[]>([])
-  const [isOthersModalOpen, setIsOthersModalOpen] = React.useState(false)
+  const [isOthersExpanded, setIsOthersExpanded] = React.useState(false)
 
   /** API·KPI 라벨에 쓰는 구간(마지막으로 로드한 기준). effect 안에서만 갱신해 요청 간 날짜 불일치를 막는다. */
   const [loadedRange, setLoadedRange] = React.useState<{ from: string; to: string } | null>(null)
@@ -923,20 +924,19 @@ export function UsageDashboard() {
       (modelBarRows.find((r) => r.isOthers)?.members ?? []).slice().sort((a, b) => b.requests - a.requests),
     [modelBarRows]
   )
+  const othersMaxRequests = React.useMemo(
+    () => Math.max(...othersRows.map((item) => item.requests), 1),
+    [othersRows]
+  )
+  const othersTotalRequests = React.useMemo(
+    () => Math.max(othersRows.reduce((sum, item) => sum + item.requests, 0), 1),
+    [othersRows]
+  )
 
   const modelBarDisplayRows = React.useMemo(
     () => (modelBarRows.length > 0 ? modelBarRows : PLACEHOLDER_MODEL_BAR_ROW),
     [modelBarRows]
   )
-
-  React.useEffect(() => {
-    if (!isOthersModalOpen) return
-    const prev = document.body.style.overflow
-    document.body.style.overflow = "hidden"
-    return () => {
-      document.body.style.overflow = prev
-    }
-  }, [isOthersModalOpen])
 
   const tokenStackRows = React.useMemo((): TokenStackRow[] => {
     const totalTokensOf = (m: ModelUsageAggregate) =>
@@ -1392,7 +1392,7 @@ export function UsageDashboard() {
                       onClick={(_, index) => {
                         if (modelBarRows.length === 0) return
                         const row = modelBarDisplayRows[index]
-                        if (row?.isOthers) setIsOthersModalOpen(true)
+                        if (row?.isOthers) setIsOthersExpanded((prev) => !prev)
                       }}
                     >
                       {modelBarDisplayRows.map((row) => (
@@ -1424,9 +1424,53 @@ export function UsageDashboard() {
               ) : null}
               {modelBarRows.length > 0 ? (
                 <p className="mt-3 text-xs text-muted-foreground">
-                  기타 막대를 클릭하여 전체 상세 내역을 확인하세요.
+                  기타 막대를 클릭하면 하단에 상세 미니 차트가 펼쳐집니다.
                 </p>
               ) : null}
+              <div
+                className={[
+                  "mt-3 overflow-hidden rounded-md border border-border/70 bg-muted/20 transition-all duration-300 ease-out",
+                  isOthersExpanded ? "max-h-[24rem] opacity-100" : "max-h-0 opacity-0 border-transparent",
+                ].join(" ")}
+              >
+                {othersRows.length === 0 ? null : (
+                  <div className="p-3">
+                    <button
+                      type="button"
+                      onClick={() => setIsOthersExpanded((prev) => !prev)}
+                      className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-foreground"
+                    >
+                      {isOthersExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                      기타 모델 상세 내역
+                    </button>
+                    <div className="space-y-2">
+                      {othersRows.map((row) => {
+                        const widthPct = Math.max(4, Math.round((row.requests / othersMaxRequests) * 100))
+                        const sharePct = (row.requests / othersTotalRequests) * 100
+                        return (
+                          <div key={`${row.provider}:${row.model}`} className="grid grid-cols-[minmax(0,1fr)_9rem] gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium" title={row.model}>
+                                {row.model}
+                              </p>
+                              <p className="text-[11px] text-muted-foreground">{labelForProviderCode(row.provider)}</p>
+                              <div className="mt-1 h-2 w-full rounded bg-muted">
+                                <div
+                                  className="h-2 rounded bg-slate-500/80"
+                                  style={{ width: `${widthPct}%` }}
+                                />
+                              </div>
+                            </div>
+                            <p className="self-end text-right text-xs tabular-nums text-muted-foreground">
+                              {formatRequestCount(row.requests)} ({sharePct.toFixed(1)}%)
+                            </p>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
             </section>
           </div>
 
@@ -1525,48 +1569,6 @@ export function UsageDashboard() {
           </section>
         </>
       )}
-      {isOthersModalOpen ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
-          onClick={() => setIsOthersModalOpen(false)}
-          role="presentation"
-        >
-          <div
-            className="w-full max-w-2xl rounded-lg border border-border bg-card shadow-xl"
-            role="dialog"
-            aria-modal="true"
-            aria-label="기타 모델 상세 내역"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-border px-4 py-3">
-              <h3 className="text-sm font-semibold">기타 모델 상세 내역</h3>
-              <Button type="button" variant="outline" size="sm" onClick={() => setIsOthersModalOpen(false)}>
-                닫기
-              </Button>
-            </div>
-            <div className="max-h-[60vh] overflow-y-auto px-4 py-3">
-              {othersRows.length === 0 ? (
-                <p className="text-sm text-muted-foreground">표시할 상세 항목이 없습니다.</p>
-              ) : (
-                <div className="space-y-2">
-                  {othersRows.map((row) => (
-                    <div
-                      key={`${row.provider}:${row.model}`}
-                      className="flex items-center justify-between rounded-md border border-border/70 px-3 py-2 text-sm"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate font-medium">{row.model}</p>
-                        <p className="text-xs text-muted-foreground">{labelForProviderCode(row.provider)}</p>
-                      </div>
-                      <p className="tabular-nums text-muted-foreground">{formatRequestCount(row.requests)}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   )
 }
