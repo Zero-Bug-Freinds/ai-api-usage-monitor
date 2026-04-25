@@ -102,6 +102,16 @@ export function ConsoleSidebar({
     } finally {
       setLogoutPending(false)
     }
+    try {
+      if (typeof sessionStorage !== "undefined") {
+        sessionStorage.clear()
+      }
+      if (typeof localStorage !== "undefined") {
+        localStorage.clear()
+      }
+    } catch {
+      // Storage 접근 오류가 있어도 로그아웃 리다이렉트는 진행한다.
+    }
     window.location.assign(logoutRedirectPath)
   }
 
