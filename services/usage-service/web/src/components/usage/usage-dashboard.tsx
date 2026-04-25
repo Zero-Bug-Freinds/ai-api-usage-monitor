@@ -870,16 +870,6 @@ export function UsageDashboard() {
   )
   const isProviderPiePlaceholder = providerPieData.length === 0
 
-  const modelPieLegendPayload = React.useMemo(
-    () =>
-      pieData.map((entry) => ({
-        value: entry.name,
-        type: "square" as const,
-        color: colorForModel(entry.fullName, entry.provider),
-      })),
-    [pieData]
-  )
-
   const providerPieLegendPayload = React.useMemo(
     () =>
       providerPieData.map((entry) => ({
@@ -1345,42 +1335,69 @@ export function UsageDashboard() {
           <div className="mb-8 grid gap-5 lg:grid-cols-2 lg:gap-6">
             <section className="rounded-lg border border-border p-4 shadow-sm">
               <h2 className="mb-4 text-lg font-medium">모델별 요청 비중</h2>
-              <div className="h-[320px] min-h-[320px] w-full min-w-0">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={modelPieChartData}
-                      dataKey="value"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      innerRadius="52%"
-                      outerRadius="80%"
-                      paddingAngle={2}
-                      isAnimationActive={!isModelPiePlaceholder}
-                      label={false}
-                    >
-                      {modelPieChartData.map((entry, i) => (
-                        <Cell
-                          key={`m-${entry.fullName}-${i}`}
-                          fill={
-                            isModelPiePlaceholder
-                              ? "var(--border)"
-                              : colorForModel(entry.fullName, entry.provider)
-                          }
-                          fillOpacity={isModelPiePlaceholder ? 0.35 : 1}
-                          style={{ cursor: "default" }}
-                        />
+              <div className="flex min-h-[320px] items-stretch gap-4">
+                <div className="w-[52%] max-h-[320px] overflow-y-auto rounded-md border border-border/70 bg-muted/20 p-3">
+                  {isModelPiePlaceholder ? (
+                    <p className="text-sm text-muted-foreground">집계 데이터 없음</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {pieData.map((entry, i) => (
+                        <div
+                          key={`legend-model-${entry.fullName}-${i}`}
+                          className="flex items-center gap-2 rounded px-1 py-1 text-sm"
+                          title={entry.fullName}
+                        >
+                          <span className="w-5 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+                            {i + 1}.
+                          </span>
+                          <span
+                            className="h-2.5 w-2.5 shrink-0 rounded-sm"
+                            style={{ backgroundColor: colorForModel(entry.fullName, entry.provider) }}
+                          />
+                          <span className="min-w-0 flex-1 truncate">{entry.fullName}</span>
+                          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                            {(entry.percent * 100).toFixed(1)}%
+                          </span>
+                        </div>
                       ))}
-                    </Pie>
-                    <Tooltip content={ModelDonutTooltip} />
-                    {!isModelPiePlaceholder ? <AnyLegend payload={modelPieLegendPayload} /> : null}
-                  </PieChart>
-                </ResponsiveContainer>
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-1 items-center justify-center rounded-md border border-border/70 bg-card/30 p-2">
+                  <div className="h-[280px] w-[280px] shrink-0">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={modelPieChartData}
+                          dataKey="value"
+                          nameKey="name"
+                          cx="50%"
+                          cy="50%"
+                          innerRadius="52%"
+                          outerRadius="80%"
+                          paddingAngle={2}
+                          isAnimationActive={!isModelPiePlaceholder}
+                          label={isModelPiePlaceholder ? false : ({ index }) => String((index ?? 0) + 1)}
+                        >
+                          {modelPieChartData.map((entry, i) => (
+                            <Cell
+                              key={`m-${entry.fullName}-${i}`}
+                              fill={
+                                isModelPiePlaceholder
+                                  ? "var(--border)"
+                                  : colorForModel(entry.fullName, entry.provider)
+                              }
+                              fillOpacity={isModelPiePlaceholder ? 0.35 : 1}
+                              style={{ cursor: "default" }}
+                            />
+                          ))}
+                        </Pie>
+                        <Tooltip content={ModelDonutTooltip} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
               </div>
-              {isModelPiePlaceholder ? (
-                <p className="mt-2 text-center text-sm text-muted-foreground">집계 데이터 없음</p>
-              ) : null}
             </section>
 
             <section className="rounded-lg border border-border p-4 shadow-sm">
