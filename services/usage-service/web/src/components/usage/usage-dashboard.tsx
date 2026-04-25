@@ -1439,8 +1439,10 @@ export function UsageDashboard() {
                 <p className="mt-2 text-center text-sm text-muted-foreground">집계 데이터 없음</p>
               ) : null}
             </section>
+          </div>
 
-            <section className="rounded-lg border border-border p-4 shadow-sm lg:col-span-2">
+          <div className="mb-8">
+            <section className="rounded-lg border border-border p-4 shadow-sm">
               <h2 className="mb-4 text-lg font-medium">모델별 요청 수 (가로)</h2>
               <div className="h-[320px] min-h-[320px] w-full max-w-full min-w-0">
                 <ResponsiveContainer width="100%" height="100%">
@@ -1539,7 +1541,7 @@ export function UsageDashboard() {
             </section>
           </div>
 
-          <section className="mb-8 rounded-lg border border-border bg-card p-4 shadow-sm min-w-0">
+          <section className="mb-8 w-full rounded-lg border border-border bg-card p-4 shadow-sm min-w-0">
             <h2 className="mb-4 text-lg font-medium">모델별 토큰 사용량</h2>
             <>
               <div
