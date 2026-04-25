@@ -1332,38 +1332,11 @@ export function UsageDashboard() {
             ) : null}
           </section>
 
-          <div className="mb-8 grid gap-5 lg:grid-cols-2 lg:gap-6">
-            <section className="rounded-lg border border-border p-4 shadow-sm">
+          <div className="mb-8 grid gap-5 lg:grid-cols-3 lg:gap-6">
+            <section className="rounded-lg border border-border p-4 shadow-sm lg:col-span-2">
               <h2 className="mb-4 text-lg font-medium">모델별 요청 비중</h2>
               <div className="flex min-h-[320px] items-stretch gap-4">
-                <div className="w-[52%] max-h-[320px] overflow-y-auto rounded-md border border-border/70 bg-muted/20 p-3">
-                  {isModelPiePlaceholder ? (
-                    <p className="text-sm text-muted-foreground">집계 데이터 없음</p>
-                  ) : (
-                    <div className="space-y-1.5">
-                      {pieData.map((entry, i) => (
-                        <div
-                          key={`legend-model-${entry.fullName}-${i}`}
-                          className="flex items-center gap-2 rounded px-1 py-1 text-sm"
-                          title={entry.fullName}
-                        >
-                          <span className="w-5 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
-                            {i + 1}.
-                          </span>
-                          <span
-                            className="h-2.5 w-2.5 shrink-0 rounded-sm"
-                            style={{ backgroundColor: colorForModel(entry.fullName, entry.provider) }}
-                          />
-                          <span className="min-w-0 flex-1 truncate">{entry.fullName}</span>
-                          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                            {(entry.percent * 100).toFixed(1)}%
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-1 items-center justify-center rounded-md border border-border/70 bg-card/30 p-2">
+                <div className="flex h-[320px] w-[320px] shrink-0 items-center justify-center rounded-md border border-border/70 bg-card/30 p-2">
                   <div className="h-[280px] w-[280px] shrink-0">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
@@ -1397,10 +1370,37 @@ export function UsageDashboard() {
                     </ResponsiveContainer>
                   </div>
                 </div>
+                <div className="flex-1 max-h-[320px] overflow-y-auto p-1">
+                  {isModelPiePlaceholder ? (
+                    <p className="text-sm text-muted-foreground">집계 데이터 없음</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {pieData.map((entry, i) => (
+                        <div
+                          key={`legend-model-${entry.fullName}-${i}`}
+                          className="flex items-center gap-2 rounded px-1 py-1 text-sm"
+                          title={entry.fullName}
+                        >
+                          <span className="w-5 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+                            {i + 1}.
+                          </span>
+                          <span
+                            className="h-2.5 w-2.5 shrink-0 rounded-sm"
+                            style={{ backgroundColor: colorForModel(entry.fullName, entry.provider) }}
+                          />
+                          <span className="min-w-0 flex-1 truncate">{entry.fullName}</span>
+                          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                            {(entry.percent * 100).toFixed(1)}%
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </section>
 
-            <section className="rounded-lg border border-border p-4 shadow-sm">
+            <section className="rounded-lg border border-border p-4 shadow-sm lg:col-span-1">
               <h2 className="mb-4 text-lg font-medium">공급사별 요청 비중</h2>
               <div className="h-[320px] min-h-[320px] w-full min-w-0">
                 <ResponsiveContainer width="100%" height="100%">
