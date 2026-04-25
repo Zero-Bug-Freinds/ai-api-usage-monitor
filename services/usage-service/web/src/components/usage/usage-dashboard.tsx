@@ -270,6 +270,7 @@ type TokenStackRow = {
   label: string
   model: string
   provider: string
+  isOthers?: boolean
   requests: number
   inputTokens: number
   estimatedReasoningTokens: number
@@ -629,6 +630,7 @@ export function UsageDashboard() {
   const [monthly, setMonthly] = React.useState<MonthlyUsagePoint[]>([])
   const [byModel, setByModel] = React.useState<ModelUsageAggregate[]>([])
   const [isOthersExpanded, setIsOthersExpanded] = React.useState(false)
+  const [isTokenOthersExpanded, setIsTokenOthersExpanded] = React.useState(false)
 
   /** API·KPI 라벨에 쓰는 구간(마지막으로 로드한 기준). effect 안에서만 갱신해 요청 간 날짜 불일치를 막는다. */
   const [loadedRange, setLoadedRange] = React.useState<{ from: string; to: string } | null>(null)
@@ -938,37 +940,65 @@ export function UsageDashboard() {
     [modelBarRows]
   )
 
-  const tokenStackRows = React.useMemo((): TokenStackRow[] => {
-    const totalTokensOf = (m: ModelUsageAggregate) =>
-      m.inputTokens + m.estimatedReasoningTokens + m.outputTokens
+  const tokenTotalOf = React.useCallback(
+    (m: ModelUsageAggregate) => m.inputTokens + m.estimatedReasoningTokens + m.outputTokens,
+    []
+  )
+
+  const tokenStackSortedModels = React.useMemo(() => {
     const forTokenChart = byModel.filter((m) => !isProviderUnknownPlaceholderModel(m.model, m.provider))
-    const sorted = [...forTokenChart].sort((a, b) => {
-      const byTotal = totalTokensOf(b) - totalTokensOf(a)
+    return [...forTokenChart].sort((a, b) => {
+      const byTotal = tokenTotalOf(b) - tokenTotalOf(a)
       if (byTotal !== 0) return byTotal
       const byProvider = tokenStackProviderTieRank(a.provider) - tokenStackProviderTieRank(b.provider)
       if (byProvider !== 0) return byProvider
       return a.model.localeCompare(b.model, "en")
     })
+  }, [byModel, tokenTotalOf])
+
+  const tokenStackOthersMembers = React.useMemo(
+    () => tokenStackSortedModels.slice(MODEL_REQUESTS_TOP_N),
+    [tokenStackSortedModels]
+  )
+
+  const tokenStackRows = React.useMemo((): TokenStackRow[] => {
+    const sorted = [...tokenStackSortedModels]
+    const othersMembers = sorted.slice(MODEL_REQUESTS_TOP_N)
+    const top = othersMembers.length > 0 ? sorted.slice(0, MODEL_REQUESTS_TOP_N) : sorted
+
+    if (othersMembers.length > 0) {
+      const othersAggregated: ModelUsageAggregate = {
+        model: "__OTHERS_TOKENS__",
+        provider: "OTHERS",
+        requestCount: othersMembers.reduce((sum, m) => sum + m.requestCount, 0),
+        inputTokens: othersMembers.reduce((sum, m) => sum + m.inputTokens, 0),
+        estimatedReasoningTokens: othersMembers.reduce((sum, m) => sum + m.estimatedReasoningTokens, 0),
+        outputTokens: othersMembers.reduce((sum, m) => sum + m.outputTokens, 0),
+      }
+      top.push(othersAggregated)
+    }
+
     let grandIn = 0
     let grandEstimatedReasoning = 0
     let grandOut = 0
-    for (const m of sorted) {
+    for (const m of top) {
       grandIn += m.inputTokens
       grandEstimatedReasoning += m.estimatedReasoningTokens
       grandOut += m.outputTokens
     }
     const grandTotal = grandIn + grandEstimatedReasoning + grandOut
-    return sorted.map((m) => {
-      const base = colorForModel(m.model, m.provider)
+    return top.map((m) => {
+      const base = m.provider === "OTHERS" ? OTHERS_BAR_COLOR : colorForModel(m.model, m.provider)
       const rc = m.requestCount
       const inT = m.inputTokens
       const estimatedReasoningT = m.estimatedReasoningTokens
       const outT = m.outputTokens
       const total = inT + estimatedReasoningT + outT
       return {
-        label: truncateModelLabel(m.model),
+        label: m.provider === "OTHERS" ? OTHERS_LABEL : truncateModelLabel(m.model),
         model: m.model,
         provider: m.provider,
+        isOthers: m.provider === "OTHERS",
         requests: rc,
         inputTokens: inT,
         estimatedReasoningTokens: estimatedReasoningT,
@@ -988,7 +1018,25 @@ export function UsageDashboard() {
         fillOutput: rgbaFromHex(base, 1),
       }
     })
-  }, [byModel])
+  }, [tokenStackSortedModels])
+
+  const tokenOthersRows = React.useMemo(
+    () =>
+      tokenStackOthersMembers.map((m) => ({
+        model: m.model,
+        provider: m.provider,
+        totalTokens: tokenTotalOf(m),
+      })),
+    [tokenStackOthersMembers, tokenTotalOf]
+  )
+  const tokenOthersMax = React.useMemo(
+    () => Math.max(...tokenOthersRows.map((row) => row.totalTokens), 1),
+    [tokenOthersRows]
+  )
+  const tokenOthersTotal = React.useMemo(
+    () => Math.max(tokenOthersRows.reduce((sum, row) => sum + row.totalTokens, 0), 1),
+    [tokenOthersRows]
+  )
 
   const tokenStackDisplayRows = React.useMemo(
     () => (tokenStackRows.length > 0 ? tokenStackRows : [EMPTY_TOKEN_STACK_DISPLAY_ROW]),
@@ -1496,7 +1544,17 @@ export function UsageDashboard() {
                     <YAxis type="category" dataKey="label" width={128} tick={{ fontSize: 11 }} />
                     <Tooltip content={TokenStackTooltip} cursor={{ fill: "var(--muted)", fillOpacity: 0.12 }} />
                     <AnyLegend payload={tokenStackLegendPayload} />
-                    <Bar stackId="tokens" dataKey="inputTokens" name="입력 토큰" radius={[4, 0, 0, 4]}>
+                    <Bar
+                      stackId="tokens"
+                      dataKey="inputTokens"
+                      name="입력 토큰"
+                      radius={[4, 0, 0, 4]}
+                      onClick={(_, index) => {
+                        if (tokenStackRows.length === 0) return
+                        const row = tokenStackDisplayRows[index]
+                        if (row?.isOthers) setIsTokenOthersExpanded((prev) => !prev)
+                      }}
+                    >
                       {tokenStackDisplayRows.map((row) => (
                         <Cell
                           key={`stk-in-${row.model}`}
@@ -1505,7 +1563,16 @@ export function UsageDashboard() {
                         />
                       ))}
                     </Bar>
-                    <Bar stackId="tokens" dataKey="estimatedReasoningTokens" name="추정 추론 토큰">
+                    <Bar
+                      stackId="tokens"
+                      dataKey="estimatedReasoningTokens"
+                      name="추정 추론 토큰"
+                      onClick={(_, index) => {
+                        if (tokenStackRows.length === 0) return
+                        const row = tokenStackDisplayRows[index]
+                        if (row?.isOthers) setIsTokenOthersExpanded((prev) => !prev)
+                      }}
+                    >
                       {tokenStackDisplayRows.map((row) => (
                         <Cell
                           key={`stk-reason-${row.model}`}
@@ -1514,7 +1581,17 @@ export function UsageDashboard() {
                         />
                       ))}
                     </Bar>
-                    <Bar stackId="tokens" dataKey="outputTokens" name="출력 토큰" radius={[0, 4, 4, 0]}>
+                    <Bar
+                      stackId="tokens"
+                      dataKey="outputTokens"
+                      name="출력 토큰"
+                      radius={[0, 4, 4, 0]}
+                      onClick={(_, index) => {
+                        if (tokenStackRows.length === 0) return
+                        const row = tokenStackDisplayRows[index]
+                        if (row?.isOthers) setIsTokenOthersExpanded((prev) => !prev)
+                      }}
+                    >
                       {tokenStackDisplayRows.map((row) => (
                         <Cell
                           key={`stk-out-${row.model}`}
@@ -1537,9 +1614,57 @@ export function UsageDashboard() {
               ) : null}
               {tokenStackRows.length > 0 ? (
                 <p className="mt-3 text-xs text-muted-foreground">
-                  ※ &apos;추정 추론 토큰&apos;은 API에서 별도로 구분되지 않는 시스템/추론 토큰의 합산 추정치입니다.
+                  기타 막대를 클릭하면 하단에 상세 미니 차트가 펼쳐집니다.
                 </p>
               ) : null}
+              <div
+                className={[
+                  "mt-3 overflow-hidden rounded-md border border-border/70 bg-muted/20 transition-all duration-300 ease-out",
+                  isTokenOthersExpanded ? "max-h-[24rem] opacity-100" : "max-h-0 opacity-0 border-transparent",
+                ].join(" ")}
+              >
+                {tokenOthersRows.length === 0 ? null : (
+                  <div className="p-3">
+                    <button
+                      type="button"
+                      onClick={() => setIsTokenOthersExpanded((prev) => !prev)}
+                      className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-foreground"
+                    >
+                      {isTokenOthersExpanded ? (
+                        <ChevronUp className="h-4 w-4" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4" />
+                      )}
+                      기타 모델 토큰 상세 내역
+                    </button>
+                    <div className="space-y-2">
+                      {tokenOthersRows.map((row) => {
+                        const widthPct = Math.max(4, Math.round((row.totalTokens / tokenOthersMax) * 100))
+                        const sharePct = (row.totalTokens / tokenOthersTotal) * 100
+                        return (
+                          <div key={`${row.provider}:${row.model}`} className="grid grid-cols-[minmax(0,1fr)_10.5rem] gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium" title={row.model}>
+                                {row.model}
+                              </p>
+                              <p className="text-[11px] text-muted-foreground">{labelForProviderCode(row.provider)}</p>
+                              <div className="mt-1 h-2 w-full rounded bg-muted">
+                                <div
+                                  className="h-2 rounded bg-slate-500/80"
+                                  style={{ width: `${widthPct}%` }}
+                                />
+                              </div>
+                            </div>
+                            <p className="self-end text-right text-xs tabular-nums text-muted-foreground">
+                              {formatTokenCount(row.totalTokens)} ({sharePct.toFixed(1)}%)
+                            </p>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
             </>
           </section>
 
