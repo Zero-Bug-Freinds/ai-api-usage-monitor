@@ -8,7 +8,7 @@
   ],
   "prediction": {
     "type": "content",
-    "content": "프롬 더 가든"
+    "content": "그로세이"
   },
-  "max_tokens": 200
+  "max_tokens": 400
 }
