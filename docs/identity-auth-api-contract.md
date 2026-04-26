@@ -1,6 +1,6 @@
 # Identity 인증 API 계약 (백엔드)
 
-버전: 1.6  
+버전: 1.7  
 관련: [architecture.md](./architecture.md) §1.3, [contracts/web-identity-bff.md](./contracts/web-identity-bff.md)
 
 ---
@@ -42,7 +42,7 @@
 | `GET`  | `/api/auth/external-keys` | 필요  | 내 외부 AI API 키 목록 조회 (`id`, `provider`, `alias`, `monthlyBudgetUsd`, `createdAt`, 삭제 예정 시 `deletionRequestedAt`·`permanentDeletionAt`·`deletionGraceDays` 등) |
 | `POST` | `/api/auth/external-keys` | 필요  | 외부 AI API 키 등록 (`provider`, `externalKey`, `alias`, `monthlyBudgetUsd`) |
 | `PUT`  | `/api/auth/external-keys/{id}` | 필요  | 외부 AI API 키 수정 (`alias`, `monthlyBudgetUsd` 필수, `externalKey`는 선택) |
-| `DELETE` | `/api/auth/external-keys/{id}` | 필요  | 외부 AI API 키 삭제 예약(선택 쿼리 `gracePeriodDays`, 기본 7일·범위 1~365일) |
+| `DELETE` | `/api/auth/external-keys/{id}` | 필요  | 외부 AI API 키 삭제 예약(선택 쿼리 `gracePeriodDays`, `retainLogs`; 기본 7일·범위 0~365일) |
 | `POST` | `/api/auth/external-keys/{id}/deletion-cancel` | 필요  | 외부 AI API 키 삭제 예약 취소 |
 | `POST` | `/api/auth/logout`  | 불필요 | 로그아웃 신호 응답(BFF 쿠키 삭제 유도) |
 
@@ -351,19 +351,20 @@
 
 ## 10.1 외부 API 키 삭제 예약/취소 계약
 
-삭제는 즉시 물리 삭제가 아니라 **유예 기간(soft delete)** 후 물리 삭제로 처리한다. **기본 유예는 7일**이며, 요청 시 **쿼리 `gracePeriodDays`** 로 **1~365일** 범위에서 바꿀 수 있다(생략 시 7일). 유예 중에는 삭제 취소가 가능하며, 유예 종료 후 스케줄러가 물리 삭제한다.
+삭제는 즉시 물리 삭제가 아니라 **유예 기간(soft delete)** 후 물리 삭제로 처리한다. **기본 유예는 7일**이며, 요청 시 **쿼리 `gracePeriodDays`** 로 **0~365일** 범위에서 바꿀 수 있다(생략 시 7일). 유예 중에는 삭제 취소가 가능하며, 유예 종료 후 스케줄러가 물리 삭제한다.
+`retainLogs`(기본 `true`)를 함께 전달할 수 있으며, `false`면 키가 최종 삭제되는 시점(즉시 삭제 또는 유예 만료 purge)에 usage 로그·통계 삭제를 요청한다.
 
 ### 삭제 예약: `DELETE /api/auth/external-keys/{id}`
 
 | 항목 | 설명 |
 | --- | --- |
-| 쿼리 | 선택 `gracePeriodDays`(정수). 생략 시 기본 7일. 범위 위반 시 `400`. |
+| 쿼리 | 선택 `gracePeriodDays`(정수), 선택 `retainLogs`(boolean, 기본 `true`). |
 | 동작 | `deletionRequestedAt`·`permanentDeletionAt`·`deletionGraceDays` 설정 |
 
 | 상황 | 상태 코드 | 예시 JSON |
 | --- | --- | --- |
 | 삭제 예약 성공 | `200` | `{"success":true,"message":"삭제가 예약되었습니다. 일주일 이내에 취소할 수 있으며, 이후에는 키가 영구 삭제됩니다.","data":{"id":1,"provider":"GEMINI","alias":"데모 키","createdAt":"...","monthlyBudgetUsd":10,"deletionRequestedAt":"...","permanentDeletionAt":"...","deletionGraceDays":7}}` |
-| `gracePeriodDays` 범위 밖 | `400` | `{"success":false,"message":"유예 기간은 1일 이상 365일 이하로 설정할 수 있습니다","data":null}` |
+| `gracePeriodDays` 범위 밖 | `400` | `{"success":false,"message":"유예 기간은 0일 이상 365일 이하로 설정할 수 있습니다","data":null}` |
 | 대상 키 없음 | `404` | `{"success":false,"message":"등록된 API 키를 찾을 수 없습니다","data":null}` |
 | 이미 삭제 예정 | `409` | `{"success":false,"message":"이미 삭제 예정인 키입니다","data":null}` |
 
@@ -382,7 +383,7 @@
 
 | 상황        | 상태 코드 | 설명                           |
 | --------- | ----- | ---------------------------- |
-| 입력 검증 실패  | `400` | 필드 유효성/정책 위반 (`provider`·`externalKey`·`alias` 등), 삭제 예약 시 `gracePeriodDays` 범위(1~365) 위반 등 |
+| 입력 검증 실패  | `400` | 필드 유효성/정책 위반 (`provider`·`externalKey`·`alias` 등), 삭제 예약 시 `gracePeriodDays` 범위(0~365) 위반 등 |
 | 로그인 인증 실패 | `401` | 이메일/비밀번호 불일치                 |
 | 보호 API 미인증 | `401` | 액세스 토큰 없음/무효 (`GET/POST/PUT/DELETE /api/auth/external-keys` 등) |
 | 외부 API 키 별칭 중복 | `409` | 동일 사용자 기준 별칭 재사용              |

@@ -1,6 +1,6 @@
 # Web(Next.js) ↔ Team Service BFF 계약
 
-버전: 0.6  
+버전: 0.7  
 관련: [web-split-boundary.md](./web-split-boundary.md), [web-identity-bff.md](./web-identity-bff.md) — `/teams` UI 소유·경로: §2.3
 
 ---
@@ -29,7 +29,7 @@
 | `GET /api/team/v1/teams/{id}/api-keys` | Team BFF `GET /api/team/v1/teams/{id}/api-keys` → Team Service `GET /api/v1/teams/{id}/api-keys` |
 | `POST /api/team/v1/teams/{id}/api-keys` | Team BFF `POST /api/team/v1/teams/{id}/api-keys` → Team Service `POST /api/v1/teams/{id}/api-keys` |
 | `PUT /api/team/v1/teams/{teamId}/api-keys/{keyId}` | Team BFF `PUT ...` → Team Service `PUT /api/v1/teams/{teamId}/api-keys/{keyId}` |
-| `DELETE /api/team/v1/teams/{teamId}/api-keys/{keyId}` | Team BFF `DELETE ...` → Team Service `DELETE /api/v1/teams/{teamId}/api-keys/{keyId}` (선택 쿼리 `gracePeriodDays`) |
+| `DELETE /api/team/v1/teams/{teamId}/api-keys/{keyId}` | Team BFF `DELETE ...` → Team Service `DELETE /api/v1/teams/{teamId}/api-keys/{keyId}` (선택 쿼리 `gracePeriodDays`, `retainLogs`) |
 | `POST /api/team/v1/teams/{teamId}/api-keys/{keyId}/deletion/cancel` | Team BFF `POST ...` → Team Service `POST /api/v1/teams/{teamId}/api-keys/{keyId}/deletion/cancel` |
 
 - Identity `web`는 `/teams` UI(팀·멤버·팀 API Key·예산)를 렌더링하고, Next rewrite로 `GET/POST/PUT/DELETE /api/team/v1/*`를 Team BFF(`team-web`)로 전달한다(삭제 예정 해제용 `POST .../deletion/cancel` 포함).
@@ -144,11 +144,13 @@
   - 실패: `400` (검증/중복/대상 없음, **삭제 예정인 키는 수정 불가**), `403`, `404`
 
 - `DELETE /api/team/v1/teams/{teamId}/api-keys/{keyId}`
-  - 선택 쿼리: `gracePeriodDays` (정수, 생략 시 **기본 7일**). 허용 범위는 **0~365일**.
+  - 선택 쿼리: `gracePeriodDays` (정수, 생략 시 **기본 7일**), `retainLogs` (boolean, 생략 시 `true`).
+  - `gracePeriodDays` 허용 범위는 **0~365일**.
     - **`0`**: 삭제 예정 없이 **즉시 DB에서 행을 삭제**(물리 삭제).
     - **`1` 이상**: `deletionRequestedAt`을 현재 시각으로, `permanentDeletionAt`을 그 시각 + `gracePeriodDays`일 후로 두는 **삭제 예정(소프트)**.
+  - `retainLogs=false`이면 키가 최종 삭제되는 시점(즉시 삭제 또는 유예 만료 purge)에 팀 사용 로그·통계 삭제를 요청하는 이벤트 값으로 전달된다.
   - 권한: **팀장만** 호출 가능.
-  - 유예 종료 후 배치로 행을 지우는 **스케줄러는 별도 구현**일 수 있다(계약만으로 보장하지 않음).
+  - 유예 종료 후 purge 스케줄러가 만료 키를 물리 삭제하고, 저장된 `retainLogs` 값을 포함해 삭제 이벤트를 발행한다.
   - 성공: `200`, `message` 예: `팀 API 키 삭제 요청이 처리되었습니다`, `data`에 해당 키 요약(즉시 삭제 직전 스냅샷 또는 삭제 예정 필드 포함)
   - 실패: `400` (대상 없음·유예 일수 범위 밖·이미 삭제 예정 등), `403`, `404`
 
@@ -178,6 +180,7 @@
 - 설정 정본: `services/team-service/src/main/resources/application.properties` — `team.member-added-event.exchange`, `team.member-added-event.routing-key`(기본값 `team-member-added`), `spring.rabbitmq.*`.
 - **동일 TopicExchange·라우팅 키**로 팀 도메인 이벤트 JSON이 발행된다. 각 메시지 본문에 **`eventType`**(필수)과 공통 필드(`teamId`, `teamName`, `actorUserId`, `occurredAt`, `recipientUserIds` 등)가 포함되며, AMQP **헤더 `eventType`**에도 동일 문자열이 실린다. 구독자는 헤더 또는 본문 `eventType`으로 분기한다.
 - 주요 `eventType` 값: `TEAM_CREATED`, `TEAM_INVITE_CREATED`, `TEAM_INVITATION_ACCEPTED`, `TEAM_INVITATION_REJECTED`, `TEAM_MEMBER_JOINED`, `TEAM_MEMBER_REMOVED`, `TEAM_DELETED`, `TEAM_API_KEY_REGISTERED`, `TEAM_API_KEY_UPDATED`, `TEAM_API_KEY_DELETED`, `TEAM_API_KEY_DELETION_SCHEDULED`, `TEAM_API_KEY_DELETION_CANCELLED`.
+- `TEAM_API_KEY_DELETED` 페이로드에는 `retainLogs`(boolean)가 포함되며, 즉시 삭제/유예 만료 purge 모두 DB에 저장된 값이 사용된다.
 - 하위 호환: `TEAM_INVITE_CREATED` 페이로드에 기존 `invitationId`, `receiverId`, `inviterId`, `createdAt` 필드가 유지된다. `TEAM_MEMBER_JOINED`에 `receiverId`, `inviterId`, `createdAt`(레거시)가 유지된다.
 - 목적: notification 등이 알림·감사 로그를 비동기로 처리할 수 있도록 전달
 - **소비(인앱):** **notification-service**(`services/notification-service/src/team-events/`)가 RabbitMQ 큐를 구독해 위 이벤트별로 `InAppNotification`을 생성하고, `NotificationDelivery.dedupeKey`로 멱등을 보장한다. `TEAM_MEMBER_JOINED`는 제품 규칙상 **참여 사용자(`receiverId`)에게만** 인앱을 생성한다(초대자는 `TEAM_INVITATION_ACCEPTED`로 별도 통지). 상세·환경 변수는 [`services/notification-service/README.md`](../../services/notification-service/README.md), 아키텍처 요약은 [`architecture.md`](../architecture.md) §4.9·§6.
@@ -224,4 +227,4 @@
 ### 7.5 Team `web` (`services/team-service/web/`)
 
 - 동일 도메인 로직을 **Team 전용 Next**에서도 볼 수 있다. UI 패턴(팀 만들기·접이식 목록 등)은 `team-management-view.tsx`가 대응한다. 브라우저 진입점으로는 보통 Identity의 **`/teams`** 를 쓴다([web-split-boundary.md](./web-split-boundary.md) §2.3).
-- `team-management-view`는 팀 API Key **목록·삭제 예정 안내(영구 삭제 예정 시각 등)** 를 볼 수 있으나, **삭제 예정 등록·삭제 취소** 전용 버튼은 Identity `/teams`와 다를 수 있다(필요 시 동일 API로 확장 가능).
+- `team-management-view`의 팀 API Key 삭제 모달은 `gracePeriodDays`와 함께 `retainLogs`를 항상 전송한다. 체크박스(기본 `true`)를 해제하면 최종 삭제 시점에 로그·통계도 함께 삭제되도록 요청한다.
