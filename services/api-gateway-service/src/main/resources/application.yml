@@ -44,12 +44,12 @@ spring:
                 - RewritePath=/api/identity/(?<segment>.*), /api/${segment}
 
             - id: team-http
-              uri: ${GATEWAY_TEAM_URI:http://localhost:8093}
+              uri: ${GATEWAY_TEAM_URI:http://team-service:8093}
               predicates:
                 - Path=/api/team/**
               filters:
                 - RemoveRequestHeader=Authorization
-                - RewritePath=/api/team/(?<segment>.*), /api/v1/${segment}
+                - RewritePath=/api/team/(?<segment>.*), /api/${segment}
 
             - id: notification-http
               uri: ${GATEWAY_NOTIFICATION_URI:http://localhost:8096}
