@@ -17,6 +17,7 @@ public final class TeamEventTypes {
 	public static final String TEAM_API_KEY_DELETED = "TEAM_API_KEY_DELETED";
 	public static final String TEAM_API_KEY_DELETION_SCHEDULED = "TEAM_API_KEY_DELETION_SCHEDULED";
 	public static final String TEAM_API_KEY_DELETION_CANCELLED = "TEAM_API_KEY_DELETION_CANCELLED";
+	public static final String TEAM_API_KEY_STATUS_CHANGED = "TEAM_API_KEY_STATUS_CHANGED";
 
 	private TeamEventTypes() {
 	}

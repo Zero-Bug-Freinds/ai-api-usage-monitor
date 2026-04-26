@@ -4,6 +4,7 @@ import com.zerobugfreinds.team_service.domain.TeamApiKeyProvider;
 import com.zerobugfreinds.team_service.entity.TeamApiKeyEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -40,4 +41,6 @@ public interface TeamApiKeyRepository extends JpaRepository<TeamApiKeyEntity, Lo
     );
 
     boolean existsByTeamId(Long teamId);
+
+    List<TeamApiKeyEntity> findAllByPermanentDeletionAtIsNotNullAndPermanentDeletionAtBefore(Instant now);
 }

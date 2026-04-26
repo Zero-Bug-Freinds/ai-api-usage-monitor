@@ -25,7 +25,7 @@ describe("DELETE /api/auth/external-keys/[id] (route handler)", () => {
   it("forwards query string to upstream", async () => {
     process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
     const fetchMock = vi.fn(async (url: string) => {
-      expect(url).toBe("http://localhost:8080/api/auth/external-keys/123?gracePeriodDays=14")
+      expect(url).toBe("http://localhost:8080/api/auth/external-keys/123?gracePeriodDays=14&retainLogs=false")
       return new Response(JSON.stringify({ success: true, message: "ok", data: null }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -33,7 +33,7 @@ describe("DELETE /api/auth/external-keys/[id] (route handler)", () => {
     })
     vi.stubGlobal("fetch", fetchMock)
 
-    const req = new Request("http://localhost/api/auth/external-keys/123?gracePeriodDays=14", {
+    const req = new Request("http://localhost/api/auth/external-keys/123?gracePeriodDays=14&retainLogs=false", {
       method: "DELETE",
       headers: { cookie: "access_token=t", Accept: "application/json" },
     })

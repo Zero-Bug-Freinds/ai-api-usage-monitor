@@ -280,7 +280,7 @@ public class ExternalApiKeyService {
 			externalApiKeyRepository.delete(entity);
 			return entity;
 		}
-		entity.markPendingDeletion(now, days);
+		entity.markPendingDeletion(now, days, retainLogs);
 		log.info(
 				"[AUDIT] external_api_key_deletion_requested userId={} keyId={} permanentDeletionAt={}",
 				userId,
@@ -321,7 +321,7 @@ public class ExternalApiKeyService {
 					e.getId(),
 					e.getProvider().name()
 			);
-			publishExternalApiKeyDeleted(e, true);
+			publishExternalApiKeyDeleted(e, e.isRetainUsageLogs());
 		}
 		externalApiKeyRepository.deleteAll(expired);
 		return expired.size();
