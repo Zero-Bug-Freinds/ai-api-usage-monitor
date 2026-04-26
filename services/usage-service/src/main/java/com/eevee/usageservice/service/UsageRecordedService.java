@@ -4,6 +4,7 @@ import com.eevee.usage.events.TokenUsage;
 import com.eevee.usage.events.AiProvider;
 import com.eevee.usage.events.UsageRecordedEvent;
 import com.eevee.usageservice.domain.UsageRecordedLogEntity;
+import com.eevee.usageservice.mq.UsageSummaryAggregationMessage;
 import com.eevee.usageservice.repository.UsageRecordedLogRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -23,15 +24,18 @@ public class UsageRecordedService {
     private final UsageRecordedLogRepository repository;
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
+    private final UsageAggregationService aggregationService;
 
     public UsageRecordedService(
             UsageRecordedLogRepository repository,
             ObjectMapper objectMapper,
-            ApplicationEventPublisher eventPublisher
+            ApplicationEventPublisher eventPublisher,
+            UsageAggregationService aggregationService
     ) {
         this.repository = repository;
         this.objectMapper = objectMapper;
         this.eventPublisher = eventPublisher;
+        this.aggregationService = aggregationService;
     }
 
     @Transactional
@@ -42,6 +46,7 @@ public class UsageRecordedService {
         }
         UsageRecordedLogEntity entity = map(event);
         repository.save(entity);
+        aggregationService.applyFromEvent(toAggregationMessage(entity));
         eventPublisher.publishEvent(new UsageSummaryAggregationRequestedEvent(
                 entity.getEventId(),
                 entity.getOccurredAt(),
@@ -58,6 +63,37 @@ public class UsageRecordedService {
                 entity.getEstimatedCost()
         ));
         log.debug("Stored usage event eventId={} userId={}", event.eventId(), event.userId());
+    }
+
+    private static UsageSummaryAggregationMessage toAggregationMessage(UsageRecordedLogEntity entity) {
+        return new UsageSummaryAggregationMessage(
+                entity.getEventId(),
+                entity.getOccurredAt(),
+                entity.getTeamId(),
+                entity.getUserId(),
+                entity.getProvider().name(),
+                entity.getModel(),
+                1L,
+                entity.isRequestSuccessful() ? 1L : 0L,
+                isError(entity.isRequestSuccessful(), entity.getUpstreamStatusCode()) ? 1L : 0L,
+                defaultLong(entity.getTotalTokens()),
+                defaultLong(entity.getPromptTokens()),
+                defaultLong(entity.getCompletionTokens()),
+                defaultLong(entity.getEstimatedReasoningTokens()),
+                defaultCost(entity.getEstimatedCost())
+        );
+    }
+
+    private static boolean isError(boolean requestSuccessful, Integer upstreamStatusCode) {
+        return !requestSuccessful || (upstreamStatusCode != null && upstreamStatusCode >= 400);
+    }
+
+    private static long defaultLong(Long value) {
+        return value != null ? value : 0L;
+    }
+
+    private static java.math.BigDecimal defaultCost(java.math.BigDecimal value) {
+        return value != null ? value : java.math.BigDecimal.ZERO;
     }
 
     private UsageRecordedLogEntity map(UsageRecordedEvent event) {

@@ -44,7 +44,7 @@ public class UsageAnalyticsJdbcRepository {
             AiProvider provider
     ) {
         String sql = """
-                SELECT COUNT(*)::bigint,
+                SELECT COALESCE(SUM(request_count), 0)::bigint,
                        COALESCE(SUM(error_count), 0)::bigint,
                        COALESCE(SUM(prompt_tokens), 0)::bigint,
                        COALESCE(SUM(total_cost), 0)

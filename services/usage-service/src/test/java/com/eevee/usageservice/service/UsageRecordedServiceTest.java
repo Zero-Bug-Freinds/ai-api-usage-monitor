@@ -31,12 +31,14 @@ class UsageRecordedServiceTest {
     private UsageRecordedLogRepository repository;
     @Mock
     private ApplicationEventPublisher eventPublisher;
+    @Mock
+    private UsageAggregationService aggregationService;
 
     private UsageRecordedService usageRecordedService;
 
     @BeforeEach
     void setUp() {
-        usageRecordedService = new UsageRecordedService(repository, new ObjectMapper(), eventPublisher);
+        usageRecordedService = new UsageRecordedService(repository, new ObjectMapper(), eventPublisher, aggregationService);
     }
 
     @Test
