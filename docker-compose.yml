@@ -256,10 +256,14 @@ services:
         NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${IDENTITY_WEB_PORT:-3000}}
     depends_on:
       - api-gateway-service
+      - identity-web
     environment:
       API_GATEWAY_URL: http://api-gateway-service:8080
       IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://host.docker.internal:8090}
       GATEWAY_DEV_MODE: ${GATEWAY_DEV_MODE:-true}
+      # billing-web 서버 라우트가 컨테이너 내부에서 /api/team/v1/**(identity-web BFF)로 호출할 때 사용할 오리진.
+      # Compose 네트워크에서는 서비스 DNS(identity-web:3000)가 가장 안정적이다. 호스트 전용 구성이면 BILLING_TEAM_BFF_BASE_URL 로 덮어쓴다.
+      BILLING_TEAM_BFF_BASE_URL: ${BILLING_TEAM_BFF_BASE_URL:-http://identity-web:3000}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
