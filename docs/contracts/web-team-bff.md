@@ -212,6 +212,12 @@
 - `GET /api/team/v1/me/teams` 응답의 팀 요약은 **`id`, `name`** 수준이며, **리더·인원 수·생성일**을 한 줄로 주지 않는다. 검증은 **이름이 목록에 나타나는지**, 펼쳤을 때 **멤버·초대·키** 동작이 보이는지로 맞춘다.
 - 팀원 초대 입력 행은 여러 개 추가할 수 있고, 2개 이상일 때 각 행 우측 `-` 버튼으로 빈 행을 즉시 제거할 수 있다.
 
+#### 7.3.1 현재 MFE/호스트 UI 배치(2026-04)
+
+- `services/team-service/web/src/components/team/team-management-view.tsx` 는 **좌측 팀 목록 아코디언 내부에서 CRUD**(멤버 초대·삭제, 팀 API Key 등록·수정·삭제/삭제취소, 팀 삭제)를 수행한다.
+- 같은 화면의 오른쪽 패널은 **Usage 소유 슬롯 예약 영역**으로 두며, Team UI는 해당 영역을 비워 둔다(Team이 Usage 화면을 직접 수정하지 않음).
+- `apps/web` 호스트는 `/teams/[id]/[section]` 경로(`dashboard|members|api-keys`)를 해석해 Team remote를 렌더한다. 현재 Team remote는 내부 탭 없이 아코디언 중심 동작으로 맞춘다.
+
 ### 7.4 팀 API Key 삭제 예정·유예·취소 (Identity `/teams`)
 
 구현: `teams-view.tsx`. 팀장만 **`삭제`/`삭제 취소`/등록 폼**이 보인다(`GET /api/team/v1/teams/{id}/owner`). 서버 기본 유예 **7일**, `gracePeriodDays` 허용 범위 **0~365일**(`0` = 즉시 삭제).
