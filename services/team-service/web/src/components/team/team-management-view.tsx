@@ -203,40 +203,35 @@ export function TeamManagementView() {
   const [deleteTeamLoadingId, setDeleteTeamLoadingId] = React.useState<string | null>(null)
   const [selectedTeamId, setSelectedTeamId] = React.useState<string | null>(null)
   const latestLoadSeqRef = React.useRef(0)
+
+  function filterTeamsByKeyword(items: TeamSummary[], keywordParam?: string): TeamSummary[] {
+    const trimmedKeyword = (keywordParam ?? "").trim().toLowerCase()
+    if (!trimmedKeyword) {
+      return items
+    }
+    return items.filter((item) => item.name.toLowerCase().includes(trimmedKeyword))
+  }
+
   const loadTeams = React.useCallback(async (keywordParam?: string) => {
     const requestSeq = latestLoadSeqRef.current + 1
     latestLoadSeqRef.current = requestSeq
     setLoading(true)
     setIsSearching(true)
     setError(null)
-    const q = new URLSearchParams({
-      page: "0",
-      size: "10",
-    })
-    const trimmedKeyword = (keywordParam ?? "").trim()
-    if (trimmedKeyword !== "") {
-      q.set("keyword", trimmedKeyword)
-    }
     try {
-      const { res, body } = await requestApi(`/api/team/v1/teams?${q.toString()}`, { method: "GET" })
+      const { res, body } = await requestApi("/api/team/v1/me/teams", { method: "GET" })
       if (requestSeq !== latestLoadSeqRef.current) {
         return
       }
-      const pageData = body?.data
-      const content =
-        pageData && typeof pageData === "object" && Array.isArray((pageData as { content?: unknown[] }).content)
-          ? (pageData as { content: unknown[] }).content
-          : null
-      if (!res.ok || !body?.success || content === null) {
+      if (!res.ok || !body?.success || !Array.isArray(body?.data)) {
         setError(body?.message ?? "팀 목록을 불러오지 못했습니다")
         setTeams([])
         return
       }
-      setTeams(
-        content
-          .map((item) => normalizeTeamSummary(item))
-          .filter((item): item is TeamSummary => item !== null)
-      )
+      const normalizedTeams = body.data
+        .map((item) => normalizeTeamSummary(item))
+        .filter((item): item is TeamSummary => item !== null)
+      setTeams(filterTeamsByKeyword(normalizedTeams, keywordParam))
     } catch {
       if (requestSeq !== latestLoadSeqRef.current) {
         return
