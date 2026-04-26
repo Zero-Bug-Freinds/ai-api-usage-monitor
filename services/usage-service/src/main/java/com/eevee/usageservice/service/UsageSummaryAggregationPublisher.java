@@ -4,6 +4,9 @@ import com.eevee.usageservice.config.UsageRabbitProperties;
 import com.eevee.usageservice.mq.UsageSummaryAggregationMessage;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.amqp.core.Message;
+import org.springframework.amqp.core.MessageDeliveryMode;
+import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -49,10 +52,16 @@ public class UsageSummaryAggregationPublisher {
                 defaultCost(event.estimatedCost())
         );
         try {
+            byte[] body = objectMapper.writeValueAsBytes(message);
+            MessageProperties messageProperties = new MessageProperties();
+            messageProperties.setContentType(MessageProperties.CONTENT_TYPE_JSON);
+            messageProperties.setContentEncoding("UTF-8");
+            messageProperties.setDeliveryMode(MessageDeliveryMode.PERSISTENT);
+            Message amqpMessage = new Message(body, messageProperties);
             rabbitTemplate.convertAndSend(
                     rabbitProperties.getSummaryAggregation().getExchange(),
                     rabbitProperties.getSummaryAggregation().getRoutingKey(),
-                    objectMapper.writeValueAsString(message)
+                    amqpMessage
             );
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Failed to serialize UsageSummaryAggregationMessage", e);
