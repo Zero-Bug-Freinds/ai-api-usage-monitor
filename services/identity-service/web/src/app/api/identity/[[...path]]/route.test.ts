@@ -1,10 +1,20 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { GET, POST } from "./route"
 
+const originalGatewayUrl = process.env.GATEWAY_URL
+
+beforeEach(() => {
+  process.env.GATEWAY_URL = "http://localhost:8888"
+})
+
 afterEach(() => {
   vi.restoreAllMocks()
-  delete process.env.IDENTITY_SERVICE_URL
+  if (originalGatewayUrl === undefined) {
+    delete process.env.GATEWAY_URL
+  } else {
+    process.env.GATEWAY_URL = originalGatewayUrl
+  }
 })
 
 function ctx(path?: string[]) {
@@ -22,7 +32,9 @@ describe("GET /api/identity/[[...path]] (Identity management BFF)", () => {
     expect(res.headers.get("cache-control")).toBe("no-store")
   })
 
-  it("returns 500 when IDENTITY_SERVICE_URL is missing", async () => {
+  it("returns 500 when GATEWAY_URL and WEB_GATEWAY_URL are missing", async () => {
+    delete process.env.GATEWAY_URL
+    delete process.env.WEB_GATEWAY_URL
     const req = new Request("http://localhost/api/identity/v1/me/organizations", {
       headers: { cookie: "access_token=tok" },
     })
@@ -30,11 +42,10 @@ describe("GET /api/identity/[[...path]] (Identity management BFF)", () => {
     const res = await GET(req, ctx(["v1", "me", "organizations"]))
     expect(res.status).toBe(500)
     const json = (await res.json()) as { message: string }
-    expect(json.message).toContain("IDENTITY_SERVICE_URL")
+    expect(json.message).toContain("GATEWAY_URL")
   })
 
   it("returns 404 when path does not start with v1", async () => {
-    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
     const req = new Request("http://localhost/api/identity/other", {
       headers: { cookie: "access_token=tok" },
     })
@@ -44,7 +55,6 @@ describe("GET /api/identity/[[...path]] (Identity management BFF)", () => {
   })
 
   it("returns 404 when path segments are empty", async () => {
-    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
     const req = new Request("http://localhost/api/identity", {
       headers: { cookie: "access_token=tok" },
     })
@@ -53,10 +63,9 @@ describe("GET /api/identity/[[...path]] (Identity management BFF)", () => {
     expect(res.status).toBe(404)
   })
 
-  it("proxies to Identity /api/v1/... with Bearer", async () => {
-    process.env.IDENTITY_SERVICE_URL = "http://localhost:8099"
+  it("proxies to Gateway /api/identity/v1/... with Bearer", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      expect(url).toBe("http://localhost:8099/api/v1/me/organizations")
+      expect(url).toBe("http://localhost:8888/api/identity/v1/me/organizations")
       expect(init?.method).toBe("GET")
       const h = init?.headers as Headers
       expect(h.get("Authorization")).toBe("Bearer test-token-value")
@@ -82,9 +91,8 @@ describe("GET /api/identity/[[...path]] (Identity management BFF)", () => {
   })
 
   it("forwards query string to upstream", async () => {
-    process.env.IDENTITY_SERVICE_URL = "http://localhost:8099"
     const fetchMock = vi.fn(async (url: string) => {
-      expect(url).toBe("http://localhost:8099/api/v1/me/teams?page=0&size=10")
+      expect(url).toBe("http://localhost:8888/api/identity/v1/me/teams?page=0&size=10")
       return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } })
     })
     vi.stubGlobal("fetch", fetchMock)
@@ -100,8 +108,8 @@ describe("GET /api/identity/[[...path]] (Identity management BFF)", () => {
 
 describe("POST /api/identity/[[...path]]", () => {
   it("proxies JSON body to upstream", async () => {
-    process.env.IDENTITY_SERVICE_URL = "http://localhost:8099"
-    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(url).toBe("http://localhost:8888/api/identity/v1/organizations")
       expect(init?.method).toBe("POST")
       const h = init?.headers as Headers
       expect(h.get("Content-Type")).toBe("application/json")
