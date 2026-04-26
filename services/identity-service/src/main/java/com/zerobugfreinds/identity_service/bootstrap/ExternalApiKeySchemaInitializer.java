@@ -1,9 +1,10 @@
 package com.zerobugfreinds.identity_service.bootstrap;
 
-import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 /**
@@ -21,8 +22,21 @@ public class ExternalApiKeySchemaInitializer {
 		this.jdbcTemplate = jdbcTemplate;
 	}
 
-	@PostConstruct
+	@EventListener(ApplicationReadyEvent.class)
 	public void ensureRetainUsageLogsColumn() {
+		Integer tableCount = jdbcTemplate.queryForObject(
+				"""
+				select count(*)
+				from information_schema.tables
+				where upper(table_name) = 'EXTERNAL_API_KEYS'
+				""",
+				Integer.class
+		);
+		if (tableCount == null || tableCount == 0) {
+			log.info("external_api_keys table not found; skip retain_usage_logs schema initialization");
+			return;
+		}
+
 		jdbcTemplate.execute(
 				"""
 				alter table if exists external_api_keys
