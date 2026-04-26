@@ -12,6 +12,7 @@ import com.zerobugfreinds.identity_service.exception.InvalidSignupRequestExcepti
 import com.zerobugfreinds.identity_service.repository.RefreshTokenRepository;
 import com.zerobugfreinds.identity_service.repository.UserRepository;
 import com.zerobugfreinds.identity_service.security.JwtTokenProvider;
+import io.jsonwebtoken.Claims;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
