@@ -134,7 +134,7 @@ export async function GET(request: Request) {
       upstreamJson = await upstream.json()
     } catch {
       return NextResponse.json(
-        { success: false, message: "Invalid JSON response from upstream" },
+        { success: false, message: "Invalid JSON response from upstream", data: null },
         { status: 502, headers: noStoreHeaders() }
       )
     }
@@ -237,7 +237,7 @@ export async function POST(request: Request) {
     upstreamJson = await upstream.json()
   } catch {
     return NextResponse.json(
-      { success: false, message: "Invalid JSON response from upstream" },
+      { success: false, message: "Invalid JSON response from upstream", data: null },
       { status: 502, headers: noStoreHeaders() }
     )
   }
