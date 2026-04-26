@@ -9,6 +9,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,10 +22,16 @@ public class UsageRecordedService {
 
     private final UsageRecordedLogRepository repository;
     private final ObjectMapper objectMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public UsageRecordedService(UsageRecordedLogRepository repository, ObjectMapper objectMapper) {
+    public UsageRecordedService(
+            UsageRecordedLogRepository repository,
+            ObjectMapper objectMapper,
+            ApplicationEventPublisher eventPublisher
+    ) {
         this.repository = repository;
         this.objectMapper = objectMapper;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -35,6 +42,21 @@ public class UsageRecordedService {
         }
         UsageRecordedLogEntity entity = map(event);
         repository.save(entity);
+        eventPublisher.publishEvent(new UsageSummaryAggregationRequestedEvent(
+                entity.getEventId(),
+                entity.getOccurredAt(),
+                entity.getTeamId(),
+                entity.getUserId(),
+                entity.getProvider(),
+                entity.getModel(),
+                entity.isRequestSuccessful(),
+                entity.getUpstreamStatusCode(),
+                entity.getTotalTokens(),
+                entity.getPromptTokens(),
+                entity.getCompletionTokens(),
+                entity.getEstimatedReasoningTokens(),
+                entity.getEstimatedCost()
+        ));
         log.debug("Stored usage event eventId={} userId={}", event.eventId(), event.userId());
     }
 

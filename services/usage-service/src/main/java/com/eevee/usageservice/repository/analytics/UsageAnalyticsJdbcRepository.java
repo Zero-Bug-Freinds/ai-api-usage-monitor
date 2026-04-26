@@ -45,12 +45,14 @@ public class UsageAnalyticsJdbcRepository {
     ) {
         String sql = """
                 SELECT COUNT(*)::bigint,
-                       COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0)::bigint,
+                       COALESCE(SUM(error_count), 0)::bigint,
                        COALESCE(SUM(prompt_tokens), 0)::bigint,
-                       COALESCE(SUM(estimated_cost), 0)
-                FROM usage_recorded_log
-                WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ?%s
-                """.formatted(ERR_PRED, PROVIDER_FILTER);
+                       COALESCE(SUM(total_cost), 0)
+                FROM daily_usage_summary
+                WHERE user_id = ?
+                  AND usage_date >= ((? AT TIME ZONE '%s')::date)
+                  AND usage_date < ((? AT TIME ZONE '%s')::date)%s
+                """.formatted(BUCKET_ZONE, BUCKET_ZONE, PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         return jdbc.queryForObject(
                 sql,
@@ -78,10 +80,12 @@ public class UsageAnalyticsJdbcRepository {
             AiProvider provider
     ) {
         String sql = """
-                SELECT COALESCE(SUM(estimated_cost), 0)
-                FROM usage_recorded_log
-                WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ?%s
-                """.formatted(PROVIDER_FILTER);
+                SELECT COALESCE(SUM(total_cost), 0)
+                FROM daily_usage_summary
+                WHERE user_id = ?
+                  AND usage_date >= ((? AT TIME ZONE '%s')::date)
+                  AND usage_date < ((? AT TIME ZONE '%s')::date)%s
+                """.formatted(BUCKET_ZONE, BUCKET_ZONE, PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         BigDecimal v = jdbc.queryForObject(
                 sql,
@@ -102,16 +106,18 @@ public class UsageAnalyticsJdbcRepository {
             AiProvider provider
     ) {
         String sql = """
-                SELECT (occurred_at AT TIME ZONE '%s')::date AS d,
-                       COUNT(*)::bigint,
-                       COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0)::bigint,
+                SELECT usage_date AS d,
+                       COALESCE(SUM(request_count), 0)::bigint,
+                       COALESCE(SUM(error_count), 0)::bigint,
                        COALESCE(SUM(prompt_tokens), 0)::bigint,
-                       COALESCE(SUM(estimated_cost), 0)
-                FROM usage_recorded_log
-                WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ?%s
-                GROUP BY (occurred_at AT TIME ZONE '%s')::date
+                       COALESCE(SUM(total_cost), 0)
+                FROM daily_usage_summary
+                WHERE user_id = ?
+                  AND usage_date >= ((? AT TIME ZONE '%s')::date)
+                  AND usage_date < ((? AT TIME ZONE '%s')::date)%s
+                GROUP BY usage_date
                 ORDER BY d
-                """.formatted(BUCKET_ZONE, ERR_PRED, PROVIDER_FILTER, BUCKET_ZONE);
+                """.formatted(BUCKET_ZONE, BUCKET_ZONE, PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         return jdbc.query(
                 sql,
@@ -140,16 +146,18 @@ public class UsageAnalyticsJdbcRepository {
             AiProvider provider
     ) {
         String sql = """
-                SELECT to_char((occurred_at AT TIME ZONE '%s'), 'YYYY-MM') AS ym,
-                       COUNT(*)::bigint,
-                       COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0)::bigint,
+                SELECT to_char(usage_date, 'YYYY-MM') AS ym,
+                       COALESCE(SUM(request_count), 0)::bigint,
+                       COALESCE(SUM(error_count), 0)::bigint,
                        COALESCE(SUM(prompt_tokens), 0)::bigint,
-                       COALESCE(SUM(estimated_cost), 0)
-                FROM usage_recorded_log
-                WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ?%s
-                GROUP BY to_char((occurred_at AT TIME ZONE '%s'), 'YYYY-MM')
+                       COALESCE(SUM(total_cost), 0)
+                FROM daily_usage_summary
+                WHERE user_id = ?
+                  AND usage_date >= ((? AT TIME ZONE '%s')::date)
+                  AND usage_date < ((? AT TIME ZONE '%s')::date)%s
+                GROUP BY to_char(usage_date, 'YYYY-MM')
                 ORDER BY ym
-                """.formatted(BUCKET_ZONE, ERR_PRED, PROVIDER_FILTER, BUCKET_ZONE);
+                """.formatted(BUCKET_ZONE, BUCKET_ZONE, PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         return jdbc.query(
                 sql,
@@ -175,17 +183,19 @@ public class UsageAnalyticsJdbcRepository {
             AiProvider provider
     ) {
         String sql = """
-                SELECT COALESCE(NULLIF(trim(model), ''), lower(provider::text) || '_unknown') AS m,
+                SELECT model AS m,
                        provider,
-                       COUNT(*)::bigint,
+                       COALESCE(SUM(request_count), 0)::bigint,
                        COALESCE(SUM(prompt_tokens), 0)::bigint,
-                       COALESCE(SUM(estimated_reasoning_tokens), 0)::bigint,
+                       COALESCE(SUM(reasoning_tokens), 0)::bigint,
                        COALESCE(SUM(completion_tokens), 0)::bigint
-                FROM usage_recorded_log
-                WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ?%s
-                GROUP BY COALESCE(NULLIF(trim(model), ''), lower(provider::text) || '_unknown'), provider
-                ORDER BY COUNT(*) DESC
-                """.formatted(PROVIDER_FILTER);
+                FROM daily_usage_summary
+                WHERE user_id = ?
+                  AND usage_date >= ((? AT TIME ZONE '%s')::date)
+                  AND usage_date < ((? AT TIME ZONE '%s')::date)%s
+                GROUP BY model, provider
+                ORDER BY SUM(request_count) DESC
+                """.formatted(BUCKET_ZONE, BUCKET_ZONE, PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         return jdbc.query(
                 sql,
