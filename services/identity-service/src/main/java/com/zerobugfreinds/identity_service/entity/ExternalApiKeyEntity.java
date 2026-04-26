@@ -70,6 +70,10 @@ public class ExternalApiKeyEntity {
 	@Column(name = "deletion_grace_days")
 	private Integer deletionGraceDays;
 
+	/** 삭제 완료 시 usage 로그 보존 여부(기본: 보존). */
+	@Column(name = "retain_usage_logs", nullable = false, columnDefinition = "boolean default true")
+	private boolean retainUsageLogs = true;
+
 	protected ExternalApiKeyEntity() {
 	}
 
@@ -112,10 +116,11 @@ public class ExternalApiKeyEntity {
 	}
 
 	/** 삭제 예정으로 표시한다(서비스에서 중복 여부를 검증한다). */
-	public void markPendingDeletion(Instant now, int gracePeriodDays) {
+	public void markPendingDeletion(Instant now, int gracePeriodDays, boolean retainUsageLogs) {
 		this.deletionRequestedAt = now;
 		this.deletionGraceDays = gracePeriodDays;
 		this.permanentDeletionAt = now.plus(Duration.ofDays(gracePeriodDays));
+		this.retainUsageLogs = retainUsageLogs;
 	}
 
 	/** 삭제 예정을 취소한다. */
@@ -123,6 +128,7 @@ public class ExternalApiKeyEntity {
 		this.deletionRequestedAt = null;
 		this.permanentDeletionAt = null;
 		this.deletionGraceDays = null;
+		this.retainUsageLogs = true;
 	}
 
 	public boolean isPendingDeletion() {
@@ -171,5 +177,9 @@ public class ExternalApiKeyEntity {
 
 	public Integer getDeletionGraceDays() {
 		return deletionGraceDays;
+	}
+
+	public boolean isRetainUsageLogs() {
+		return retainUsageLogs;
 	}
 }

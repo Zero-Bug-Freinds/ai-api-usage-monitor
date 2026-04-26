@@ -288,14 +288,12 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
       return
     }
     const { keyId, retainLogs } = externalKeyDeletionModal
-    const { graceDays, immediate } = parsed
+    const { graceDays } = parsed
     setKeysError(null)
     setKeyActionId(keyId)
     try {
       const q = new URLSearchParams({ gracePeriodDays: String(graceDays) })
-      if (immediate) {
-        q.set("retainLogs", String(retainLogs))
-      }
+      q.set("retainLogs", String(retainLogs))
       const { response, json } = await apiFetch<unknown>(
         `/api/auth/external-keys/${keyId}?${q.toString()}`,
         { method: "DELETE", credentials: "include", cache: "no-store", headers: { Accept: "application/json" } },
@@ -495,30 +493,28 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
                 <p className="text-xs text-destructive">{keysError}</p>
               ) : null}
             </div>
-            {deletionModalParsed?.valid && deletionModalParsed.immediate ? (
-              <div className="mt-4 flex gap-3 rounded-md border border-border bg-muted/30 p-3">
-                <Checkbox
-                  id="external-key-retain-logs"
-                  checked={externalKeyDeletionModal.retainLogs}
-                  onCheckedChange={(v) => {
-                    setKeysError(null)
-                    setExternalKeyDeletionModal((prev) =>
-                      prev ? { ...prev, retainLogs: v === true } : prev
-                    )
-                  }}
-                  disabled={keyActionId === externalKeyDeletionModal.keyId}
-                  className="mt-0.5"
-                />
-                <div className="min-w-0 space-y-1">
-                  <Label htmlFor="external-key-retain-logs" className="text-sm font-medium leading-snug">
-                    기존 API 사용 기록 보존
-                  </Label>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    체크 해제 시, 이 API Key로 발생한 모든 호출 로그와 통계가 영구적으로 삭제됩니다.
-                  </p>
-                </div>
+            <div className="mt-4 flex gap-3 rounded-md border border-border bg-muted/30 p-3">
+              <Checkbox
+                id="external-key-retain-logs"
+                checked={externalKeyDeletionModal.retainLogs}
+                onCheckedChange={(v) => {
+                  setKeysError(null)
+                  setExternalKeyDeletionModal((prev) =>
+                    prev ? { ...prev, retainLogs: v === true } : prev
+                  )
+                }}
+                disabled={keyActionId === externalKeyDeletionModal.keyId}
+                className="mt-0.5"
+              />
+              <div className="min-w-0 space-y-1">
+                <Label htmlFor="external-key-retain-logs" className="text-sm font-medium leading-snug">
+                  기존 API 사용 기록 보존
+                </Label>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  체크 해제 시, API Key가 완전히 삭제되는 시점에 발생한 모든 호출 로그와 통계도 함께 영구적으로 삭제됩니다.
+                </p>
               </div>
-            ) : null}
+            </div>
             <div className="mt-5 flex flex-wrap justify-end gap-2">
               <button
                 type="button"
@@ -591,20 +587,25 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
             </p>
           </div>
 
-          {keysLoading || externalKeys === null ? (
+          {keysError ? (
+            <div className="flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
+              <p className="text-sm text-destructive">{keysError}</p>
+              <button
+                type="button"
+                className="shrink-0 rounded-md border border-destructive/40 bg-background px-2.5 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                onClick={() => void loadExternalKeys()}
+                disabled={keysLoading}
+              >
+                다시 시도
+              </button>
+            </div>
+          ) : keysLoading || externalKeys === null ? (
             <p className="text-sm text-muted-foreground">목록을 불러오는 중…</p>
-          ) : null}
-          {keysError && !keysLoading && externalKeys !== null && !externalKeyDeletionModal ? (
-            <p className="text-sm text-destructive">{keysError}</p>
-          ) : null}
-
-          {!keysLoading && externalKeys !== null && externalKeys.length === 0 ? (
+          ) : externalKeys.length === 0 ? (
             <p className="rounded-md border border-dashed border-border bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground">
               등록된 외부 키가 없습니다. 아래에서 추가할 수 있습니다.
             </p>
-          ) : null}
-
-          {!keysLoading && externalKeys !== null && externalKeys.length > 0 ? (
+          ) : (
             <ul className="divide-y divide-border rounded-md border border-border">
               {externalKeys.map((row) => (
                 <li
@@ -710,7 +711,7 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
                 </li>
               ))}
             </ul>
-          ) : null}
+          )}
         </section>
       ) : null}
 
