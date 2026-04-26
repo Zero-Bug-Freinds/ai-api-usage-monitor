@@ -2,9 +2,8 @@ package com.zerobugfreinds.identity_service.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.zerobugfreinds.identity_service.security.JwtTokenProvider;
+import com.zerobugfreinds.identity_service.security.GatewayHeaderInterceptor;
 import com.zerobugfreinds.identity_service.service.TeamMembershipVerificationClient;
-import io.jsonwebtoken.Claims;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,9 +38,6 @@ class AuthSwitchTeamE2ETest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Autowired
-    private JwtTokenProvider jwtTokenProvider;
-
-    @Autowired
     private TeamMembershipVerificationClient teamMembershipVerificationClient;
 
     @BeforeEach
@@ -67,15 +63,15 @@ class AuthSwitchTeamE2ETest {
                 .andReturn();
 
         String firstAccessToken = accessTokenFrom(loginResult);
-        Claims firstClaims = jwtTokenProvider.validateAndGetClaims(firstAccessToken);
-        assertThat(firstClaims.get("active_team_id")).isNull();
+        JsonNode firstClaims = payloadClaims(firstAccessToken);
+        assertThat(firstClaims.path("active_team_id").isMissingNode()).isTrue();
 
         Long targetTeamId = 701L;
-        Long userId = claimAsLong(firstClaims.get("userId"));
+        Long userId = claimAsLong(firstClaims.path("userId"));
         when(teamMembershipVerificationClient.isActiveTeamMember(eq(targetTeamId), eq(userId))).thenReturn(true);
 
         MvcResult switchResult = mockMvc.perform(post("/api/auth/token/switch-team")
-                        .header("Authorization", "Bearer " + firstAccessToken)
+                        .header(GatewayHeaderInterceptor.USER_ID_HEADER, userId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -86,8 +82,8 @@ class AuthSwitchTeamE2ETest {
                 .andReturn();
 
         String switchedAccessToken = accessTokenFrom(switchResult);
-        Claims switchedClaims = jwtTokenProvider.validateAndGetClaims(switchedAccessToken);
-        assertThat(claimAsLong(switchedClaims.get("active_team_id"))).isEqualTo(targetTeamId);
+        JsonNode switchedClaims = payloadClaims(switchedAccessToken);
+        assertThat(claimAsLong(switchedClaims.path("active_team_id"))).isEqualTo(targetTeamId);
     }
 
     @Test
@@ -106,9 +102,11 @@ class AuthSwitchTeamE2ETest {
                 .andReturn();
 
         String accessToken = accessTokenFrom(loginResult);
+        JsonNode accessClaims = payloadClaims(accessToken);
+        Long userId = claimAsLong(accessClaims.path("userId"));
 
         mockMvc.perform(post("/api/auth/external-keys")
-                        .header("Authorization", "Bearer " + accessToken)
+                        .header(GatewayHeaderInterceptor.USER_ID_HEADER, userId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -121,7 +119,7 @@ class AuthSwitchTeamE2ETest {
                 .andExpect(status().isCreated());
 
         mockMvc.perform(get("/api/auth/external-keys")
-                        .header("Authorization", "Bearer " + accessToken))
+                        .header(GatewayHeaderInterceptor.USER_ID_HEADER, userId))
                 .andExpect(status().isOk());
     }
 
@@ -145,11 +143,23 @@ class AuthSwitchTeamE2ETest {
         return root.path("data").path("accessToken").asText();
     }
 
-    private static Long claimAsLong(Object value) {
-        if (value instanceof Number number) {
-            return number.longValue();
+    private JsonNode payloadClaims(String token) throws Exception {
+        String[] parts = token.split("\\.");
+        if (parts.length < 2) {
+            throw new IllegalArgumentException("JWT payload를 읽을 수 없습니다");
         }
-        return Long.parseLong(String.valueOf(value));
+        byte[] payloadBytes = java.util.Base64.getUrlDecoder().decode(parts[1]);
+        return objectMapper.readTree(payloadBytes);
+    }
+
+    private static Long claimAsLong(JsonNode value) {
+        if (value == null || value.isMissingNode() || value.isNull()) {
+            return null;
+        }
+        if (value.isNumber()) {
+            return value.longValue();
+        }
+        return Long.parseLong(value.asText());
     }
 
     @TestConfiguration

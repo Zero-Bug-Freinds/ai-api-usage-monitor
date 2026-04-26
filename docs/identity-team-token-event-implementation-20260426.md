@@ -15,6 +15,7 @@
 - 로그인/팀 전환 응답을 `TokenResponse(access + refresh)` 구조로 통일.
 - `/api/auth/switch-team` + `/api/auth/token/switch-team`에서 팀 전환 후 토큰 pair 재발급.
 - 팀 전환 시 기존 refresh 토큰 무효화 후 신규 refresh 토큰 저장(DB).
+- (추가 정리) Identity 인증 경계는 Gateway로 이관하여 `JwtAuthenticationFilter`를 제거했고, 서비스 내부 요청 인증은 `X-User-Id` 헤더 기반(`GatewayHeaderInterceptor`)으로 전환.
 
 ### 2.2 Team: 멤버십 내부 검증 API
 
@@ -43,6 +44,7 @@
 - `POST /api/auth/token/switch-team` BFF 라우트 추가.
 - Identity switch-team 성공 시 새 `access_token` 쿠키 즉시 갱신.
 - 팀 선택 UI(`team-management-view.tsx`)에서 팀 전환 API 호출 연결.
+- Team BFF의 `/api/team/v1/*` 업스트림을 Team Service 직결이 아닌 Gateway 경유로 전환(`GATEWAY_URL`).
 
 ---
 
@@ -100,7 +102,7 @@
   - `POST /api/auth/token/switch-team` (호환 경로)
 - 요청: `targetTeamId`
 - 처리:
-  - Authorization의 JWT 사용자와 인증 principal 일치 검증
+  - Gateway가 주입한 `X-User-Id`를 인증 사용자로 신뢰
   - team-service 내부 API로 멤버십 검증
   - 성공 시 새 access/refresh 재발급
 
@@ -125,6 +127,7 @@
 - `AuthSwitchTeamE2ETest` 실행 성공
   - 로그인 -> 팀 전환 -> JWT `active_team_id` 단언
   - 개인 external key 등록/조회 회귀 확인
+- `team-service` 전체 테스트 실행 성공(`./gradlew test`)
 
 ### 5.2 참고
 
@@ -139,4 +142,5 @@
 - team 이벤트 구독 큐/라우팅 설정(`identity.team-member-removed.*`)이 배포 환경과 일치하는지 확인.
 - outbox 재시도 스케줄러 도입 전에는 `published=false` 레코드 모니터링이 필요.
 - 게이트웨이에서 `active_team_id -> X-Team-Id` 헤더 주입 로직이 배포 브랜치에 반영되어야 최종 전파가 완성된다.
+- Team Service는 JWT 서명 검증을 수행하지 않으므로, 게이트웨이 구간에서 `X-User-Id`/`X-Team-Id` 주입·검증 정책이 강제되어야 한다.
 

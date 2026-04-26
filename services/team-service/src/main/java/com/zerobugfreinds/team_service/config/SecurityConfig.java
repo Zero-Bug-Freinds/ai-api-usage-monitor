@@ -1,6 +1,6 @@
 package com.zerobugfreinds.team_service.config;
 
-import com.zerobugfreinds.team_service.security.JwtAuthenticationFilter;
+import com.zerobugfreinds.team_service.security.GatewayHeaderContextFilter;
 import com.zerobugfreinds.team_service.security.RestAuthenticationEntryPoint;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -13,11 +13,14 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
-	private final JwtAuthenticationFilter jwtAuthenticationFilter;
+	private final GatewayHeaderContextFilter gatewayHeaderContextFilter;
 	private final RestAuthenticationEntryPoint restAuthenticationEntryPoint;
 
-	public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter, RestAuthenticationEntryPoint restAuthenticationEntryPoint) {
-		this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+	public SecurityConfig(
+			GatewayHeaderContextFilter gatewayHeaderContextFilter,
+			RestAuthenticationEntryPoint restAuthenticationEntryPoint
+	) {
+		this.gatewayHeaderContextFilter = gatewayHeaderContextFilter;
 		this.restAuthenticationEntryPoint = restAuthenticationEntryPoint;
 	}
 
@@ -33,7 +36,7 @@ public class SecurityConfig {
 						.requestMatchers("/error").permitAll()
 						.anyRequest().authenticated()
 				)
-				.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+				.addFilterBefore(gatewayHeaderContextFilter, UsernamePasswordAuthenticationFilter.class);
 		return http.build();
 	}
 }
