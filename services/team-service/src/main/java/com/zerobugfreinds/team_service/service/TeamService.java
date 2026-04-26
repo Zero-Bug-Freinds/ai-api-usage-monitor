@@ -5,6 +5,7 @@ import com.zerobugfreinds.team_service.domain.TeamInvitationStatus;
 import com.zerobugfreinds.team_service.dto.InternalTeamDetailResponse;
 import com.zerobugfreinds.team_service.dto.InternalBillingTeamApiKeyResponse;
 import com.zerobugfreinds.team_service.dto.InternalBillingTeamSummaryResponse;
+import com.zerobugfreinds.team_service.dto.InternalTeamMembershipVerifyResponse;
 import com.zerobugfreinds.team_service.dto.TeamResponse;
 import com.zerobugfreinds.team_service.dto.TeamInvitationActionResponse;
 import com.zerobugfreinds.team_service.dto.TeamInvitationResponse;
@@ -234,6 +235,12 @@ public class TeamService {
 				.filter(StringUtils::hasText)
 				.sorted(Comparator.naturalOrder())
 				.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public InternalTeamMembershipVerifyResponse verifyTeamMembershipInternal(Long teamId, String userId) {
+		boolean isValid = teamMemberRepository.existsByTeamIdAndUserId(teamId, userId);
+		return new InternalTeamMembershipVerifyResponse(teamId, userId, isValid);
 	}
 
 	@Transactional(readOnly = true)

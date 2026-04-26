@@ -4,13 +4,14 @@ import com.zerobugfreinds.identity_service.common.ApiResponse;
 import com.zerobugfreinds.identity_service.dto.DeleteAccountRequest;
 import com.zerobugfreinds.identity_service.dto.ForgotPasswordRequest;
 import com.zerobugfreinds.identity_service.dto.LoginRequest;
-import com.zerobugfreinds.identity_service.dto.LoginResponse;
 import com.zerobugfreinds.identity_service.dto.ResetPasswordRequest;
 import com.zerobugfreinds.identity_service.dto.SessionResponse;
 import com.zerobugfreinds.identity_service.dto.SignupRequest;
 import com.zerobugfreinds.identity_service.dto.SignupResponse;
+import com.zerobugfreinds.identity_service.dto.SwitchTeamRequest;
+import com.zerobugfreinds.identity_service.dto.TokenResponse;
 import com.zerobugfreinds.identity_service.exception.AuthContractViolationException;
-import com.zerobugfreinds.identity_service.security.IdentityUserPrincipal;
+import com.zerobugfreinds.identity_service.security.GatewayHeaderInterceptor;
 import com.zerobugfreinds.identity_service.service.AccountDeletionService;
 import com.zerobugfreinds.identity_service.service.PasswordResetService;
 import com.zerobugfreinds.identity_service.service.UserService;
@@ -20,13 +21,13 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestHeader;
 
 /**
  * Authentication HTTP API.
@@ -73,8 +74,8 @@ public class AuthController {
 	}
 
 	@PostMapping("/login")
-	public ResponseEntity<ApiResponse<LoginResponse>> login(@Valid @RequestBody LoginRequest request) {
-		LoginResponse body = userService.login(request);
+	public ResponseEntity<ApiResponse<TokenResponse>> login(@Valid @RequestBody LoginRequest request) {
+		TokenResponse body = userService.login(request);
 		if (!"Bearer".equals(body.tokenType())) {
 			throw new AuthContractViolationException("Token type contract violation");
 		}
@@ -104,15 +105,26 @@ public class AuthController {
 				.body(ApiResponse.ok("Signed out. Clear auth cookie on BFF.", null));
 	}
 
+	@PostMapping({"/switch-team", "/token/switch-team"})
+	public ResponseEntity<ApiResponse<TokenResponse>> switchTeam(
+			@RequestHeader(GatewayHeaderInterceptor.USER_ID_HEADER) Long userId,
+			@Valid @RequestBody SwitchTeamRequest request
+	) {
+		TokenResponse body = userService.switchTeam(userId, request.targetTeamId());
+		return ResponseEntity.ok()
+				.cacheControl(CacheControl.noStore().mustRevalidate())
+				.body(ApiResponse.ok("Team context switched", body));
+	}
+
 	/**
 	 * 삭제 요청 이벤트 발행까지 완료하면 응답한다. identity 사용자 행 제거는 연동 서비스 ACK 후 비동기로 진행된다.
 	 */
 	@PostMapping("/delete-account")
 	public ResponseEntity<ApiResponse<Void>> deleteAccount(
-			@AuthenticationPrincipal IdentityUserPrincipal principal,
+			@RequestHeader(GatewayHeaderInterceptor.USER_ID_HEADER) Long userId,
 			@Valid @RequestBody DeleteAccountRequest request
 	) {
-		accountDeletionService.deleteAuthenticatedAccount(principal, request.password());
+		accountDeletionService.deleteAuthenticatedAccount(userId, request.password());
 		return ResponseEntity.status(HttpStatus.ACCEPTED)
 				.cacheControl(CacheControl.noStore().mustRevalidate())
 				.body(ApiResponse.ok(

@@ -5,7 +5,6 @@ import com.zerobugfreinds.identity_service.entity.User;
 import com.zerobugfreinds.identity_service.exception.InvalidCredentialsException;
 import com.zerobugfreinds.identity_service.mq.UserAccountDeletionEventPublisher;
 import com.zerobugfreinds.identity_service.repository.UserRepository;
-import com.zerobugfreinds.identity_service.security.IdentityUserPrincipal;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -36,15 +35,15 @@ public class AccountDeletionService {
 	/**
 	 * 비밀번호 검증 → 탈퇴 대기 등록 → 삭제 요청 이벤트 발행 (로컬 사용자 행은 ACK 후 삭제).
 	 */
-	public void deleteAuthenticatedAccount(IdentityUserPrincipal principal, String rawPassword) {
+	public void deleteAuthenticatedAccount(Long userId, String rawPassword) {
+		if (userId == null) {
+			throw new IllegalArgumentException("인증 사용자 정보가 없습니다");
+		}
 		if (rawPassword == null || rawPassword.isBlank()) {
 			throw new InvalidCredentialsException("Password is required");
 		}
-		User user = userRepository.findById(principal.userId())
+		User user = userRepository.findById(userId)
 				.orElseThrow(() -> new IllegalArgumentException("User not found"));
-		if (!user.getEmail().equals(principal.email())) {
-			throw new IllegalArgumentException("Session does not match user record");
-		}
 		if (!passwordEncoder.matches(rawPassword, user.getPassword())) {
 			throw new InvalidCredentialsException("Invalid password");
 		}

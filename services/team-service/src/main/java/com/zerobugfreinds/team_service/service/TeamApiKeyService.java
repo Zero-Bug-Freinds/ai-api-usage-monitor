@@ -13,13 +13,17 @@ import com.zerobugfreinds.team_service.event.TeamDomainOutboundEvent.TeamApiKeyD
 import com.zerobugfreinds.team_service.event.TeamDomainOutboundEvent.TeamApiKeyDeletionCancelledEvent;
 import com.zerobugfreinds.team_service.event.TeamDomainOutboundEvent.TeamApiKeyDeletionScheduledEvent;
 import com.zerobugfreinds.team_service.event.TeamDomainOutboundEvent.TeamApiKeyRegisteredEvent;
+import com.zerobugfreinds.team_service.event.TeamDomainOutboundEvent.TeamApiKeyStatusChangedEvent;
 import com.zerobugfreinds.team_service.event.TeamDomainOutboundEvent.TeamApiKeyUpdatedEvent;
 import com.zerobugfreinds.team_service.event.TeamEventRecipients;
+import com.zerobugfreinds.team_service.event.TeamApiKeyStatus;
 import com.zerobugfreinds.team_service.exception.TeamNotFoundException;
 import com.zerobugfreinds.team_service.repository.TeamApiKeyRepository;
 import com.zerobugfreinds.team_service.repository.TeamMemberRepository;
 import com.zerobugfreinds.team_service.repository.TeamRepository;
+import com.zerobugfreinds.team_service.security.TeamContextHolder;
 import com.zerobugfreinds.team_service.util.EncryptionUtil;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -41,19 +45,22 @@ public class TeamApiKeyService {
     private final TeamApiKeyRepository teamApiKeyRepository;
     private final EncryptionUtil encryptionUtil;
     private final TeamDomainEventPublisher teamDomainEventPublisher;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
     public TeamApiKeyService(
             TeamRepository teamRepository,
             TeamMemberRepository teamMemberRepository,
             TeamApiKeyRepository teamApiKeyRepository,
             EncryptionUtil encryptionUtil,
-            TeamDomainEventPublisher teamDomainEventPublisher
+            TeamDomainEventPublisher teamDomainEventPublisher,
+            ApplicationEventPublisher applicationEventPublisher
     ) {
         this.teamRepository = teamRepository;
         this.teamMemberRepository = teamMemberRepository;
         this.teamApiKeyRepository = teamApiKeyRepository;
         this.encryptionUtil = encryptionUtil;
         this.teamDomainEventPublisher = teamDomainEventPublisher;
+        this.applicationEventPublisher = applicationEventPublisher;
     }
 
     @Transactional
@@ -65,6 +72,7 @@ public class TeamApiKeyService {
             String externalKey,
             BigDecimal monthlyBudgetUsd
     ) {
+        teamId = resolveTeamId(teamId);
         validateOwnerAccess(actorUserId, teamId);
         if (provider == null) {
             throw new IllegalArgumentException("provider는 필수입니다");
@@ -105,6 +113,14 @@ public class TeamApiKeyService {
                 saved.getKeyAlias(),
                 occurredAt
         ));
+        publishTeamApiKeyStatusChanged(
+                teamId,
+                saved.getId(),
+                saved.getKeyAlias(),
+                saved.getProvider().name(),
+                TeamApiKeyStatus.ACTIVE,
+                null
+        );
         return toSummary(saved);
     }
 
@@ -118,6 +134,7 @@ public class TeamApiKeyService {
             String externalKey,
             BigDecimal monthlyBudgetUsd
     ) {
+        teamId = resolveTeamId(teamId);
         validateTeamAccess(actorUserId, teamId);
         if (apiKeyId == null) {
             throw new IllegalArgumentException("apiKeyId는 필수입니다");
@@ -172,11 +189,26 @@ public class TeamApiKeyService {
                 entity.getKeyAlias(),
                 Instant.now()
         ));
+        publishTeamApiKeyStatusChanged(
+                teamId,
+                entity.getId(),
+                entity.getKeyAlias(),
+                entity.getProvider().name(),
+                TeamApiKeyStatus.ACTIVE,
+                null
+        );
         return toSummary(entity);
     }
 
     @Transactional
-    public TeamApiKeySummaryResponse delete(String actorUserId, Long teamId, Long apiKeyId, Integer gracePeriodDays) {
+    public TeamApiKeySummaryResponse delete(
+            String actorUserId,
+            Long teamId,
+            Long apiKeyId,
+            Integer gracePeriodDays,
+            boolean retainLogs
+    ) {
+        teamId = resolveTeamId(teamId);
         validateOwnerAccess(actorUserId, teamId);
         if (apiKeyId == null) {
             throw new IllegalArgumentException("apiKeyId는 필수입니다");
@@ -196,14 +228,23 @@ public class TeamApiKeyService {
                     ctx.teamName(),
                     ctx.recipientUserIds(),
                     entity.getId(),
+                    retainLogs,
                     entity.getProvider().name(),
                     entity.getKeyAlias(),
                     occurredAt
             ));
             teamApiKeyRepository.delete(entity);
+            publishTeamApiKeyStatusChanged(
+                    teamId,
+                    entity.getId(),
+                    entity.getKeyAlias(),
+                    entity.getProvider().name(),
+                    TeamApiKeyStatus.DELETED,
+                    retainLogs
+            );
             return toSummary(entity);
         }
-        entity.markDeletionRequested(Instant.now(), days);
+        entity.markDeletionRequested(Instant.now(), days, retainLogs);
         teamApiKeyRepository.save(entity);
         publish(TeamApiKeyDeletionScheduledEvent.of(
                 actorUserId,
@@ -217,11 +258,43 @@ public class TeamApiKeyService {
                 entity.getPermanentDeletionAt(),
                 occurredAt
         ));
+        publishTeamApiKeyStatusChanged(
+                teamId,
+                entity.getId(),
+                entity.getKeyAlias(),
+                entity.getProvider().name(),
+                TeamApiKeyStatus.DELETION_REQUESTED,
+                retainLogs
+        );
         return toSummary(entity);
     }
 
     @Transactional
+    public int purgeExpiredDeletions() {
+        Instant now = Instant.now();
+        List<TeamApiKeyEntity> expired =
+                teamApiKeyRepository.findAllByPermanentDeletionAtIsNotNullAndPermanentDeletionAtBefore(now);
+        for (TeamApiKeyEntity entity : expired) {
+            TeamApiKeyNotifyContext ctx = teamApiKeyNotifyContext(entity.getTeamId());
+            publish(TeamApiKeyDeletedEvent.of(
+                    "system",
+                    entity.getTeamId(),
+                    ctx.teamName(),
+                    ctx.recipientUserIds(),
+                    entity.getId(),
+                    entity.isRetainUsageLogs(),
+                    entity.getProvider().name(),
+                    entity.getKeyAlias(),
+                    now
+            ));
+        }
+        teamApiKeyRepository.deleteAll(expired);
+        return expired.size();
+    }
+
+    @Transactional
     public TeamApiKeySummaryResponse cancelDeletion(String actorUserId, Long teamId, Long apiKeyId) {
+        teamId = resolveTeamId(teamId);
         validateTeamAccess(actorUserId, teamId);
         if (apiKeyId == null) {
             throw new IllegalArgumentException("apiKeyId는 필수입니다");
@@ -249,10 +322,25 @@ public class TeamApiKeyService {
 
     @Transactional(readOnly = true)
     public List<TeamApiKeySummaryResponse> getTeamApiKeys(String actorUserId, Long teamId) {
+        teamId = resolveTeamId(teamId);
         validateTeamAccess(actorUserId, teamId);
         return teamApiKeyRepository.findAllByTeamIdOrderByCreatedAtDesc(teamId).stream()
                 .map(TeamApiKeyService::toSummary)
                 .toList();
+    }
+
+    private static Long resolveTeamId(Long requestedTeamId) {
+        Long headerTeamId = TeamContextHolder.getTeamId();
+        if (headerTeamId != null) {
+            if (requestedTeamId != null && !headerTeamId.equals(requestedTeamId)) {
+                throw new IllegalArgumentException("X-Team-Id 헤더와 요청 teamId가 일치하지 않습니다");
+            }
+            return headerTeamId;
+        }
+        if (requestedTeamId == null) {
+            throw new IllegalArgumentException("teamId는 필수입니다");
+        }
+        return requestedTeamId;
     }
 
     private void validateTeamAccess(String actorUserId, Long teamId) {
@@ -335,5 +423,25 @@ public class TeamApiKeyService {
 
     private void publish(TeamDomainOutboundEvent event) {
         teamDomainEventPublisher.publish(event);
+    }
+
+    private void publishTeamApiKeyStatusChanged(
+            Long teamId,
+            Long teamApiKeyId,
+            String alias,
+            String provider,
+            TeamApiKeyStatus status,
+            Boolean retainLogs
+    ) {
+        applicationEventPublisher.publishEvent(
+                TeamApiKeyStatusChangedEvent.of(
+                        teamId,
+                        teamApiKeyId,
+                        alias,
+                        provider,
+                        status,
+                        retainLogs
+                )
+        );
     }
 }

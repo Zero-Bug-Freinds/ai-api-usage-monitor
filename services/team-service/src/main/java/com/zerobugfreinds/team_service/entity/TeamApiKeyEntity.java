@@ -71,6 +71,10 @@ public class TeamApiKeyEntity {
     @Column(name = "deletion_grace_days")
     private Integer deletionGraceDays;
 
+    /** 삭제 완료 시 사용 로그 보존 여부(기본: 보존). */
+    @Column(name = "retain_usage_logs", nullable = false, columnDefinition = "boolean default true")
+    private boolean retainUsageLogs = true;
+
     protected TeamApiKeyEntity() {
     }
 
@@ -116,16 +120,18 @@ public class TeamApiKeyEntity {
         return deletionRequestedAt != null;
     }
 
-    public void markDeletionRequested(Instant now, int gracePeriodDays) {
+    public void markDeletionRequested(Instant now, int gracePeriodDays, boolean retainUsageLogs) {
         this.deletionRequestedAt = now;
         this.deletionGraceDays = gracePeriodDays;
         this.permanentDeletionAt = now.plus(Duration.ofDays(gracePeriodDays));
+        this.retainUsageLogs = retainUsageLogs;
     }
 
     public void clearDeletionRequest() {
         this.deletionRequestedAt = null;
         this.permanentDeletionAt = null;
         this.deletionGraceDays = null;
+        this.retainUsageLogs = true;
     }
 
     public Long getId() {
@@ -170,5 +176,9 @@ public class TeamApiKeyEntity {
 
     public Integer getDeletionGraceDays() {
         return deletionGraceDays;
+    }
+
+    public boolean isRetainUsageLogs() {
+        return retainUsageLogs;
     }
 }

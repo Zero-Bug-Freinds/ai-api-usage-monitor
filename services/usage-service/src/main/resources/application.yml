@@ -11,7 +11,7 @@ spring:
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
       naming:
         physical-strategy: org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy
     open-in-view: false
@@ -27,6 +27,11 @@ spring:
     port: ${SPRING_RABBITMQ_PORT:5672}
     username: ${SPRING_RABBITMQ_USERNAME:${RABBITMQ_USER:guest}}
     password: ${SPRING_RABBITMQ_PASSWORD:${RABBITMQ_PASSWORD:guest}}
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 1
+    locations: classpath:db/migration
 
 management:
   endpoints:
@@ -49,6 +54,13 @@ usage:
       exchange: ${USAGE_RABBIT_COST_FINALIZED_EXCHANGE:billing.events}
       routing-key: ${USAGE_RABBIT_COST_FINALIZED_ROUTING_KEY:usage.cost.finalized}
       queue: ${USAGE_RABBIT_COST_FINALIZED_QUEUE:usage-service.usage-cost-finalized.queue}
+    summary-aggregation:
+      enabled: ${USAGE_RABBIT_SUMMARY_AGGREGATION_ENABLED:true}
+      exchange: ${USAGE_RABBIT_SUMMARY_AGGREGATION_EXCHANGE:usage.events}
+      routing-key: ${USAGE_RABBIT_SUMMARY_AGGREGATION_ROUTING_KEY:usage.summary.aggregate}
+      queue: ${USAGE_RABBIT_SUMMARY_AGGREGATION_QUEUE:usage-service.summary-aggregation.queue}
+      dlx: ${USAGE_RABBIT_SUMMARY_AGGREGATION_DLX:usage.summary-aggregation.dlx}
+      dlq: ${USAGE_RABBIT_SUMMARY_AGGREGATION_DLQ:usage-service.summary-aggregation.dlq}
   analytics:
     max-range-days: ${USAGE_ANALYTICS_MAX_RANGE_DAYS:400}
   gateway:

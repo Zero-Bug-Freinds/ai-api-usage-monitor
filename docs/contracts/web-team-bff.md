@@ -1,6 +1,6 @@
 # Web(Next.js) ↔ Team Service BFF 계약
 
-버전: 0.6  
+버전: 0.7  
 관련: [web-split-boundary.md](./web-split-boundary.md), [web-identity-bff.md](./web-identity-bff.md) — `/teams` UI 소유·경로: §2.3
 
 ---
@@ -8,7 +8,7 @@
 ## 1. 목적
 
 - `services/team-service/web/`에서 팀 생성/조회/아이디 초대/팀 API Key 등록·조회를 BFF로 처리한다.
-- 브라우저는 `access_token` httpOnly 쿠키를 유지하고, BFF가 Bearer로 Team Service를 호출한다.
+- 브라우저는 `access_token` httpOnly 쿠키를 유지하고, Team BFF는 Authorization 헤더를 보존해 Gateway로 전달한다.
 
 ---
 
@@ -16,31 +16,33 @@
 
 | 브라우저 경로 (Identity `web` 기준) | Upstream |
 |---|---|
-| `GET /api/team/v1/me/teams` | Team BFF `GET /api/team/v1/me/teams` → Team Service `GET /api/v1/me/teams` |
-| `POST /api/team/v1/teams` | Team BFF `POST /api/team/v1/teams` → Team Service `POST /api/v1/teams` |
-| `POST /api/team/v1/teams/{id}/members` | Team BFF `POST /api/team/v1/teams/{id}/members` → Team Service `POST /api/v1/teams/{id}/members` |
-| `GET /api/team/v1/teams/{id}/members` | Team BFF `GET ...` → Team Service `GET /api/v1/teams/{id}/members` |
-| `GET /api/team/v1/teams/{id}/owner` | Team BFF `GET ...` → Team Service `GET /api/v1/teams/{id}/owner` (`data`: 팀장 여부 `boolean`) |
-| `DELETE /api/team/v1/teams/{teamId}/members/{userId}` | Team BFF `DELETE ...` → Team Service `DELETE /api/v1/teams/{teamId}/members/{userId}` |
-| `DELETE /api/team/v1/teams/{teamId}` | Team BFF `DELETE ...` → Team Service `DELETE /api/v1/teams/{teamId}` |
-| `GET /api/team/v1/me/team-invitations` | Team BFF `GET ...` → Team Service `GET /api/v1/me/team-invitations` |
-| `POST /api/team/v1/me/team-invitations/{invitationId}/accept` | Team BFF `POST ...` → Team Service `POST /api/v1/me/team-invitations/{invitationId}/accept` |
-| `POST /api/team/v1/me/team-invitations/{invitationId}/reject` | Team BFF `POST ...` → Team Service `POST /api/v1/me/team-invitations/{invitationId}/reject` |
-| `GET /api/team/v1/teams/{id}/api-keys` | Team BFF `GET /api/team/v1/teams/{id}/api-keys` → Team Service `GET /api/v1/teams/{id}/api-keys` |
-| `POST /api/team/v1/teams/{id}/api-keys` | Team BFF `POST /api/team/v1/teams/{id}/api-keys` → Team Service `POST /api/v1/teams/{id}/api-keys` |
-| `PUT /api/team/v1/teams/{teamId}/api-keys/{keyId}` | Team BFF `PUT ...` → Team Service `PUT /api/v1/teams/{teamId}/api-keys/{keyId}` |
-| `DELETE /api/team/v1/teams/{teamId}/api-keys/{keyId}` | Team BFF `DELETE ...` → Team Service `DELETE /api/v1/teams/{teamId}/api-keys/{keyId}` (선택 쿼리 `gracePeriodDays`) |
-| `POST /api/team/v1/teams/{teamId}/api-keys/{keyId}/deletion/cancel` | Team BFF `POST ...` → Team Service `POST /api/v1/teams/{teamId}/api-keys/{keyId}/deletion/cancel` |
+| `GET /api/team/v1/me/teams` | Team BFF `GET /api/team/v1/me/teams` → Gateway `GET /api/team/v1/me/teams` → Team Service `GET /api/v1/me/teams` |
+| `POST /api/team/v1/teams` | Team BFF `POST /api/team/v1/teams` → Gateway `POST /api/team/v1/teams` → Team Service `POST /api/v1/teams` |
+| `POST /api/team/v1/teams/{id}/members` | Team BFF `POST /api/team/v1/teams/{id}/members` → Gateway `POST /api/team/v1/teams/{id}/members` → Team Service `POST /api/v1/teams/{id}/members` |
+| `GET /api/team/v1/teams/{id}/members` | Team BFF `GET ...` → Gateway `GET ...` → Team Service `GET /api/v1/teams/{id}/members` |
+| `GET /api/team/v1/teams/{id}/owner` | Team BFF `GET ...` → Gateway `GET ...` → Team Service `GET /api/v1/teams/{id}/owner` (`data`: 팀장 여부 `boolean`) |
+| `DELETE /api/team/v1/teams/{teamId}/members/{userId}` | Team BFF `DELETE ...` → Gateway `DELETE ...` → Team Service `DELETE /api/v1/teams/{teamId}/members/{userId}` |
+| `DELETE /api/team/v1/teams/{teamId}` | Team BFF `DELETE ...` → Gateway `DELETE ...` → Team Service `DELETE /api/v1/teams/{teamId}` |
+| `GET /api/team/v1/me/team-invitations` | Team BFF `GET ...` → Gateway `GET ...` → Team Service `GET /api/v1/me/team-invitations` |
+| `POST /api/team/v1/me/team-invitations/{invitationId}/accept` | Team BFF `POST ...` → Gateway `POST ...` → Team Service `POST /api/v1/me/team-invitations/{invitationId}/accept` |
+| `POST /api/team/v1/me/team-invitations/{invitationId}/reject` | Team BFF `POST ...` → Gateway `POST ...` → Team Service `POST /api/v1/me/team-invitations/{invitationId}/reject` |
+| `GET /api/team/v1/teams/{id}/api-keys` | Team BFF `GET /api/team/v1/teams/{id}/api-keys` → Gateway `GET ...` → Team Service `GET /api/v1/teams/{id}/api-keys` |
+| `POST /api/team/v1/teams/{id}/api-keys` | Team BFF `POST /api/team/v1/teams/{id}/api-keys` → Gateway `POST ...` → Team Service `POST /api/v1/teams/{id}/api-keys` |
+| `PUT /api/team/v1/teams/{teamId}/api-keys/{keyId}` | Team BFF `PUT ...` → Gateway `PUT ...` → Team Service `PUT /api/v1/teams/{teamId}/api-keys/{keyId}` |
+| `DELETE /api/team/v1/teams/{teamId}/api-keys/{keyId}` | Team BFF `DELETE ...` → Gateway `DELETE ...` → Team Service `DELETE /api/v1/teams/{teamId}/api-keys/{keyId}` (선택 쿼리 `gracePeriodDays`) |
+| `POST /api/team/v1/teams/{teamId}/api-keys/{keyId}/deletion/cancel` | Team BFF `POST ...` → Gateway `POST ...` → Team Service `POST /api/v1/teams/{teamId}/api-keys/{keyId}/deletion/cancel` |
 
 - Identity `web`는 `/teams` UI(팀·멤버·팀 API Key·예산)를 렌더링하고, Next rewrite로 `GET/POST/PUT/DELETE /api/team/v1/*`를 Team BFF(`team-web`)로 전달한다(삭제 예정 해제용 `POST .../deletion/cancel` 포함).
-- Team BFF는 `TEAM_SERVICE_URL` 환경 변수로 Team Service를 프록시한다.
+- Team BFF는 `GATEWAY_URL` 환경 변수로 Gateway를 프록시한다.
 - Team BFF는 `IDENTITY_SERVICE_URL`로 세션 확인(`GET /api/auth/session`)을 프록시한다.
 
 ---
 
 ## 3. 요청/응답 공통 규칙
 
-- `access_token` 쿠키가 없으면 BFF는 업스트림 호출 없이 `401`을 반환한다.
+- `Authorization` 헤더가 있으면 그대로 업스트림(Gateway)으로 전달한다.
+- `Authorization` 헤더가 없고 `access_token` 쿠키가 있으면 BFF가 `Bearer <token>`을 구성해 전달한다.
+- 두 인증 정보가 모두 없으면 BFF는 업스트림 호출 없이 `401`을 반환한다.
 - 응답에는 `Cache-Control: no-store`를 적용한다.
 - 성공/실패 응답은 Team Service의 `ApiResponse` 포맷을 그대로 전달한다.
 
@@ -48,7 +50,7 @@
 
 ## 4. 보안/권한
 
-- 아래는 모두 **Bearer 인증**이 필요하다. 권한은 Team Service가 최종 판단한다.
+- 아래는 모두 Gateway를 경유한 인증이 필요하다. 권한은 Team Service가 최종 판단한다.
 - **팀장(OWNER) 전용**
   - `DELETE /api/v1/teams/{teamId}/members/{userId}` (팀원 삭제; 팀장 본인 삭제는 불가)
   - `DELETE /api/v1/teams/{teamId}` (팀 삭제; 팀 API Key 행이 하나라도 남아 있으면 `409`)
@@ -211,6 +213,12 @@
 - 행을 눌러 펼치면 팀 `id`, 멤버 수·이메일 목록, 초대 입력, 팀 API Key 등록·목록·수정·삭제 영역이 나온다. 펼친 팀에 대해서만 멤버/API Key 목록 API를 호출한다.
 - `GET /api/team/v1/me/teams` 응답의 팀 요약은 **`id`, `name`** 수준이며, **리더·인원 수·생성일**을 한 줄로 주지 않는다. 검증은 **이름이 목록에 나타나는지**, 펼쳤을 때 **멤버·초대·키** 동작이 보이는지로 맞춘다.
 - 팀원 초대 입력 행은 여러 개 추가할 수 있고, 2개 이상일 때 각 행 우측 `-` 버튼으로 빈 행을 즉시 제거할 수 있다.
+
+#### 7.3.1 현재 MFE/호스트 UI 배치(2026-04)
+
+- `services/team-service/web/src/components/team/team-management-view.tsx` 는 **좌측 팀 목록 아코디언 내부에서 CRUD**(멤버 초대·삭제, 팀 API Key 등록·수정·삭제/삭제취소, 팀 삭제)를 수행한다.
+- 같은 화면의 오른쪽 패널은 **Usage 소유 슬롯 예약 영역**으로 두며, Team UI는 해당 영역을 비워 둔다(Team이 Usage 화면을 직접 수정하지 않음).
+- `apps/web` 호스트는 `/teams/[id]/[section]` 경로(`dashboard|members|api-keys`)를 해석해 Team remote를 렌더한다. 현재 Team remote는 내부 탭 없이 아코디언 중심 동작으로 맞춘다.
 
 ### 7.4 팀 API Key 삭제 예정·유예·취소 (Identity `/teams`)
 

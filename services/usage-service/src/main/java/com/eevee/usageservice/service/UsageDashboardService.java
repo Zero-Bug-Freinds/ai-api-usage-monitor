@@ -19,6 +19,8 @@ import com.eevee.usageservice.repository.UsageRecordedLogRepository;
 import com.eevee.usageservice.repository.analytics.UsageAnalyticsJdbcRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -37,6 +39,8 @@ import java.util.List;
 
 @Service
 public class UsageDashboardService {
+
+    private static final Logger log = LoggerFactory.getLogger(UsageDashboardService.class);
 
     /** Dashboard date ranges and buckets align with Korea Standard Time (same as identity-service convention). */
     private static final ZoneId DASHBOARD_ZONE = ZoneId.of("Asia/Seoul");
@@ -68,25 +72,37 @@ public class UsageDashboardService {
     @Transactional(readOnly = true)
     public UsageSummaryResponse summary(String userId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
         Range r = validateRange(from, toInclusive);
-        return analyticsJdbcRepository.aggregateSummary(userId, r.from(), r.toExclusive(), provider);
+        long startedAt = System.nanoTime();
+        UsageSummaryResponse response = analyticsJdbcRepository.aggregateSummary(userId, r.from(), r.toExclusive(), provider);
+        log.debug("dashboard.summary dbMs={} range={}~{} provider={}", (System.nanoTime() - startedAt) / 1_000_000, from, toInclusive, provider);
+        return response;
     }
 
     @Transactional(readOnly = true)
     public List<DailyUsagePoint> dailySeries(String userId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
         Range r = validateRange(from, toInclusive);
-        return analyticsJdbcRepository.aggregateDaily(userId, r.from(), r.toExclusive(), provider);
+        long startedAt = System.nanoTime();
+        List<DailyUsagePoint> rows = analyticsJdbcRepository.aggregateDaily(userId, r.from(), r.toExclusive(), provider);
+        log.debug("dashboard.daily dbMs={} rows={} range={}~{} provider={}", (System.nanoTime() - startedAt) / 1_000_000, rows.size(), from, toInclusive, provider);
+        return rows;
     }
 
     @Transactional(readOnly = true)
     public List<MonthlyUsagePoint> monthlySeries(String userId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
         Range r = validateRange(from, toInclusive);
-        return analyticsJdbcRepository.aggregateMonthly(userId, r.from(), r.toExclusive(), provider);
+        long startedAt = System.nanoTime();
+        List<MonthlyUsagePoint> rows = analyticsJdbcRepository.aggregateMonthly(userId, r.from(), r.toExclusive(), provider);
+        log.debug("dashboard.monthly dbMs={} rows={} range={}~{} provider={}", (System.nanoTime() - startedAt) / 1_000_000, rows.size(), from, toInclusive, provider);
+        return rows;
     }
 
     @Transactional(readOnly = true)
     public List<ModelUsageAggregate> byModel(String userId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
         Range r = validateRange(from, toInclusive);
-        return analyticsJdbcRepository.aggregateByModel(userId, r.from(), r.toExclusive(), provider);
+        long startedAt = System.nanoTime();
+        List<ModelUsageAggregate> rows = analyticsJdbcRepository.aggregateByModel(userId, r.from(), r.toExclusive(), provider);
+        log.debug("dashboard.byModel dbMs={} rows={} range={}~{} provider={}", (System.nanoTime() - startedAt) / 1_000_000, rows.size(), from, toInclusive, provider);
+        return rows;
     }
 
     @Transactional(readOnly = true)
@@ -98,12 +114,13 @@ public class UsageDashboardService {
             UsageSeriesUnit unit
     ) {
         Range r = validateRange(from, toInclusive);
+        long startedAt = System.nanoTime();
         if (unit == UsageSeriesUnit.HOUR) {
             long days = ChronoUnit.DAYS.between(from, toInclusive) + 1;
             if (days != 1) {
                 throw new IllegalArgumentException("HOUR unit requires a single-day range");
             }
-            return analyticsJdbcRepository.aggregateHourlyForKstDay(userId, r.from(), r.toExclusive(), provider)
+            List<UsageSeriesPoint> rows = analyticsJdbcRepository.aggregateHourlyForKstDay(userId, r.from(), r.toExclusive(), provider)
                     .stream()
                     .map(row -> new UsageSeriesPoint(
                             String.format("%02d:00", row.hour()),
@@ -113,9 +130,11 @@ public class UsageDashboardService {
                             row.estimatedCostUsd()
                     ))
                     .toList();
+            log.debug("dashboard.series unit=HOUR dbAndMapMs={} rows={} range={}~{} provider={}", (System.nanoTime() - startedAt) / 1_000_000, rows.size(), from, toInclusive, provider);
+            return rows;
         }
         if (unit == UsageSeriesUnit.DAY) {
-            return analyticsJdbcRepository.aggregateDaily(userId, r.from(), r.toExclusive(), provider)
+            List<UsageSeriesPoint> rows = analyticsJdbcRepository.aggregateDaily(userId, r.from(), r.toExclusive(), provider)
                     .stream()
                     .map(row -> new UsageSeriesPoint(
                             row.date().toString(),
@@ -125,8 +144,10 @@ public class UsageDashboardService {
                             row.estimatedCost()
                     ))
                     .toList();
+            log.debug("dashboard.series unit=DAY dbAndMapMs={} rows={} range={}~{} provider={}", (System.nanoTime() - startedAt) / 1_000_000, rows.size(), from, toInclusive, provider);
+            return rows;
         }
-        return analyticsJdbcRepository.aggregateMonthly(userId, r.from(), r.toExclusive(), provider)
+        List<UsageSeriesPoint> rows = analyticsJdbcRepository.aggregateMonthly(userId, r.from(), r.toExclusive(), provider)
                 .stream()
                 .map(row -> new UsageSeriesPoint(
                         row.yearMonth(),
@@ -136,6 +157,8 @@ public class UsageDashboardService {
                         row.estimatedCost()
                 ))
                 .toList();
+        log.debug("dashboard.series unit=MONTH dbAndMapMs={} rows={} range={}~{} provider={}", (System.nanoTime() - startedAt) / 1_000_000, rows.size(), from, toInclusive, provider);
+        return rows;
     }
 
     /**
@@ -191,6 +214,7 @@ public class UsageDashboardService {
             int page,
             int size
     ) {
+        long startedAt = System.nanoTime();
         Range r = validateRange(from, toInclusive);
         int pageIndex = Math.max(0, page);
         int pageSize = Math.min(200, Math.max(1, size));
@@ -208,6 +232,15 @@ public class UsageDashboardService {
                 PageRequest.of(pageIndex, pageSize, Sort.by(Sort.Direction.DESC, "occurredAt"))
         );
         List<UsageLogEntryResponse> content = p.getContent().stream().map(this::toLogDto).toList();
+        log.debug("dashboard.logs totalMs={} page={} size={} rows={} range={}~{} provider={}",
+                (System.nanoTime() - startedAt) / 1_000_000,
+                pageIndex,
+                pageSize,
+                content.size(),
+                from,
+                toInclusive,
+                provider
+        );
         return new PagedLogsResponse(
                 content,
                 p.getNumber(),

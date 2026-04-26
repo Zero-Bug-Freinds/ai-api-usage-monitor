@@ -1,9 +1,11 @@
 package com.zerobugfreinds.team_service.event;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * 팀 도메인 AMQP 페이로드 공통 필드 + 유형별 확장 필드(하위 호환용 레거시 필드 포함).
@@ -20,7 +22,8 @@ public sealed interface TeamDomainOutboundEvent permits
 		TeamDomainOutboundEvent.TeamApiKeyUpdatedEvent,
 		TeamDomainOutboundEvent.TeamApiKeyDeletedEvent,
 		TeamDomainOutboundEvent.TeamApiKeyDeletionScheduledEvent,
-		TeamDomainOutboundEvent.TeamApiKeyDeletionCancelledEvent {
+		TeamDomainOutboundEvent.TeamApiKeyDeletionCancelledEvent,
+		TeamDomainOutboundEvent.TeamApiKeyStatusChangedEvent {
 
 	String eventType();
 
@@ -335,6 +338,7 @@ public sealed interface TeamDomainOutboundEvent permits
 			Instant occurredAt,
 			List<String> recipientUserIds,
 			long apiKeyId,
+			boolean retainLogs,
 			String provider,
 			String alias
 	) implements TeamDomainOutboundEvent {
@@ -345,6 +349,7 @@ public sealed interface TeamDomainOutboundEvent permits
 				String teamName,
 				List<String> recipientUserIds,
 				long apiKeyId,
+				boolean retainLogs,
 				String provider,
 				String alias,
 				Instant occurredAt
@@ -357,6 +362,7 @@ public sealed interface TeamDomainOutboundEvent permits
 					occurredAt,
 					List.copyOf(recipientUserIds),
 					apiKeyId,
+					retainLogs,
 					provider,
 					alias
 			);
@@ -440,6 +446,70 @@ public sealed interface TeamDomainOutboundEvent permits
 					provider,
 					alias
 			);
+		}
+	}
+
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	record TeamApiKeyStatusChangedEvent(
+			String schemaVersion,
+			String eventId,
+			String eventType,
+			Instant occurredAt,
+			@JsonProperty("teamId")
+			Long teamIdValue,
+			Long teamApiKeyId,
+			String alias,
+			String provider,
+			TeamApiKeyStatus status,
+			Boolean retainLogs
+	) implements TeamDomainOutboundEvent {
+
+		public TeamApiKeyStatusChangedEvent {
+			schemaVersion = schemaVersion == null ? "v1" : schemaVersion;
+			eventId = eventId == null ? UUID.randomUUID().toString() : eventId;
+			eventType = TeamEventTypes.TEAM_API_KEY_STATUS_CHANGED;
+		}
+
+		public static TeamApiKeyStatusChangedEvent of(
+				Long teamId,
+				Long teamApiKeyId,
+				String alias,
+				String provider,
+				TeamApiKeyStatus status,
+				Boolean retainLogs
+		) {
+			return new TeamApiKeyStatusChangedEvent(
+					"v1",
+					UUID.randomUUID().toString(),
+					TeamEventTypes.TEAM_API_KEY_STATUS_CHANGED,
+					Instant.now(),
+					teamId,
+					teamApiKeyId,
+					alias,
+					provider,
+					status,
+					retainLogs
+			);
+		}
+
+		@Override
+		public String teamId() {
+			return teamIdValue == null ? null : String.valueOf(teamIdValue);
+		}
+
+		@Override
+		public String teamName() {
+			return null;
+		}
+
+		@Override
+		public String actorUserId() {
+			return null;
+		}
+
+		@Override
+		public List<String> recipientUserIds() {
+			return List.of();
 		}
 	}
 }
