@@ -164,6 +164,34 @@ async function requestApi(path: string, init?: RequestInit) {
   return { res, body: asApiResponse(json) }
 }
 
+/**
+ * Debug helper for browser Network tab inspection.
+ * - switch-team succeeds, then this request should carry the refreshed auth cookie.
+ * - Gateway should decode JWT(active_team_id) and append X-Team-Id to upstream calls.
+ */
+async function debugGatewayTeamHeaderReadiness() {
+  await fetch(teamApiPath("/api/team/v1/me/teams"), {
+    method: "GET",
+    credentials: "include",
+    cache: "no-store",
+    headers: { Accept: "application/json", "X-Debug-Team-Switch": "network-check" },
+  })
+}
+
+async function switchActiveTeam(teamId: string) {
+  const res = await fetch("/api/auth/token/switch-team", {
+    method: "POST",
+    credentials: "include",
+    cache: "no-store",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ targetTeamId: Number(teamId) }),
+  })
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as ApiResponse<unknown> | null
+    throw new Error(body?.message ?? "팀 전환 토큰 갱신에 실패했습니다")
+  }
+}
+
 export function TeamManagementView() {
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
@@ -946,6 +974,14 @@ export function TeamManagementView() {
                           setInviteInputsByTeamId((prev) =>
                             prev[team.id] !== undefined ? prev : { ...prev, [team.id]: [newInviteeRow()] },
                           )
+                          void switchActiveTeam(team.id)
+                            .then(() => debugGatewayTeamHeaderReadiness())
+                            .catch((e) => {
+                              setMessage({
+                                kind: "error",
+                                text: e instanceof Error ? e.message : "팀 전환 토큰 갱신에 실패했습니다",
+                              })
+                            })
                         }}
                       >
                         <div className="flex items-center gap-2">

@@ -4,11 +4,12 @@ import com.zerobugfreinds.identity_service.common.ApiResponse;
 import com.zerobugfreinds.identity_service.dto.DeleteAccountRequest;
 import com.zerobugfreinds.identity_service.dto.ForgotPasswordRequest;
 import com.zerobugfreinds.identity_service.dto.LoginRequest;
-import com.zerobugfreinds.identity_service.dto.LoginResponse;
 import com.zerobugfreinds.identity_service.dto.ResetPasswordRequest;
 import com.zerobugfreinds.identity_service.dto.SessionResponse;
 import com.zerobugfreinds.identity_service.dto.SignupRequest;
 import com.zerobugfreinds.identity_service.dto.SignupResponse;
+import com.zerobugfreinds.identity_service.dto.SwitchTeamRequest;
+import com.zerobugfreinds.identity_service.dto.TokenResponse;
 import com.zerobugfreinds.identity_service.exception.AuthContractViolationException;
 import com.zerobugfreinds.identity_service.security.IdentityUserPrincipal;
 import com.zerobugfreinds.identity_service.service.AccountDeletionService;
@@ -27,6 +28,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestHeader;
 
 /**
  * Authentication HTTP API.
@@ -73,8 +75,8 @@ public class AuthController {
 	}
 
 	@PostMapping("/login")
-	public ResponseEntity<ApiResponse<LoginResponse>> login(@Valid @RequestBody LoginRequest request) {
-		LoginResponse body = userService.login(request);
+	public ResponseEntity<ApiResponse<TokenResponse>> login(@Valid @RequestBody LoginRequest request) {
+		TokenResponse body = userService.login(request);
 		if (!"Bearer".equals(body.tokenType())) {
 			throw new AuthContractViolationException("Token type contract violation");
 		}
@@ -102,6 +104,18 @@ public class AuthController {
 		return ResponseEntity.ok()
 				.header(HttpHeaders.CACHE_CONTROL, "no-store")
 				.body(ApiResponse.ok("Signed out. Clear auth cookie on BFF.", null));
+	}
+
+	@PostMapping({"/switch-team", "/token/switch-team"})
+	public ResponseEntity<ApiResponse<TokenResponse>> switchTeam(
+			@AuthenticationPrincipal IdentityUserPrincipal principal,
+			@RequestHeader(HttpHeaders.AUTHORIZATION) String authorization,
+			@Valid @RequestBody SwitchTeamRequest request
+	) {
+		TokenResponse body = userService.switchTeam(principal.userId(), request.targetTeamId(), authorization);
+		return ResponseEntity.ok()
+				.cacheControl(CacheControl.noStore().mustRevalidate())
+				.body(ApiResponse.ok("Team context switched", body));
 	}
 
 	/**
