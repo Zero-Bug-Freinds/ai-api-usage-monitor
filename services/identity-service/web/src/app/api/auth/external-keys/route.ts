@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { cookies } from "next/headers"
 import { z } from "zod"
 import type { ApiResponse } from "@/lib/api/identity/types"
 
@@ -12,10 +13,13 @@ function json<T>(status: number, body: ApiResponse<T>) {
   return NextResponse.json(body, { status, headers: noStoreHeaders() })
 }
 
-function envIdentityBaseUrl() {
-  const url = process.env.IDENTITY_SERVICE_URL
-  if (!url) return null
-  return url.replace(/\/+$/, "")
+function envGatewayBaseUrl() {
+  const url = process.env.GATEWAY_URL ?? process.env.WEB_GATEWAY_URL
+  if (url) return url.replace(/\/+$/, "")
+  if (process.env.NODE_ENV === "development") {
+    return "http://127.0.0.1:8888"
+  }
+  return null
 }
 
 /** Cookie 헤더에서 지정 이름의 값을 추출한다 (첫 일치). */
@@ -30,6 +34,13 @@ function getCookieValue(cookieHeader: string | null, name: string): string | nul
     }
   }
   return null
+}
+
+async function resolveAccessToken(request: Request): Promise<string | null> {
+  const cookieStore = await cookies()
+  const tokenFromStore = cookieStore.get(ACCESS_TOKEN_COOKIE)?.value
+  if (tokenFromStore && tokenFromStore.length > 0) return tokenFromStore
+  return getCookieValue(request.headers.get("cookie"), ACCESS_TOKEN_COOKIE)
 }
 
 const createExternalKeyRequestSchema = z.object({
@@ -81,23 +92,23 @@ function isExternalKeysListResponseData(data: unknown): boolean {
 }
 
 export async function GET(request: Request) {
-  const token = getCookieValue(request.headers.get("cookie"), ACCESS_TOKEN_COOKIE)
+  const token = await resolveAccessToken(request)
   if (!token) {
     return json(401, { success: false, message: "로그인이 필요합니다", data: null })
   }
 
-  const identityBaseUrl = envIdentityBaseUrl()
-  if (!identityBaseUrl) {
+  const gatewayBaseUrl = envGatewayBaseUrl()
+  if (!gatewayBaseUrl) {
     return json(500, {
       success: false,
-      message: "서버 설정이 필요합니다 (IDENTITY_SERVICE_URL)",
+      message: "서버 설정이 필요합니다 (GATEWAY_URL 또는 WEB_GATEWAY_URL)",
       data: null,
     })
   }
 
   let upstream: Response
   try {
-    upstream = await fetch(`${identityBaseUrl}/api/auth/external-keys`, {
+    upstream = await fetch(`${gatewayBaseUrl}/api/identity/auth/external-keys`, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -120,7 +131,11 @@ export async function GET(request: Request) {
     if (typeof upstreamJson === "object" && upstreamJson !== null) {
       return NextResponse.json(upstreamJson, { status: upstream.status, headers: noStoreHeaders() })
     }
-    return json(502, { success: false, message: "요청 처리에 실패했습니다", data: null })
+    const message =
+      upstream.status === 401 || upstream.status === 403
+        ? "로그인이 필요합니다"
+        : "요청 처리에 실패했습니다"
+    return json(upstream.status >= 400 ? upstream.status : 502, { success: false, message, data: null })
   }
 
   // 성공 시에는 data 형식을 방어적으로 검증한다.
@@ -138,16 +153,16 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const token = getCookieValue(request.headers.get("cookie"), ACCESS_TOKEN_COOKIE)
+  const token = await resolveAccessToken(request)
   if (!token) {
     return json(401, { success: false, message: "로그인이 필요합니다", data: null })
   }
 
-  const identityBaseUrl = envIdentityBaseUrl()
-  if (!identityBaseUrl) {
+  const gatewayBaseUrl = envGatewayBaseUrl()
+  if (!gatewayBaseUrl) {
     return json(500, {
       success: false,
-      message: "서버 설정이 필요합니다 (IDENTITY_SERVICE_URL)",
+      message: "서버 설정이 필요합니다 (GATEWAY_URL 또는 WEB_GATEWAY_URL)",
       data: null,
     })
   }
@@ -171,7 +186,7 @@ export async function POST(request: Request) {
 
   let upstream: Response
   try {
-    upstream = await fetch(`${identityBaseUrl}/api/auth/external-keys`, {
+    upstream = await fetch(`${gatewayBaseUrl}/api/identity/auth/external-keys`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -199,7 +214,9 @@ export async function POST(request: Request) {
     return json(502, { success: false, message: "응답 형식이 올바르지 않습니다", data: null })
   }
 
-  const message = getUpstreamMessage(upstreamJson) ?? "요청 처리에 실패했습니다"
+  const message =
+    getUpstreamMessage(upstreamJson) ??
+    (upstream.status === 401 || upstream.status === 403 ? "로그인이 필요합니다" : "요청 처리에 실패했습니다")
 
   if (upstream.status === 400 || upstream.status === 401 || upstream.status === 409) {
     return json(upstream.status, { success: false, message, data: null })

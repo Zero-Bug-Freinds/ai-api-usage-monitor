@@ -33,7 +33,14 @@ Import-DotEnv -Path $EnvPath
 
 # Per-service defaults only (SERVER_PORT would override server.port for every Spring app).
 switch ($Service) {
-    'identity-service' { if (-not $env:SERVER_PORT) { $env:SERVER_PORT = '8090' } }
+    'identity-service' {
+        if (-not $env:SERVER_PORT) { $env:SERVER_PORT = '8090' }
+        # identity-service JWT 서명 키를 gateway 검증 키와 맞춘다.
+        # .env 에 JWT_SECRET 이 비어 있고 GATEWAY_JWT_SECRET 만 있는 경우를 대비한다.
+        if ((-not $env:JWT_SECRET) -and $env:GATEWAY_JWT_SECRET) {
+            $env:JWT_SECRET = $env:GATEWAY_JWT_SECRET
+        }
+    }
     'usage-service' { if (-not $env:USAGE_SERVICE_PORT) { $env:USAGE_SERVICE_PORT = '8092' } }
     'team-service' { if (-not $env:TEAM_SERVICE_PORT) { $env:TEAM_SERVICE_PORT = '8094' } }
     'billing-service' { if (-not $env:BILLING_SERVICE_PORT) { $env:BILLING_SERVICE_PORT = '8095' } }
