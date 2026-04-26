@@ -1,3 +1,7 @@
 "use client"
 
-export { TeamManagementView as default } from "@web/components/team/team-management-view"
+import { TeamManagementView } from "@web/components/team/team-management-view"
+
+export default function TeamManagementEntry() {
+  return <TeamManagementView />
+}
