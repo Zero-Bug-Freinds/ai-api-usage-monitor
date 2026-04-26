@@ -57,7 +57,7 @@
   - `GET /monthly` — 월별 비용 시계열(확정 여부 포함)
   - `GET /api-keys` — 사용자가 본 API Key 목록(공급사 필터 선택)
   - `GET /me` — 현재 사용자 식별자(`X-User-Id`) 반환(웹 UI 상단 표시 용도)
-  - `POST /team/month-rollup` — 팀(또는 관리) 뷰: 여러 플랫폼 `userId`에 대해 지정 월의 `monthly_expenditure_agg` 합산(본문: `TeamMonthRollupRequest`). 호출자는 **노출 가능한 userId만** 넘기도록 BFF/Gateway에서 제한하는 것을 전제로 한다.
+  - `POST /team/month-rollup` — 팀(또는 관리) 뷰: 여러 플랫폼 `userId`에 대해 지정 월의 `monthly_expenditure_agg` 합산(본문: `TeamMonthRollupRequest`). 호출자는 **노출 가능한 userId만** 넘기도록 BFF/Gateway에서 제한하는 것을 전제로 한다. **Billing Next BFF**에서는 전용 라우트가 `teamId`를 검증하고, **서버에서 팀 멤버 목록을 조회한 뒤** 요청 `userIds`가 멤버 집합에 포함되는지 검사한 다음, 통과한 `userIds`만 게이트웨이로 포워딩한다(§4.10).
 - **인증**: Gateway가 넘기는 `X-User-Id` 필수; `billing.gateway.shared-secret`이 설정된 경우 `X-Gateway-Auth` 일치 필요.
 
 ### 4.3 월 집계 확정
@@ -126,12 +126,18 @@
 
 ### 4.10 Next.js BFF (`services/billing-service/web`)
 
-- **라우트**: `app/api/expenditure/[[...path]]/route.ts` — 브라우저의 `/api/expenditure/*`를 **API Gateway**의 `/api/v1/expenditure/*`로 프록시.
-- **인증**: 쿠키 `access_token`을 `Authorization: Bearer`로 전달.
+- **범용 프록시**: `app/api/expenditure/[[...path]]/route.ts` — 브라우저의 `/api/expenditure/*`를 **API Gateway**의 `/api/v1/expenditure/*`로 프록시한다. **GET·POST 등** 지출 API에 맞게 메서드를 그대로 전달한다(과거 POST 미구현으로 405가 나지 않도록 유지).
+- **팀 월 롤업 하드닝**: `app/api/expenditure/team/month-rollup/route.ts` — 브라우저는 **`POST /api/expenditure/team/month-rollup`**(앱 `basePath`가 있으면 그 접두 하위)만 호출한다.
+  - **본문**: `teamId`(Long 호환 숫자 문자열), `monthStartDate`, `userIds`. `teamId` 형식 오류·필수 필드 누락 시 **400**.
+  - **팀 멤버 조회**: 서버가 **`GET {팀 BFF 오리진}/api/team/v1/teams/{teamId}/members`** 를 호출해 `{ success: true, data: string[] }` 형태의 멤버 `userId` 목록을 얻는다. 요청의 **`Cookie`** 를 그대로 넘겨 세션 기반 접근을 맞춘다. 조회 실패·스키마 불일치 시 **502**(`팀 멤버 조회에 실패했습니다` 등).
+  - **멤버 검증**: 클라이언트가 보낸 `userIds`(trim·빈값 제거·중복 제거 후)가 멤버 집합에 **전부** 포함되지 않으면 **403**(비멤버 `userId` 탐색 완화).
+  - **업스트림**: 검증을 통과한 `userIds`와 `monthStartDate`만으로 **`POST {API_GATEWAY_URL}/api/v1/expenditure/team/month-rollup`** 호출(§4.2 백엔드 계약과 동일 본문).
+- **팀 BFF 오리진**(`BILLING_TEAM_BFF_BASE_URL`, 선택): 설정 시 팀 멤버 조회의 베이스 URL로 **우선** 사용한다. 비우면 `x-forwarded-host`·`host` 등으로 요청 오리진을 조합한다. **Docker Compose**의 `billing-web` 서비스에는 기본으로 **`http://identity-web:3000`** 이 들어가며(루트 `docker-compose.yml`), 컨테이너에서 Identity `web`이 노출하는 **`/api/team/v1/**`** 경로로 붙는 구성이다. 호스트에서만 Identity `web`을 띄우는 등 예외일 때는 루트 `.env`에서 `BILLING_TEAM_BFF_BASE_URL`을 덮어쓴다. 상세 예시는 루트 **`.env.example`**, `services/billing-service/web/.env.example` 참고.
+- **인증**: 쿠키 `access_token`을 `Authorization: Bearer`로 게이트웨이 호출에 전달.
 - **게이트웨이 개발 모드**(`GATEWAY_DEV_MODE`): Identity `GET /api/auth/session`으로 이메일 등을 받아 **`X-User-Id`**를 세팅(운영에서는 Gateway가 사용자 식별 헤더를 붙이는 패턴).
-- **환경 변수**: `API_GATEWAY_URL` 필수, 개발 모드 시 `IDENTITY_SERVICE_URL` 필수.
+- **환경 변수**: `API_GATEWAY_URL` 필수, 개발 모드 시 `IDENTITY_SERVICE_URL` 필수. 팀 멤버 서버 조회 시 **`BILLING_TEAM_BFF_BASE_URL`**(선택, Compose 기본값 있음).
   - 지출 화면은 기간(`from`, `to`)을 프리셋(최근 7/30/90일, 이번 달) 또는 커스텀 날짜로 선택해 `/api/expenditure/summary|daily|monthly`에 반영한다.
-  - 팀 모드 집계는 월 선택(type="month") UI에서 선택한 월의 `YYYY-MM-01`을 `monthStartDate`로 전송한다.
+  - 팀 모드 집계는 월 선택(type="month") UI에서 선택한 월의 `YYYY-MM-01`을 `monthStartDate`로 전송하고, **`teamId`** 를 함께 보낸다.
 
 ### 4.11 기타 런타임 구성
 

@@ -375,6 +375,7 @@
 - **로컬**: 루트 `docker-compose.yml`은 인프라·일부 앱(예: proxy·gateway)을 포함할 수 있으며, **웹 컨테이너는 `profile: web`(`identity-web`, `usage-web`, `web-edge`) 등으로 선택 기동**해 호스트 개발과 병행할 수 있다. 호스트에서 Next를 직접 띄울 때는 저장소 루트 **`pnpm install`** 후 **`pnpm --filter identity-web dev`** / **`pnpm --filter usage-web dev`** 등(`packages/ui` workspace 포함 — `README.md`, `docs/repository-structure.md` §6).
 - 동일 `profile: web` 선택 시 루트 `docker-compose.yml`에는 위에 더해 `team-web`, `team-service` 컨테이너가 포함될 수 있고, 팀 도메인 전용 DB는 `postgres-team` 등 별도 PostgreSQL 컨테이너로 둘 수 있다(`docs/repository-structure.md` §2 참고).
 - **Compose 환경변수:** `docker compose`는 루트 **`.env`**만 자동 로드한다. `GATEWAY_SHARED_SECRET`처럼 compose 파일에서 `${VAR:-}` 형태로 넘기는 값은, `.env`에 **빈 할당(`VAR=`)만** 있으면 컨테이너에 빈 문자열이 들어가 **Spring `application.yml`의 기본값이 적용되지 않을 수 있다**(게이트웨이 기동 실패 등). **비어 있지 않은 값**으로 맞추거나 변수 줄을 제거하고, 게이트웨이·Proxy·usage-service의 공유 비밀은 [`docs/contracts/gateway-proxy.md`](contracts/gateway-proxy.md) §5와 동일하게 유지한다.
+- **`billing-web`:** 팀 지출 롤업 BFF가 서버에서 팀 멤버 API를 호출할 때, 컨테이너 간 DNS로 **`identity-web:3000`** 에 붙도록 루트 `docker-compose.yml`에 **`BILLING_TEAM_BFF_BASE_URL`** 기본값과 **`depends_on: identity-web`** 을 둔다. 호스트에서만 Identity Next를 띄우는 등 예외는 루트 `.env`의 동일 변수로 덮어쓴다(예시·설명: 루트 `.env.example`, [billing-service-overview-20260412.md](billing-service-overview-20260412.md) §4.10, [web-split-boundary.md](contracts/web-split-boundary.md) §2.7).
 
 ### 10.2 단일 도메인·엣지 라우팅(브라우저 URL 하나)
 
