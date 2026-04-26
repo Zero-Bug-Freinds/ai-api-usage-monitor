@@ -330,6 +330,7 @@ services:
     depends_on:
       - team-service
     environment:
+      GATEWAY_URL: ${WEB_GATEWAY_URL:-http://api-gateway-service:8080}
       TEAM_SERVICE_URL: ${WEB_TEAM_SERVICE_URL:-http://team-service:8093}
       IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://host.docker.internal:8090}
     extra_hosts:
