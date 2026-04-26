@@ -13,13 +13,16 @@ import com.zerobugfreinds.team_service.event.TeamDomainOutboundEvent.TeamApiKeyD
 import com.zerobugfreinds.team_service.event.TeamDomainOutboundEvent.TeamApiKeyDeletionCancelledEvent;
 import com.zerobugfreinds.team_service.event.TeamDomainOutboundEvent.TeamApiKeyDeletionScheduledEvent;
 import com.zerobugfreinds.team_service.event.TeamDomainOutboundEvent.TeamApiKeyRegisteredEvent;
+import com.zerobugfreinds.team_service.event.TeamDomainOutboundEvent.TeamApiKeyStatusChangedEvent;
 import com.zerobugfreinds.team_service.event.TeamDomainOutboundEvent.TeamApiKeyUpdatedEvent;
 import com.zerobugfreinds.team_service.event.TeamEventRecipients;
+import com.zerobugfreinds.team_service.event.TeamApiKeyStatus;
 import com.zerobugfreinds.team_service.exception.TeamNotFoundException;
 import com.zerobugfreinds.team_service.repository.TeamApiKeyRepository;
 import com.zerobugfreinds.team_service.repository.TeamMemberRepository;
 import com.zerobugfreinds.team_service.repository.TeamRepository;
 import com.zerobugfreinds.team_service.util.EncryptionUtil;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -41,19 +44,22 @@ public class TeamApiKeyService {
     private final TeamApiKeyRepository teamApiKeyRepository;
     private final EncryptionUtil encryptionUtil;
     private final TeamDomainEventPublisher teamDomainEventPublisher;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
     public TeamApiKeyService(
             TeamRepository teamRepository,
             TeamMemberRepository teamMemberRepository,
             TeamApiKeyRepository teamApiKeyRepository,
             EncryptionUtil encryptionUtil,
-            TeamDomainEventPublisher teamDomainEventPublisher
+            TeamDomainEventPublisher teamDomainEventPublisher,
+            ApplicationEventPublisher applicationEventPublisher
     ) {
         this.teamRepository = teamRepository;
         this.teamMemberRepository = teamMemberRepository;
         this.teamApiKeyRepository = teamApiKeyRepository;
         this.encryptionUtil = encryptionUtil;
         this.teamDomainEventPublisher = teamDomainEventPublisher;
+        this.applicationEventPublisher = applicationEventPublisher;
     }
 
     @Transactional
@@ -105,6 +111,14 @@ public class TeamApiKeyService {
                 saved.getKeyAlias(),
                 occurredAt
         ));
+        publishTeamApiKeyStatusChanged(
+                teamId,
+                saved.getId(),
+                saved.getKeyAlias(),
+                saved.getProvider().name(),
+                TeamApiKeyStatus.ACTIVE,
+                null
+        );
         return toSummary(saved);
     }
 
@@ -172,6 +186,14 @@ public class TeamApiKeyService {
                 entity.getKeyAlias(),
                 Instant.now()
         ));
+        publishTeamApiKeyStatusChanged(
+                teamId,
+                entity.getId(),
+                entity.getKeyAlias(),
+                entity.getProvider().name(),
+                TeamApiKeyStatus.ACTIVE,
+                null
+        );
         return toSummary(entity);
     }
 
@@ -208,6 +230,14 @@ public class TeamApiKeyService {
                     occurredAt
             ));
             teamApiKeyRepository.delete(entity);
+            publishTeamApiKeyStatusChanged(
+                    teamId,
+                    entity.getId(),
+                    entity.getKeyAlias(),
+                    entity.getProvider().name(),
+                    TeamApiKeyStatus.DELETED,
+                    retainLogs
+            );
             return toSummary(entity);
         }
         entity.markDeletionRequested(Instant.now(), days, retainLogs);
@@ -224,6 +254,14 @@ public class TeamApiKeyService {
                 entity.getPermanentDeletionAt(),
                 occurredAt
         ));
+        publishTeamApiKeyStatusChanged(
+                teamId,
+                entity.getId(),
+                entity.getKeyAlias(),
+                entity.getProvider().name(),
+                TeamApiKeyStatus.DELETION_REQUESTED,
+                retainLogs
+        );
         return toSummary(entity);
     }
 
@@ -365,5 +403,25 @@ public class TeamApiKeyService {
 
     private void publish(TeamDomainOutboundEvent event) {
         teamDomainEventPublisher.publish(event);
+    }
+
+    private void publishTeamApiKeyStatusChanged(
+            Long teamId,
+            Long teamApiKeyId,
+            String alias,
+            String provider,
+            TeamApiKeyStatus status,
+            Boolean retainLogs
+    ) {
+        applicationEventPublisher.publishEvent(
+                TeamApiKeyStatusChangedEvent.of(
+                        teamId,
+                        teamApiKeyId,
+                        alias,
+                        provider,
+                        status,
+                        retainLogs
+                )
+        );
     }
 }
