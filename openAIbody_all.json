@@ -1,15 +1,14 @@
 {
-  "model": "gpt-5.4-nano",
+  "model": "gpt-4o-mini",
   "messages": [
     {
       "role": "user",
-      "content": "영어로 정확히 한 문장만 출력하라. 반드시 'I drank '로 시작하고 'before work.'로 끝내라. 음료는 tea를 사용하라."
+      "content": "향수 브랜드인 '메종 마르지엘라'에서 출시한 향수 중, { 토마토 잎/제라늄/패츌리 }를 포함한 향수가 어떤 것인지 다음 후보 중 맞는 것을 추론해서 정답을 알려줘. 정답으로 향수 이름만 알려주면 돼. 향수 후보는 {프롬 더 가든, 그로세이, 캠퍼스 피크닉} 이야."
     }
   ],
   "prediction": {
     "type": "content",
-    "content": "I drank coffee before work."
+    "content": "프롬 더 가든"
   },
-  "max_completion_tokens": 96,
-  "reasoning_effort": "low"
+  "max_tokens": 400
 }

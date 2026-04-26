@@ -8,15 +8,19 @@ import com.eevee.usageservice.api.dto.MonthlyUsagePoint;
 import com.eevee.usageservice.api.dto.PagedLogsResponse;
 import com.eevee.usageservice.api.dto.UsageCostIntradayKpiResponse;
 import com.eevee.usageservice.api.dto.UsageLogApiKeyItemResponse;
+import com.eevee.usageservice.api.dto.UsageSeriesPoint;
+import com.eevee.usageservice.api.dto.UsageSeriesUnit;
 import com.eevee.usageservice.api.dto.UsageSummaryResponse;
 import com.eevee.usageservice.security.UsageGatewayTrustFilter;
 import com.eevee.usageservice.service.UsageDashboardService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -72,6 +76,18 @@ public class UsageAnalyticsController {
         return dashboardService.dailySeries(userId, from, to, provider);
     }
 
+    @GetMapping("/dashboard/series")
+    public List<UsageSeriesPoint> series(
+            HttpServletRequest request,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam UsageSeriesUnit unit,
+            @RequestParam(required = false) AiProvider provider
+    ) {
+        String userId = currentUser(request);
+        return dashboardService.series(userId, from, to, provider, unit);
+    }
+
     @GetMapping("/dashboard/series/monthly")
     public List<MonthlyUsagePoint> monthly(
             HttpServletRequest request,
@@ -125,6 +141,6 @@ public class UsageAnalyticsController {
         if (v instanceof String s && !s.isBlank()) {
             return s;
         }
-        throw new IllegalStateException("Missing authenticated user");
+        throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing authenticated user");
     }
 }

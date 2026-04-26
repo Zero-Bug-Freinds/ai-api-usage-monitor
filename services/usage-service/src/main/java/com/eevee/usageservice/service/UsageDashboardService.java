@@ -8,6 +8,8 @@ import com.eevee.usageservice.api.dto.MonthlyUsagePoint;
 import com.eevee.usageservice.api.dto.PagedLogsResponse;
 import com.eevee.usageservice.api.dto.UsageCostIntradayKpiResponse;
 import com.eevee.usageservice.api.dto.UsageLogApiKeyItemResponse;
+import com.eevee.usageservice.api.dto.UsageSeriesPoint;
+import com.eevee.usageservice.api.dto.UsageSeriesUnit;
 import com.eevee.usageservice.api.dto.UsageLogEntryResponse;
 import com.eevee.usageservice.api.dto.UsageSummaryResponse;
 import com.eevee.usageservice.config.UsageServiceProperties;
@@ -41,6 +43,7 @@ public class UsageDashboardService {
     private static final String DELETED_ALIAS_SUFFIX = " (삭제)";
 
     private static final int LOG_API_KEY_LOOKUP_DAYS = 30;
+    private static final int MAX_DASHBOARD_RANGE_DAYS = 366;
 
     private final UsageAnalyticsJdbcRepository analyticsJdbcRepository;
     private final UsageRecordedLogRepository logRepository;
@@ -84,6 +87,55 @@ public class UsageDashboardService {
     public List<ModelUsageAggregate> byModel(String userId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
         Range r = validateRange(from, toInclusive);
         return analyticsJdbcRepository.aggregateByModel(userId, r.from(), r.toExclusive(), provider);
+    }
+
+    @Transactional(readOnly = true)
+    public List<UsageSeriesPoint> series(
+            String userId,
+            LocalDate from,
+            LocalDate toInclusive,
+            AiProvider provider,
+            UsageSeriesUnit unit
+    ) {
+        Range r = validateRange(from, toInclusive);
+        if (unit == UsageSeriesUnit.HOUR) {
+            long days = ChronoUnit.DAYS.between(from, toInclusive) + 1;
+            if (days != 1) {
+                throw new IllegalArgumentException("HOUR unit requires a single-day range");
+            }
+            return analyticsJdbcRepository.aggregateHourlyForKstDay(userId, r.from(), r.toExclusive(), provider)
+                    .stream()
+                    .map(row -> new UsageSeriesPoint(
+                            String.format("%02d:00", row.hour()),
+                            row.requestCount(),
+                            row.errorCount(),
+                            0L,
+                            row.estimatedCostUsd()
+                    ))
+                    .toList();
+        }
+        if (unit == UsageSeriesUnit.DAY) {
+            return analyticsJdbcRepository.aggregateDaily(userId, r.from(), r.toExclusive(), provider)
+                    .stream()
+                    .map(row -> new UsageSeriesPoint(
+                            row.date().toString(),
+                            row.requestCount(),
+                            row.errorCount(),
+                            row.inputTokens(),
+                            row.estimatedCost()
+                    ))
+                    .toList();
+        }
+        return analyticsJdbcRepository.aggregateMonthly(userId, r.from(), r.toExclusive(), provider)
+                .stream()
+                .map(row -> new UsageSeriesPoint(
+                        row.yearMonth(),
+                        row.requestCount(),
+                        row.errorCount(),
+                        row.inputTokens(),
+                        row.estimatedCost()
+                ))
+                .toList();
     }
 
     /**
@@ -220,14 +272,7 @@ public class UsageDashboardService {
     }
 
     private static Long resolveEstimatedReasoningTokens(UsageRecordedLogEntity e) {
-        if (e.getEstimatedReasoningTokens() != null) {
-            return e.getEstimatedReasoningTokens();
-        }
-        if (e.getTotalTokens() == null || e.getPromptTokens() == null || e.getCompletionTokens() == null) {
-            return null;
-        }
-        long fallback = e.getTotalTokens() - e.getPromptTokens() - e.getCompletionTokens();
-        return Math.max(fallback, 0L);
+        return e.getEstimatedReasoningTokens();
     }
 
     private JsonNode parseProviderTokenDetails(String json) {
@@ -256,7 +301,7 @@ public class UsageDashboardService {
             throw new IllegalArgumentException("to must be on or after from");
         }
         long days = ChronoUnit.DAYS.between(from, toInclusive) + 1;
-        int max = properties.getAnalytics().getMaxRangeDays();
+        int max = Math.min(properties.getAnalytics().getMaxRangeDays(), MAX_DASHBOARD_RANGE_DAYS);
         if (days > max) {
             throw new IllegalArgumentException("Date range too large (max " + max + " days)");
         }

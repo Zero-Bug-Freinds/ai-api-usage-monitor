@@ -1,14 +1,14 @@
 {
-  "model": "gpt-5.4-nano",
+  "model": "gpt-4o-mini",
   "messages": [
     {
       "role": "user",
-      "content": "영어로 한 문장만 출력해라. 반드시 'I drank '로 시작하고, 마지막은 'before work.'로 끝나야 한다. 중간 음료는 coffee가 아니라 tea로 써라."
+      "content": "영화계의 거장, 마틴 스콜세지가 한 말 중 '가장 개인적인 것이 가장 창의적인 것이다.'라는 문장을 영어로 번역해줘. 번역한 영어 문장만 출력해줘. 'The most personal' 로 시작해야해. 그리고 창의적이란 단어를 번역할 때에는 'creative'라고 번역해야 해."
     }
   ],
   "prediction": {
     "type": "content",
-    "content": "I drank juice before work."
+    "content": "The most personal is the most perfect."
   },
-  "max_tokens": 90
+  "max_tokens": 300
 }

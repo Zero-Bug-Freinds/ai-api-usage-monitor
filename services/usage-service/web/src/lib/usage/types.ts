@@ -47,6 +47,16 @@ export type HourlyUsagePoint = {
   estimatedCostUsd: number | string
 }
 
+export type UsageSeriesUnit = "HOUR" | "DAY" | "MONTH"
+
+export type UsageSeriesPoint = {
+  bucketLabel: string
+  requestCount: number
+  errorCount: number
+  inputTokens: number
+  estimatedCost: number | string
+}
+
 export type UsageLogApiKeyItemResponse = {
   apiKeyId: string
   alias: string | null

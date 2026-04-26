@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { CircleHelp, ChevronRight } from "lucide-react"
+import { CircleHelp, ChevronDown, ChevronRight, Filter, RotateCcw, X } from "lucide-react"
 
 import {
   Button,
@@ -66,11 +66,19 @@ function reasoningTokensTooltipContent() {
     <div className="space-y-1">
       <p className="font-medium text-foreground">추론 토큰 산출</p>
       <p>
-        Google / Anthropic 공급사의 추론 토큰은 총 토큰에서 입력·출력을 제외해 계산한{" "}
-        <span className="font-medium">추정된</span> 추론 토큰입니다.
+        Google / OpenAI: 모델이 직접 응답 전문에 포함하여 제공한 실제 추론 수치입니다.
       </p>
-      <p>OpenAI: 모델이 직접 응답 전문에 포함하여 제공한 실제 추론 수치입니다.</p>
+      <p>Anthropic: 현재 사용 기록이 없어 추론 토큰 상세값이 없는 경우가 있습니다.</p>
       <p>공통: 모델의 사고 과정(Reasoning) 및 시스템 처리 비용을 포함합니다.</p>
+    </div>
+  )
+}
+
+function outputTokensTooltipContent() {
+  return (
+    <div className="space-y-1">
+      <p className="font-medium text-foreground">출력 토큰 산출</p>
+      <p>출력 토큰에서는 추론 토큰을 제외한 순수 응답량만 표시합니다.</p>
     </div>
   )
 }
@@ -86,14 +94,11 @@ export function UsageLogPanel() {
   const [successFilter, setSuccessFilter] = React.useState<string>(LOG_SUCCESS_ALL)
   const [apiKeyOptions, setApiKeyOptions] = React.useState<UsageLogApiKeyItemResponse[]>([])
   const [modelDraft, setModelDraft] = React.useState("")
-  const [appliedModelMask, setAppliedModelMask] = React.useState("")
   const [logRefresh, setLogRefresh] = React.useState(0)
   const [openAiDetailsRow, setOpenAiDetailsRow] = React.useState<UsageLogEntryResponse | null>(null)
+  const [showAdvancedFilters, setShowAdvancedFilters] = React.useState(false)
 
-  const applyLogFilters = React.useCallback(() => {
-    setLogsPage(0)
-    setAppliedModelMask(modelDraft.trim())
-  }, [modelDraft])
+  const appliedModelMask = modelDraft.trim()
 
   React.useEffect(() => {
     if (!openAiDetailsRow) return
@@ -175,7 +180,7 @@ export function UsageLogPanel() {
     }
   }, [
     logsPage,
-    appliedModelMask,
+    modelDraft,
     logProvider,
     providerParam,
     apiKeyFilter,
@@ -184,8 +189,22 @@ export function UsageLogPanel() {
     logRefresh,
   ])
 
+  const hasAdvancedReasoning = reasoningFilter !== LOG_REASONING_ALL
+  const hasAdvancedSuccess = successFilter !== LOG_SUCCESS_ALL
+  const hasAnyAdvancedFilter = hasAdvancedReasoning || hasAdvancedSuccess
+
+  const resetAllFilters = React.useCallback(() => {
+    setLogsPage(0)
+    setLogProvider(LOG_PROVIDER_ALL)
+    setApiKeyFilter(LOG_API_KEY_ALL)
+    setReasoningFilter(LOG_REASONING_ALL)
+    setSuccessFilter(LOG_SUCCESS_ALL)
+    setModelDraft("")
+    setLogRefresh((n) => n + 1)
+  }, [])
+
   return (
-    <div className="rounded-lg border border-border p-4 shadow-sm">
+    <div className="mx-auto w-full max-w-[86rem] rounded-lg border border-border p-4 shadow-sm">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">발생 시각은 한국 표준시(KST)입니다.</p>
         <Button type="button" variant="outline" size="sm" onClick={() => setLogRefresh((n) => n + 1)}>
@@ -251,80 +270,152 @@ export function UsageLogPanel() {
           </Select>
         </div>
 
-        <div className="space-y-2 sm:w-40">
-          <div className="flex items-center gap-1">
-            <Label htmlFor="log-reasoning" className="mb-0">
-              추론 토큰
-            </Label>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    id="log-reasoning-help"
-                    className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-muted-foreground/40 text-[10px] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                    aria-label="추론 토큰 설명"
-                  >
-                    <CircleHelp className="h-3 w-3" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="top" align="start">
-                  {reasoningTokensTooltipContent()}
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </div>
-          <Select
-            value={reasoningFilter}
-            onValueChange={(v) => {
-              setLogsPage(0)
-              setReasoningFilter(v)
-            }}
-          >
-            <SelectTrigger id="log-reasoning" className="w-full">
-              <SelectValue placeholder="전체" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={LOG_REASONING_ALL}>전체</SelectItem>
-              <SelectItem value="present">있음</SelectItem>
-              <SelectItem value="absent">없음</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-2 sm:w-40">
-          <Label htmlFor="log-success">성공</Label>
-          <Select value={successFilter} onValueChange={(v) => { setLogsPage(0); setSuccessFilter(v) }}>
-            <SelectTrigger id="log-success" className="w-full">
-              <SelectValue placeholder="전체" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={LOG_SUCCESS_ALL}>전체</SelectItem>
-              <SelectItem value="true">예</SelectItem>
-              <SelectItem value="false">아니오</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
         <div className="space-y-2 sm:w-56">
           <Label htmlFor="log-model">모델 (부분 일치)</Label>
           <Input
             id="log-model"
             value={modelDraft}
-            onChange={(e) => setModelDraft(e.target.value)}
-            onBlur={applyLogFilters}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") applyLogFilters()
+            onChange={(e) => {
+              setLogsPage(0)
+              setModelDraft(e.target.value)
             }}
             placeholder="예: gpt-4"
             autoComplete="off"
           />
         </div>
 
-        <Button type="button" variant="secondary" size="sm" className="sm:self-end" onClick={applyLogFilters}>
-          필터 적용
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="gap-1.5 sm:self-end"
+          onClick={() => setShowAdvancedFilters((v) => !v)}
+        >
+          <Filter className="h-4 w-4" />
+          상세 필터
+          <ChevronDown className={`h-4 w-4 transition-transform ${showAdvancedFilters ? "rotate-180" : ""}`} />
+        </Button>
+
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="sm:self-end"
+          onClick={resetAllFilters}
+          aria-label="필터링 조건 해제"
+          title="필터링 조건 해제"
+        >
+          <RotateCcw className="h-4 w-4" />
         </Button>
       </div>
+
+      <div
+        className={[
+          "mb-4 overflow-hidden transition-all duration-300 ease-out",
+          showAdvancedFilters ? "max-h-40 opacity-100" : "max-h-0 opacity-0",
+        ].join(" ")}
+      >
+        <div className="flex flex-wrap gap-4">
+          <div className="space-y-2 sm:w-40">
+            <div className="flex items-center gap-1">
+              <Label htmlFor="log-reasoning" className="mb-0">
+                추론 토큰
+              </Label>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      id="log-reasoning-help"
+                      className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-muted-foreground/40 text-[10px] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                      aria-label="추론 토큰 설명"
+                    >
+                      <CircleHelp className="h-3 w-3" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" align="start">
+                    {reasoningTokensTooltipContent()}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+            <Select
+              value={reasoningFilter}
+              onValueChange={(v) => {
+                setLogsPage(0)
+                setReasoningFilter(v)
+              }}
+            >
+              <SelectTrigger id="log-reasoning" className="w-full">
+                <SelectValue placeholder="전체" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={LOG_REASONING_ALL}>전체</SelectItem>
+                <SelectItem value="present">있음</SelectItem>
+                <SelectItem value="absent">없음</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2 sm:w-40">
+            <Label htmlFor="log-success">성공</Label>
+            <Select
+              value={successFilter}
+              onValueChange={(v) => {
+                setLogsPage(0)
+                setSuccessFilter(v)
+              }}
+            >
+              <SelectTrigger id="log-success" className="w-full">
+                <SelectValue placeholder="전체" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={LOG_SUCCESS_ALL}>전체</SelectItem>
+                <SelectItem value="true">예</SelectItem>
+                <SelectItem value="false">아니오</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </div>
+
+      {hasAnyAdvancedFilter ? (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <p className="text-xs text-muted-foreground">적용된 필터링 조건</p>
+          {hasAdvancedSuccess ? (
+            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2.5 py-1 text-xs">
+              성공: {successFilter === "true" ? "예" : "아니오"}
+              <button
+                type="button"
+                className="inline-flex h-4 w-4 items-center justify-center rounded-full hover:bg-background"
+                onClick={() => {
+                  setLogsPage(0)
+                  setSuccessFilter(LOG_SUCCESS_ALL)
+                }}
+                aria-label="성공 필터 해제"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ) : null}
+          {hasAdvancedReasoning ? (
+            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2.5 py-1 text-xs">
+              추론 토큰: {reasoningFilter === "present" ? "있음" : "없음"}
+              <button
+                type="button"
+                className="inline-flex h-4 w-4 items-center justify-center rounded-full hover:bg-background"
+                onClick={() => {
+                  setLogsPage(0)
+                  setReasoningFilter(LOG_REASONING_ALL)
+                }}
+                aria-label="추론 토큰 필터 해제"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ) : null}
+        </div>
+      ) : null}
 
       {logsError ? (
         <p className="mb-4 text-sm text-destructive">{logsError}</p>
@@ -337,15 +428,15 @@ export function UsageLogPanel() {
       ) : (
         <>
           <div className="overflow-x-auto rounded-md border border-border">
-            <table className="w-full min-w-[1060px] text-left text-sm">
+            <table className="w-full min-w-[980px] table-auto text-left text-sm [&_th]:px-2.5 [&_td]:px-2.5">
               <thead className="border-b border-border bg-muted/40">
                 <tr>
-                  <th className="px-3 py-2 font-medium">시각 (KST)</th>
-                  <th className="px-3 py-2 font-medium">공급자</th>
-                  <th className="px-3 py-2 font-medium">별칭</th>
-                  <th className="px-3 py-2 font-medium">모델</th>
-                  <th className="px-3 py-2 font-medium">입력 토큰</th>
-                  <th className="px-3 py-2 font-medium">
+                  <th className="py-2 font-medium whitespace-nowrap">시각 (KST)</th>
+                  <th className="py-2 font-medium whitespace-nowrap">공급자</th>
+                  <th className="py-2 font-medium">별칭</th>
+                  <th className="py-2 font-medium">모델</th>
+                  <th className="py-2 font-medium whitespace-nowrap">입력 토큰</th>
+                  <th className="py-2 font-medium whitespace-nowrap">
                     <span className="inline-flex items-center gap-1">
                       추론 토큰
                       <TooltipProvider>
@@ -366,9 +457,29 @@ export function UsageLogPanel() {
                       </TooltipProvider>
                     </span>
                   </th>
-                  <th className="px-3 py-2 font-medium">출력 토큰</th>
-                  <th className="px-3 py-2 font-medium">합계</th>
-                  <th className="px-3 py-2 font-medium text-right">상세</th>
+                  <th className="py-2 font-medium whitespace-nowrap">
+                    <span className="inline-flex items-center gap-1">
+                      출력 토큰
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-muted-foreground/40 text-[10px] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                              aria-label="출력 토큰 설명"
+                            >
+                              <CircleHelp className="h-3 w-3" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" align="start">
+                            {outputTokensTooltipContent()}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </span>
+                  </th>
+                  <th className="py-2 font-medium whitespace-nowrap">합계</th>
+                  <th className="py-2 font-medium text-right whitespace-nowrap">상세</th>
                 </tr>
               </thead>
               <tbody>
@@ -376,8 +487,11 @@ export function UsageLogPanel() {
                   const isOpenAi = row.provider === "OPENAI"
                   const hasOpenAiDetails = isOpenAi && openAiDetailsSum(row) > 0
                   const ert = row.estimatedReasoningTokens
-                  const showReasoningBadge =
-                    typeof ert === "number" && Number.isFinite(ert) && ert > 0
+                  const reasoningDisplay = !row.requestSuccessful
+                    ? "-"
+                    : typeof ert === "number" && Number.isFinite(ert)
+                      ? String(ert)
+                      : "0"
                   return (
                     <tr
                       key={row.eventId}
@@ -399,36 +513,21 @@ export function UsageLogPanel() {
                         }
                       }}
                     >
-                    <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">
+                    <td className="py-2 font-mono text-xs whitespace-nowrap">
                       {formatOccurredAtKst(row.occurredAt)}
                     </td>
-                    <td className="px-3 py-2">{row.provider}</td>
-                    <td className="px-3 py-2 max-w-[200px] truncate" title={row.apiKeyAlias ?? undefined}>
+                    <td className="py-2 whitespace-nowrap">{row.provider}</td>
+                    <td className="py-2 max-w-[180px] truncate" title={row.apiKeyAlias ?? undefined}>
                       {row.apiKeyAlias ?? "—"}
                     </td>
-                    <td className="px-3 py-2 font-mono text-xs">{row.model}</td>
-                    <td className="px-3 py-2 tabular-nums">{row.promptTokens ?? "—"}</td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-2">
-                        {showReasoningBadge ? (
-                          row.provider === "OPENAI" ? (
-                            <span className="inline-flex items-center rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
-                              실제값
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                              추정치
-                            </span>
-                          )
-                        ) : null}
-                        <span className="tabular-nums">
-                          {typeof ert === "number" && Number.isFinite(ert) ? ert : "—"}
-                        </span>
-                      </div>
+                    <td className="py-2 max-w-[220px] truncate font-mono text-xs" title={row.model}>
+                      {row.model}
                     </td>
-                    <td className="px-3 py-2 tabular-nums">{row.completionTokens ?? "—"}</td>
-                    <td className="px-3 py-2 tabular-nums">{row.totalTokens ?? "—"}</td>
-                    <td className="px-3 py-2 text-right text-muted-foreground">
+                    <td className="py-2 tabular-nums whitespace-nowrap">{row.promptTokens ?? "—"}</td>
+                    <td className="py-2 tabular-nums whitespace-nowrap">{reasoningDisplay}</td>
+                    <td className="py-2 tabular-nums whitespace-nowrap">{row.completionTokens ?? "—"}</td>
+                    <td className="py-2 tabular-nums whitespace-nowrap">{row.totalTokens ?? "—"}</td>
+                    <td className="py-2 text-right text-muted-foreground">
                       {isOpenAi && hasOpenAiDetails ? (
                         <ChevronRight className="inline-block h-4 w-4" aria-label="상세보기" />
                       ) : (

@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { ChevronDown, ChevronUp } from "lucide-react"
 import {
   Bar,
   BarChart,
@@ -28,17 +29,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@ai-usage/ui"
-import { loadDashboardSummaryCache, saveDashboardSummaryCache } from "@/lib/usage/dashboard-summary-cache"
 import { buildUsageQuery, fetchUsageJson } from "@/lib/usage/fetch-usage"
 import { formatOccurredAtKst } from "@/lib/usage/format-occurred-at-kst"
 import { formatRequestCount, formatTokenCount, formatUsd, toNumber } from "@/lib/usage/format"
 import type {
   DailyUsagePoint,
-  HourlyUsagePoint,
   ModelUsageAggregate,
   MonthlyUsagePoint,
   UsageCostIntradayKpiResponse,
   UsageProviderFilter,
+  UsageSeriesPoint,
+  UsageSeriesUnit,
   UsageSummaryResponse,
 } from "@/lib/usage/types"
 import { addKstDays, formatKstIsoDate } from "@/lib/usage/kst-dates"
@@ -60,8 +61,12 @@ const PROVIDER_LABEL: Record<string, string> = {
 }
 
 const MONTHLY_LOOKBACK_DAYS = 365
+const MAX_RANGE_DAYS = 366
+const HISTORY_CACHE_TTL_MS = 60 * 60 * 1000
 
 const DASHBOARD_PROVIDER_ALL = "__ALL__"
+const DASHBOARD_PROVIDER_STORAGE_KEY = "usage-dashboard:provider:v1"
+const DASHBOARD_PERIOD_STORAGE_KEY = "usage-dashboard:period:v1"
 const MODEL_REQUESTS_TOP_N = 10
 const OTHERS_LABEL = "기타 (Others)"
 const OTHERS_BAR_COLOR = "#94a3b8"
@@ -98,6 +103,43 @@ function isProviderUnknownPlaceholderModel(model: string, provider: string): boo
 }
 
 type PeriodMode = "today" | "7d" | "30d" | "custom"
+type StoredDashboardPeriod = {
+  mode: PeriodMode
+  from: string
+  to: string
+}
+
+function isPeriodMode(v: unknown): v is PeriodMode {
+  return v === "today" || v === "7d" || v === "30d" || v === "custom"
+}
+
+function readStoredDashboardPeriod(todayIso: string): StoredDashboardPeriod {
+  if (typeof sessionStorage === "undefined") {
+    return { mode: "today", from: todayIso, to: todayIso }
+  }
+  try {
+    const raw = sessionStorage.getItem(DASHBOARD_PERIOD_STORAGE_KEY)
+    if (!raw) return { mode: "today", from: todayIso, to: todayIso }
+    const parsed = JSON.parse(raw) as Partial<StoredDashboardPeriod>
+    const mode = isPeriodMode(parsed.mode) ? parsed.mode : "today"
+    const from = typeof parsed.from === "string" && parsed.from.length > 0 ? parsed.from : todayIso
+    const to = typeof parsed.to === "string" && parsed.to.length > 0 ? parsed.to : todayIso
+    return { mode, from, to }
+  } catch {
+    return { mode: "today", from: todayIso, to: todayIso }
+  }
+}
+
+function readStoredDashboardProvider(): string {
+  if (typeof sessionStorage === "undefined") return DASHBOARD_PROVIDER_ALL
+  try {
+    const raw = sessionStorage.getItem(DASHBOARD_PROVIDER_STORAGE_KEY)
+    if (!raw) return DASHBOARD_PROVIDER_ALL
+    return raw
+  } catch {
+    return DASHBOARD_PROVIDER_ALL
+  }
+}
 
 function tooltipNumericValue(value: unknown): number {
   if (typeof value === "number") return value
@@ -115,7 +157,7 @@ function providerParam(v: string): UsageProviderFilter | undefined {
   return v as UsageProviderFilter
 }
 
-function rangeForPeriod(mode: PeriodMode, todayKst: string, customFrom: string, customTo: string) {
+function presetRangeForMode(mode: PeriodMode, todayKst: string) {
   switch (mode) {
     case "today":
       return { from: todayKst, to: todayKst }
@@ -123,8 +165,6 @@ function rangeForPeriod(mode: PeriodMode, todayKst: string, customFrom: string, 
       return { from: addKstDays(todayKst, -6), to: todayKst }
     case "30d":
       return { from: addKstDays(todayKst, -29), to: todayKst }
-    case "custom":
-      return { from: customFrom || todayKst, to: customTo || todayKst }
     default:
       return { from: todayKst, to: todayKst }
   }
@@ -146,38 +186,29 @@ function previousPeriodBounds(fromIso: string, toIso: string): { prevFrom: strin
   return { prevFrom, prevTo }
 }
 
-function kpiPeriodPrefix(mode: PeriodMode, fromIso: string, toIso: string): string {
-  switch (mode) {
-    case "today":
-      return "오늘의"
-    case "7d":
-      return "7일간"
-    case "30d":
-      return "30일간"
-    case "custom": {
-      const n = kstDaysInclusive(fromIso, toIso)
-      return `${n}일간`
-    }
-    default:
-      return "선택 기간"
-  }
+function kpiPeriodPrefix(fromIso: string, toIso: string, todayIso: string): string {
+  const n = kstDaysInclusive(fromIso, toIso)
+  if (n === 1 && fromIso === todayIso && toIso === todayIso) return "오늘의"
+  if (n === 7) return "7일간"
+  if (n === 30) return "30일간"
+  return `${n}일간`
 }
 
-function costCompareLabel(mode: PeriodMode, fromIso: string, toIso: string): string {
-  switch (mode) {
-    case "today":
-      return "전일 동기 대비"
-    case "7d":
-      return "이전 7일 대비"
-    case "30d":
-      return "이전 30일 대비"
-    case "custom": {
-      const n = kstDaysInclusive(fromIso, toIso)
-      return `이전 ${n}일 대비`
-    }
-    default:
-      return "이전 동일 기간 대비"
-  }
+function costCompareLabel(fromIso: string, toIso: string, todayIso: string): string {
+  const n = kstDaysInclusive(fromIso, toIso)
+  if (n === 1 && fromIso === todayIso && toIso === todayIso) return "전일 동기 대비"
+  return `이전 ${n}일 대비`
+}
+
+function diffDays(fromIso: string, toIso: string): number {
+  return Math.max(0, kstDaysInclusive(fromIso, toIso) - 1)
+}
+
+function resolveSeriesUnit(fromIso: string, toIso: string): UsageSeriesUnit {
+  const d = diffDays(fromIso, toIso)
+  if (d === 0) return "HOUR"
+  if (d <= 30) return "DAY"
+  return "MONTH"
 }
 
 /**
@@ -191,27 +222,6 @@ function percentCostChangeVsPrevious(current: number, previous: number): number 
     return 100
   }
   return 0
-}
-
-function dashboardProviderCacheKey(providerSelect: string): string {
-  return providerSelect === DASHBOARD_PROVIDER_ALL ? "ALL" : providerSelect
-}
-
-async function fetchDashboardSummaryCached(
-  fromIso: string,
-  toIso: string,
-  providerSelect: string,
-  queryWithLeadingQuestion: string,
-  signal: AbortSignal
-): Promise<UsageSummaryResponse> {
-  const key = dashboardProviderCacheKey(providerSelect)
-  const hit = loadDashboardSummaryCache(fromIso, toIso, key)
-  if (hit) return hit
-  const data = await fetchUsageJson<UsageSummaryResponse>(`dashboard/summary${queryWithLeadingQuestion}`, {
-    signal,
-  })
-  saveDashboardSummaryCache(fromIso, toIso, key, data)
-  return data
 }
 
 function hashToUint(str: string): number {
@@ -260,6 +270,7 @@ type TokenStackRow = {
   label: string
   model: string
   provider: string
+  isOthers?: boolean
   requests: number
   inputTokens: number
   estimatedReasoningTokens: number
@@ -593,23 +604,33 @@ const TOKEN_CHART_MIN_H = 280
 const TOKEN_CHART_MAX_H = 520
 
 export function UsageDashboard() {
-  const [periodMode, setPeriodMode] = React.useState<PeriodMode>("today")
-  const [customFrom, setCustomFrom] = React.useState("")
-  const [customTo, setCustomTo] = React.useState("")
-  const [dashProvider, setDashProvider] = React.useState<string>(DASHBOARD_PROVIDER_ALL)
+  const [periodMode, setPeriodMode] = React.useState<PeriodMode>(() => {
+    const t = formatKstIsoDate()
+    return readStoredDashboardPeriod(t).mode
+  })
+  const [customFrom, setCustomFrom] = React.useState(() => {
+    const t = formatKstIsoDate()
+    return readStoredDashboardPeriod(t).from
+  })
+  const [customTo, setCustomTo] = React.useState(() => {
+    const t = formatKstIsoDate()
+    return readStoredDashboardPeriod(t).to
+  })
+  const [dashProvider, setDashProvider] = React.useState<string>(() => readStoredDashboardProvider())
 
   const [mainLoading, setMainLoading] = React.useState(true)
   const [mainError, setMainError] = React.useState<string | null>(null)
   const [mainRefresh, setMainRefresh] = React.useState(0)
 
   const [costKpi, setCostKpi] = React.useState<UsageCostIntradayKpiResponse | null>(null)
-  const [hourly, setHourly] = React.useState<HourlyUsagePoint[] | null>(null)
+  const [mainSeries, setMainSeries] = React.useState<UsageSeriesPoint[]>([])
   const [kpiSummary, setKpiSummary] = React.useState<UsageSummaryResponse | null>(null)
   const [prevPeriodSummary, setPrevPeriodSummary] = React.useState<UsageSummaryResponse | null>(null)
   const [daily, setDaily] = React.useState<DailyUsagePoint[]>([])
   const [monthly, setMonthly] = React.useState<MonthlyUsagePoint[]>([])
   const [byModel, setByModel] = React.useState<ModelUsageAggregate[]>([])
-  const [isOthersModalOpen, setIsOthersModalOpen] = React.useState(false)
+  const [isOthersExpanded, setIsOthersExpanded] = React.useState(false)
+  const [isTokenOthersExpanded, setIsTokenOthersExpanded] = React.useState(false)
 
   /** API·KPI 라벨에 쓰는 구간(마지막으로 로드한 기준). effect 안에서만 갱신해 요청 간 날짜 불일치를 막는다. */
   const [loadedRange, setLoadedRange] = React.useState<{ from: string; to: string } | null>(null)
@@ -618,6 +639,37 @@ export function UsageDashboard() {
   React.useLayoutEffect(() => {
     setClientReady(true)
   }, [])
+
+  React.useEffect(() => {
+    if (!clientReady || periodMode === "custom") return
+    const t = formatKstIsoDate()
+    const { from, to } = presetRangeForMode(periodMode, t)
+    setCustomFrom(from)
+    setCustomTo(to)
+  }, [clientReady, periodMode])
+
+  React.useEffect(() => {
+    if (!clientReady || typeof sessionStorage === "undefined") return
+    try {
+      sessionStorage.setItem(DASHBOARD_PROVIDER_STORAGE_KEY, dashProvider)
+    } catch {
+      /* ignore quota/private mode */
+    }
+  }, [clientReady, dashProvider])
+
+  React.useEffect(() => {
+    if (!clientReady || typeof sessionStorage === "undefined") return
+    try {
+      const payload: StoredDashboardPeriod = {
+        mode: periodMode,
+        from: customFrom,
+        to: customTo,
+      }
+      sessionStorage.setItem(DASHBOARD_PERIOD_STORAGE_KEY, JSON.stringify(payload))
+    } catch {
+      /* ignore quota/private mode */
+    }
+  }, [clientReady, periodMode, customFrom, customTo])
 
   const kstTodayFallback = formatKstIsoDate()
   const rangeFrom = loadedRange?.from ?? kstTodayFallback
@@ -633,8 +685,18 @@ export function UsageDashboard() {
     ;(async () => {
       try {
         const t = formatKstIsoDate()
-        const { from: rf, to: rt } = rangeForPeriod(periodMode, t, customFrom, customTo)
+        const rf = customFrom || t
+        const rt = customTo || t
+        if (Date.parse(`${rt}T12:00:00+09:00`) < Date.parse(`${rf}T12:00:00+09:00`)) {
+          throw new Error("종료일은 시작일보다 빠를 수 없습니다.")
+        }
+        const rangeDays = kstDaysInclusive(rf, rt)
+        if (rangeDays > MAX_RANGE_DAYS) {
+          throw new Error("조회 기간은 최대 1년(366일)까지 가능합니다.")
+        }
         const { prevFrom: pf, prevTo: pt } = previousPeriodBounds(rf, rt)
+        const seriesUnit = resolveSeriesUnit(rf, rt)
+        const isCurrentDayRange = rf === t && rt === t
 
         const fy = addKstDays(t, -MONTHLY_LOOKBACK_DAYS)
         const pq = buildUsageQuery({ provider: providerParam(dashProvider) })
@@ -648,58 +710,47 @@ export function UsageDashboard() {
           to: pt,
           provider: providerParam(dashProvider),
         })
+        const qMainSeries = buildUsageQuery({
+          from: rf,
+          to: rt,
+          unit: seriesUnit,
+          provider: providerParam(dashProvider),
+        })
 
-        const opt = { signal }
-        const summaryP = fetchDashboardSummaryCached(rf, rt, dashProvider, qRange, signal)
-        const summaryPrevP = fetchDashboardSummaryCached(pf, pt, dashProvider, qPrev, signal)
-        const dailyP = fetchUsageJson<DailyUsagePoint[]>(`dashboard/series/daily${qRange}`, opt)
+        const fetchPolicy = isCurrentDayRange
+          ? { signal, cacheMode: "no-store" as const, clientCacheTtlMs: 0 }
+          : { signal, cacheMode: "default" as const, clientCacheTtlMs: HISTORY_CACHE_TTL_MS }
+
+        const summaryP = fetchUsageJson<UsageSummaryResponse>(`dashboard/summary${qRange}`, fetchPolicy)
+        const summaryPrevP = fetchUsageJson<UsageSummaryResponse>(`dashboard/summary${qPrev}`, fetchPolicy)
+        const mainSeriesP = fetchUsageJson<UsageSeriesPoint[]>(`dashboard/series${qMainSeries}`, fetchPolicy)
+        const dailyP = fetchUsageJson<DailyUsagePoint[]>(`dashboard/series/daily${qRange}`, fetchPolicy)
         const monthlyP = fetchUsageJson<MonthlyUsagePoint[]>(
           `dashboard/series/monthly${buildUsageQuery({ from: fy, to: rt, provider: providerParam(dashProvider) })}`,
-          opt
+          fetchPolicy
         )
-        const byModelP = fetchUsageJson<ModelUsageAggregate[]>(`dashboard/by-model${qRange}`, opt)
+        const byModelP = fetchUsageJson<ModelUsageAggregate[]>(`dashboard/by-model${qRange}`, fetchPolicy)
 
-        if (periodMode === "today") {
-          const [kpi, h, cur, prev, d, m, bm] = await Promise.all([
-            fetchUsageJson<UsageCostIntradayKpiResponse>(`dashboard/kpi/cost-intraday${pq}`, opt),
-            fetchUsageJson<HourlyUsagePoint[]>(
-              `dashboard/series/hourly${buildUsageQuery({ date: t, provider: providerParam(dashProvider) })}`,
-              opt
-            ),
-            summaryP,
-            summaryPrevP,
-            dailyP,
-            monthlyP,
-            byModelP,
-          ])
-          if (!cancelled) {
-            setLoadedRange({ from: rf, to: rt })
-            setCostKpi(kpi)
-            setHourly(Array.isArray(h) ? h : [])
-            setKpiSummary(cur)
-            setPrevPeriodSummary(prev)
-            setDaily(Array.isArray(d) ? d : [])
-            setMonthly(Array.isArray(m) ? m : [])
-            setByModel(Array.isArray(bm) ? bm : [])
-          }
-        } else {
-          const [cur, prev, d, m, bm] = await Promise.all([
-            summaryP,
-            summaryPrevP,
-            dailyP,
-            monthlyP,
-            byModelP,
-          ])
-          if (!cancelled) {
-            setLoadedRange({ from: rf, to: rt })
-            setCostKpi(null)
-            setHourly(null)
-            setKpiSummary(cur)
-            setPrevPeriodSummary(prev)
-            setDaily(Array.isArray(d) ? d : [])
-            setMonthly(Array.isArray(m) ? m : [])
-            setByModel(Array.isArray(bm) ? bm : [])
-          }
+        const [cur, prev, seriesRows, d, m, bm, maybeKpi] = await Promise.all([
+          summaryP,
+          summaryPrevP,
+          mainSeriesP,
+          dailyP,
+          monthlyP,
+          byModelP,
+          isCurrentDayRange
+            ? fetchUsageJson<UsageCostIntradayKpiResponse>(`dashboard/kpi/cost-intraday${pq}`, fetchPolicy)
+            : Promise.resolve(null),
+        ])
+        if (!cancelled) {
+          setLoadedRange({ from: rf, to: rt })
+          setCostKpi(maybeKpi)
+          setMainSeries(Array.isArray(seriesRows) ? seriesRows : [])
+          setKpiSummary(cur)
+          setPrevPeriodSummary(prev)
+          setDaily(Array.isArray(d) ? d : [])
+          setMonthly(Array.isArray(m) ? m : [])
+          setByModel(Array.isArray(bm) ? bm : [])
         }
       } catch (e) {
         if (isAbortError(e)) return
@@ -734,32 +785,32 @@ export function UsageDashboard() {
     [daily]
   )
 
-  const hourlyChart = React.useMemo(
-    (): MainStabilityRow[] =>
-      (hourly ?? []).map((row) => ({
-        label: `${row.hour}시`,
-        requestCount: row.requestCount,
-        successCount: Math.max(0, row.requestCount - row.errorCount),
-        errorCount: row.errorCount,
-        successRate: row.requestCount > 0 ? (100 * (row.requestCount - row.errorCount)) / row.requestCount : 0,
-        errorRate: row.requestCount > 0 ? (100 * row.errorCount) / row.requestCount : 0,
-      })),
-    [hourly]
-  )
+  const mainChartUnit = React.useMemo(() => resolveSeriesUnit(rangeFrom, rangeTo), [rangeFrom, rangeTo])
 
   const mainStabilitySeries = React.useMemo((): MainStabilityRow[] => {
-    if (periodMode === "today") {
-      return hourlyChart.length > 0 ? hourlyChart : emptyHourlyStabilityRows()
-    }
-    return dailyChart.length > 0 ? dailyChart : emptyDailyStabilityRows(rangeFrom, rangeTo)
-  }, [periodMode, hourlyChart, dailyChart, rangeFrom, rangeTo])
+    const fromSeries = mainSeries.map((row) => {
+      const successCount = Math.max(0, row.requestCount - row.errorCount)
+      const successRate = row.requestCount > 0 ? (100 * successCount) / row.requestCount : 0
+      const errorRate = row.requestCount > 0 ? (100 * row.errorCount) / row.requestCount : 0
+      const label = mainChartUnit === "HOUR" ? row.bucketLabel.replace(":00", "시") : row.bucketLabel
+      return {
+        label,
+        requestCount: row.requestCount,
+        successCount,
+        errorCount: row.errorCount,
+        successRate,
+        errorRate,
+      }
+    })
+    if (fromSeries.length > 0) return fromSeries
+    if (mainChartUnit === "HOUR") return emptyHourlyStabilityRows()
+    if (mainChartUnit === "DAY") return dailyChart.length > 0 ? dailyChart : emptyDailyStabilityRows(rangeFrom, rangeTo)
+    return []
+  }, [mainSeries, mainChartUnit, dailyChart, rangeFrom, rangeTo])
 
   const mainStabilityNoRequests = React.useMemo(() => {
-    if (periodMode === "today") {
-      return !(hourly ?? []).some((h) => h.requestCount > 0)
-    }
-    return !daily.some((d) => d.requestCount > 0)
-  }, [periodMode, hourly, daily])
+    return !mainSeries.some((row) => row.requestCount > 0)
+  }, [mainSeries])
 
   const monthlyChart = React.useMemo(
     () =>
@@ -819,16 +870,6 @@ export function UsageDashboard() {
   )
   const isProviderPiePlaceholder = providerPieData.length === 0
 
-  const modelPieLegendPayload = React.useMemo(
-    () =>
-      pieData.map((entry) => ({
-        value: entry.name,
-        type: "square" as const,
-        color: colorForModel(entry.fullName, entry.provider),
-      })),
-    [pieData]
-  )
-
   const providerPieLegendPayload = React.useMemo(
     () =>
       providerPieData.map((entry) => ({
@@ -875,52 +916,79 @@ export function UsageDashboard() {
       (modelBarRows.find((r) => r.isOthers)?.members ?? []).slice().sort((a, b) => b.requests - a.requests),
     [modelBarRows]
   )
+  const othersMaxRequests = React.useMemo(
+    () => Math.max(...othersRows.map((item) => item.requests), 1),
+    [othersRows]
+  )
+  const othersTotalRequests = React.useMemo(
+    () => Math.max(othersRows.reduce((sum, item) => sum + item.requests, 0), 1),
+    [othersRows]
+  )
 
   const modelBarDisplayRows = React.useMemo(
     () => (modelBarRows.length > 0 ? modelBarRows : PLACEHOLDER_MODEL_BAR_ROW),
     [modelBarRows]
   )
 
-  React.useEffect(() => {
-    if (!isOthersModalOpen) return
-    const prev = document.body.style.overflow
-    document.body.style.overflow = "hidden"
-    return () => {
-      document.body.style.overflow = prev
-    }
-  }, [isOthersModalOpen])
+  const tokenTotalOf = React.useCallback(
+    (m: ModelUsageAggregate) => m.inputTokens + m.estimatedReasoningTokens + m.outputTokens,
+    []
+  )
 
-  const tokenStackRows = React.useMemo((): TokenStackRow[] => {
-    const totalTokensOf = (m: ModelUsageAggregate) =>
-      m.inputTokens + m.estimatedReasoningTokens + m.outputTokens
+  const tokenStackSortedModels = React.useMemo(() => {
     const forTokenChart = byModel.filter((m) => !isProviderUnknownPlaceholderModel(m.model, m.provider))
-    const sorted = [...forTokenChart].sort((a, b) => {
-      const byTotal = totalTokensOf(b) - totalTokensOf(a)
+    return [...forTokenChart].sort((a, b) => {
+      const byTotal = tokenTotalOf(b) - tokenTotalOf(a)
       if (byTotal !== 0) return byTotal
       const byProvider = tokenStackProviderTieRank(a.provider) - tokenStackProviderTieRank(b.provider)
       if (byProvider !== 0) return byProvider
       return a.model.localeCompare(b.model, "en")
     })
+  }, [byModel, tokenTotalOf])
+
+  const tokenStackOthersMembers = React.useMemo(
+    () => tokenStackSortedModels.slice(MODEL_REQUESTS_TOP_N),
+    [tokenStackSortedModels]
+  )
+
+  const tokenStackRows = React.useMemo((): TokenStackRow[] => {
+    const sorted = [...tokenStackSortedModels]
+    const othersMembers = sorted.slice(MODEL_REQUESTS_TOP_N)
+    const top = othersMembers.length > 0 ? sorted.slice(0, MODEL_REQUESTS_TOP_N) : sorted
+
+    if (othersMembers.length > 0) {
+      const othersAggregated: ModelUsageAggregate = {
+        model: "__OTHERS_TOKENS__",
+        provider: "OTHERS",
+        requestCount: othersMembers.reduce((sum, m) => sum + m.requestCount, 0),
+        inputTokens: othersMembers.reduce((sum, m) => sum + m.inputTokens, 0),
+        estimatedReasoningTokens: othersMembers.reduce((sum, m) => sum + m.estimatedReasoningTokens, 0),
+        outputTokens: othersMembers.reduce((sum, m) => sum + m.outputTokens, 0),
+      }
+      top.push(othersAggregated)
+    }
+
     let grandIn = 0
     let grandEstimatedReasoning = 0
     let grandOut = 0
-    for (const m of sorted) {
+    for (const m of top) {
       grandIn += m.inputTokens
       grandEstimatedReasoning += m.estimatedReasoningTokens
       grandOut += m.outputTokens
     }
     const grandTotal = grandIn + grandEstimatedReasoning + grandOut
-    return sorted.map((m) => {
-      const base = colorForModel(m.model, m.provider)
+    return top.map((m) => {
+      const base = m.provider === "OTHERS" ? OTHERS_BAR_COLOR : colorForModel(m.model, m.provider)
       const rc = m.requestCount
       const inT = m.inputTokens
       const estimatedReasoningT = m.estimatedReasoningTokens
       const outT = m.outputTokens
       const total = inT + estimatedReasoningT + outT
       return {
-        label: truncateModelLabel(m.model),
+        label: m.provider === "OTHERS" ? OTHERS_LABEL : truncateModelLabel(m.model),
         model: m.model,
         provider: m.provider,
+        isOthers: m.provider === "OTHERS",
         requests: rc,
         inputTokens: inT,
         estimatedReasoningTokens: estimatedReasoningT,
@@ -940,7 +1008,25 @@ export function UsageDashboard() {
         fillOutput: rgbaFromHex(base, 1),
       }
     })
-  }, [byModel])
+  }, [tokenStackSortedModels])
+
+  const tokenOthersRows = React.useMemo(
+    () =>
+      tokenStackOthersMembers.map((m) => ({
+        model: m.model,
+        provider: m.provider,
+        totalTokens: tokenTotalOf(m),
+      })),
+    [tokenStackOthersMembers, tokenTotalOf]
+  )
+  const tokenOthersMax = React.useMemo(
+    () => Math.max(...tokenOthersRows.map((row) => row.totalTokens), 1),
+    [tokenOthersRows]
+  )
+  const tokenOthersTotal = React.useMemo(
+    () => Math.max(tokenOthersRows.reduce((sum, row) => sum + row.totalTokens, 0), 1),
+    [tokenOthersRows]
+  )
 
   const tokenStackDisplayRows = React.useMemo(
     () => (tokenStackRows.length > 0 ? tokenStackRows : [EMPTY_TOKEN_STACK_DISPLAY_ROW]),
@@ -978,15 +1064,18 @@ export function UsageDashboard() {
     daily.length > 0 ||
     monthly.length > 0 ||
     byModel.some((m) => m.requestCount > 0) ||
-    (hourly && hourly.some((h) => h.requestCount > 0))
+    mainSeries.some((r) => r.requestCount > 0)
 
-  const periodPrefix = kpiPeriodPrefix(periodMode, rangeFrom, rangeTo)
-  const compareCostLabel = costCompareLabel(periodMode, rangeFrom, rangeTo)
+  const todayKst = formatKstIsoDate()
+  const periodPrefix = kpiPeriodPrefix(rangeFrom, rangeTo, todayKst)
+  const compareCostLabel = costCompareLabel(rangeFrom, rangeTo, todayKst)
 
   const rangeCost = kpiSummary ? toNumber(kpiSummary.totalEstimatedCost) : 0
   /** 오늘 선택 시 카드 금액은 intraday KPI와 동일 기준(전일 동시창 비교와 일치). */
   const displayedTotalCostUsd =
-    periodMode === "today" && costKpi != null ? toNumber(costKpi.todayEstimatedCostUsd) : rangeCost
+    mainChartUnit === "HOUR" && rangeFrom === todayKst && rangeTo === todayKst && costKpi != null
+      ? toNumber(costKpi.todayEstimatedCostUsd)
+      : rangeCost
   const rangeRequests = kpiSummary?.totalRequests ?? 0
   const rangeTokens = kpiSummary?.totalInputTokens ?? 0
   const rangeErrors = kpiSummary?.totalErrors ?? 0
@@ -998,7 +1087,7 @@ export function UsageDashboard() {
   const prevCostForCompare = prevPeriodSummary ? toNumber(prevPeriodSummary.totalEstimatedCost) : 0
 
   const costChangePercent = React.useMemo(() => {
-    if (periodMode === "today" && costKpi != null) {
+    if (mainChartUnit === "HOUR" && rangeFrom === todayKst && rangeTo === todayKst && costKpi != null) {
       const apiRate = costKpi.changeRatePercent
       if (apiRate != null && apiRate !== "") {
         return toNumber(apiRate)
@@ -1008,7 +1097,7 @@ export function UsageDashboard() {
       return percentCostChangeVsPrevious(todayWindow, yesterdayWindow)
     }
     return percentCostChangeVsPrevious(rangeCost, prevCostForCompare)
-  }, [periodMode, costKpi, rangeCost, prevCostForCompare])
+  }, [mainChartUnit, rangeFrom, rangeTo, todayKst, costKpi, rangeCost, prevCostForCompare])
 
   const monthlyHasActivity = monthlyChart.some((r) => r.requestCount > 0)
 
@@ -1021,7 +1110,11 @@ export function UsageDashboard() {
   )
 
   const mainChartTitle =
-    periodMode === "today" ? "시간별 요청·성공률·오류율 (오늘 KST)" : "일별 요청·성공률·오류율 (선택 기간)"
+    mainChartUnit === "HOUR"
+      ? "시간별 요청·성공률·오류율"
+      : mainChartUnit === "DAY"
+        ? "일별 요청·성공률·오류율"
+        : "월별 요청·성공률·오류율"
 
   const rateAxisDomain = React.useMemo(
     () => stabilityRateDomain(mainStabilitySeries),
@@ -1063,7 +1156,16 @@ export function UsageDashboard() {
           <Label htmlFor="dash-period">기간</Label>
           <Select
             value={periodMode}
-            onValueChange={(v) => setPeriodMode(v as PeriodMode)}
+            onValueChange={(v) => {
+              const nextMode = v as PeriodMode
+              setPeriodMode(nextMode)
+              if (nextMode !== "custom") {
+                const t = formatKstIsoDate()
+                const nextRange = presetRangeForMode(nextMode, t)
+                setCustomFrom(nextRange.from)
+                setCustomTo(nextRange.to)
+              }
+            }}
           >
             <SelectTrigger id="dash-period">
               <SelectValue />
@@ -1078,24 +1180,27 @@ export function UsageDashboard() {
         </div>
 
         {periodMode === "custom" ? (
-          <div className="flex flex-wrap gap-3">
-            <div className="space-y-2">
-              <Label htmlFor="custom-from">시작</Label>
-              <Input
-                id="custom-from"
-                type="date"
-                value={customFrom}
-                onChange={(e) => setCustomFrom(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="custom-to">종료</Label>
-              <Input
-                id="custom-to"
-                type="date"
-                value={customTo}
-                onChange={(e) => setCustomTo(e.target.value)}
-              />
+          <div className="flex min-w-[18rem] flex-col gap-2 lg:pb-0.5">
+            <p className="text-xs text-muted-foreground">기간 지정 조회는 최대 1년(366일)까지 가능합니다.</p>
+            <div className="flex flex-wrap gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="custom-from">시작</Label>
+                <Input
+                  id="custom-from"
+                  type="date"
+                  value={customFrom}
+                  onChange={(e) => setCustomFrom(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="custom-to">종료</Label>
+                <Input
+                  id="custom-to"
+                  type="date"
+                  value={customTo}
+                  onChange={(e) => setCustomTo(e.target.value)}
+                />
+              </div>
             </div>
           </div>
         ) : null}
@@ -1139,7 +1244,7 @@ export function UsageDashboard() {
                   {costChangePercent.toFixed(1)}%
                 </span>
               </p>
-              {periodMode === "today" && costKpi ? (
+              {mainChartUnit === "HOUR" && rangeFrom === todayKst && rangeTo === todayKst && costKpi ? (
                 <p className="mt-1 text-[11px] text-muted-foreground leading-snug">
                   기준 {formatOccurredAtKst(costKpi.comparisonWindowEnd)} (KST)
                 </p>
@@ -1227,48 +1332,75 @@ export function UsageDashboard() {
             ) : null}
           </section>
 
-          <div className="mb-8 grid gap-5 lg:grid-cols-2 lg:gap-6">
-            <section className="rounded-lg border border-border p-4 shadow-sm">
+          <div className="mb-8 grid gap-5 lg:grid-cols-3 lg:gap-6">
+            <section className="rounded-lg border border-border p-4 shadow-sm lg:col-span-2">
               <h2 className="mb-4 text-lg font-medium">모델별 요청 비중</h2>
-              <div className="h-[320px] min-h-[320px] w-full min-w-0">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={modelPieChartData}
-                      dataKey="value"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      innerRadius="52%"
-                      outerRadius="80%"
-                      paddingAngle={2}
-                      isAnimationActive={!isModelPiePlaceholder}
-                      label={false}
-                    >
-                      {modelPieChartData.map((entry, i) => (
-                        <Cell
-                          key={`m-${entry.fullName}-${i}`}
-                          fill={
-                            isModelPiePlaceholder
-                              ? "var(--border)"
-                              : colorForModel(entry.fullName, entry.provider)
-                          }
-                          fillOpacity={isModelPiePlaceholder ? 0.35 : 1}
-                          style={{ cursor: "default" }}
-                        />
+              <div className="flex min-h-[320px] items-stretch gap-4">
+                <div className="flex h-[320px] w-[320px] shrink-0 items-center justify-center rounded-md border border-border/70 bg-card/30 p-2">
+                  <div className="h-[280px] w-[280px] shrink-0">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={modelPieChartData}
+                          dataKey="value"
+                          nameKey="name"
+                          cx="50%"
+                          cy="50%"
+                          innerRadius="52%"
+                          outerRadius="80%"
+                          paddingAngle={2}
+                          isAnimationActive={!isModelPiePlaceholder}
+                          label={isModelPiePlaceholder ? false : ({ index }) => String((index ?? 0) + 1)}
+                        >
+                          {modelPieChartData.map((entry, i) => (
+                            <Cell
+                              key={`m-${entry.fullName}-${i}`}
+                              fill={
+                                isModelPiePlaceholder
+                                  ? "var(--border)"
+                                  : colorForModel(entry.fullName, entry.provider)
+                              }
+                              fillOpacity={isModelPiePlaceholder ? 0.35 : 1}
+                              style={{ cursor: "default" }}
+                            />
+                          ))}
+                        </Pie>
+                        <Tooltip content={ModelDonutTooltip} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+                <div className="flex-1 max-h-[320px] overflow-y-auto p-1">
+                  {isModelPiePlaceholder ? (
+                    <p className="text-sm text-muted-foreground">집계 데이터 없음</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {pieData.map((entry, i) => (
+                        <div
+                          key={`legend-model-${entry.fullName}-${i}`}
+                          className="flex items-center gap-2 rounded px-1 py-1 text-sm"
+                          title={entry.fullName}
+                        >
+                          <span className="w-5 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+                            {i + 1}.
+                          </span>
+                          <span
+                            className="h-2.5 w-2.5 shrink-0 rounded-sm"
+                            style={{ backgroundColor: colorForModel(entry.fullName, entry.provider) }}
+                          />
+                          <span className="min-w-0 flex-1 truncate">{entry.fullName}</span>
+                          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                            {(entry.percent * 100).toFixed(1)}%
+                          </span>
+                        </div>
                       ))}
-                    </Pie>
-                    <Tooltip content={ModelDonutTooltip} />
-                    {!isModelPiePlaceholder ? <AnyLegend payload={modelPieLegendPayload} /> : null}
-                  </PieChart>
-                </ResponsiveContainer>
+                    </div>
+                  )}
+                </div>
               </div>
-              {isModelPiePlaceholder ? (
-                <p className="mt-2 text-center text-sm text-muted-foreground">집계 데이터 없음</p>
-              ) : null}
             </section>
 
-            <section className="rounded-lg border border-border p-4 shadow-sm">
+            <section className="rounded-lg border border-border p-4 shadow-sm lg:col-span-1">
               <h2 className="mb-4 text-lg font-medium">공급사별 요청 비중</h2>
               <div className="h-[320px] min-h-[320px] w-full min-w-0">
                 <ResponsiveContainer width="100%" height="100%">
@@ -1307,8 +1439,10 @@ export function UsageDashboard() {
                 <p className="mt-2 text-center text-sm text-muted-foreground">집계 데이터 없음</p>
               ) : null}
             </section>
+          </div>
 
-            <section className="rounded-lg border border-border p-4 shadow-sm lg:col-span-2">
+          <div className="mb-8">
+            <section className="rounded-lg border border-border p-4 shadow-sm">
               <h2 className="mb-4 text-lg font-medium">모델별 요청 수 (가로)</h2>
               <div className="h-[320px] min-h-[320px] w-full max-w-full min-w-0">
                 <ResponsiveContainer width="100%" height="100%">
@@ -1325,7 +1459,7 @@ export function UsageDashboard() {
                       onClick={(_, index) => {
                         if (modelBarRows.length === 0) return
                         const row = modelBarDisplayRows[index]
-                        if (row?.isOthers) setIsOthersModalOpen(true)
+                        if (row?.isOthers) setIsOthersExpanded((prev) => !prev)
                       }}
                     >
                       {modelBarDisplayRows.map((row) => (
@@ -1357,13 +1491,57 @@ export function UsageDashboard() {
               ) : null}
               {modelBarRows.length > 0 ? (
                 <p className="mt-3 text-xs text-muted-foreground">
-                  기타 막대를 클릭하여 전체 상세 내역을 확인하세요.
+                  기타 막대를 클릭하면 하단에 상세 미니 차트가 펼쳐집니다.
                 </p>
               ) : null}
+              <div
+                className={[
+                  "mt-3 overflow-hidden rounded-md border border-border/70 bg-muted/20 transition-all duration-300 ease-out",
+                  isOthersExpanded ? "max-h-[24rem] opacity-100" : "max-h-0 opacity-0 border-transparent",
+                ].join(" ")}
+              >
+                {othersRows.length === 0 ? null : (
+                  <div className="p-3">
+                    <button
+                      type="button"
+                      onClick={() => setIsOthersExpanded((prev) => !prev)}
+                      className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-foreground"
+                    >
+                      {isOthersExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                      기타 모델 상세 내역
+                    </button>
+                    <div className="space-y-2">
+                      {othersRows.map((row) => {
+                        const widthPct = Math.max(4, Math.round((row.requests / othersMaxRequests) * 100))
+                        const sharePct = (row.requests / othersTotalRequests) * 100
+                        return (
+                          <div key={`${row.provider}:${row.model}`} className="grid grid-cols-[minmax(0,1fr)_9rem] gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium" title={row.model}>
+                                {row.model}
+                              </p>
+                              <p className="text-[11px] text-muted-foreground">{labelForProviderCode(row.provider)}</p>
+                              <div className="mt-1 h-2 w-full rounded bg-muted">
+                                <div
+                                  className="h-2 rounded bg-slate-500/80"
+                                  style={{ width: `${widthPct}%` }}
+                                />
+                              </div>
+                            </div>
+                            <p className="self-end text-right text-xs tabular-nums text-muted-foreground">
+                              {formatRequestCount(row.requests)} ({sharePct.toFixed(1)}%)
+                            </p>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
             </section>
           </div>
 
-          <section className="mb-8 rounded-lg border border-border bg-card p-4 shadow-sm min-w-0">
+          <section className="mb-8 w-full rounded-lg border border-border bg-card p-4 shadow-sm min-w-0">
             <h2 className="mb-4 text-lg font-medium">모델별 토큰 사용량</h2>
             <>
               <div
@@ -1385,7 +1563,17 @@ export function UsageDashboard() {
                     <YAxis type="category" dataKey="label" width={128} tick={{ fontSize: 11 }} />
                     <Tooltip content={TokenStackTooltip} cursor={{ fill: "var(--muted)", fillOpacity: 0.12 }} />
                     <AnyLegend payload={tokenStackLegendPayload} />
-                    <Bar stackId="tokens" dataKey="inputTokens" name="입력 토큰" radius={[4, 0, 0, 4]}>
+                    <Bar
+                      stackId="tokens"
+                      dataKey="inputTokens"
+                      name="입력 토큰"
+                      radius={[4, 0, 0, 4]}
+                      onClick={(_, index) => {
+                        if (tokenStackRows.length === 0) return
+                        const row = tokenStackDisplayRows[index]
+                        if (row?.isOthers) setIsTokenOthersExpanded((prev) => !prev)
+                      }}
+                    >
                       {tokenStackDisplayRows.map((row) => (
                         <Cell
                           key={`stk-in-${row.model}`}
@@ -1394,7 +1582,16 @@ export function UsageDashboard() {
                         />
                       ))}
                     </Bar>
-                    <Bar stackId="tokens" dataKey="estimatedReasoningTokens" name="추정 추론 토큰">
+                    <Bar
+                      stackId="tokens"
+                      dataKey="estimatedReasoningTokens"
+                      name="추정 추론 토큰"
+                      onClick={(_, index) => {
+                        if (tokenStackRows.length === 0) return
+                        const row = tokenStackDisplayRows[index]
+                        if (row?.isOthers) setIsTokenOthersExpanded((prev) => !prev)
+                      }}
+                    >
                       {tokenStackDisplayRows.map((row) => (
                         <Cell
                           key={`stk-reason-${row.model}`}
@@ -1403,7 +1600,17 @@ export function UsageDashboard() {
                         />
                       ))}
                     </Bar>
-                    <Bar stackId="tokens" dataKey="outputTokens" name="출력 토큰" radius={[0, 4, 4, 0]}>
+                    <Bar
+                      stackId="tokens"
+                      dataKey="outputTokens"
+                      name="출력 토큰"
+                      radius={[0, 4, 4, 0]}
+                      onClick={(_, index) => {
+                        if (tokenStackRows.length === 0) return
+                        const row = tokenStackDisplayRows[index]
+                        if (row?.isOthers) setIsTokenOthersExpanded((prev) => !prev)
+                      }}
+                    >
                       {tokenStackDisplayRows.map((row) => (
                         <Cell
                           key={`stk-out-${row.model}`}
@@ -1426,9 +1633,57 @@ export function UsageDashboard() {
               ) : null}
               {tokenStackRows.length > 0 ? (
                 <p className="mt-3 text-xs text-muted-foreground">
-                  ※ &apos;추정 추론 토큰&apos;은 API에서 별도로 구분되지 않는 시스템/추론 토큰의 합산 추정치입니다.
+                  기타 막대를 클릭하면 하단에 상세 미니 차트가 펼쳐집니다.
                 </p>
               ) : null}
+              <div
+                className={[
+                  "mt-3 overflow-hidden rounded-md border border-border/70 bg-muted/20 transition-all duration-300 ease-out",
+                  isTokenOthersExpanded ? "max-h-[24rem] opacity-100" : "max-h-0 opacity-0 border-transparent",
+                ].join(" ")}
+              >
+                {tokenOthersRows.length === 0 ? null : (
+                  <div className="p-3">
+                    <button
+                      type="button"
+                      onClick={() => setIsTokenOthersExpanded((prev) => !prev)}
+                      className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-foreground"
+                    >
+                      {isTokenOthersExpanded ? (
+                        <ChevronUp className="h-4 w-4" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4" />
+                      )}
+                      기타 모델 토큰 상세 내역
+                    </button>
+                    <div className="space-y-2">
+                      {tokenOthersRows.map((row) => {
+                        const widthPct = Math.max(4, Math.round((row.totalTokens / tokenOthersMax) * 100))
+                        const sharePct = (row.totalTokens / tokenOthersTotal) * 100
+                        return (
+                          <div key={`${row.provider}:${row.model}`} className="grid grid-cols-[minmax(0,1fr)_10.5rem] gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium" title={row.model}>
+                                {row.model}
+                              </p>
+                              <p className="text-[11px] text-muted-foreground">{labelForProviderCode(row.provider)}</p>
+                              <div className="mt-1 h-2 w-full rounded bg-muted">
+                                <div
+                                  className="h-2 rounded bg-slate-500/80"
+                                  style={{ width: `${widthPct}%` }}
+                                />
+                              </div>
+                            </div>
+                            <p className="self-end text-right text-xs tabular-nums text-muted-foreground">
+                              {formatTokenCount(row.totalTokens)} ({sharePct.toFixed(1)}%)
+                            </p>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
             </>
           </section>
 
@@ -1458,48 +1713,6 @@ export function UsageDashboard() {
           </section>
         </>
       )}
-      {isOthersModalOpen ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
-          onClick={() => setIsOthersModalOpen(false)}
-          role="presentation"
-        >
-          <div
-            className="w-full max-w-2xl rounded-lg border border-border bg-card shadow-xl"
-            role="dialog"
-            aria-modal="true"
-            aria-label="기타 모델 상세 내역"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-border px-4 py-3">
-              <h3 className="text-sm font-semibold">기타 모델 상세 내역</h3>
-              <Button type="button" variant="outline" size="sm" onClick={() => setIsOthersModalOpen(false)}>
-                닫기
-              </Button>
-            </div>
-            <div className="max-h-[60vh] overflow-y-auto px-4 py-3">
-              {othersRows.length === 0 ? (
-                <p className="text-sm text-muted-foreground">표시할 상세 항목이 없습니다.</p>
-              ) : (
-                <div className="space-y-2">
-                  {othersRows.map((row) => (
-                    <div
-                      key={`${row.provider}:${row.model}`}
-                      className="flex items-center justify-between rounded-md border border-border/70 px-3 py-2 text-sm"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate font-medium">{row.model}</p>
-                        <p className="text-xs text-muted-foreground">{labelForProviderCode(row.provider)}</p>
-                      </div>
-                      <p className="tabular-nums text-muted-foreground">{formatRequestCount(row.requests)}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   )
 }
