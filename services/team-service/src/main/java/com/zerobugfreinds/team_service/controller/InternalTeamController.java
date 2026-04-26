@@ -2,6 +2,7 @@ package com.zerobugfreinds.team_service.controller;
 
 import com.zerobugfreinds.team_service.common.ApiResponse;
 import com.zerobugfreinds.team_service.dto.InternalBillingTeamSummaryResponse;
+import com.zerobugfreinds.team_service.dto.InternalTeamMembershipVerifyResponse;
 import com.zerobugfreinds.team_service.dto.InternalTeamDetailResponse;
 import com.zerobugfreinds.team_service.service.TeamService;
 import org.springframework.http.ResponseEntity;
@@ -14,6 +15,7 @@ import java.util.List;
 
 /**
  * 내부 서비스 간 호출용 팀 조회 API.
+ * 외부 Gateway 라우트에서는 노출하지 않는 Internal 전용 엔드포인트다.
  */
 @RestController
 @RequestMapping("/internal")
@@ -39,5 +41,14 @@ public class InternalTeamController {
 	) {
 		List<InternalBillingTeamSummaryResponse> summaries = teamService.getBillingTeamSummariesInternal(userId);
 		return ResponseEntity.ok(ApiResponse.ok("Billing용 팀 목록 조회에 성공했습니다", summaries));
+	}
+
+	@GetMapping("/v1/teams/{teamId}/members/{userId}/verify")
+	public ResponseEntity<ApiResponse<InternalTeamMembershipVerifyResponse>> verifyTeamMembership(
+			@PathVariable("teamId") Long teamId,
+			@PathVariable("userId") String userId
+	) {
+		InternalTeamMembershipVerifyResponse response = teamService.verifyTeamMembershipInternal(teamId, userId);
+		return ResponseEntity.ok(ApiResponse.ok("팀 멤버십 검증에 성공했습니다", response));
 	}
 }
