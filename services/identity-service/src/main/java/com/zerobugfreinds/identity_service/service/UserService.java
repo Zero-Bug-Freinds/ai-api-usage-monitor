@@ -12,7 +12,6 @@ import com.zerobugfreinds.identity_service.exception.InvalidSignupRequestExcepti
 import com.zerobugfreinds.identity_service.repository.RefreshTokenRepository;
 import com.zerobugfreinds.identity_service.repository.UserRepository;
 import com.zerobugfreinds.identity_service.security.JwtTokenProvider;
-import io.jsonwebtoken.Claims;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -94,16 +93,12 @@ public class UserService {
 	}
 
 	@Transactional
-	public TokenResponse switchTeam(Long authenticatedUserId, Long targetTeamId, String bearerToken) {
+	public TokenResponse switchTeam(Long authenticatedUserId, Long targetTeamId) {
 		if (authenticatedUserId == null) {
 			throw new IllegalArgumentException("인증 사용자 정보가 없습니다");
 		}
 		if (targetTeamId == null) {
 			throw new IllegalArgumentException("targetTeamId는 필수입니다");
-		}
-		Long userIdFromToken = extractUserIdFromBearerToken(bearerToken);
-		if (!authenticatedUserId.equals(userIdFromToken)) {
-			throw new IllegalArgumentException("토큰 사용자와 요청 사용자가 일치하지 않습니다");
 		}
 		boolean isValidMember = teamMembershipVerificationClient.isActiveTeamMember(targetTeamId, authenticatedUserId);
 		if (!isValidMember) {
@@ -168,22 +163,6 @@ public class UserService {
 				Instant.now().plusSeconds(jwtTokenProvider.getRefreshTokenTtlSeconds())
 		);
 		refreshTokenRepository.save(tokenEntity);
-	}
-
-	private Long extractUserIdFromBearerToken(String bearerToken) {
-		if (bearerToken == null || bearerToken.isBlank() || !bearerToken.startsWith("Bearer ")) {
-			throw new IllegalArgumentException("Authorization Bearer 토큰이 필요합니다");
-		}
-		String token = bearerToken.substring("Bearer ".length()).trim();
-		Claims claims = jwtTokenProvider.validateAndGetClaims(token);
-		Object userIdClaim = claims.get("userId");
-		if (userIdClaim == null) {
-			throw new IllegalArgumentException("토큰에 userId 클레임이 없습니다");
-		}
-		if (userIdClaim instanceof Number number) {
-			return number.longValue();
-		}
-		return Long.parseLong(userIdClaim.toString());
 	}
 
 	private static String sha256Hex(String value) {

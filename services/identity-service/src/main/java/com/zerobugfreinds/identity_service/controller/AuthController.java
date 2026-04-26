@@ -11,7 +11,7 @@ import com.zerobugfreinds.identity_service.dto.SignupResponse;
 import com.zerobugfreinds.identity_service.dto.SwitchTeamRequest;
 import com.zerobugfreinds.identity_service.dto.TokenResponse;
 import com.zerobugfreinds.identity_service.exception.AuthContractViolationException;
-import com.zerobugfreinds.identity_service.security.IdentityUserPrincipal;
+import com.zerobugfreinds.identity_service.security.GatewayHeaderInterceptor;
 import com.zerobugfreinds.identity_service.service.AccountDeletionService;
 import com.zerobugfreinds.identity_service.service.PasswordResetService;
 import com.zerobugfreinds.identity_service.service.UserService;
@@ -21,7 +21,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -108,11 +107,10 @@ public class AuthController {
 
 	@PostMapping({"/switch-team", "/token/switch-team"})
 	public ResponseEntity<ApiResponse<TokenResponse>> switchTeam(
-			@AuthenticationPrincipal IdentityUserPrincipal principal,
-			@RequestHeader(HttpHeaders.AUTHORIZATION) String authorization,
+			@RequestHeader(GatewayHeaderInterceptor.USER_ID_HEADER) Long userId,
 			@Valid @RequestBody SwitchTeamRequest request
 	) {
-		TokenResponse body = userService.switchTeam(principal.userId(), request.targetTeamId(), authorization);
+		TokenResponse body = userService.switchTeam(userId, request.targetTeamId());
 		return ResponseEntity.ok()
 				.cacheControl(CacheControl.noStore().mustRevalidate())
 				.body(ApiResponse.ok("Team context switched", body));
@@ -123,10 +121,10 @@ public class AuthController {
 	 */
 	@PostMapping("/delete-account")
 	public ResponseEntity<ApiResponse<Void>> deleteAccount(
-			@AuthenticationPrincipal IdentityUserPrincipal principal,
+			@RequestHeader(GatewayHeaderInterceptor.USER_ID_HEADER) Long userId,
 			@Valid @RequestBody DeleteAccountRequest request
 	) {
-		accountDeletionService.deleteAuthenticatedAccount(principal, request.password());
+		accountDeletionService.deleteAuthenticatedAccount(userId, request.password());
 		return ResponseEntity.status(HttpStatus.ACCEPTED)
 				.cacheControl(CacheControl.noStore().mustRevalidate())
 				.body(ApiResponse.ok(

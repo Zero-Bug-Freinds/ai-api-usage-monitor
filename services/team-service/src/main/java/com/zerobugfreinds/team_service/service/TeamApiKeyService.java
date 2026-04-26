@@ -21,6 +21,7 @@ import com.zerobugfreinds.team_service.exception.TeamNotFoundException;
 import com.zerobugfreinds.team_service.repository.TeamApiKeyRepository;
 import com.zerobugfreinds.team_service.repository.TeamMemberRepository;
 import com.zerobugfreinds.team_service.repository.TeamRepository;
+import com.zerobugfreinds.team_service.security.TeamContextHolder;
 import com.zerobugfreinds.team_service.util.EncryptionUtil;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -71,6 +72,7 @@ public class TeamApiKeyService {
             String externalKey,
             BigDecimal monthlyBudgetUsd
     ) {
+        teamId = resolveTeamId(teamId);
         validateOwnerAccess(actorUserId, teamId);
         if (provider == null) {
             throw new IllegalArgumentException("provider는 필수입니다");
@@ -132,6 +134,7 @@ public class TeamApiKeyService {
             String externalKey,
             BigDecimal monthlyBudgetUsd
     ) {
+        teamId = resolveTeamId(teamId);
         validateTeamAccess(actorUserId, teamId);
         if (apiKeyId == null) {
             throw new IllegalArgumentException("apiKeyId는 필수입니다");
@@ -205,6 +208,7 @@ public class TeamApiKeyService {
             Integer gracePeriodDays,
             boolean retainLogs
     ) {
+        teamId = resolveTeamId(teamId);
         validateOwnerAccess(actorUserId, teamId);
         if (apiKeyId == null) {
             throw new IllegalArgumentException("apiKeyId는 필수입니다");
@@ -290,6 +294,7 @@ public class TeamApiKeyService {
 
     @Transactional
     public TeamApiKeySummaryResponse cancelDeletion(String actorUserId, Long teamId, Long apiKeyId) {
+        teamId = resolveTeamId(teamId);
         validateTeamAccess(actorUserId, teamId);
         if (apiKeyId == null) {
             throw new IllegalArgumentException("apiKeyId는 필수입니다");
@@ -317,10 +322,25 @@ public class TeamApiKeyService {
 
     @Transactional(readOnly = true)
     public List<TeamApiKeySummaryResponse> getTeamApiKeys(String actorUserId, Long teamId) {
+        teamId = resolveTeamId(teamId);
         validateTeamAccess(actorUserId, teamId);
         return teamApiKeyRepository.findAllByTeamIdOrderByCreatedAtDesc(teamId).stream()
                 .map(TeamApiKeyService::toSummary)
                 .toList();
+    }
+
+    private static Long resolveTeamId(Long requestedTeamId) {
+        Long headerTeamId = TeamContextHolder.getTeamId();
+        if (headerTeamId != null) {
+            if (requestedTeamId != null && !headerTeamId.equals(requestedTeamId)) {
+                throw new IllegalArgumentException("X-Team-Id 헤더와 요청 teamId가 일치하지 않습니다");
+            }
+            return headerTeamId;
+        }
+        if (requestedTeamId == null) {
+            throw new IllegalArgumentException("teamId는 필수입니다");
+        }
+        return requestedTeamId;
     }
 
     private void validateTeamAccess(String actorUserId, Long teamId) {
