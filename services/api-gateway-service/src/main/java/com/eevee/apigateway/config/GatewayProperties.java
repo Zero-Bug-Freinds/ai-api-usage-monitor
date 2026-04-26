@@ -2,6 +2,8 @@ package com.eevee.apigateway.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.util.List;
+
 /**
  * See {@code docs/contracts/gateway-proxy.md}.
  */
@@ -19,6 +21,7 @@ public class GatewayProperties {
     private String sharedSecret = "";
 
     private final Jwt jwt = new Jwt();
+    private final Cors cors = new Cors();
 
     public boolean isDevMode() {
         return devMode;
@@ -40,6 +43,10 @@ public class GatewayProperties {
         return jwt;
     }
 
+    public Cors getCors() {
+        return cors;
+    }
+
     public static class Jwt {
         /**
          * HMAC256 secret for validating platform JWTs (same convention as legacy combined gateway module).
@@ -52,6 +59,18 @@ public class GatewayProperties {
 
         public void setSecret(String secret) {
             this.secret = secret;
+        }
+    }
+
+    public static class Cors {
+        private List<String> allowedOrigins = List.of("http://localhost:8888");
+
+        public List<String> getAllowedOrigins() {
+            return allowedOrigins;
+        }
+
+        public void setAllowedOrigins(List<String> allowedOrigins) {
+            this.allowedOrigins = allowedOrigins;
         }
     }
 }

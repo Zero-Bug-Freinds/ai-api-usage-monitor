@@ -59,7 +59,7 @@ public class SecurityConfiguration {
                             "/api/identity/auth/forgot-password", "/api/identity/auth/reset-password").permitAll()
                     .pathMatchers("/api/identity/**").authenticated()
                     .pathMatchers("/api/team/**").authenticated()
-                    .pathMatchers("/api/notification/**").authenticated()
+                    .pathMatchers("/api/notification/**").permitAll()
                     .anyExchange().denyAll()
             );
         }
@@ -69,9 +69,9 @@ public class SecurityConfiguration {
     }
 
     @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
+    public CorsConfigurationSource corsConfigurationSource(GatewayProperties gatewayProperties) {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of("http://localhost:8888"));
+        config.setAllowedOrigins(gatewayProperties.getCors().getAllowedOrigins());
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of(
                 "Authorization",

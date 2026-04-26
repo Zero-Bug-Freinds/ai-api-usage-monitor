@@ -52,6 +52,9 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
         String path = exchange.getRequest().getPath().value();
+        if (isNotificationPath(path)) {
+            return chain.filter(exchange);
+        }
         if (!requiresGatewayTrustHeaders(path)) {
             return chain.filter(exchange);
         }
@@ -161,6 +164,7 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
         String scopeType = resolveScopeType(jwt, team);
         req.header(HDR_SCOPE_TYPE, scopeType);
         attachGatewayAuth(req);
+        logForwarding(jwt.getSubject(), pathToService(exchange.getRequest().getPath().value()), scopeType, team);
         return chain.filter(exchange.mutate().request(req.build()).build());
     }
 
@@ -186,6 +190,9 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
             req.header(HDR_SCOPE_TYPE, (teamId != null && !teamId.isBlank()) ? "TEAM" : "USER");
         }
         attachGatewayAuth(req);
+        logForwarding(userId, pathToService(exchange.getRequest().getPath().value()),
+                (scopeType != null && !scopeType.isBlank()) ? scopeType : ((teamId != null && !teamId.isBlank()) ? "TEAM" : "USER"),
+                teamId);
         return chain.filter(exchange.mutate().request(req.build()).build());
     }
 
@@ -195,6 +202,35 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
             return claim.toUpperCase();
         }
         return (teamIdClaim != null && !teamIdClaim.isBlank()) ? "TEAM" : "USER";
+    }
+
+    private static boolean isNotificationPath(String path) {
+        return path.startsWith("/api/notification/");
+    }
+
+    private static String pathToService(String path) {
+        if (path.startsWith("/api/team/")) return "team-service";
+        if (path.startsWith("/api/identity/")) return "identity-service";
+        if (path.startsWith("/api/notification/")) return "notification-service";
+        if (path.startsWith("/api/v1/usage/")) return "usage-service";
+        if (path.startsWith("/api/v1/expenditure/")) return "billing-service";
+        if (path.startsWith("/api/v1/ai/")) return "proxy-service";
+        return "unknown";
+    }
+
+    private void logForwarding(String userId, String service, String scopeType, String teamId) {
+        String maskedUser = maskUserId(userId);
+        String maskedTeam = (teamId == null || teamId.isBlank()) ? "-" : maskUserId(teamId);
+        log.info("[Gateway] Forwarding request for User: {} to Service: {} scope={} team={}",
+                maskedUser, service, scopeType, maskedTeam);
+    }
+
+    private static String maskUserId(String value) {
+        if (value == null || value.isBlank()) {
+            return "-";
+        }
+        int keep = Math.min(4, value.length());
+        return value.substring(0, keep) + "***";
     }
 
     private void copyCorrelation(ServerWebExchange exchange, ServerHttpRequest.Builder req) {
