@@ -127,15 +127,18 @@ export async function GET(request: Request) {
     return json(502, { success: false, message: "인증 서비스에 연결할 수 없습니다", data: null })
   }
 
-  let upstreamJson: unknown = null
-  try {
-    upstreamJson = await upstream.json()
-  } catch {
-    upstreamJson = null
-  }
-
   // 업스트림 오류는 가능한 그대로 전달한다 (상태/본문 유지).
   if (!upstream.ok) {
+    let upstreamJson: unknown
+    try {
+      upstreamJson = await upstream.json()
+    } catch {
+      return NextResponse.json(
+        { success: false, message: "Invalid JSON response from upstream" },
+        { status: 502, headers: noStoreHeaders() }
+      )
+    }
+
     if (typeof upstreamJson === "object" && upstreamJson !== null) {
       return NextResponse.json(upstreamJson, { status: upstream.status, headers: noStoreHeaders() })
     }
@@ -144,6 +147,13 @@ export async function GET(request: Request) {
         ? "로그인이 필요합니다"
         : "요청 처리에 실패했습니다"
     return json(upstream.status >= 400 ? upstream.status : 502, { success: false, message, data: null })
+  }
+
+  let upstreamJson: unknown = null
+  try {
+    upstreamJson = await upstream.json()
+  } catch {
+    upstreamJson = null
   }
 
   // 성공 시에는 data 형식을 방어적으로 검증한다.
@@ -207,19 +217,29 @@ export async function POST(request: Request) {
     return json(502, { success: false, message: "인증 서비스에 연결할 수 없습니다", data: null })
   }
 
-  let upstreamJson: unknown = null
-  try {
-    upstreamJson = await upstream.json()
-  } catch {
-    upstreamJson = null
-  }
-
   if (upstream.ok) {
+    let upstreamJson: unknown = null
+    try {
+      upstreamJson = await upstream.json()
+    } catch {
+      upstreamJson = null
+    }
+
     // Identity의 ApiResponse를 최대한 유지한다.
     if (typeof upstreamJson === "object" && upstreamJson !== null) {
       return NextResponse.json(upstreamJson, { status: upstream.status, headers: noStoreHeaders() })
     }
     return json(502, { success: false, message: "응답 형식이 올바르지 않습니다", data: null })
+  }
+
+  let upstreamJson: unknown
+  try {
+    upstreamJson = await upstream.json()
+  } catch {
+    return NextResponse.json(
+      { success: false, message: "Invalid JSON response from upstream" },
+      { status: 502, headers: noStoreHeaders() }
+    )
   }
 
   const message =
