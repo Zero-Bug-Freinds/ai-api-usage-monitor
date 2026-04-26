@@ -8,6 +8,7 @@ import {
   Bell,
   Building2,
   ChevronLeft,
+  ChevronRight,
   LayoutDashboard,
   ScrollText,
   Settings,
@@ -19,6 +20,17 @@ import { Button, cn } from "@ai-usage/ui"
 import type { ConsoleNavId, ConsoleProfile } from "./console-nav"
 import { CONSOLE_MAIN_NAV_ORDER, CONSOLE_NAV } from "./console-nav"
 import { isConsoleNavActive, resolveConsoleNavLink } from "./console-nav"
+
+type TeamSidebarItem = {
+  id: string
+  name: string
+}
+
+const TEAM_SUB_MENU = [
+  { key: "dashboard", label: "대시보드", suffix: "dashboard" },
+  { key: "members", label: "멤버 관리", suffix: "members" },
+  { key: "apiKeys", label: "API 및 설정", suffix: "api-keys" },
+] as const
 
 const ICONS: Record<ConsoleNavId, ReactNode> = {
   usageHome: <LayoutDashboard className="size-[1.125rem] shrink-0" aria-hidden />,
@@ -76,6 +88,7 @@ function NavRow({
 
 export type ConsoleSidebarProps = {
   profile: ConsoleProfile
+  teams?: TeamSidebarItem[]
   /** Per-service BFF logout endpoint path. */
   logoutApiPath?: string
   /** Redirect path after logout request. */
@@ -84,11 +97,20 @@ export type ConsoleSidebarProps = {
 
 export function ConsoleSidebar({
   profile,
+  teams = [],
   logoutApiPath = "/api/auth/logout",
   logoutRedirectPath = "/",
 }: ConsoleSidebarProps) {
   const pathname = usePathname() ?? ""
   const [logoutPending, setLogoutPending] = React.useState(false)
+  const [expandedTeamId, setExpandedTeamId] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    const match = pathname.match(/^\/teams\/([^/]+)/)
+    if (match?.[1]) {
+      setExpandedTeamId((prev) => prev ?? decodeURIComponent(match[1]))
+    }
+  }, [pathname])
 
   async function handleLogout() {
     setLogoutPending(true)
@@ -132,6 +154,65 @@ export function ConsoleSidebar({
         {CONSOLE_MAIN_NAV_ORDER.map((id) => (
           <NavRow key={id} profile={profile} id={id} pathname={pathname} />
         ))}
+        {teams.length > 0 ? (
+          <div className="mt-2 space-y-1 border-t border-sidebar-border pt-2">
+            {teams.map((team) => {
+              const isExpanded = expandedTeamId === team.id
+              return (
+                <div key={team.id} className="rounded-md">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedTeamId((prev) => (prev === team.id ? null : team.id))}
+                    className={cn(
+                      "flex min-h-10 w-full items-center justify-between gap-2 rounded-md px-3 py-2.5 text-left text-sm font-medium transition-colors",
+                      isExpanded
+                        ? "bg-sidebar-accent font-semibold text-sidebar-accent-foreground shadow-sm"
+                        : "text-sidebar-foreground/85 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+                    )}
+                    aria-expanded={isExpanded}
+                    aria-controls={`team-submenu-${team.id}`}
+                  >
+                    <span className="truncate">{team.name}</span>
+                    <ChevronRight
+                      className={cn("size-4 shrink-0 transition-transform duration-200", isExpanded && "rotate-90")}
+                      aria-hidden
+                    />
+                  </button>
+
+                  <div
+                    id={`team-submenu-${team.id}`}
+                    className={cn(
+                      "grid overflow-hidden transition-all duration-200",
+                      isExpanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+                    )}
+                  >
+                    <ul className="min-h-0 space-y-1 py-1 pl-3">
+                      {TEAM_SUB_MENU.map((item) => {
+                        const href = `/teams/${encodeURIComponent(team.id)}/${item.suffix}`
+                        const active = pathname === href || pathname.startsWith(`${href}/`)
+                        return (
+                          <li key={item.key}>
+                            <Link
+                              href={href}
+                              className={cn(
+                                "block rounded-md px-3 py-2 text-xs transition-colors",
+                                active
+                                  ? "bg-sidebar-accent font-semibold text-sidebar-accent-foreground"
+                                  : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+                              )}
+                            >
+                              {item.label}
+                            </Link>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : null}
       </nav>
 
       <div className="mt-auto border-t border-sidebar-border px-3 py-4">
