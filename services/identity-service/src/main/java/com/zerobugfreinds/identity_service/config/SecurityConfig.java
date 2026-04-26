@@ -1,6 +1,6 @@
 package com.zerobugfreinds.identity_service.config;
 
-import com.zerobugfreinds.identity_service.security.JwtAuthenticationFilter;
+import com.zerobugfreinds.identity_service.security.GatewayHeaderInterceptor;
 import com.zerobugfreinds.identity_service.security.RestAuthenticationEntryPoint;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,14 +19,14 @@ import org.springframework.security.web.SecurityFilterChain;
 @EnableWebSecurity
 public class SecurityConfig {
 
-	private final JwtAuthenticationFilter jwtAuthenticationFilter;
+	private final GatewayHeaderInterceptor gatewayHeaderInterceptor;
 	private final RestAuthenticationEntryPoint restAuthenticationEntryPoint;
 
 	public SecurityConfig(
-			JwtAuthenticationFilter jwtAuthenticationFilter,
+			GatewayHeaderInterceptor gatewayHeaderInterceptor,
 			RestAuthenticationEntryPoint restAuthenticationEntryPoint
 	) {
-		this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+		this.gatewayHeaderInterceptor = gatewayHeaderInterceptor;
 		this.restAuthenticationEntryPoint = restAuthenticationEntryPoint;
 	}
 
@@ -48,7 +48,7 @@ public class SecurityConfig {
 						.requestMatchers("/error").permitAll()
 						.anyRequest().authenticated()
 				)
-				.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+				.addFilterBefore(gatewayHeaderInterceptor, UsernamePasswordAuthenticationFilter.class);
 		return http.build();
 	}
 
