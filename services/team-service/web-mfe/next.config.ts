@@ -3,6 +3,8 @@ import path from "path";
 import type { Configuration as WebpackConfig } from "webpack";
 import NextFederationPlugin from "@module-federation/nextjs-mf";
 
+const usageRemoteOrigin = process.env.NEXT_PUBLIC_MFE_USAGE_REMOTE_URL ?? "http://localhost:3011";
+
 const nextConfig: NextConfig = {
   output: "standalone",
   outputFileTracingRoot: path.join(__dirname, "../../.."),
@@ -13,6 +15,9 @@ const nextConfig: NextConfig = {
       new NextFederationPlugin({
         name: "team",
         filename: "static/chunks/remoteEntry.js",
+        remotes: {
+          usage: `usage@${usageRemoteOrigin.replace(/\/$/, "")}/_next/static/chunks/remoteEntry.js`,
+        },
         exposes: {
           "./TeamManagement": "./src/components/mf/team-management-entry.tsx",
         },
