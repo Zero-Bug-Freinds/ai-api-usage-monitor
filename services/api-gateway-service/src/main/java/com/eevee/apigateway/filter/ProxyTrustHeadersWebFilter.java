@@ -38,6 +38,7 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
     private static final String HDR_PLATFORM_USER = "X-Platform-User-Id";
     private static final String HDR_ORG = "X-Org-Id";
     private static final String HDR_TEAM = "X-Team-Id";
+    private static final String HDR_SCOPE_TYPE = "X-Scope-Type";
     private static final String HDR_GATEWAY_AUTH = "X-Gateway-Auth";
     private static final String HDR_CORRELATION = "X-Correlation-Id";
     private static final Logger log = LoggerFactory.getLogger(ProxyTrustHeadersWebFilter.class);
@@ -157,6 +158,8 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
         if (team != null && !team.isBlank()) {
             req.header(HDR_TEAM, team);
         }
+        String scopeType = resolveScopeType(jwt, team);
+        req.header(HDR_SCOPE_TYPE, scopeType);
         attachGatewayAuth(req);
         return chain.filter(exchange.mutate().request(req.build()).build());
     }
@@ -172,8 +175,26 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
         if (platformUserId != null && !platformUserId.isBlank()) {
             req.header(HDR_PLATFORM_USER, platformUserId);
         }
+        String teamId = exchange.getRequest().getHeaders().getFirst(HDR_TEAM);
+        if (teamId != null && !teamId.isBlank()) {
+            req.header(HDR_TEAM, teamId);
+        }
+        String scopeType = exchange.getRequest().getHeaders().getFirst(HDR_SCOPE_TYPE);
+        if (scopeType != null && !scopeType.isBlank()) {
+            req.header(HDR_SCOPE_TYPE, scopeType);
+        } else {
+            req.header(HDR_SCOPE_TYPE, (teamId != null && !teamId.isBlank()) ? "TEAM" : "USER");
+        }
         attachGatewayAuth(req);
         return chain.filter(exchange.mutate().request(req.build()).build());
+    }
+
+    private static String resolveScopeType(Jwt jwt, String teamIdClaim) {
+        String claim = jwt.getClaimAsString("scope_type");
+        if ("TEAM".equalsIgnoreCase(claim) || "USER".equalsIgnoreCase(claim)) {
+            return claim.toUpperCase();
+        }
+        return (teamIdClaim != null && !teamIdClaim.isBlank()) ? "TEAM" : "USER";
     }
 
     private void copyCorrelation(ServerWebExchange exchange, ServerHttpRequest.Builder req) {
@@ -193,6 +214,9 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
     static boolean requiresGatewayTrustHeaders(String path) {
         return path.startsWith("/api/v1/ai/")
                 || path.startsWith("/api/v1/usage/")
-                || path.startsWith("/api/v1/expenditure/");
+                || path.startsWith("/api/v1/expenditure/")
+                || path.startsWith("/api/identity/")
+                || path.startsWith("/api/team/")
+                || path.startsWith("/api/notification/");
     }
 }

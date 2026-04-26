@@ -35,6 +35,30 @@ spring:
               filters:
                 - RemoveRequestHeader=Authorization
 
+            - id: identity-http
+              uri: ${GATEWAY_IDENTITY_URI:http://localhost:8090}
+              predicates:
+                - Path=/api/identity/**
+              filters:
+                - RemoveRequestHeader=Authorization
+                - RewritePath=/api/identity/(?<segment>.*), /api/${segment}
+
+            - id: team-http
+              uri: ${GATEWAY_TEAM_URI:http://localhost:8093}
+              predicates:
+                - Path=/api/team/**
+              filters:
+                - RemoveRequestHeader=Authorization
+                - RewritePath=/api/team/(?<segment>.*), /api/v1/${segment}
+
+            - id: notification-http
+              uri: ${GATEWAY_NOTIFICATION_URI:http://localhost:8096}
+              predicates:
+                - Path=/api/notification/**
+              filters:
+                - RemoveRequestHeader=Authorization
+                - RewritePath=/api/notification/(?<segment>.*), /api/${segment}
+
 management:
   endpoints:
     web:
