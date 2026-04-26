@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { ChevronRight, Eye, EyeOff, Minus, Plus, Search } from "lucide-react"
+import { Checkbox, Label } from "@ai-usage/ui"
 
 type ApiResponse<T> = {
   success: boolean
@@ -196,6 +197,7 @@ export function TeamManagementView() {
     teamId: string
     keyId: number
     graceDaysInput: string
+    retainLogs: boolean
   } | null>(null)
   const [teamApiKeyDeletionGraceError, setTeamApiKeyDeletionGraceError] = React.useState<string | null>(null)
   const [cancelDeleteLoadingKey, setCancelDeleteLoadingKey] = React.useState<string | null>(null)
@@ -608,6 +610,7 @@ export function TeamManagementView() {
       teamId,
       keyId,
       graceDaysInput: String(DEFAULT_DELETION_GRACE_DAYS),
+      retainLogs: true,
     })
   }
 
@@ -623,7 +626,7 @@ export function TeamManagementView() {
       setTeamApiKeyDeletionGraceError(GRACE_PERIOD_DELETION_HINT)
       return
     }
-    const { teamId, keyId } = teamApiKeyDeletionModal
+    const { teamId, keyId, retainLogs } = teamApiKeyDeletionModal
     const { graceDays } = parsed
     const loadingKey = `${teamId}:${keyId}`
     setTeamApiKeyDeletionGraceError(null)
@@ -631,6 +634,7 @@ export function TeamManagementView() {
     setMessage(null)
     try {
       const q = new URLSearchParams({ gracePeriodDays: String(graceDays) })
+      q.set("retainLogs", String(retainLogs))
       const { res, body } = await requestApi(
         `/api/team/v1/teams/${encodeURIComponent(teamId)}/api-keys/${encodeURIComponent(String(keyId))}?${q.toString()}`,
         { method: "DELETE" },
@@ -771,6 +775,28 @@ export function TeamManagementView() {
               {teamApiKeyDeletionGraceError ? (
                 <p className="text-xs text-red-600">{teamApiKeyDeletionGraceError}</p>
               ) : null}
+            </div>
+            <div className="mt-4 flex gap-3 rounded-md border border-zinc-200 bg-zinc-50 p-3">
+              <Checkbox
+                id="team-api-key-retain-logs"
+                checked={teamApiKeyDeletionModal.retainLogs}
+                onCheckedChange={(v) => {
+                  setTeamApiKeyDeletionGraceError(null)
+                  setTeamApiKeyDeletionModal((prev) =>
+                    prev ? { ...prev, retainLogs: v === true } : prev
+                  )
+                }}
+                disabled={deleteLoadingKey === `${teamApiKeyDeletionModal.teamId}:${teamApiKeyDeletionModal.keyId}`}
+                className="mt-0.5"
+              />
+              <div className="min-w-0 space-y-1">
+                <Label htmlFor="team-api-key-retain-logs" className="text-xs font-medium leading-snug text-zinc-800">
+                  팀 API 사용 기록 보존
+                </Label>
+                <p className="text-xs leading-relaxed text-zinc-600">
+                  체크 해제 시, API Key가 최종적으로 완전히 삭제되는 시점에 이 키로 발생한 모든 팀 호출 로그와 통계도 함께 영구적으로 삭제됩니다.
+                </p>
+              </div>
             </div>
             <div className="mt-5 flex flex-wrap justify-end gap-2">
               <button

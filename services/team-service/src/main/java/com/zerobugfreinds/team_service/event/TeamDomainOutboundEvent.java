@@ -335,6 +335,7 @@ public sealed interface TeamDomainOutboundEvent permits
 			Instant occurredAt,
 			List<String> recipientUserIds,
 			long apiKeyId,
+			boolean retainLogs,
 			String provider,
 			String alias
 	) implements TeamDomainOutboundEvent {
@@ -345,6 +346,7 @@ public sealed interface TeamDomainOutboundEvent permits
 				String teamName,
 				List<String> recipientUserIds,
 				long apiKeyId,
+				boolean retainLogs,
 				String provider,
 				String alias,
 				Instant occurredAt
@@ -357,6 +359,7 @@ public sealed interface TeamDomainOutboundEvent permits
 					occurredAt,
 					List.copyOf(recipientUserIds),
 					apiKeyId,
+					retainLogs,
 					provider,
 					alias
 			);

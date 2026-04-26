@@ -176,7 +176,13 @@ public class TeamApiKeyService {
     }
 
     @Transactional
-    public TeamApiKeySummaryResponse delete(String actorUserId, Long teamId, Long apiKeyId, Integer gracePeriodDays) {
+    public TeamApiKeySummaryResponse delete(
+            String actorUserId,
+            Long teamId,
+            Long apiKeyId,
+            Integer gracePeriodDays,
+            boolean retainLogs
+    ) {
         validateOwnerAccess(actorUserId, teamId);
         if (apiKeyId == null) {
             throw new IllegalArgumentException("apiKeyId는 필수입니다");
@@ -196,6 +202,7 @@ public class TeamApiKeyService {
                     ctx.teamName(),
                     ctx.recipientUserIds(),
                     entity.getId(),
+                    retainLogs,
                     entity.getProvider().name(),
                     entity.getKeyAlias(),
                     occurredAt
@@ -203,7 +210,7 @@ public class TeamApiKeyService {
             teamApiKeyRepository.delete(entity);
             return toSummary(entity);
         }
-        entity.markDeletionRequested(Instant.now(), days);
+        entity.markDeletionRequested(Instant.now(), days, retainLogs);
         teamApiKeyRepository.save(entity);
         publish(TeamApiKeyDeletionScheduledEvent.of(
                 actorUserId,
@@ -218,6 +225,29 @@ public class TeamApiKeyService {
                 occurredAt
         ));
         return toSummary(entity);
+    }
+
+    @Transactional
+    public int purgeExpiredDeletions() {
+        Instant now = Instant.now();
+        List<TeamApiKeyEntity> expired =
+                teamApiKeyRepository.findAllByPermanentDeletionAtIsNotNullAndPermanentDeletionAtBefore(now);
+        for (TeamApiKeyEntity entity : expired) {
+            TeamApiKeyNotifyContext ctx = teamApiKeyNotifyContext(entity.getTeamId());
+            publish(TeamApiKeyDeletedEvent.of(
+                    "system",
+                    entity.getTeamId(),
+                    ctx.teamName(),
+                    ctx.recipientUserIds(),
+                    entity.getId(),
+                    entity.isRetainUsageLogs(),
+                    entity.getProvider().name(),
+                    entity.getKeyAlias(),
+                    now
+            ));
+        }
+        teamApiKeyRepository.deleteAll(expired);
+        return expired.size();
     }
 
     @Transactional

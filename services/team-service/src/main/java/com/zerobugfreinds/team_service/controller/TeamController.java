@@ -183,10 +183,11 @@ public class TeamController {
 			@AuthenticationPrincipal TeamUserPrincipal principal,
 			@PathVariable("teamId") Long teamId,
 			@PathVariable("keyId") Long keyId,
-			@RequestParam(name = "gracePeriodDays", required = false) Integer gracePeriodDays
+			@RequestParam(name = "gracePeriodDays", required = false) Integer gracePeriodDays,
+			@RequestParam(name = "retainLogs", defaultValue = "true") boolean retainLogs
 	) {
 		TeamApiKeySummaryResponse updated =
-				teamApiKeyService.delete(principal.userId(), teamId, keyId, gracePeriodDays);
+				teamApiKeyService.delete(principal.userId(), teamId, keyId, gracePeriodDays, retainLogs);
 		return ResponseEntity.ok(ApiResponse.ok("팀 API 키 삭제 요청이 처리되었습니다", updated));
 	}
 
