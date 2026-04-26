@@ -55,7 +55,7 @@ public class DailyUsageSummaryAggregationRepository {
         return jdbcTemplate.update(
                 sql,
                 Date.valueOf(message.occurredAt().atZone(DASHBOARD_ZONE).toLocalDate()),
-                message.teamId(),
+                normalizeTeamId(message.teamId()),
                 message.userId(),
                 message.model(),
                 message.provider(),
@@ -106,5 +106,9 @@ public class DailyUsageSummaryAggregationRepository {
 
     private static BigDecimal defaultCost(BigDecimal value) {
         return value != null ? value : BigDecimal.ZERO;
+    }
+
+    private static String normalizeTeamId(String teamId) {
+        return teamId != null ? teamId : "";
     }
 }

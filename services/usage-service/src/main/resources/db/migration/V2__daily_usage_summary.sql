@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS daily_usage_summary (
     usage_date date NOT NULL,
-    team_id varchar(255),
+    team_id varchar(255) NOT NULL DEFAULT '',
     user_id varchar(255) NOT NULL,
     model varchar(255) NOT NULL,
     provider varchar(64) NOT NULL,
@@ -42,7 +42,7 @@ INSERT INTO daily_usage_summary (
 )
 SELECT
     (u.occurred_at AT TIME ZONE 'Asia/Seoul')::date AS usage_date,
-    u.team_id,
+    COALESCE(u.team_id, '') AS team_id,
     u.user_id,
     COALESCE(NULLIF(TRIM(u.model), ''), LOWER(u.provider::text) || '_unknown') AS model,
     u.provider::text AS provider,
@@ -58,7 +58,7 @@ SELECT
 FROM usage_recorded_log u
 GROUP BY
     (u.occurred_at AT TIME ZONE 'Asia/Seoul')::date,
-    u.team_id,
+    COALESCE(u.team_id, ''),
     u.user_id,
     COALESCE(NULLIF(TRIM(u.model), ''), LOWER(u.provider::text) || '_unknown'),
     u.provider::text
