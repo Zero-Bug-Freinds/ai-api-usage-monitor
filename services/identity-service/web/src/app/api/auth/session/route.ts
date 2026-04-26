@@ -36,10 +36,18 @@ function getCookieValue(cookieHeader: string | null, name: string): string | nul
 }
 
 async function resolveAccessToken(request: Request): Promise<string | null> {
-  const cookieStore = await cookies()
-  const tokenFromStore = cookieStore.get(ACCESS_TOKEN_COOKIE)?.value
-  if (tokenFromStore && tokenFromStore.length > 0) return tokenFromStore
-  return getCookieValue(request.headers.get("cookie"), ACCESS_TOKEN_COOKIE)
+  const tokenFromHeader = getCookieValue(request.headers.get("cookie"), ACCESS_TOKEN_COOKIE)
+  if (tokenFromHeader && tokenFromHeader.length > 0) return tokenFromHeader
+
+  try {
+    const cookieStore = await cookies()
+    const tokenFromStore = cookieStore.get(ACCESS_TOKEN_COOKIE)?.value
+    if (tokenFromStore && tokenFromStore.length > 0) return tokenFromStore
+  } catch {
+    // Vitest 등 요청 스코프가 없는 환경에서는 next/headers 접근이 실패할 수 있다.
+  }
+
+  return null
 }
 
 function isSessionData(data: unknown): data is SessionResponse {
