@@ -10,8 +10,8 @@
 # identity·usage 백엔드는 패턴 B Dockerfile 이 Gradle 을 이미지 안에서 실행(사전 JAR 불필요).
 #   usage 백엔드: 저장소 루트에서 docker build -f services/usage-service/Dockerfile -t usage-service:local .
 #
-# identity-service, usage-service Spring 앱은 기본 Compose 에는 없고 호스트 실행 또는
-# services/<svc>/docker-compose.yml 로 백+Next 스택 기동(루트 compose 와 DB·게이트웨이 맞출 것).
+# identity-service, usage-service, billing-service Spring 앱은
+# 루트 Compose 에서 컨테이너 네트워크(service DNS)로 함께 기동한다.
 #
 # [Next] 빌드: 저장소 루트에서 pnpm install 후 `pnpm build:web` 또는 각 web 에서 build.
 #   Docker 이미지: build context 는 루트(.), dockerfile 은 services/<svc>/web/Dockerfile (workspace `packages/ui`).
@@ -155,6 +155,67 @@ services:
     ports:
       - "${NOTIFICATION_SERVICE_PORT:-8096}:8096"
 
+  identity-service:
+    build:
+      context: .
+      dockerfile: services/identity-service/Dockerfile
+    depends_on:
+      - postgres
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      JWT_SECRET: ${GATEWAY_JWT_SECRET:-change-this-secret-key-to-at-least-32-bytes}
+    ports:
+      - "${IDENTITY_SERVICE_PORT:-8090}:8080"
+
+  usage-service:
+    build:
+      context: .
+      dockerfile: services/usage-service/Dockerfile
+    depends_on:
+      - postgres-usage
+      - rabbitmq
+    environment:
+      USAGE_POSTGRES_HOST: postgres-usage
+      USAGE_POSTGRES_PORT: 5432
+      USAGE_POSTGRES_DB: ${USAGE_POSTGRES_DB:-usage_db}
+      USAGE_POSTGRES_USER: ${USAGE_POSTGRES_USER:-usage_app}
+      USAGE_POSTGRES_PASSWORD: ${USAGE_POSTGRES_PASSWORD:-usage_app}
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET:-}
+      USAGE_SERVICE_PORT: 8092
+    ports:
+      - "${USAGE_SERVICE_PORT:-8092}:8092"
+
+  billing-service:
+    build:
+      context: .
+      dockerfile: services/billing-service/Dockerfile
+    depends_on:
+      - postgres-billing
+      - rabbitmq
+    environment:
+      BILLING_POSTGRES_HOST: postgres-billing
+      BILLING_POSTGRES_PORT: 5432
+      BILLING_POSTGRES_DB: ${BILLING_POSTGRES_DB:-billing_db}
+      BILLING_POSTGRES_USER: ${BILLING_POSTGRES_USER:-billing_app}
+      BILLING_POSTGRES_PASSWORD: ${BILLING_POSTGRES_PASSWORD:-billing_app}
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      BILLING_SERVICE_PORT: 8095
+      GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET:-}
+      BILLING_IDENTITY_BASE_URL: http://identity-service:8080
+    ports:
+      - "${BILLING_SERVICE_PORT:-8095}:8095"
+
   proxy-service:
     build:
       context: ./services/proxy-service
@@ -163,7 +224,7 @@ services:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: docker
-      PROXY_KEY_SERVICE_BASE_URL: ${PROXY_KEY_SERVICE_BASE_URL:-http://host.docker.internal:8090}
+      PROXY_KEY_SERVICE_BASE_URL: ${PROXY_KEY_SERVICE_BASE_URL:-http://identity-service:8080}
       PROXY_OPENAI_TEST_API_KEY: ${PROXY_OPENAI_TEST_API_KEY:-}
       PROXY_GOOGLE_TEST_API_KEY: ${PROXY_GOOGLE_TEST_API_KEY:-}
       PROXY_MOCK_KEY_FALLBACK: ${PROXY_MOCK_KEY_FALLBACK:-}
@@ -178,13 +239,16 @@ services:
       context: ./services/api-gateway-service
     depends_on:
       - proxy-service
+      - identity-service
+      - usage-service
+      - billing-service
     environment:
       GATEWAY_PROXY_URI: http://proxy-service:8081
-      GATEWAY_IDENTITY_URI: ${GATEWAY_IDENTITY_URI:-http://host.docker.internal:8090}
-      GATEWAY_USAGE_URI: ${GATEWAY_USAGE_URI:-http://host.docker.internal:8092}
+      GATEWAY_IDENTITY_URI: ${GATEWAY_IDENTITY_URI:-http://identity-service:8080}
+      GATEWAY_USAGE_URI: ${GATEWAY_USAGE_URI:-http://usage-service:8092}
+      GATEWAY_TEAM_URI: ${GATEWAY_TEAM_URI:-http://team-service:8093}
       GATEWAY_NOTIFICATION_URI: ${GATEWAY_NOTIFICATION_URI:-http://notification-service:8096}
-      # Host-run billing (bootRun default 8095). Override if billing runs elsewhere.
-      GATEWAY_BILLING_URI: ${GATEWAY_BILLING_URI:-http://host.docker.internal:8095}
+      GATEWAY_BILLING_URI: ${GATEWAY_BILLING_URI:-http://billing-service:8095}
       GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET:-}
       GATEWAY_JWT_SECRET: ${GATEWAY_JWT_SECRET:-}
       GATEWAY_DEV_MODE: ${GATEWAY_DEV_MODE:-true}
