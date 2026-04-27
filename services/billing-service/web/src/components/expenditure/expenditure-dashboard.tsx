@@ -275,6 +275,7 @@ export function ExpenditureDashboard() {
         totalCostUsd: number;
         byUser: { userId: string; costUsd: number }[];
       }>(expenditureApiPath("/api/expenditure/team/month-rollup"), {
+        teamId: tid,
         userIds,
         monthStartDate: monthStart,
       });

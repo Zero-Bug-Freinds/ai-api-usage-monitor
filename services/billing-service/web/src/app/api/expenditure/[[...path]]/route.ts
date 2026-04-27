@@ -166,3 +166,7 @@ export async function GET(request: Request, context: RouteContext) {
 export async function HEAD(request: Request, context: RouteContext) {
   return proxyExpenditure(request, context);
 }
+
+export async function POST(request: Request, context: RouteContext) {
+  return proxyExpenditure(request, context);
+}

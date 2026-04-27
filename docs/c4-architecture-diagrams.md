@@ -3,13 +3,13 @@
 이 문서는 목표 설계가 아니라, 현재 저장소에 존재하는 구현 코드 기준으로
 시스템 아키텍처를 C4 모델(C1 → C4)로 정리한다.
 
-**문서 버전:** 0.7 (Usage API Key metadata 분리 + RabbitMQ 토폴로지 반영)
+**문서 버전:** 0.8 (Billing web 팀 월 롤업 BFF 하드닝·`BILLING_TEAM_BFF_BASE_URL` 반영)
 
 분석 대상:
 - **`services/identity-service/web`** (정본: 랜딩·인증·설정/org UI + `/api/auth/**`·`/api/identity/**` BFF)
 - **`services/usage-service/web`** (정본: 대시보드 UI + `/api/usage/**` BFF → 게이트웨이)
 - **`services/team-service/web`** (정본: 팀 생성/조회/초대 UI + `/api/team/v1/**` BFF)
-- **`services/billing-service/web`** (정본: 지출·비용 UI + `/api/expenditure/**` BFF → 게이트웨이 `/api/v1/expenditure/**`)
+- **`services/billing-service/web`** (정본: 지출·비용 UI + `/api/expenditure/**` BFF → 게이트웨이 `/api/v1/expenditure/**`; 팀 월 롤업은 전용 `POST …/team/month-rollup`에서 멤버 검증 후 동일 게이트웨이로 전달)
 - **`services/notification-service/web`** (정본: 인앱 알림 UI + BFF → `notification-service` REST)
 - `apps/web` (과도기·레거시; 안내용 `README` 위주 — 런타임 정본 아님)
 - `services/api-gateway-service`
@@ -621,7 +621,7 @@ flowchart TD
 
 | 항목 | 내용 |
 |------|------|
-| BFF | `src/app/api/expenditure/[[...path]]/route.ts` 등 → `API_GATEWAY_URL` 의 `/api/v1/expenditure/**` (게이트웨이가 `GATEWAY_BILLING_URI` 로 billing-service에 전달) |
+| BFF | `src/app/api/expenditure/[[...path]]/route.ts` → `API_GATEWAY_URL` 의 `/api/v1/expenditure/**`(게이트웨이가 `GATEWAY_BILLING_URI` 로 billing-service 전달). 팀 월 롤업은 **`src/app/api/expenditure/team/month-rollup/route.ts`** 에서 `teamId`·팀 멤버 조회(`BILLING_TEAM_BFF_BASE_URL` 등) 후 허용된 `userIds`만 동일 게이트웨이 경로로 **POST** 한다. |
 | UI | `src/components/expenditure/...` (기본 basePath·단일 오리진은 루트 `.env`·Compose와 정합) |
 | 계약·개요 | `docs/billing-service-overview-20260412.md`, `docs/billing-identity-budget.md` |
 
@@ -661,6 +661,7 @@ flowchart TD
 
 **Billing Web (정본)**  
 - `services/billing-service/web/src/app/api/expenditure/[[...path]]/route.ts`  
+- `services/billing-service/web/src/app/api/expenditure/team/month-rollup/route.ts` (+ `route.test.ts`)  
 - `services/billing-service/web/src/components/expenditure/expenditure-dashboard.tsx`  
 
 **Notification Web (정본)**  

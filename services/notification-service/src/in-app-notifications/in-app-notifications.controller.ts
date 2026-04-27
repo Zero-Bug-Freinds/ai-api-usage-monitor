@@ -2,12 +2,12 @@ import {
   Body,
   Controller,
   Get,
-  UnauthorizedException,
   Param,
   Patch,
   Post,
   Query,
   Req,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -17,6 +17,14 @@ import { TestSendInAppNotificationDto } from './dto/test-send-in-app-notificatio
 import { InAppNotificationsService } from './in-app-notifications.service';
 import type { AuthedRequest } from './in-app-notifications.types';
 
+function requireUserId(req: AuthedRequest): string {
+  const id = req.auth?.userId;
+  if (!id) {
+    throw new UnauthorizedException('Missing X-User-Id');
+  }
+  return id;
+}
+
 @ApiTags('in-app-notifications')
 @Controller('api/in-app-notifications')
 @UseGuards(InAppAuthGuard)
@@ -24,7 +32,27 @@ import type { AuthedRequest } from './in-app-notifications.types';
   name: 'X-User-Id',
   required: false,
   description:
-    'API Gateway trusted header (recommended). Required for list/read endpoints.',
+    'API Gateway injects the platform user id from the JWT `userId` claim. Do not send email or JWT `sub` here.',
+})
+@ApiHeader({
+  name: 'X-Platform-User-Id',
+  required: false,
+  description: 'Optional; same as `X-User-Id` when routed via API Gateway.',
+})
+@ApiHeader({
+  name: 'X-Team-Id',
+  required: false,
+  description: 'Optional tenant header from API Gateway (`team_id` claim).',
+})
+@ApiHeader({
+  name: 'X-Scope-Type',
+  required: false,
+  description: 'Optional `USER` or `TEAM` from API Gateway (`scope_type` claim).',
+})
+@ApiHeader({
+  name: 'X-Correlation-Id',
+  required: false,
+  description: 'Optional correlation id propagated by the Gateway or BFF.',
 })
 @ApiHeader({
   name: 'X-Notification-Internal-Secret',
@@ -38,13 +66,10 @@ export class InAppNotificationsController {
   @Get()
   @ApiOperation({ summary: 'List in-app notifications (cursor pagination)' })
   async list(@Req() req: AuthedRequest, @Query() query: ListInAppNotificationsQuery) {
-    if (!req.userId) {
-      throw new UnauthorizedException('Missing X-User-Id');
-    }
-
+    const userId = requireUserId(req);
     const limit = query.limit ?? 30;
     return await this.service.listByUserId({
-      userId: req.userId,
+      userId,
       cursor: query.cursor,
       limit,
     });
@@ -53,21 +78,15 @@ export class InAppNotificationsController {
   @Patch(':id/read')
   @ApiOperation({ summary: 'Mark a notification as read' })
   async markRead(@Req() req: AuthedRequest, @Param('id') id: string) {
-    if (!req.userId) {
-      throw new UnauthorizedException('Missing X-User-Id');
-    }
-
-    return await this.service.markRead({ userId: req.userId, id });
+    const userId = requireUserId(req);
+    return await this.service.markRead({ userId, id });
   }
 
   @Post('read-all')
   @ApiOperation({ summary: 'Mark all notifications as read' })
   async markAllRead(@Req() req: AuthedRequest) {
-    if (!req.userId) {
-      throw new UnauthorizedException('Missing X-User-Id');
-    }
-
-    return await this.service.markAllRead({ userId: req.userId });
+    const userId = requireUserId(req);
+    return await this.service.markAllRead({ userId });
   }
 
   @Post('test-send')
@@ -76,9 +95,13 @@ export class InAppNotificationsController {
       'Create a test in-app notification (self-only unless internal secret is provided)',
   })
   async testSend(@Req() req: AuthedRequest, @Body() dto: TestSendInAppNotificationDto) {
+    const auth = req.auth;
+    if (!auth) {
+      throw new UnauthorizedException('Missing authentication context');
+    }
     return await this.service.testSend({
-      actorUserId: req.userId,
-      isInternal: Boolean(req.auth?.isInternal),
+      actorUserId: auth.userId,
+      isInternal: auth.isInternal,
       targetUserId: dto.targetUserId,
       title: dto.title,
       body: dto.body,
@@ -86,4 +109,3 @@ export class InAppNotificationsController {
     });
   }
 }
-

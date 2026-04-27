@@ -31,7 +31,7 @@ function dedupeNewestFirst(items: InAppNotification[]): InAppNotification[] {
 }
 
 async function fetchLatest(): Promise<InAppNotification[]> {
-  const res = await fetch(apiPath("/api/notification/api/in-app-notifications?limit=10"), {
+  const res = await fetch(apiPath("/api/notification/in-app-notifications?limit=10"), {
     method: "GET",
     cache: "no-store",
   })

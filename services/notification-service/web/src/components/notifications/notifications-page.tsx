@@ -23,7 +23,7 @@ function extractMessage(body: unknown): string | null {
 }
 
 async function fetchNotifications(limit: number, cursor?: string | null): Promise<InAppNotificationListResponse> {
-  const url = new URL(apiPath("/api/notification/api/in-app-notifications"), window.location.origin)
+  const url = new URL(apiPath("/api/notification/in-app-notifications"), window.location.origin)
   url.searchParams.set("limit", String(limit))
   if (cursor) url.searchParams.set("cursor", cursor)
 
@@ -37,7 +37,7 @@ async function fetchNotifications(limit: number, cursor?: string | null): Promis
 }
 
 async function markRead(id: string): Promise<void> {
-  const res = await fetch(apiPath(`/api/notification/api/in-app-notifications/${encodeURIComponent(id)}/read`), {
+  const res = await fetch(apiPath(`/api/notification/in-app-notifications/${encodeURIComponent(id)}/read`), {
     method: "PATCH",
     cache: "no-store",
   })
@@ -49,7 +49,7 @@ async function markRead(id: string): Promise<void> {
 }
 
 async function markAllRead(): Promise<void> {
-  const res = await fetch(apiPath("/api/notification/api/in-app-notifications/read-all"), {
+  const res = await fetch(apiPath("/api/notification/in-app-notifications/read-all"), {
     method: "POST",
     cache: "no-store",
   })
