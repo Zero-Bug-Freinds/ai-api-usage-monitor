@@ -182,6 +182,7 @@ services:
       GATEWAY_PROXY_URI: http://proxy-service:8081
       GATEWAY_IDENTITY_URI: ${GATEWAY_IDENTITY_URI:-http://host.docker.internal:8090}
       GATEWAY_USAGE_URI: ${GATEWAY_USAGE_URI:-http://host.docker.internal:8092}
+      GATEWAY_NOTIFICATION_URI: ${GATEWAY_NOTIFICATION_URI:-http://notification-service:8096}
       # Host-run billing (bootRun default 8095). Override if billing runs elsewhere.
       GATEWAY_BILLING_URI: ${GATEWAY_BILLING_URI:-http://host.docker.internal:8095}
       GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET:-}
