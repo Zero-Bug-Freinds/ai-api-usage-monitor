@@ -59,7 +59,7 @@ public class SecurityConfiguration {
                             "/api/identity/auth/forgot-password", "/api/identity/auth/reset-password").permitAll()
                     .pathMatchers("/api/identity/**").authenticated()
                     .pathMatchers("/api/team/**").authenticated()
-                    .pathMatchers("/api/notification/**").permitAll()
+                    .pathMatchers("/api/notification/**").authenticated()
                     .anyExchange().denyAll()
             );
         }
