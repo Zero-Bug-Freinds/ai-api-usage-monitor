@@ -117,6 +117,15 @@ export function usageDashboardHref(): string {
 }
 
 /**
+ * Legacy compatibility helper.
+ * Returns identity web origin when explicitly configured; otherwise empty string
+ * so callers can safely build same-origin relative paths.
+ */
+export function identityWebOrigin(): string {
+  return (process.env.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN ?? "").replace(/\/$/, "")
+}
+
+/**
  * Identity landing / dashboard entry: same semantics as former `usageAppHref("/dashboard")` on identity.
  */
 export function usageEntryPublicPath(): string {
