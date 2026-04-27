@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   buildNotificationOutboundHeaders,
   parseNotificationHttpUpstream,
-  parseUserIdFromAccessTokenJwt,
+  parseSubjectEmailFromAccessTokenJwt,
   resolveNotificationUpstreamTarget,
 } from "./notification-bff-proxy"
 
@@ -69,17 +69,17 @@ describe("resolveNotificationUpstreamTarget", () => {
   })
 })
 
-describe("parseUserIdFromAccessTokenJwt", () => {
-  it("reads string userId claim from JWT payload", () => {
-    const payload = Buffer.from(JSON.stringify({ userId: "42" })).toString("base64url")
+describe("parseSubjectEmailFromAccessTokenJwt", () => {
+  it("reads string sub (email) claim from JWT payload", () => {
+    const payload = Buffer.from(JSON.stringify({ sub: "test2@test.com" })).toString("base64url")
     const jwt = `a.${payload}.c`
-    expect(parseUserIdFromAccessTokenJwt(jwt)).toBe("42")
+    expect(parseSubjectEmailFromAccessTokenJwt(jwt)).toBe("test2@test.com")
   })
 
-  it("coerces numeric userId to string", () => {
-    const payload = Buffer.from(JSON.stringify({ userId: 7 })).toString("base64url")
+  it("returns null when sub is missing", () => {
+    const payload = Buffer.from(JSON.stringify({ userId: "42" })).toString("base64url")
     const jwt = `a.${payload}.c`
-    expect(parseUserIdFromAccessTokenJwt(jwt)).toBe("7")
+    expect(parseSubjectEmailFromAccessTokenJwt(jwt)).toBeNull()
   })
 })
 
@@ -89,20 +89,20 @@ describe("buildNotificationOutboundHeaders", () => {
       upstream: "gateway",
       accessToken: "tok",
       inbound: new Headers({ accept: "application/json" }),
-      directUserId: "should-not-appear",
+      directUserEmail: "should-not-appear@test.com",
     })
     expect(h.get("Authorization")).toBe("Bearer tok")
     expect(h.get("X-User-Id")).toBeNull()
   })
 
-  it("direct mode sets X-User-Id from parsed user id", () => {
+  it("direct mode sets X-User-Id to JWT sub (email)", () => {
     const h = buildNotificationOutboundHeaders({
       upstream: "direct",
       accessToken: "tok",
       inbound: new Headers(),
-      directUserId: "uid-1",
+      directUserEmail: "test2@test.com",
     })
     expect(h.get("Authorization")).toBe("Bearer tok")
-    expect(h.get("X-User-Id")).toBe("uid-1")
+    expect(h.get("X-User-Id")).toBe("test2@test.com")
   })
 })

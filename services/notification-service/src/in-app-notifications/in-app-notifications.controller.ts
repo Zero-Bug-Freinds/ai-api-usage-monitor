@@ -32,12 +32,12 @@ function requireUserId(req: AuthedRequest): string {
   name: 'X-User-Id',
   required: false,
   description:
-    'API Gateway injects the platform user id from the JWT `userId` claim. Do not send email or JWT `sub` here.',
+    'API Gateway injects the JWT `sub` (email). Do not send the platform internal `userId` claim here.',
 })
 @ApiHeader({
   name: 'X-Platform-User-Id',
   required: false,
-  description: 'Optional; same as `X-User-Id` when routed via API Gateway.',
+  description: 'API Gateway injects the platform internal user id (JWT `userId` claim).',
 })
 @ApiHeader({
   name: 'X-Team-Id',

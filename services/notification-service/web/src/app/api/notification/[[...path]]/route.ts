@@ -4,7 +4,7 @@ import {
   buildNotificationOutboundHeaders,
   getAccessTokenFromRequestCookie,
   parseNotificationHttpUpstream,
-  parseUserIdFromAccessTokenJwt,
+  parseSubjectEmailFromAccessTokenJwt,
   resolveNotificationUpstreamTarget,
 } from "../notification-bff-proxy"
 
@@ -75,9 +75,9 @@ async function proxyNotification(request: Request, context: RouteContext): Promi
     return jsonError(404, "알림 API 경로가 필요합니다")
   }
 
-  const directUserId =
-    upstream === "direct" ? parseUserIdFromAccessTokenJwt(token) : null
-  if (upstream === "direct" && !directUserId) {
+  const directUserEmail =
+    upstream === "direct" ? parseSubjectEmailFromAccessTokenJwt(token) : null
+  if (upstream === "direct" && !directUserEmail) {
     return jsonError(401, "토큰에서 사용자 식별자를 확인할 수 없습니다")
   }
 
@@ -86,7 +86,7 @@ async function proxyNotification(request: Request, context: RouteContext): Promi
     upstream,
     accessToken: token,
     inbound: request.headers,
-    directUserId,
+    directUserEmail,
   })
 
   const hasBody = method !== "GET" && method !== "HEAD"
