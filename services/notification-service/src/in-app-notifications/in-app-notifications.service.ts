@@ -5,6 +5,14 @@ import { PrismaService } from '../prisma/prisma.service';
 export class InAppNotificationsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async countUnreadByUserId(params: { userId: string }) {
+    const unreadCount = await this.prisma.inAppNotification.count({
+      where: { userId: params.userId, readAt: null },
+    });
+
+    return { unreadCount };
+  }
+
   async listByUserId(params: { userId: string; cursor?: string; limit: number }) {
     const { userId, cursor, limit } = params;
 

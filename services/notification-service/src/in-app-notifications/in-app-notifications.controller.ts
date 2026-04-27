@@ -75,6 +75,13 @@ export class InAppNotificationsController {
     });
   }
 
+  @Get('unread-count')
+  @ApiOperation({ summary: 'Get unread in-app notification count' })
+  async unreadCount(@Req() req: AuthedRequest) {
+    const userId = requireUserId(req);
+    return await this.service.countUnreadByUserId({ userId });
+  }
+
   @Patch(':id/read')
   @ApiOperation({ summary: 'Mark a notification as read' })
   async markRead(@Req() req: AuthedRequest, @Param('id') id: string) {

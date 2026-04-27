@@ -73,6 +73,13 @@ Notification `web`은 Next `basePath=/notifications`를 사용한다.
 - Gateway 모드: `GET {API_GATEWAY_URL}/api/notification/in-app-notifications?limit=20`
 - Direct 모드: `GET {NOTIFICATION_SERVICE_URL}/in-app-notifications?limit=20`
 
+추가 예(미확인 개수; 알림 배지):
+
+- 브라우저 `GET /notifications/api/notification/in-app-notifications/unread-count`
+- Gateway 모드: `GET {API_GATEWAY_URL}/api/notification/in-app-notifications/unread-count`
+- Direct 모드: `GET {NOTIFICATION_SERVICE_URL}/in-app-notifications/unread-count`
+- 응답: `{ "unreadCount": number }`
+
 ### 4.4 캐시 정책
 
 - BFF 응답에는 `Cache-Control: no-store`를 강제한다.

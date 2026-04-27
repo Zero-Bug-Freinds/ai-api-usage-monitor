@@ -3,6 +3,7 @@ package com.eevee.billingservice.service;
 import com.eevee.billingservice.config.BillingRabbitProperties;
 import com.eevee.billingservice.domain.BillingProcessedEventEntity;
 import com.eevee.billingservice.domain.ProviderModelPriceEntity;
+import com.eevee.billingservice.integration.IdentityBudgetClient;
 import com.eevee.billingservice.repository.BillingProcessedEventRepository;
 import com.eevee.billingservice.repository.ProviderModelPriceRepository;
 import com.eevee.usage.events.TokenUsage;
@@ -34,23 +35,29 @@ public class BillingRecordedService {
     private final ProviderModelPriceRepository priceRepository;
     private final BillingAggregationJdbc aggregationJdbc;
     private final UsageCostFinalizedEventPublisher costFinalizedPublisher;
+    private final BudgetThresholdEventPublisher budgetThresholdPublisher;
     private final BillingProcessedEventLifecycle processedEventLifecycle;
     private final BillingRabbitProperties rabbitProperties;
+    private final IdentityBudgetClient identityBudgetClient;
 
     public BillingRecordedService(
             BillingProcessedEventRepository processedEventRepository,
             ProviderModelPriceRepository priceRepository,
             BillingAggregationJdbc aggregationJdbc,
             UsageCostFinalizedEventPublisher costFinalizedPublisher,
+            BudgetThresholdEventPublisher budgetThresholdPublisher,
             BillingProcessedEventLifecycle processedEventLifecycle,
-            BillingRabbitProperties rabbitProperties
+            BillingRabbitProperties rabbitProperties,
+            IdentityBudgetClient identityBudgetClient
     ) {
         this.processedEventRepository = processedEventRepository;
         this.priceRepository = priceRepository;
         this.aggregationJdbc = aggregationJdbc;
         this.costFinalizedPublisher = costFinalizedPublisher;
+        this.budgetThresholdPublisher = budgetThresholdPublisher;
         this.processedEventLifecycle = processedEventLifecycle;
         this.rabbitProperties = rabbitProperties;
+        this.identityBudgetClient = identityBudgetClient;
     }
 
     @Transactional
@@ -72,6 +79,7 @@ public class BillingRecordedService {
         boolean costOutEnabled = rabbitProperties.getCostOut().isEnabled();
         boolean applicable = costOutEnabled;
 
+        var monthlyTotalBefore = aggregationJdbc.findMonthlyTotalUsd(bc.monthStart(), bc.userId(), bc.apiKeyId());
         aggregationJdbc.upsertDaily(
                 bc.aggDate(),
                 bc.userId(),
@@ -84,10 +92,25 @@ public class BillingRecordedService {
         aggregationJdbc.upsertMonthly(bc.monthStart(), bc.userId(), bc.apiKeyId(), bc.cost());
         aggregationJdbc.upsertSeen(bc.userId(), bc.apiKeyId(), event.provider(), bc.occurredAt());
 
+        var monthlyTotalAfter = aggregationJdbc.findMonthlyTotalUsd(bc.monthStart(), bc.userId(), bc.apiKeyId());
+        var monthlyBudgetUsd = identityBudgetClient.fetchMonthlyBudgetUsd(bc.userId()).orElse(null);
+
         processedEventRepository.save(new BillingProcessedEventEntity(event.eventId(), processedAt, applicable));
 
         if (costOutEnabled) {
             scheduleAfterCommit(() -> publishCostAndMark(event, bc.model(), bc.cost()));
+        }
+
+        if (rabbitProperties.getBudgetOut().isEnabled() && monthlyBudgetUsd != null) {
+            scheduleAfterCommit(() -> budgetThresholdPublisher.publishIfCrossed(
+                    bc.userId(),
+                    bc.teamId(),
+                    bc.apiKeyId(),
+                    bc.monthStart(),
+                    monthlyTotalBefore == null ? BigDecimal.ZERO : monthlyTotalBefore,
+                    monthlyTotalAfter == null ? BigDecimal.ZERO : monthlyTotalAfter,
+                    monthlyBudgetUsd
+            ));
         }
     }
 
@@ -137,6 +160,7 @@ public class BillingRecordedService {
             return Optional.empty();
         }
         String userId = event.userId();
+        String teamId = event.teamId();
         String apiKeyId = event.apiKeyId();
         if (userId == null || userId.isBlank() || apiKeyId == null || apiKeyId.isBlank()) {
             log.debug("Skipping expenditure aggregation: missing userId or apiKeyId eventId={}", event.eventId());
@@ -169,6 +193,7 @@ public class BillingRecordedService {
 
         return Optional.of(new BillableComputation(
                 userId,
+                teamId,
                 apiKeyId,
                 aggDate,
                 monthStart,
@@ -236,6 +261,7 @@ public class BillingRecordedService {
 
     private record BillableComputation(
             String userId,
+            String teamId,
             String apiKeyId,
             LocalDate aggDate,
             LocalDate monthStart,
