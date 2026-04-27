@@ -24,11 +24,33 @@ export function getAccessTokenFromRequestCookie(request: Request): string | null
 }
 
 /**
- * Parses JWT access token payload and returns the platform `userId` claim (Identity JWT).
+ * Parses JWT access token payload and returns the JWT `sub` (email).
  * Does not verify the signature; use only for **direct** BFF→Nest hops where the Gateway
  * would normally inject `X-User-Id` after verifying the same token.
  */
-export function parseUserIdFromAccessTokenJwt(accessToken: string): string | null {
+export function parseSubjectEmailFromAccessTokenJwt(accessToken: string): string | null {
+  const parts = accessToken.split(".")
+  if (parts.length < 2) return null
+  const segment = parts[1].replace(/-/g, "+").replace(/_/g, "/")
+  const pad = segment.length % 4
+  const padded = pad ? segment + "=".repeat(4 - pad) : segment
+  try {
+    const json = Buffer.from(padded, "base64").toString("utf8")
+    const payload = JSON.parse(json) as { sub?: unknown }
+    const sub = payload.sub
+    if (typeof sub === "string" && sub.trim().length > 0) return sub.trim()
+    return null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Parses JWT access token payload and returns the JWT `userId` claim (platform internal user id).
+ * Does not verify the signature; use only for **direct** BFF→Nest hops where the Gateway
+ * would normally inject `X-Platform-User-Id` after verifying the same token.
+ */
+export function parsePlatformUserIdFromAccessTokenJwt(accessToken: string): string | null {
   const parts = accessToken.split(".")
   if (parts.length < 2) return null
   const segment = parts[1].replace(/-/g, "+").replace(/_/g, "/")
@@ -37,9 +59,9 @@ export function parseUserIdFromAccessTokenJwt(accessToken: string): string | nul
   try {
     const json = Buffer.from(padded, "base64").toString("utf8")
     const payload = JSON.parse(json) as { userId?: unknown }
-    const id = payload.userId
-    if (typeof id === "string" && id.trim().length > 0) return id.trim()
-    if (typeof id === "number" && Number.isFinite(id)) return String(Math.trunc(id))
+    const userId = payload.userId
+    if (typeof userId === "number" && Number.isFinite(userId)) return String(userId)
+    if (typeof userId === "string" && userId.trim().length > 0) return userId.trim()
     return null
   } catch {
     return null
@@ -94,14 +116,15 @@ export type BuildNotificationOutboundHeadersInput = {
   upstream: NotificationHttpUpstream
   accessToken: string
   inbound: Headers
-  directUserId: string | null
+  directUserEmail: string | null
+  directPlatformUserId: string | null
 }
 
 /**
  * Outbound headers to Nest/Gateway. Never forwards client `X-User-Id` / internal secret.
  */
 export function buildNotificationOutboundHeaders(input: BuildNotificationOutboundHeadersInput): Headers {
-  const { upstream, accessToken, inbound, directUserId } = input
+  const { upstream, accessToken, inbound, directUserEmail, directPlatformUserId } = input
   const outbound = new Headers()
 
   const accept = inbound.get("accept")
@@ -118,8 +141,10 @@ export function buildNotificationOutboundHeaders(input: BuildNotificationOutboun
   outbound.set("Authorization", `Bearer ${accessToken}`)
 
   if (upstream === "direct") {
-    const uid = directUserId?.trim()
+    const uid = directUserEmail?.trim()
     if (uid) outbound.set("X-User-Id", uid)
+    const platform = directPlatformUserId?.trim()
+    if (platform) outbound.set("X-Platform-User-Id", platform)
   }
 
   return outbound

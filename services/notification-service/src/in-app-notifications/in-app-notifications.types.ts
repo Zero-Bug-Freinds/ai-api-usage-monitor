@@ -7,9 +7,9 @@ export type ScopeType = 'USER' | 'TEAM';
  * after JWT validation; internal calls may set only `isInternal`.
  */
 export type AuthContext = {
-  /** Platform user id from `X-User-Id` (JWT `userId` claim), never email/`sub`. */
+  /** User identifier from `X-User-Id` (JWT `sub` email injected by API Gateway). */
   userId?: string;
-  /** Same as `userId` on gateway hops when `X-Platform-User-Id` is injected. */
+  /** Platform internal user id from `X-Platform-User-Id` (JWT `userId` claim). */
   platformUserId?: string;
   teamId?: string;
   scopeType?: ScopeType;

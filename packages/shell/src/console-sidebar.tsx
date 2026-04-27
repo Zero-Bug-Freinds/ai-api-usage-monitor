@@ -47,10 +47,12 @@ function NavRow({
   profile,
   id,
   pathname,
+  unreadCount,
 }: {
   profile: ConsoleProfile
   id: ConsoleNavId
   pathname: string
+  unreadCount?: number | null
 }) {
   const spec = resolveConsoleNavLink(profile, id)
   const active = isConsoleNavActive(profile, pathname, id)
@@ -74,6 +76,14 @@ function NavRow({
       <Link href={spec.href} className={className}>
         {icon}
         {label}
+        {id === "notifications" && typeof unreadCount === "number" && unreadCount > 0 ? (
+          <span
+            className="ml-2 inline-flex min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[11px] font-semibold leading-5 text-destructive-foreground"
+            aria-label={`미확인 알림 ${unreadCount}개`}
+          >
+            {unreadCount}
+          </span>
+        ) : null}
       </Link>
     )
   }
@@ -82,6 +92,14 @@ function NavRow({
     <a href={spec.href} className={className}>
       {icon}
       {label}
+      {id === "notifications" && typeof unreadCount === "number" && unreadCount > 0 ? (
+        <span
+          className="ml-2 inline-flex min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[11px] font-semibold leading-5 text-destructive-foreground"
+          aria-label={`미확인 알림 ${unreadCount}개`}
+        >
+          {unreadCount}
+        </span>
+      ) : null}
     </a>
   )
 }
@@ -104,6 +122,7 @@ export function ConsoleSidebar({
   const pathname = usePathname() ?? ""
   const [logoutPending, setLogoutPending] = React.useState(false)
   const [expandedTeamId, setExpandedTeamId] = React.useState<string | null>(null)
+  const [unreadCount, setUnreadCount] = React.useState<number | null>(null)
 
   React.useEffect(() => {
     const match = pathname.match(/^\/teams\/([^/]+)/)
@@ -111,6 +130,48 @@ export function ConsoleSidebar({
       setExpandedTeamId((prev) => prev ?? decodeURIComponent(match[1]))
     }
   }, [pathname])
+
+  React.useEffect(() => {
+    let cancelled = false
+    let timer: ReturnType<typeof setInterval> | null = null
+
+    const rawPollMs = process.env.NEXT_PUBLIC_NOTIFICATION_POLL_MS
+    const pollMs = Math.max(1_000, Number.parseInt(rawPollMs ?? "", 10) || 20_000)
+
+    async function fetchUnreadCount() {
+      try {
+        const res = await fetch("/notifications/api/notification/in-app-notifications/unread-count", {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        })
+
+        if (!res.ok) {
+          if (!cancelled) setUnreadCount(null)
+          return
+        }
+
+        const json: unknown = await res.json()
+        const value = (json as { unreadCount?: unknown } | null)?.unreadCount
+        if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+          if (!cancelled) setUnreadCount(null)
+          return
+        }
+
+        if (!cancelled) setUnreadCount(value)
+      } catch {
+        if (!cancelled) setUnreadCount(null)
+      }
+    }
+
+    void fetchUnreadCount()
+    timer = setInterval(fetchUnreadCount, pollMs)
+
+    return () => {
+      cancelled = true
+      if (timer) clearInterval(timer)
+    }
+  }, [])
 
   async function handleLogout() {
     setLogoutPending(true)
@@ -147,12 +208,12 @@ export function ConsoleSidebar({
       </div>
 
       <div className="px-3 pt-3 pb-1">
-        <NavRow profile={profile} id="identityLanding" pathname={pathname} />
+        <NavRow profile={profile} id="identityLanding" pathname={pathname} unreadCount={unreadCount} />
       </div>
 
       <nav className="flex flex-1 flex-col gap-1 px-3 pb-3" aria-label="앱 메뉴">
         {CONSOLE_MAIN_NAV_ORDER.map((id) => (
-          <NavRow key={id} profile={profile} id={id} pathname={pathname} />
+          <NavRow key={id} profile={profile} id={id} pathname={pathname} unreadCount={unreadCount} />
         ))}
         {teams.length > 0 ? (
           <div className="mt-2 space-y-1 border-t border-sidebar-border pt-2">

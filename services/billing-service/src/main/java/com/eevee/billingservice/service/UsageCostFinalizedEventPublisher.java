@@ -6,12 +6,15 @@ import com.eevee.usage.events.UsageCostFinalizedEvent;
 import com.eevee.usage.events.UsageRecordedEvent;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.amqp.core.Message;
+import org.springframework.amqp.core.MessageProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 
 /**
@@ -57,9 +60,37 @@ public class UsageCostFinalizedEventPublisher {
                 out.getRoutingKey());
         try {
             String json = objectMapper.writeValueAsString(payload);
-            rabbitTemplate.convertAndSend(out.getExchange(), out.getRoutingKey(), json);
+            MessageProperties props = new MessageProperties();
+            props.setContentType(MessageProperties.CONTENT_TYPE_JSON);
+            props.setContentEncoding(StandardCharsets.UTF_8.name());
+            props.setHeader("subjectType", resolveSubjectType(source));
+            if (hasText(source.userId())) {
+                props.setHeader("userId", source.userId());
+            }
+            if (hasText(source.teamId())) {
+                props.setHeader("teamId", source.teamId());
+            }
+            if (hasText(source.apiKeyId())) {
+                props.setHeader("apiKeyId", source.apiKeyId());
+            }
+            Message message = new Message(json.getBytes(StandardCharsets.UTF_8), props);
+            rabbitTemplate.send(out.getExchange(), out.getRoutingKey(), message);
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("usage cost finalized serialization failed", e);
         }
+    }
+
+    private static String resolveSubjectType(UsageRecordedEvent source) {
+        if (hasText(source.apiKeyId())) {
+            return "API_KEY";
+        }
+        if (hasText(source.teamId())) {
+            return "TEAM";
+        }
+        return "USER";
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

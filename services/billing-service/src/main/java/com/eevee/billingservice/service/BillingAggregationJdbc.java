@@ -77,6 +77,24 @@ public class BillingAggregationJdbc {
         );
     }
 
+    public BigDecimal findMonthlyTotalUsd(LocalDate monthStartDate, String userId, String apiKeyId) {
+        return jdbcTemplate.query(
+                """
+                        SELECT total_cost_usd
+                        FROM monthly_expenditure_agg
+                        WHERE month_start_date = ?
+                          AND user_id = ?
+                          AND api_key_id = ?
+                        """,
+                ps -> {
+                    ps.setObject(1, monthStartDate);
+                    ps.setString(2, userId);
+                    ps.setString(3, apiKeyId);
+                },
+                rs -> rs.next() ? rs.getBigDecimal(1) : null
+        );
+    }
+
     public void upsertSeen(String userId, String apiKeyId, AiProvider provider, Instant occurredAt) {
         jdbcTemplate.update(
                 """
