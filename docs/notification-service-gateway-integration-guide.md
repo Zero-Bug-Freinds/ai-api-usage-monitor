@@ -1,4 +1,4 @@
-# Notification Service Gateway Integration Guide (Task 38-2)
+ # Notification Service Gateway Integration Guide (Task 38-2)
 
 ## 1) 목적과 범위
 
@@ -24,9 +24,10 @@
 
 ### 2.3 글로벌 필터(ProxyTrustHeadersWebFilter)
 
-- 게이트웨이 표준 전파 헤더:
-  - `X-User-Id` (`sub`)
-  - `X-Platform-User-Id` (`userId`)
+- 게이트웨이 표준 전파 헤더(JWT 검증 후 `forwardWithJwt` 적용 경로 기준):
+  - `X-User-Id` ← JWT 클레임 **`userId`** (플랫폼 사용자 ID 문자열). **`sub`(이메일 등)은 `X-User-Id`로 전달하지 않음.**
+  - `X-Platform-User-Id` ← 동일하게 JWT 클레임 **`userId`** 값을 사용한다.
+  - JWT에 **`userId` 클레임이 없거나 빈 문자열이면** 요청은 조용히 통과하지 않고 **401**(Missing userId claim)으로 처리한다.
   - `X-Org-Id` (`org_id`)
   - `X-Team-Id` (`team_id`)
   - `X-Scope-Type` (`scope_type`, 없으면 `team_id` 기반 추론)
@@ -58,6 +59,7 @@
 
 - `services/notification-service/web/src/app/api/notification/[[...path]]/route.ts`는 아직 Gateway 경유가 아닌 **notification-service 직접 호출** 구조다.
 - 이 BFF는 Identity `/api/auth/session`으로 이메일을 조회해 `X-User-Id`를 생성/전달한다.
+- Gateway 경로에서 내려오는 `X-User-Id`는 **플랫폼 숫자 `userId`** 이고, 위 BFF 경로에서 보내는 값은 **이메일 문자열**일 수 있다. 인앱 알림 도메인에서 기준 식별자를 하나로 정할지(또는 양쪽을 구분할지)는 통합 완료 시점에 정합성 검토가 필요하다.
 - 따라서 notification 백엔드는 현재 "Gateway 헤더"와 "BFF 생성 헤더"를 모두 받을 수 있는 상태다.
 
 ## 4) 전환 전략 (제안만, 미적용)
@@ -81,7 +83,7 @@
 제안:
 - `AuthContext` 형태로 정규화:
   - `userId` (`X-User-Id`)
-  - `platformUserId` (`X-Platform-User-Id`, optional)
+  - `platformUserId` (`X-Platform-User-Id`, optional — Gateway JWT 경로에서는 현재 구현상 **`userId`와 동일 값**이 내려온다)
   - `teamId` (`X-Team-Id`, optional)
   - `scopeType` (`X-Scope-Type`, USER|TEAM)
   - `isInternal` (internal secret 검증 결과)
@@ -131,7 +133,7 @@
 - 이유:
   - 이번 전환 대상은 notification 경로의 게이트웨이 인증 정책 및 notification 내부 헤더 수용 방식
   - identity/team의 기존 엔드포인트/필터 계약을 변경할 필요가 없음
-- 단, 플랫폼 JWT 클레임 스키마(`sub`, `userId`, `team_id`, `scope_type`) 변경이 발생하면 세 서비스 공통 영향이 있으므로 별도 공지/버전 관리가 필요하다.
+- 단, 플랫폼 JWT 클레임 스키마(`sub`, `userId`, `team_id`, `scope_type`) 변경이 발생하면 세 서비스 공통 영향이 있으므로 별도 공지/버전 관리가 필요하다. 특히 **`sub`는 이메일 등 로그인 식별자로 남을 수 있으나, 다운스트림 신뢰 헤더 `X-User-Id`는 `userId` 클레임 기준**으로 맞추는 것이 identity/team과의 계약과 일치한다.
 
 ## 7) 권장 적용 순서(승인 후)
 
