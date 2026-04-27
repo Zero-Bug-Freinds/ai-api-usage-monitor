@@ -149,8 +149,10 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
                     exchange.getRequest().getPath().value(), jwt.getSubject());
             return Mono.error(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing userId claim"));
         }
+        String service = pathToService(exchange.getRequest().getPath().value());
+        String effectiveUserId = resolveUserIdForService(service, jwt.getSubject(), platformUserId);
         ServerHttpRequest.Builder req = exchange.getRequest().mutate();
-        req.header(HDR_USER, platformUserId);
+        req.header(HDR_USER, effectiveUserId);
         req.header(HDR_PLATFORM_USER, platformUserId);
         copyCorrelation(exchange, req);
         String org = jwt.getClaimAsString("org_id");
@@ -164,8 +166,19 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
         String scopeType = resolveScopeType(jwt, team);
         req.header(HDR_SCOPE_TYPE, scopeType);
         attachGatewayAuth(req);
-        logForwarding(platformUserId, pathToService(exchange.getRequest().getPath().value()), scopeType, team);
+        logForwarding(effectiveUserId, service, scopeType, team);
         return chain.filter(exchange.mutate().request(req.build()).build());
+    }
+
+    private static String resolveUserIdForService(String service, String subject, String platformUserId) {
+        if (("usage-service".equals(service)
+                || "team-service".equals(service)
+                || "billing-service".equals(service)
+                || "notification-service".equals(service))
+                && subject != null && !subject.isBlank()) {
+            return subject;
+        }
+        return platformUserId;
     }
 
     private Mono<Void> forwardDevHeaders(ServerWebExchange exchange, WebFilterChain chain) {

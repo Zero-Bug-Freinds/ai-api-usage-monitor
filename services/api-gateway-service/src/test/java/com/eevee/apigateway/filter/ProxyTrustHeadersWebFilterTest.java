@@ -151,7 +151,7 @@ class ProxyTrustHeadersWebFilterTest {
     }
 
     @Test
-    void jwtUserIdClaimIsForwardedAsXUserId_forUsagePath() {
+    void jwtSubjectIsForwardedAsXUserId_forUsagePath() {
         gatewayProperties.setDevMode(false);
         Jwt jwt = Jwt.withTokenValue("dummy")
                 .header("alg", "HS256")
@@ -173,7 +173,7 @@ class ProxyTrustHeadersWebFilterTest {
         StepVerifier.create(filter.applyTrustHeaders(exchange, chain, auth))
                 .verifyComplete();
 
-        assertThat(userIdSeen.get()).isEqualTo("42");
+        assertThat(userIdSeen.get()).isEqualTo("user@example.com");
     }
 
     @Test
@@ -200,6 +200,58 @@ class ProxyTrustHeadersWebFilterTest {
                 .verifyComplete();
 
         assertThat(platformUserIdSeen.get()).isEqualTo("42");
+    }
+
+    @Test
+    void jwtUserIdClaimIsForwardedAsXUserId_forIdentityPath() {
+        gatewayProperties.setDevMode(false);
+        Jwt jwt = Jwt.withTokenValue("dummy")
+                .header("alg", "HS256")
+                .subject("user@example.com")
+                .claim("userId", "42")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt);
+
+        MockServerHttpRequest request = MockServerHttpRequest.get("/api/identity/auth/session").build();
+        MockServerWebExchange exchange = MockServerWebExchange.from(request);
+        AtomicReference<String> userIdSeen = new AtomicReference<>();
+        WebFilterChain chain = ex -> {
+            userIdSeen.set(ex.getRequest().getHeaders().getFirst("X-User-Id"));
+            return Mono.empty();
+        };
+
+        ProxyTrustHeadersWebFilter filter = new ProxyTrustHeadersWebFilter(gatewayProperties);
+
+        StepVerifier.create(filter.applyTrustHeaders(exchange, chain, auth))
+                .verifyComplete();
+
+        assertThat(userIdSeen.get()).isEqualTo("42");
+    }
+
+    @Test
+    void jwtSubjectIsForwardedAsXUserId_forNotificationPath() {
+        gatewayProperties.setDevMode(false);
+        Jwt jwt = Jwt.withTokenValue("dummy")
+                .header("alg", "HS256")
+                .subject("user@example.com")
+                .claim("userId", "42")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt);
+
+        MockServerHttpRequest request = MockServerHttpRequest.get("/api/notification/in-app-notifications").build();
+        MockServerWebExchange exchange = MockServerWebExchange.from(request);
+        AtomicReference<String> userIdSeen = new AtomicReference<>();
+        WebFilterChain chain = ex -> {
+            userIdSeen.set(ex.getRequest().getHeaders().getFirst("X-User-Id"));
+            return Mono.empty();
+        };
+
+        ProxyTrustHeadersWebFilter filter = new ProxyTrustHeadersWebFilter(gatewayProperties);
+
+        StepVerifier.create(filter.applyTrustHeaders(exchange, chain, auth))
+                .verifyComplete();
+
+        assertThat(userIdSeen.get()).isEqualTo("user@example.com");
     }
 
     @Test
