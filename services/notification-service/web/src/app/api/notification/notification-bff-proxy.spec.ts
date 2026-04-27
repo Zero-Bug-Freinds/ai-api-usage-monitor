@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   buildNotificationOutboundHeaders,
   parseNotificationHttpUpstream,
+  parsePlatformUserIdFromAccessTokenJwt,
   parseSubjectEmailFromAccessTokenJwt,
   resolveNotificationUpstreamTarget,
 } from "./notification-bff-proxy"
@@ -83,6 +84,14 @@ describe("parseSubjectEmailFromAccessTokenJwt", () => {
   })
 })
 
+describe("parsePlatformUserIdFromAccessTokenJwt", () => {
+  it("reads userId claim from JWT payload as string", () => {
+    const payload = Buffer.from(JSON.stringify({ userId: 42 })).toString("base64url")
+    const jwt = `a.${payload}.c`
+    expect(parsePlatformUserIdFromAccessTokenJwt(jwt)).toBe("42")
+  })
+})
+
 describe("buildNotificationOutboundHeaders", () => {
   it("gateway mode sets Authorization only (no X-User-Id)", () => {
     const h = buildNotificationOutboundHeaders({
@@ -90,9 +99,11 @@ describe("buildNotificationOutboundHeaders", () => {
       accessToken: "tok",
       inbound: new Headers({ accept: "application/json" }),
       directUserEmail: "should-not-appear@test.com",
+      directPlatformUserId: "42",
     })
     expect(h.get("Authorization")).toBe("Bearer tok")
     expect(h.get("X-User-Id")).toBeNull()
+    expect(h.get("X-Platform-User-Id")).toBeNull()
   })
 
   it("direct mode sets X-User-Id to JWT sub (email)", () => {
@@ -101,8 +112,10 @@ describe("buildNotificationOutboundHeaders", () => {
       accessToken: "tok",
       inbound: new Headers(),
       directUserEmail: "test2@test.com",
+      directPlatformUserId: "42",
     })
     expect(h.get("Authorization")).toBe("Bearer tok")
     expect(h.get("X-User-Id")).toBe("test2@test.com")
+    expect(h.get("X-Platform-User-Id")).toBe("42")
   })
 })

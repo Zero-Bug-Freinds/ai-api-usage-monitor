@@ -25,6 +25,11 @@ function requireUserId(req: AuthedRequest): string {
   return id;
 }
 
+function optionalPlatformUserId(req: AuthedRequest): string | undefined {
+  const id = req.auth?.platformUserId;
+  return id && id.trim().length > 0 ? id : undefined;
+}
+
 @ApiTags('in-app-notifications')
 @Controller('api/in-app-notifications')
 @UseGuards(InAppAuthGuard)
@@ -67,9 +72,11 @@ export class InAppNotificationsController {
   @ApiOperation({ summary: 'List in-app notifications (cursor pagination)' })
   async list(@Req() req: AuthedRequest, @Query() query: ListInAppNotificationsQuery) {
     const userId = requireUserId(req);
+    const platformUserId = optionalPlatformUserId(req);
     const limit = query.limit ?? 30;
     return await this.service.listByUserId({
       userId,
+      platformUserId,
       cursor: query.cursor,
       limit,
     });
@@ -79,21 +86,24 @@ export class InAppNotificationsController {
   @ApiOperation({ summary: 'Get unread in-app notification count' })
   async unreadCount(@Req() req: AuthedRequest) {
     const userId = requireUserId(req);
-    return await this.service.countUnreadByUserId({ userId });
+    const platformUserId = optionalPlatformUserId(req);
+    return await this.service.countUnreadByUserId({ userId, platformUserId });
   }
 
   @Patch(':id/read')
   @ApiOperation({ summary: 'Mark a notification as read' })
   async markRead(@Req() req: AuthedRequest, @Param('id') id: string) {
     const userId = requireUserId(req);
-    return await this.service.markRead({ userId, id });
+    const platformUserId = optionalPlatformUserId(req);
+    return await this.service.markRead({ userId, platformUserId, id });
   }
 
   @Post('read-all')
   @ApiOperation({ summary: 'Mark all notifications as read' })
   async markAllRead(@Req() req: AuthedRequest) {
     const userId = requireUserId(req);
-    return await this.service.markAllRead({ userId });
+    const platformUserId = optionalPlatformUserId(req);
+    return await this.service.markAllRead({ userId, platformUserId });
   }
 
   @Post('test-send')

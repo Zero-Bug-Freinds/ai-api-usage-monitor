@@ -45,6 +45,29 @@ export function parseSubjectEmailFromAccessTokenJwt(accessToken: string): string
   }
 }
 
+/**
+ * Parses JWT access token payload and returns the JWT `userId` claim (platform internal user id).
+ * Does not verify the signature; use only for **direct** BFF→Nest hops where the Gateway
+ * would normally inject `X-Platform-User-Id` after verifying the same token.
+ */
+export function parsePlatformUserIdFromAccessTokenJwt(accessToken: string): string | null {
+  const parts = accessToken.split(".")
+  if (parts.length < 2) return null
+  const segment = parts[1].replace(/-/g, "+").replace(/_/g, "/")
+  const pad = segment.length % 4
+  const padded = pad ? segment + "=".repeat(4 - pad) : segment
+  try {
+    const json = Buffer.from(padded, "base64").toString("utf8")
+    const payload = JSON.parse(json) as { userId?: unknown }
+    const userId = payload.userId
+    if (typeof userId === "number" && Number.isFinite(userId)) return String(userId)
+    if (typeof userId === "string" && userId.trim().length > 0) return userId.trim()
+    return null
+  } catch {
+    return null
+  }
+}
+
 export function parseNotificationHttpUpstream(raw: string | undefined): NotificationHttpUpstream {
   const v = raw?.trim().toLowerCase()
   if (v === "gateway") return "gateway"
@@ -94,13 +117,14 @@ export type BuildNotificationOutboundHeadersInput = {
   accessToken: string
   inbound: Headers
   directUserEmail: string | null
+  directPlatformUserId: string | null
 }
 
 /**
  * Outbound headers to Nest/Gateway. Never forwards client `X-User-Id` / internal secret.
  */
 export function buildNotificationOutboundHeaders(input: BuildNotificationOutboundHeadersInput): Headers {
-  const { upstream, accessToken, inbound, directUserEmail } = input
+  const { upstream, accessToken, inbound, directUserEmail, directPlatformUserId } = input
   const outbound = new Headers()
 
   const accept = inbound.get("accept")
@@ -119,6 +143,8 @@ export function buildNotificationOutboundHeaders(input: BuildNotificationOutboun
   if (upstream === "direct") {
     const uid = directUserEmail?.trim()
     if (uid) outbound.set("X-User-Id", uid)
+    const platform = directPlatformUserId?.trim()
+    if (platform) outbound.set("X-Platform-User-Id", platform)
   }
 
   return outbound
