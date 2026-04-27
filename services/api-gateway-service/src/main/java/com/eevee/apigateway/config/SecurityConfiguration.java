@@ -5,14 +5,16 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import com.eevee.apigateway.filter.ProxyTrustHeadersWebFilter;
-import org.springframework.http.HttpMethod;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.SecurityWebFiltersOrder;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.security.web.server.SecurityWebFilterChain;
-import org.springframework.security.web.server.util.matcher.ServerWebExchangeMatchers;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.reactive.CorsConfigurationSource;
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
@@ -23,24 +25,46 @@ import java.util.List;
 @EnableWebFluxSecurity
 public class SecurityConfiguration {
 
+    private static final Logger log = LoggerFactory.getLogger(SecurityConfiguration.class);
+
     @Bean
-    @Order(0)
-    public SecurityWebFilterChain internalWebEdgeAuthChain(ServerHttpSecurity http) {
-        http.securityMatcher(ServerWebExchangeMatchers.pathMatchers("/internal/web-edge/auth/resolve"));
+    @Order(Ordered.HIGHEST_PRECEDENCE)
+    public SecurityWebFilterChain internalSecurityWebFilterChain() {
+        ServerHttpSecurity http = ServerHttpSecurity.http();
+        http.securityMatcher(exchange -> {
+            String path = exchange.getRequest().getPath().value();
+            boolean matched = path.startsWith("/internal/") || path.startsWith("/actuator/");
+            log.debug("[SecurityChain:internal] path={} matched={}", path, matched);
+            return matched
+                    ? org.springframework.security.web.server.util.matcher.ServerWebExchangeMatcher.MatchResult.match()
+                    : org.springframework.security.web.server.util.matcher.ServerWebExchangeMatcher.MatchResult.notMatch();
+        });
         http.csrf(ServerHttpSecurity.CsrfSpec::disable);
         http.httpBasic(ServerHttpSecurity.HttpBasicSpec::disable);
         http.formLogin(ServerHttpSecurity.FormLoginSpec::disable);
-        http.authorizeExchange(ex -> ex.anyExchange().permitAll());
+        http.authorizeExchange(ex -> ex
+                .pathMatchers("/internal/web-edge/auth/resolve").permitAll()
+                .pathMatchers("/actuator/health", "/actuator/info").permitAll()
+                .anyExchange().denyAll()
+        );
         return http.build();
     }
 
     @Bean
-    @Order(1)
+    @Order(Ordered.HIGHEST_PRECEDENCE + 1)
     public SecurityWebFilterChain securityWebFilterChain(
-            ServerHttpSecurity http,
             GatewayProperties gatewayProperties,
             ObjectProvider<ReactiveJwtDecoder> jwtDecoderProvider
     ) {
+        ServerHttpSecurity http = ServerHttpSecurity.http();
+        http.securityMatcher(exchange -> {
+            String path = exchange.getRequest().getPath().value();
+            boolean matched = path.startsWith("/api/");
+            log.debug("[SecurityChain:api] path={} matched={}", path, matched);
+            return matched
+                    ? org.springframework.security.web.server.util.matcher.ServerWebExchangeMatcher.MatchResult.match()
+                    : org.springframework.security.web.server.util.matcher.ServerWebExchangeMatcher.MatchResult.notMatch();
+        });
         http.csrf(ServerHttpSecurity.CsrfSpec::disable);
         http.httpBasic(ServerHttpSecurity.HttpBasicSpec::disable);
         http.formLogin(ServerHttpSecurity.FormLoginSpec::disable);
@@ -48,7 +72,6 @@ public class SecurityConfiguration {
 
         if (gatewayProperties.isDevMode()) {
             http.authorizeExchange(ex -> ex
-                    .pathMatchers("/actuator/health", "/actuator/info").permitAll()
                     .pathMatchers("/api/v1/ai/**").permitAll()
                     .pathMatchers("/api/v1/usage/**").permitAll()
                     .pathMatchers("/api/v1/expenditure/**").permitAll()
@@ -66,7 +89,6 @@ public class SecurityConfiguration {
             }
             http.oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.jwtDecoder(jwtDecoder)));
             http.authorizeExchange(ex -> ex
-                    .pathMatchers("/actuator/health", "/actuator/info").permitAll()
                     .pathMatchers("/api/v1/ai/**").authenticated()
                     .pathMatchers("/api/v1/usage/**").authenticated()
                     .pathMatchers("/api/v1/expenditure/**").authenticated()
