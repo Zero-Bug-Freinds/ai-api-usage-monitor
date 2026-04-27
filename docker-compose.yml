@@ -438,10 +438,17 @@ services:
       - team-web
       - notification-web
       - api-gateway-service
+    environment:
+      GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET:-}
+    command: >
+      /bin/sh -c "envsubst '$$GATEWAY_SHARED_SECRET'
+      < /etc/nginx/nginx.conf.template
+      > /etc/nginx/nginx.conf
+      && nginx -g 'daemon off;'"
     ports:
       - "${WEB_EDGE_PORT:-8888}:80"
     volumes:
-      - ./docker/web-edge/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/web-edge/nginx.conf.template:/etc/nginx/nginx.conf.template:ro
 
 volumes:
   postgres_data:

@@ -1,8 +1,11 @@
-# 단일 도메인 엣지 — compose 의 web-edge 서비스가 로드한다.
-# Usage Next: basePath=/dashboard → 브라우저는 /dashboard 및 /dashboard/* 만 Usage 로 보낸다.
-#   location 은 /dashboard/ 접두만 매칭(/dashboard2 같은 오탐 방지). /dashboard 는 /dashboard/ 로 고정 리다이렉트.
-# Billing Next: basePath=/billing → /billing 및 /billing/* 만 billing-web 으로 보낸다. /billing 는 /billing/ 로 308.
-# /api/v1/* → api-gateway(스트리밍·장시간 응답 대비 버퍼링 끔), 그 외 → identity-web
+# Single-domain edge for local compose.
+# Usage Next basePath=/dashboard, Billing basePath=/billing, Team basePath=/teams.
+# /api/v1/* is routed to api-gateway; others to identity-web.
+#
+# Deployment note:
+# - In production, inject GATEWAY_SHARED_SECRET from an external Secret Manager
+#   (Vault, AWS Secrets Manager, GCP Secret Manager, etc.).
+# - This template is rendered at container startup via envsubst; do not hardcode secrets.
 
 worker_processes auto;
 
@@ -115,7 +118,7 @@ http {
       proxy_pass http://api_gateway;
       proxy_http_version 1.1;
       proxy_set_header Connection "";
-      proxy_set_header X-Web-Edge-Auth "local-dev-gateway-shared-secret-do-not-use-in-prod";
+      proxy_set_header X-Web-Edge-Auth "${GATEWAY_SHARED_SECRET}";
       proxy_set_header X-Auth-Subject $auth_subject;
       proxy_set_header X-Auth-UserId $auth_userid;
       proxy_set_header X-Auth-TeamId $auth_teamid;
@@ -130,7 +133,7 @@ http {
       internal;
       proxy_pass http://api_gateway/internal/web-edge/auth/resolve;
       proxy_set_header Authorization $edge_auth_header;
-      proxy_set_header X-Web-Edge-Auth "local-dev-gateway-shared-secret-do-not-use-in-prod";
+      proxy_set_header X-Web-Edge-Auth "${GATEWAY_SHARED_SECRET}";
       proxy_pass_request_body off;
       proxy_set_header Content-Length "";
     }
