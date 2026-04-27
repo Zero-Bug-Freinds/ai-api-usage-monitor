@@ -14,10 +14,9 @@ export function resolveIdentityLogoutPathsFromEnv(): {
   logoutApiPath: string
   logoutRedirectPath: string
 } {
-  const idOrigin = (process.env.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN ?? "").replace(/\/$/, "")
   return {
-    logoutApiPath: `${idOrigin}/api/auth/logout`,
-    logoutRedirectPath: `${idOrigin}/login`,
+    logoutApiPath: "/api/auth/logout",
+    logoutRedirectPath: "/login",
   }
 }
 
