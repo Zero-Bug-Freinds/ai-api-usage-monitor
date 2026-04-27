@@ -213,9 +213,15 @@ public class TeamService {
 							apiKey.getMonthlyBudgetUsd()
 					))
 					.toList();
+			java.math.BigDecimal totalMonthlyBudgetUsd = keyResponses.stream()
+					.map(InternalBillingTeamApiKeyResponse::monthlyBudgetUsd)
+					.filter(java.util.Objects::nonNull)
+					.reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
 			result.add(new InternalBillingTeamSummaryResponse(
 					String.valueOf(team.getId()),
 					team.getName(),
+					totalMonthlyBudgetUsd,
+					keyResponses,
 					keyResponses
 			));
 		}

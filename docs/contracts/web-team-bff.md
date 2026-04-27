@@ -174,6 +174,11 @@
 
 - Team Service는 내부 호출용으로 `GET /internal/teams/{id}`를 제공한다.
 - 응답 `data`는 `teamId`, `teamName`, `createdBy`, `createdAt`를 포함한다.
+- Billing 연동용으로 `GET /internal/teams/users/{userId}/billing-summaries`를 제공한다.
+  - 응답 목록의 각 팀 항목은 `teamId`, `teamAlias`, `monthlyBudgetUsd`, `monthlyBudgetsByKey`, `apiKeys`를 포함한다.
+  - `monthlyBudgetUsd`: 팀 API 키 월 예산 합계(USD)
+  - `monthlyBudgetsByKey`: 키별 월 예산 목록(`apiKeyId`, `provider`, `alias`, `monthlyBudgetUsd`)
+  - `apiKeys`: 기존 하위 호환용 키 목록(현재 `monthlyBudgetsByKey`와 동일 스냅샷)
 
 ### 6.2 RabbitMQ 이벤트 (`team.events`)
 
