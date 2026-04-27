@@ -40,7 +40,6 @@ spring:
               predicates:
                 - Path=/api/identity/**
               filters:
-                - RemoveRequestHeader=Authorization
                 - RewritePath=/api/identity/(?<segment>.*), /api/${segment}
 
             - id: team-http

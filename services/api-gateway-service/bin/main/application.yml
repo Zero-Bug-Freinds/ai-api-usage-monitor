@@ -12,7 +12,7 @@ spring:
           routes:
             # Client Authorization (platform JWT) is validated in SecurityConfiguration; strip before upstream — docs/contracts/gateway-proxy.md §3.1
             - id: proxy-ai
-              uri: ${GATEWAY_PROXY_URI:http://localhost:8081}
+              uri: ${GATEWAY_PROXY_URI:http://proxy-service:8081}
               predicates:
                 - Path=/api/v1/ai/**
               filters:
@@ -21,7 +21,7 @@ spring:
 
             # Usage HTTP (dashboard / analytics REST). Path unchanged downstream.
             - id: usage-http
-              uri: ${GATEWAY_USAGE_URI:http://localhost:8092}
+              uri: ${GATEWAY_USAGE_URI:http://usage-service:8092}
               predicates:
                 - Path=/api/v1/usage/**
               filters:
@@ -29,18 +29,17 @@ spring:
 
             # Default matches scripts/bootrun.* billing port (8095); override via GATEWAY_BILLING_URI / .env.
             - id: billing-http
-              uri: ${GATEWAY_BILLING_URI:http://localhost:8095}
+              uri: ${GATEWAY_BILLING_URI:http://billing-service:8095}
               predicates:
                 - Path=/api/v1/expenditure/**
               filters:
                 - RemoveRequestHeader=Authorization
 
             - id: identity-http
-              uri: ${GATEWAY_IDENTITY_URI:http://localhost:8090}
+              uri: ${GATEWAY_IDENTITY_URI:http://identity-service:8080}
               predicates:
                 - Path=/api/identity/**
               filters:
-                - RemoveRequestHeader=Authorization
                 - RewritePath=/api/identity/(?<segment>.*), /api/${segment}
 
             - id: team-http
@@ -52,7 +51,7 @@ spring:
                 - RewritePath=/api/team/(?<segment>.*), /api/${segment}
 
             - id: notification-http
-              uri: ${GATEWAY_NOTIFICATION_URI:http://localhost:8096}
+              uri: ${GATEWAY_NOTIFICATION_URI:http://notification-service:8096}
               predicates:
                 - Path=/api/notification/**
               filters:
