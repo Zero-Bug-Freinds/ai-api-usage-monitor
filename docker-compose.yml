@@ -180,12 +180,15 @@ services:
       - proxy-service
     environment:
       GATEWAY_PROXY_URI: http://proxy-service:8081
+      GATEWAY_IDENTITY_URI: ${GATEWAY_IDENTITY_URI:-http://host.docker.internal:8090}
       GATEWAY_USAGE_URI: ${GATEWAY_USAGE_URI:-http://host.docker.internal:8092}
       # Host-run billing (bootRun default 8095). Override if billing runs elsewhere.
       GATEWAY_BILLING_URI: ${GATEWAY_BILLING_URI:-http://host.docker.internal:8095}
       GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET:-}
       GATEWAY_JWT_SECRET: ${GATEWAY_JWT_SECRET:-}
       GATEWAY_DEV_MODE: ${GATEWAY_DEV_MODE:-true}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${API_GATEWAY_PORT:-8080}:8080"
 
@@ -201,6 +204,9 @@ services:
     depends_on:
       - api-gateway-service
     environment:
+      # identity-web BFF must call gateway so that gateway injects X-User-Id/X-Team-Id.
+      GATEWAY_URL: ${WEB_GATEWAY_URL:-http://api-gateway-service:8080}
+      WEB_GATEWAY_URL: ${WEB_GATEWAY_URL:-http://api-gateway-service:8080}
       IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://host.docker.internal:8090}
       USAGE_WEB_INTERNAL_ORIGIN: ${USAGE_WEB_INTERNAL_ORIGIN:-http://host.docker.internal:3001}
       BILLING_WEB_INTERNAL_ORIGIN: ${BILLING_WEB_INTERNAL_ORIGIN:-http://host.docker.internal:3003}

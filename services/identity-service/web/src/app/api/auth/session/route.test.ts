@@ -1,10 +1,20 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { GET } from "./route"
 
+const originalGatewayUrl = process.env.GATEWAY_URL
+
+beforeEach(() => {
+  process.env.GATEWAY_URL = "http://localhost:8888"
+})
+
 afterEach(() => {
   vi.restoreAllMocks()
-  delete process.env.IDENTITY_SERVICE_URL
+  if (originalGatewayUrl === undefined) {
+    delete process.env.GATEWAY_URL
+  } else {
+    process.env.GATEWAY_URL = originalGatewayUrl
+  }
 })
 
 describe("GET /api/auth/session (route handler)", () => {
@@ -19,7 +29,9 @@ describe("GET /api/auth/session (route handler)", () => {
     expect(res.headers.get("cache-control")).toBe("no-store")
   })
 
-  it("returns 500 when IDENTITY_SERVICE_URL is missing", async () => {
+  it("returns 500 when GATEWAY_URL and WEB_GATEWAY_URL are missing", async () => {
+    delete process.env.GATEWAY_URL
+    delete process.env.WEB_GATEWAY_URL
     const req = new Request("http://localhost/api/auth/session", {
       method: "GET",
       headers: { cookie: "access_token=test-token-value" },
@@ -31,10 +43,9 @@ describe("GET /api/auth/session (route handler)", () => {
     expect(json.success).toBe(false)
   })
 
-  it("proxies to Identity with Bearer token and returns session data", async () => {
-    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
+  it("proxies to Gateway with Bearer token and returns session data", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      expect(url).toBe("http://localhost:8080/api/auth/session")
+      expect(url).toBe("http://localhost:8888/api/identity/auth/session")
       expect(init?.method).toBe("GET")
       expect(init?.headers).toMatchObject({
         Authorization: "Bearer test-token-value",
@@ -70,8 +81,7 @@ describe("GET /api/auth/session (route handler)", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it("returns 401 when Identity rejects the token", async () => {
-    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
+  it("returns 401 when Gateway upstream rejects the token", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => {
@@ -99,7 +109,6 @@ describe("GET /api/auth/session (route handler)", () => {
   })
 
   it("returns 502 when upstream session shape is invalid", async () => {
-    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => {
@@ -124,7 +133,6 @@ describe("GET /api/auth/session (route handler)", () => {
   })
 
   it("returns 502 when session role is not USER or ADMIN", async () => {
-    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => {
@@ -149,7 +157,6 @@ describe("GET /api/auth/session (route handler)", () => {
   })
 
   it("returns 502 when upstream returns 200 but success is false", async () => {
-    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => {
@@ -173,10 +180,10 @@ describe("GET /api/auth/session (route handler)", () => {
     expect(res.status).toBe(502)
   })
 
-  it("strips trailing slashes from IDENTITY_SERVICE_URL when proxying", async () => {
-    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080/"
+  it("strips trailing slashes from GATEWAY_URL when proxying", async () => {
+    process.env.GATEWAY_URL = "http://localhost:8888/"
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      expect(url).toBe("http://localhost:8080/api/auth/session")
+      expect(url).toBe("http://localhost:8888/api/identity/auth/session")
       expect(init?.headers).toMatchObject({ Authorization: "Bearer t" })
       return new Response(
         JSON.stringify({
@@ -199,8 +206,7 @@ describe("GET /api/auth/session (route handler)", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it("returns 502 when Identity is unreachable", async () => {
-    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
+  it("returns 502 when Gateway upstream is unreachable", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new Error("ECONNREFUSED"))))
 
     const req = new Request("http://localhost/api/auth/session", {

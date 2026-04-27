@@ -31,8 +31,6 @@ type TeamApiKeySummary = {
   deletionGraceDays?: number | null
 }
 
-type _TeamKeyProvider = "OPENAI" | "GEMINI" | "CLAUDE"
-
 function asApiResponse(value: unknown): ApiResponse<unknown> | null {
   if (!value || typeof value !== "object") return null
   const r = value as Record<string, unknown>
@@ -83,23 +81,6 @@ function normalizeTeamApiKeySummary(item: unknown): TeamApiKeySummary | null {
   }
 }
 
-function _formatBudgetUsd(value: number | null | undefined) {
-  if (value === null || value === undefined) return null
-  return new Intl.NumberFormat("ko-KR", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(value)
-}
-
-function _formatDeletionDeadline(iso: string) {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })
-}
-
-const BUDGET_STEP = 0.01
 const DEFAULT_DELETION_GRACE_DAYS = 7
 const MIN_DELETION_GRACE_DAYS = 0
 const MAX_DELETION_GRACE_DAYS = 365
@@ -142,15 +123,6 @@ function useDebounce<T>(value: T, delayMs: number): T {
   }, [value, delayMs])
 
   return debouncedValue
-}
-
-function _normalizeBudgetNumericString(raw: string): string {
-  const t = raw.trim()
-  if (t === "") return ""
-  const n = Number(t)
-  if (!Number.isFinite(n) || n < 0) return ""
-  const rounded = Math.round(n / BUDGET_STEP) * BUDGET_STEP
-  return Number(rounded.toFixed(2)).toString()
 }
 
 async function requestApi(path: string, init?: RequestInit) {
@@ -970,6 +942,10 @@ export function TeamManagementView() {
                         }`}
                         onClick={() => {
                           cancelEditTeamApiKey()
+                          if (isSelected) {
+                            setSelectedTeamId(null)
+                            return
+                          }
                           setSelectedTeamId(team.id)
                           setInviteInputsByTeamId((prev) =>
                             prev[team.id] !== undefined ? prev : { ...prev, [team.id]: [newInviteeRow()] },

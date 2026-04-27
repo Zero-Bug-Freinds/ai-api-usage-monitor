@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { GET, POST } from "./route"
 
@@ -23,9 +23,19 @@ function getRequest(cookie?: string) {
   })
 }
 
+const originalGatewayUrl = process.env.GATEWAY_URL
+
+beforeEach(() => {
+  process.env.GATEWAY_URL = "http://localhost:8888"
+})
+
 afterEach(() => {
   vi.restoreAllMocks()
-  delete process.env.IDENTITY_SERVICE_URL
+  if (originalGatewayUrl === undefined) {
+    delete process.env.GATEWAY_URL
+  } else {
+    process.env.GATEWAY_URL = originalGatewayUrl
+  }
 })
 
 describe("GET /api/auth/external-keys (route handler)", () => {
@@ -38,20 +48,20 @@ describe("GET /api/auth/external-keys (route handler)", () => {
     expect(res.headers.get("cache-control")).toBe("no-store")
   })
 
-  it("returns 500 when IDENTITY_SERVICE_URL is missing", async () => {
+  it("returns 500 when GATEWAY_URL and WEB_GATEWAY_URL are missing", async () => {
+    delete process.env.GATEWAY_URL
+    delete process.env.WEB_GATEWAY_URL
     const res = await GET(getRequest("access_token=test-token-value"))
     expect(res.status).toBe(500)
     const json = (await res.json()) as { success: boolean; message: string }
     expect(json.success).toBe(false)
-    expect(json.message).toContain("IDENTITY_SERVICE_URL")
+    expect(json.message).toContain("GATEWAY_URL")
     expect(res.headers.get("cache-control")).toBe("no-store")
   })
 
-  it("returns 200 and passes through valid list data from identity", async () => {
-    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
-
+  it("returns 200 and passes through valid list data from gateway upstream", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      expect(url).toBe("http://localhost:8080/api/auth/external-keys")
+      expect(url).toBe("http://localhost:8888/api/identity/auth/external-keys")
       expect(init?.method).toBe("GET")
       expect(init?.headers).toMatchObject({
         Authorization: "Bearer test-token-value",
@@ -91,7 +101,6 @@ describe("GET /api/auth/external-keys (route handler)", () => {
   })
 
   it("passes through upstream 401 JSON body", async () => {
-    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => {
@@ -112,7 +121,6 @@ describe("GET /api/auth/external-keys (route handler)", () => {
   })
 
   it("passes through upstream non-401 error JSON body", async () => {
-    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => {
@@ -131,7 +139,6 @@ describe("GET /api/auth/external-keys (route handler)", () => {
   })
 
   it("returns 502 when upstream error has no parseable JSON body", async () => {
-    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => {
@@ -150,8 +157,7 @@ describe("GET /api/auth/external-keys (route handler)", () => {
     expect(res.headers.get("cache-control")).toBe("no-store")
   })
 
-  it("returns 502 when Identity is unreachable", async () => {
-    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
+  it("returns 502 when Gateway upstream is unreachable", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new Error("ECONNREFUSED"))))
 
     const res = await GET(getRequest("access_token=test-token-value"))
@@ -163,7 +169,6 @@ describe("GET /api/auth/external-keys (route handler)", () => {
   })
 
   it("returns 502 when success response data shape is invalid", async () => {
-    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => {
@@ -198,7 +203,9 @@ describe("POST /api/auth/external-keys (route handler)", () => {
     expect(res.headers.get("cache-control")).toBe("no-store")
   })
 
-  it("returns 500 when IDENTITY_SERVICE_URL is missing", async () => {
+  it("returns 500 when GATEWAY_URL and WEB_GATEWAY_URL are missing", async () => {
+    delete process.env.GATEWAY_URL
+    delete process.env.WEB_GATEWAY_URL
     const res = await POST(
       jsonRequest(
         { provider: "OPENAI", externalKey: "k", alias: "a", monthlyBudgetUsd: 10 },
@@ -208,12 +215,11 @@ describe("POST /api/auth/external-keys (route handler)", () => {
     expect(res.status).toBe(500)
     const json = (await res.json()) as { success: boolean; message: string }
     expect(json.success).toBe(false)
-    expect(json.message).toContain("IDENTITY_SERVICE_URL")
+    expect(json.message).toContain("GATEWAY_URL")
     expect(res.headers.get("cache-control")).toBe("no-store")
   })
 
   it("returns 400 for invalid JSON body", async () => {
-    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
     const req = new Request("http://localhost/api/auth/external-keys", {
       method: "POST",
       headers: {
@@ -231,11 +237,9 @@ describe("POST /api/auth/external-keys (route handler)", () => {
     expect(res.headers.get("cache-control")).toBe("no-store")
   })
 
-  it("passes through 201 success payload from identity", async () => {
-    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
-
+  it("passes through 201 success payload from gateway upstream", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      expect(url).toBe("http://localhost:8080/api/auth/external-keys")
+      expect(url).toBe("http://localhost:8888/api/identity/auth/external-keys")
       expect(init?.method).toBe("POST")
       expect(init?.headers).toMatchObject({
         Authorization: "Bearer test-token-value",
@@ -284,7 +288,6 @@ describe("POST /api/auth/external-keys (route handler)", () => {
   })
 
   it("passes through upstream 400 and safe message", async () => {
-    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => {
@@ -310,7 +313,6 @@ describe("POST /api/auth/external-keys (route handler)", () => {
   })
 
   it("passes through upstream 409 and safe message", async () => {
-    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => {
@@ -335,8 +337,7 @@ describe("POST /api/auth/external-keys (route handler)", () => {
     expect(res.headers.get("cache-control")).toBe("no-store")
   })
 
-  it("returns 502 when Identity is unreachable", async () => {
-    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
+  it("returns 502 when Gateway upstream is unreachable", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new Error("ECONNREFUSED"))))
 
     const res = await POST(
