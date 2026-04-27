@@ -5,11 +5,13 @@ import com.zerobugfreinds.identity_service.dto.ExternalApiKeyRegisterRequest;
 import com.zerobugfreinds.identity_service.dto.ExternalApiKeyRegisterResponse;
 import com.zerobugfreinds.identity_service.dto.ExternalApiKeyUpdateRequest;
 import com.zerobugfreinds.identity_service.entity.ExternalApiKeyEntity;
-import com.zerobugfreinds.identity_service.security.GatewayHeaderInterceptor;
+import com.zerobugfreinds.identity_service.entity.User;
 import com.zerobugfreinds.identity_service.service.ExternalApiKeyService;
+import com.zerobugfreinds.identity_service.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -31,18 +33,21 @@ import java.util.List;
 public class ExternalApiKeyController {
 
 	private final ExternalApiKeyService externalApiKeyService;
+	private final UserService userService;
 
-	public ExternalApiKeyController(ExternalApiKeyService externalApiKeyService) {
+	public ExternalApiKeyController(ExternalApiKeyService externalApiKeyService, UserService userService) {
 		this.externalApiKeyService = externalApiKeyService;
+		this.userService = userService;
 	}
 
 	@PostMapping("/external-keys")
 	public ResponseEntity<ApiResponse<ExternalApiKeyRegisterResponse>> register(
-			@RequestHeader(GatewayHeaderInterceptor.USER_ID_HEADER) Long userId,
+			Authentication authentication,
 			@Valid @RequestBody ExternalApiKeyRegisterRequest request
 	) {
+		User user = userService.findByAuthenticatedPrincipal(authentication.getName());
 		ExternalApiKeyEntity saved = externalApiKeyService.register(
-				userId,
+				user.getId(),
 				request.provider(),
 				request.alias(),
 				request.externalKey(),
@@ -53,9 +58,10 @@ public class ExternalApiKeyController {
 
 	@GetMapping("/external-keys")
 	public ResponseEntity<ApiResponse<List<ExternalApiKeyRegisterResponse>>> getMyKeys(
-			@RequestHeader(GatewayHeaderInterceptor.USER_ID_HEADER) Long userId
+			Authentication authentication
 	) {
-		List<ExternalApiKeyRegisterResponse> data = externalApiKeyService.getMyKeys(userId).stream()
+		User user = userService.findByAuthenticatedPrincipal(authentication.getName());
+		List<ExternalApiKeyRegisterResponse> data = externalApiKeyService.getMyKeys(user.getId()).stream()
 				.map(ExternalApiKeyController::toResponse)
 				.toList();
 		return ResponseEntity.ok(ApiResponse.ok("외부 API 키 목록 조회에 성공했습니다", data));
@@ -63,12 +69,13 @@ public class ExternalApiKeyController {
 
 	@PutMapping("/external-keys/{id}")
 	public ResponseEntity<ApiResponse<ExternalApiKeyRegisterResponse>> update(
-			@RequestHeader(GatewayHeaderInterceptor.USER_ID_HEADER) Long userId,
+			Authentication authentication,
 			@PathVariable("id") Long id,
 			@Valid @RequestBody ExternalApiKeyUpdateRequest request
 	) {
+		User user = userService.findByAuthenticatedPrincipal(authentication.getName());
 		ExternalApiKeyEntity saved = externalApiKeyService.update(
-				userId,
+				user.getId(),
 				id,
 				request.provider(),
 				request.alias(),
@@ -84,12 +91,14 @@ public class ExternalApiKeyController {
 	 */
 	@DeleteMapping("/external-keys/{id}")
 	public ResponseEntity<ApiResponse<ExternalApiKeyRegisterResponse>> requestDeletion(
-			@RequestHeader(GatewayHeaderInterceptor.USER_ID_HEADER) Long userId,
+			Authentication authentication,
 			@PathVariable("id") Long id,
 			@RequestParam(name = "gracePeriodDays", required = false) Integer gracePeriodDays,
 			@RequestParam(name = "retainLogs", defaultValue = "true") boolean retainLogs
 	) {
-		ExternalApiKeyEntity saved = externalApiKeyService.requestDeletion(userId, id, gracePeriodDays, retainLogs);
+		User user = userService.findByAuthenticatedPrincipal(authentication.getName());
+		ExternalApiKeyEntity saved =
+				externalApiKeyService.requestDeletion(user.getId(), id, gracePeriodDays, retainLogs);
 		boolean immediate = gracePeriodDays != null && gracePeriodDays == 0;
 		String message = immediate
 				? "API 키가 즉시 영구 삭제되었습니다."
@@ -99,10 +108,11 @@ public class ExternalApiKeyController {
 
 	@PostMapping("/external-keys/{id}/deletion-cancel")
 	public ResponseEntity<ApiResponse<ExternalApiKeyRegisterResponse>> cancelDeletion(
-			@RequestHeader(GatewayHeaderInterceptor.USER_ID_HEADER) Long userId,
+			Authentication authentication,
 			@PathVariable("id") Long id
 	) {
-		ExternalApiKeyEntity saved = externalApiKeyService.cancelDeletion(userId, id);
+		User user = userService.findByAuthenticatedPrincipal(authentication.getName());
+		ExternalApiKeyEntity saved = externalApiKeyService.cancelDeletion(user.getId(), id);
 		return ResponseEntity.ok(ApiResponse.ok("삭제 예약이 취소되었습니다", toResponse(saved)));
 	}
 

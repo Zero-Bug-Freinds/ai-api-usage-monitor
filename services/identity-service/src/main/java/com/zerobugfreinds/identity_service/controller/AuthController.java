@@ -11,7 +11,7 @@ import com.zerobugfreinds.identity_service.dto.SignupResponse;
 import com.zerobugfreinds.identity_service.dto.SwitchTeamRequest;
 import com.zerobugfreinds.identity_service.dto.TokenResponse;
 import com.zerobugfreinds.identity_service.exception.AuthContractViolationException;
-import com.zerobugfreinds.identity_service.security.GatewayHeaderInterceptor;
+import com.zerobugfreinds.identity_service.entity.User;
 import com.zerobugfreinds.identity_service.service.AccountDeletionService;
 import com.zerobugfreinds.identity_service.service.PasswordResetService;
 import com.zerobugfreinds.identity_service.service.UserService;
@@ -27,7 +27,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.bind.annotation.RequestHeader;
 
 /**
  * Authentication HTTP API.
@@ -86,13 +85,14 @@ public class AuthController {
 
 	@GetMapping("/session")
 	public ResponseEntity<ApiResponse<SessionResponse>> session(Authentication authentication) {
+		User user = userService.findByAuthenticatedPrincipal(authentication.getName());
 		String authority = authentication.getAuthorities().stream()
 				.findFirst()
 				.map(granted -> granted.getAuthority())
 				.orElse("ROLE_USER");
 		String role = authority.startsWith("ROLE_") ? authority.substring(5) : authority;
 
-		SessionResponse body = new SessionResponse(authentication.getName(), role, true);
+		SessionResponse body = new SessionResponse(user.getEmail(), role, true);
 		return ResponseEntity.ok()
 				.cacheControl(CacheControl.noStore().mustRevalidate())
 				.body(ApiResponse.ok("Session valid", body));
@@ -107,10 +107,11 @@ public class AuthController {
 
 	@PostMapping({"/switch-team", "/token/switch-team"})
 	public ResponseEntity<ApiResponse<TokenResponse>> switchTeam(
-			@RequestHeader(GatewayHeaderInterceptor.USER_ID_HEADER) Long userId,
+			Authentication authentication,
 			@Valid @RequestBody SwitchTeamRequest request
 	) {
-		TokenResponse body = userService.switchTeam(userId, request.targetTeamId());
+		User user = userService.findByAuthenticatedPrincipal(authentication.getName());
+		TokenResponse body = userService.switchTeam(user.getId(), request.targetTeamId());
 		return ResponseEntity.ok()
 				.cacheControl(CacheControl.noStore().mustRevalidate())
 				.body(ApiResponse.ok("Team context switched", body));
@@ -121,10 +122,11 @@ public class AuthController {
 	 */
 	@PostMapping("/delete-account")
 	public ResponseEntity<ApiResponse<Void>> deleteAccount(
-			@RequestHeader(GatewayHeaderInterceptor.USER_ID_HEADER) Long userId,
+			Authentication authentication,
 			@Valid @RequestBody DeleteAccountRequest request
 	) {
-		accountDeletionService.deleteAuthenticatedAccount(userId, request.password());
+		User user = userService.findByAuthenticatedPrincipal(authentication.getName());
+		accountDeletionService.deleteAuthenticatedAccount(user.getId(), request.password());
 		return ResponseEntity.status(HttpStatus.ACCEPTED)
 				.cacheControl(CacheControl.noStore().mustRevalidate())
 				.body(ApiResponse.ok(
