@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { DELETE, PUT } from "./route"
 
 const context = { params: Promise.resolve({ id: "123" }) }
+const originalGatewayUrl = process.env.GATEWAY_URL
 
 function putRequest(body: unknown, cookie?: string) {
   return new Request("http://localhost/api/auth/external-keys/123", {
@@ -16,16 +17,23 @@ function putRequest(body: unknown, cookie?: string) {
   })
 }
 
+beforeEach(() => {
+  process.env.GATEWAY_URL = "http://localhost:8888"
+})
+
 afterEach(() => {
   vi.restoreAllMocks()
-  delete process.env.IDENTITY_SERVICE_URL
+  if (originalGatewayUrl === undefined) {
+    delete process.env.GATEWAY_URL
+  } else {
+    process.env.GATEWAY_URL = originalGatewayUrl
+  }
 })
 
 describe("DELETE /api/auth/external-keys/[id] (route handler)", () => {
   it("forwards query string to upstream", async () => {
-    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
     const fetchMock = vi.fn(async (url: string) => {
-      expect(url).toBe("http://localhost:8080/api/auth/external-keys/123?gracePeriodDays=14&retainLogs=false")
+      expect(url).toBe("http://localhost:8888/api/identity/auth/external-keys/123?gracePeriodDays=14&retainLogs=false")
       return new Response(JSON.stringify({ success: true, message: "ok", data: null }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -43,9 +51,8 @@ describe("DELETE /api/auth/external-keys/[id] (route handler)", () => {
   })
 
   it("forwards gracePeriodDays=0 as immediate deletion", async () => {
-    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
     const fetchMock = vi.fn(async (url: string) => {
-      expect(url).toBe("http://localhost:8080/api/auth/external-keys/123?gracePeriodDays=0")
+      expect(url).toBe("http://localhost:8888/api/identity/auth/external-keys/123?gracePeriodDays=0")
       return new Response(JSON.stringify({ success: true, message: "ok", data: null }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -63,10 +70,9 @@ describe("DELETE /api/auth/external-keys/[id] (route handler)", () => {
   })
 
   it("forwards retainLogs with immediate deletion query", async () => {
-    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
     const fetchMock = vi.fn(async (url: string) => {
       expect(url).toBe(
-        "http://localhost:8080/api/auth/external-keys/123?gracePeriodDays=0&retainLogs=false"
+        "http://localhost:8888/api/identity/auth/external-keys/123?gracePeriodDays=0&retainLogs=false"
       )
       return new Response(JSON.stringify({ success: true, message: "ok", data: null }), {
         status: 200,
@@ -95,13 +101,11 @@ describe("PUT /api/auth/external-keys/[id] (route handler)", () => {
   })
 
   it("returns 400 for invalid payload", async () => {
-    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
     const res = await PUT(putRequest({ alias: " ", externalKey: "sk-live" }, "access_token=test-token"), context)
     expect(res.status).toBe(400)
   })
 
   it("passes through upstream success response", async () => {
-    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
     const fetchMock = vi.fn(async () => {
       return new Response(
         JSON.stringify({
@@ -126,8 +130,8 @@ describe("PUT /api/auth/external-keys/[id] (route handler)", () => {
   })
 
   it("passes update payload with alias and budget", async () => {
-    process.env.IDENTITY_SERVICE_URL = "http://localhost:8080"
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      expect(_url).toBe("http://localhost:8888/api/identity/auth/external-keys/123")
       expect(init?.body).toBe(JSON.stringify({ alias: "새 별칭", monthlyBudgetUsd: 40 }))
       return new Response(
         JSON.stringify({

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { cookies } from "next/headers"
 
 const ACCESS_TOKEN_COOKIE = "access_token"
 
@@ -6,10 +7,13 @@ function noStoreHeaders(): HeadersInit {
   return { "Cache-Control": "no-store" }
 }
 
-function envIdentityBaseUrl(): string | null {
-  const url = process.env.IDENTITY_SERVICE_URL
-  if (!url) return null
-  return url.replace(/\/+$/, "")
+function envGatewayBaseUrl(): string | null {
+  const url = process.env.GATEWAY_URL ?? process.env.WEB_GATEWAY_URL
+  if (url) return url.replace(/\/+$/, "")
+  if (process.env.NODE_ENV === "development") {
+    return "http://127.0.0.1:8888"
+  }
+  return null
 }
 
 function getCookieValue(cookieHeader: string | null, name: string): string | null {
@@ -22,6 +26,21 @@ function getCookieValue(cookieHeader: string | null, name: string): string | nul
       return value.length > 0 ? value : null
     }
   }
+  return null
+}
+
+async function resolveAccessToken(request: Request): Promise<string | null> {
+  const tokenFromHeader = getCookieValue(request.headers.get("cookie"), ACCESS_TOKEN_COOKIE)
+  if (tokenFromHeader && tokenFromHeader.length > 0) return tokenFromHeader
+
+  try {
+    const cookieStore = await cookies()
+    const tokenFromStore = cookieStore.get(ACCESS_TOKEN_COOKIE)?.value
+    if (tokenFromStore && tokenFromStore.length > 0) return tokenFromStore
+  } catch {
+    // Vitest 등 요청 스코프가 없는 환경에서는 next/headers 접근이 실패할 수 있다.
+  }
+
   return null
 }
 
@@ -45,18 +64,18 @@ type RouteContext = { params: Promise<{ path?: string[] }> }
 
 /**
  * Identity 관리 API용 BFF. 브라우저는 동일 오리진 `/api/identity/v1/...` 만 호출하고,
- * BFF가 `IDENTITY_SERVICE_URL/api/v1/...` 로 Bearer 프록시한다.
+ * BFF가 `GATEWAY_URL/api/identity/v1/...` 로 Bearer 프록시한다.
  * `/api/auth/*` 는 전용 라우트를 사용하므로 여기서는 다루지 않는다.
  */
 async function proxyIdentityManagement(request: Request, context: RouteContext): Promise<Response> {
-  const token = getCookieValue(request.headers.get("cookie"), ACCESS_TOKEN_COOKIE)
+  const token = await resolveAccessToken(request)
   if (!token) {
     return jsonError(401, "로그인이 필요합니다")
   }
 
-  const identityBase = envIdentityBaseUrl()
-  if (!identityBase) {
-    return jsonError(500, "서버 설정이 필요합니다 (IDENTITY_SERVICE_URL)")
+  const gatewayBase = envGatewayBaseUrl()
+  if (!gatewayBase) {
+    return jsonError(500, "서버 설정이 필요합니다 (GATEWAY_URL 또는 WEB_GATEWAY_URL)")
   }
 
   const { path: segments } = await context.params
@@ -70,7 +89,7 @@ async function proxyIdentityManagement(request: Request, context: RouteContext):
 
   const subPath = pathParts.map((s) => encodeURIComponent(s)).join("/")
   const url = new URL(request.url)
-  const targetUrl = `${identityBase}/api/${subPath}${url.search}`
+  const targetUrl = `${gatewayBase}/api/identity/${subPath}${url.search}`
 
   const method = request.method.toUpperCase()
   const outbound = new Headers()

@@ -38,6 +38,7 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
     private static final String HDR_PLATFORM_USER = "X-Platform-User-Id";
     private static final String HDR_ORG = "X-Org-Id";
     private static final String HDR_TEAM = "X-Team-Id";
+    private static final String HDR_SCOPE_TYPE = "X-Scope-Type";
     private static final String HDR_GATEWAY_AUTH = "X-Gateway-Auth";
     private static final String HDR_CORRELATION = "X-Correlation-Id";
     private static final Logger log = LoggerFactory.getLogger(ProxyTrustHeadersWebFilter.class);
@@ -51,6 +52,9 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
         String path = exchange.getRequest().getPath().value();
+        if (isNotificationPath(path)) {
+            return chain.filter(exchange);
+        }
         if (!requiresGatewayTrustHeaders(path)) {
             return chain.filter(exchange);
         }
@@ -142,12 +146,15 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
 
     private Mono<Void> forwardWithJwt(ServerWebExchange exchange, WebFilterChain chain, JwtAuthenticationToken jwtAuth) {
         Jwt jwt = jwtAuth.getToken();
-        ServerHttpRequest.Builder req = exchange.getRequest().mutate();
-        req.header(HDR_USER, jwt.getSubject());
         String platformUserId = jwt.getClaimAsString("userId");
-        if (platformUserId != null && !platformUserId.isBlank()) {
-            req.header(HDR_PLATFORM_USER, platformUserId);
+        if (platformUserId == null || platformUserId.isBlank()) {
+            log.warn("Reject JWT without userId claim path={} subject={}",
+                    exchange.getRequest().getPath().value(), jwt.getSubject());
+            return Mono.error(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing userId claim"));
         }
+        ServerHttpRequest.Builder req = exchange.getRequest().mutate();
+        req.header(HDR_USER, platformUserId);
+        req.header(HDR_PLATFORM_USER, platformUserId);
         copyCorrelation(exchange, req);
         String org = jwt.getClaimAsString("org_id");
         if (org != null && !org.isBlank()) {
@@ -157,7 +164,10 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
         if (team != null && !team.isBlank()) {
             req.header(HDR_TEAM, team);
         }
+        String scopeType = resolveScopeType(jwt, team);
+        req.header(HDR_SCOPE_TYPE, scopeType);
         attachGatewayAuth(req);
+        logForwarding(platformUserId, pathToService(exchange.getRequest().getPath().value()), scopeType, team);
         return chain.filter(exchange.mutate().request(req.build()).build());
     }
 
@@ -172,8 +182,58 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
         if (platformUserId != null && !platformUserId.isBlank()) {
             req.header(HDR_PLATFORM_USER, platformUserId);
         }
+        String teamId = exchange.getRequest().getHeaders().getFirst(HDR_TEAM);
+        if (teamId != null && !teamId.isBlank()) {
+            req.header(HDR_TEAM, teamId);
+        }
+        String scopeType = exchange.getRequest().getHeaders().getFirst(HDR_SCOPE_TYPE);
+        if (scopeType != null && !scopeType.isBlank()) {
+            req.header(HDR_SCOPE_TYPE, scopeType);
+        } else {
+            req.header(HDR_SCOPE_TYPE, (teamId != null && !teamId.isBlank()) ? "TEAM" : "USER");
+        }
         attachGatewayAuth(req);
+        logForwarding(userId, pathToService(exchange.getRequest().getPath().value()),
+                (scopeType != null && !scopeType.isBlank()) ? scopeType : ((teamId != null && !teamId.isBlank()) ? "TEAM" : "USER"),
+                teamId);
         return chain.filter(exchange.mutate().request(req.build()).build());
+    }
+
+    private static String resolveScopeType(Jwt jwt, String teamIdClaim) {
+        String claim = jwt.getClaimAsString("scope_type");
+        if ("TEAM".equalsIgnoreCase(claim) || "USER".equalsIgnoreCase(claim)) {
+            return claim.toUpperCase();
+        }
+        return (teamIdClaim != null && !teamIdClaim.isBlank()) ? "TEAM" : "USER";
+    }
+
+    private static boolean isNotificationPath(String path) {
+        return path.startsWith("/api/notification/");
+    }
+
+    private static String pathToService(String path) {
+        if (path.startsWith("/api/team/")) return "team-service";
+        if (path.startsWith("/api/identity/")) return "identity-service";
+        if (path.startsWith("/api/notification/")) return "notification-service";
+        if (path.startsWith("/api/v1/usage/")) return "usage-service";
+        if (path.startsWith("/api/v1/expenditure/")) return "billing-service";
+        if (path.startsWith("/api/v1/ai/")) return "proxy-service";
+        return "unknown";
+    }
+
+    private void logForwarding(String userId, String service, String scopeType, String teamId) {
+        String maskedUser = maskUserId(userId);
+        String maskedTeam = (teamId == null || teamId.isBlank()) ? "-" : maskUserId(teamId);
+        log.info("[Gateway] Forwarding request for User: {} to Service: {} scope={} team={}",
+                maskedUser, service, scopeType, maskedTeam);
+    }
+
+    private static String maskUserId(String value) {
+        if (value == null || value.isBlank()) {
+            return "-";
+        }
+        int keep = Math.min(4, value.length());
+        return value.substring(0, keep) + "***";
     }
 
     private void copyCorrelation(ServerWebExchange exchange, ServerHttpRequest.Builder req) {
@@ -193,6 +253,9 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
     static boolean requiresGatewayTrustHeaders(String path) {
         return path.startsWith("/api/v1/ai/")
                 || path.startsWith("/api/v1/usage/")
-                || path.startsWith("/api/v1/expenditure/");
+                || path.startsWith("/api/v1/expenditure/")
+                || path.startsWith("/api/identity/")
+                || path.startsWith("/api/team/")
+                || path.startsWith("/api/notification/");
     }
 }

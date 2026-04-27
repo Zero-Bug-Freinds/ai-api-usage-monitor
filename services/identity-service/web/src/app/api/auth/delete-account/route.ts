@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { cookies } from "next/headers"
 import type { ApiResponse } from "@/lib/api/identity/types"
 
 const ACCESS_TOKEN_COOKIE = "access_token"
@@ -11,10 +12,13 @@ function json<T>(status: number, body: ApiResponse<T>) {
   return NextResponse.json(body, { status, headers: noStoreHeaders() })
 }
 
-function envIdentityBaseUrl() {
-  const url = process.env.IDENTITY_SERVICE_URL
-  if (!url) return null
-  return url.replace(/\/+$/, "")
+function envGatewayBaseUrl() {
+  const url = process.env.GATEWAY_URL ?? process.env.WEB_GATEWAY_URL
+  if (url) return url.replace(/\/+$/, "")
+  if (process.env.NODE_ENV === "development") {
+    return "http://127.0.0.1:8888"
+  }
+  return null
 }
 
 function getCookieValue(cookieHeader: string | null, name: string): string | null {
@@ -28,6 +32,13 @@ function getCookieValue(cookieHeader: string | null, name: string): string | nul
     }
   }
   return null
+}
+
+async function resolveAccessToken(request: Request): Promise<string | null> {
+  const cookieStore = await cookies()
+  const tokenFromStore = cookieStore.get(ACCESS_TOKEN_COOKIE)?.value
+  if (tokenFromStore && tokenFromStore.length > 0) return tokenFromStore
+  return getCookieValue(request.headers.get("cookie"), ACCESS_TOKEN_COOKIE)
 }
 
 function isSecureCookie(request: Request): boolean {
@@ -61,16 +72,16 @@ function clearAccessTokenCookie(request: Request, res: NextResponse) {
 }
 
 export async function POST(request: Request) {
-  const token = getCookieValue(request.headers.get("cookie"), ACCESS_TOKEN_COOKIE)
+  const token = await resolveAccessToken(request)
   if (!token) {
     return json(401, { success: false, message: "Login required", data: null })
   }
 
-  const identityBaseUrl = envIdentityBaseUrl()
-  if (!identityBaseUrl) {
+  const gatewayBaseUrl = envGatewayBaseUrl()
+  if (!gatewayBaseUrl) {
     return json(500, {
       success: false,
-      message: "Server misconfiguration (IDENTITY_SERVICE_URL)",
+      message: "Server misconfiguration (GATEWAY_URL or WEB_GATEWAY_URL)",
       data: null,
     })
   }
@@ -95,7 +106,7 @@ export async function POST(request: Request) {
 
   let upstream: Response
   try {
-    upstream = await fetch(`${identityBaseUrl}/api/auth/delete-account`, {
+    upstream = await fetch(`${gatewayBaseUrl}/api/identity/auth/delete-account`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
