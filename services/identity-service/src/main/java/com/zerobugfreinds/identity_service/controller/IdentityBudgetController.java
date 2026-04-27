@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
 
 @RestController
@@ -23,20 +24,36 @@ public class IdentityBudgetController {
 
 	@GetMapping("/{userId}/budget")
 	public ResponseEntity<BudgetResponse> getUserMonthlyBudget(@PathVariable("userId") Long userId) {
-		Optional<BigDecimal> monthlyBudgetUsd = externalApiKeyService.resolveUserMonthlyBudgetUsd(userId);
-		return monthlyBudgetUsd
-				.map(value -> ResponseEntity.ok(new BudgetResponse(value)))
+		Optional<ExternalApiKeyService.UserMonthlyBudgetBreakdown> monthlyBudget =
+				externalApiKeyService.resolveUserMonthlyBudgetBreakdown(userId);
+		return monthlyBudget
+				.map(value -> ResponseEntity.ok(BudgetResponse.from(value)))
 				.orElseGet(() -> ResponseEntity.notFound().build());
 	}
 
 	@GetMapping("/budget")
 	public ResponseEntity<BudgetResponse> getUserMonthlyBudgetByEmail(@RequestParam("email") String email) {
-		Optional<BigDecimal> monthlyBudgetUsd = externalApiKeyService.resolveUserMonthlyBudgetUsdByEmail(email);
-		return monthlyBudgetUsd
-				.map(value -> ResponseEntity.ok(new BudgetResponse(value)))
+		Optional<ExternalApiKeyService.UserMonthlyBudgetBreakdown> monthlyBudget =
+				externalApiKeyService.resolveUserMonthlyBudgetBreakdownByEmail(email);
+		return monthlyBudget
+				.map(value -> ResponseEntity.ok(BudgetResponse.from(value)))
 				.orElseGet(() -> ResponseEntity.notFound().build());
 	}
 
-	public record BudgetResponse(BigDecimal monthlyBudgetUsd) {
+	public record BudgetResponse(BigDecimal monthlyBudgetUsd, List<BudgetByKeyResponse> monthlyBudgetsByKey) {
+		public static BudgetResponse from(ExternalApiKeyService.UserMonthlyBudgetBreakdown breakdown) {
+			List<BudgetByKeyResponse> items = breakdown.monthlyBudgetsByKey().stream()
+					.map(v -> new BudgetByKeyResponse(v.externalApiKeyId(), v.provider(), v.alias(), v.monthlyBudgetUsd()))
+					.toList();
+			return new BudgetResponse(breakdown.monthlyBudgetUsd(), items);
+		}
+	}
+
+	public record BudgetByKeyResponse(
+			Long externalApiKeyId,
+			String provider,
+			String alias,
+			BigDecimal monthlyBudgetUsd
+	) {
 	}
 }
