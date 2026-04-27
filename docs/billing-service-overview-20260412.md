@@ -109,7 +109,7 @@
 
 **기간 제한**: `from`~`to` 포함 일수가 `billing.analytics.max-range-days`(기본 400)를 넘으면 `IllegalArgumentException` → HTTP 400.
 
-**예산 연동**: `billing.identity.enabled=true`이고 `base-url`·`budget-path-template`이 유효할 때만 `IdentityBudgetClient`가 GET으로 JSON을 읽고, 루트에 `monthlyBudgetUsd` 필드가 있으면 요약에 포함. 404·비활성·오류 시 예산 필드는 null에 가깝게 동작(클라이언트는 empty optional).
+**예산 연동**: `billing.identity.enabled=true`이고 `base-url`·`budget-path-template`이 유효할 때만 `IdentityBudgetClient`가 GET으로 JSON을 읽는다. Identity 응답은 `monthlyBudgetUsd`(합계)와 `monthlyBudgetsByKey`(키별 목록)를 포함할 수 있으며, 현재 billing은 하위 호환을 위해 루트 `monthlyBudgetUsd`를 요약에 반영한다. 404·비활성·오류 시 예산 필드는 null에 가깝게 동작(클라이언트는 empty optional).
 `budget-path-template`에 `{userId}`가 들어가고 이메일을 쿼리에 넣는 구성(예: `...?email={userId}`)에서도 깨지지 않도록 billing은 URL-safe 인코딩으로 URI를 구성한다.
 
 ### 4.8 스케줄러 (`MonthlyExpenditureFinalizeScheduler`)
@@ -298,7 +298,7 @@ X-Gateway-Auth: local-dev-gateway-shared-secret-do-not-use-in-prod
 | 항목 | 내용 |
 |------|------|
 | **설정** | `billing.identity.enabled`, `billing.identity.base-url`, `billing.identity.budget-path-template` (`application.yml` / env). |
-| **호출** | `IdentityBudgetClient`가 `RestClient`로 GET; 경로에 `{userId}` 치환을 지원. 응답 JSON에서 `monthlyBudgetUsd`만 매핑(`BudgetEnvelope`). |
+| **호출** | `IdentityBudgetClient`가 `RestClient`로 GET; 경로에 `{userId}` 치환을 지원. Identity 응답은 `monthlyBudgetUsd`(합계)와 `monthlyBudgetsByKey`(키별 예산) 확장을 포함할 수 있으며, billing은 현재 `monthlyBudgetUsd`를 매핑(`BudgetEnvelope`). |
 | **실패 시** | 404 및 기타 오류는 **예산 없음**으로 취급(지출 합계 API는 계속 동작). |
 | **용도** | `GET /expenditure/summary` 응답에 **예산 vs 지출** 표시를 풍부히 하기 위한 선택적 연동이다. |
 

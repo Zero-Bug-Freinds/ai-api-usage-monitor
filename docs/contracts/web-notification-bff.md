@@ -11,8 +11,8 @@
 
 - 브라우저는 **동일 오리진**의 Next.js Route Handler(BFF)만 호출한다.
 - BFF는 `access_token` **httpOnly 쿠키**를 읽어 `Authorization: Bearer` 로 업스트림에 전달한다.
-- **프로덕션 경로:** BFF는 **API Gateway**의 `/api/notification/**` 로 프록시한다. Gateway가 JWT를 검증한 뒤 Nest에 `X-User-Id` 등 신뢰 헤더를 주입한다(이메일·JWT `sub`를 `X-User-Id`로 쓰지 않음 — 가이드 §2 표 참고).
-- **로컬 direct 경로:** Gateway 없이 Nest만 둘 때는 `NOTIFICATION_HTTP_UPSTREAM=direct` 로 두고, BFF가 동일 쿠키의 액세스 JWT 페이로드에서 플랫폼 `userId` 클레임만 추출해 `X-User-Id`로 전달한다(서명 검증은 Gateway 책임과 동일 키 전제 하에 로컬 한정).
+- **프로덕션 경로:** BFF는 **API Gateway**의 `/api/notification/**` 로 프록시한다. Gateway가 JWT를 검증한 뒤 Nest에 `X-User-Id` 등 신뢰 헤더를 주입한다(정본: 가이드 §2).
+- **로컬 direct 경로:** Gateway 없이 Nest만 둘 때는 `NOTIFICATION_HTTP_UPSTREAM=direct` 로 두고, BFF가 동일 쿠키의 액세스 JWT 페이로드에서 **JWT `sub`(이메일)** 을 추출해 `X-User-Id`로 전달한다(서명 검증은 Gateway 책임과 동일 키 전제 하에 로컬 한정).
 
 ---
 
@@ -49,13 +49,13 @@ Notification `web`은 Next `basePath=/notifications`를 사용한다.
 
 1. 브라우저 요청에 `access_token` httpOnly 쿠키가 없으면 BFF는 `401`로 응답한다.
 2. 쿠키가 있으면 업스트림 요청에 `Authorization: Bearer {access_token}` 을 설정한다.
-3. **`direct` 모드:** JWT 페이로드에 `userId` 클레임이 없으면 `401`로 응답한다.
+3. **`direct` 모드:** JWT 페이로드에 `sub` 클레임이 없으면 `401`로 응답한다.
 4. **`gateway` 모드:** Identity `GET /api/auth/session` 을 호출하지 않는다. `X-User-Id`는 클라이언트가 보낸 값을 신뢰·전달하지 않는다(오염 방지).
 
 ### 4.2 업스트림 전달 헤더
 
 - 필수: `Authorization: Bearer {access_token}`
-- **`direct` 모드:** `X-User-Id: {JWT userId 클레임}` (문자열; 숫형 클레임은 문자열로 정규화)
+- **`direct` 모드:** `X-User-Id: {JWT sub(이메일)}` (문자열)
 - **`gateway` 모드:** `X-User-Id` / 팀·스코프 헤더는 **Gateway가** Nest로 주입한다. BFF는 Bearer만 붙인다.
 - 선택: 인바운드 `X-Correlation-Id`가 있으면 동일 값 전달
 
@@ -72,6 +72,13 @@ Notification `web`은 Next `basePath=/notifications`를 사용한다.
 - 브라우저 `GET /notifications/api/notification/in-app-notifications?limit=20`
 - Gateway 모드: `GET {API_GATEWAY_URL}/api/notification/in-app-notifications?limit=20`
 - Direct 모드: `GET {NOTIFICATION_SERVICE_URL}/in-app-notifications?limit=20`
+
+추가 예(미확인 개수; 알림 배지):
+
+- 브라우저 `GET /notifications/api/notification/in-app-notifications/unread-count`
+- Gateway 모드: `GET {API_GATEWAY_URL}/api/notification/in-app-notifications/unread-count`
+- Direct 모드: `GET {NOTIFICATION_SERVICE_URL}/in-app-notifications/unread-count`
+- 응답: `{ "unreadCount": number }`
 
 ### 4.4 캐시 정책
 

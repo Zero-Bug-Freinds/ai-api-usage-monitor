@@ -12,7 +12,38 @@
 
 ## 응답 JSON
 
-클라이언트는 응답 루트에 **`monthlyBudgetUsd`** (number, USD) 필드가 있으면 그 값을 지출 요약 API에 붙인다. 404·비활성·오류 시 예산 필드는 생략된다.
+Identity 예산 API 응답은 아래 필드를 포함한다.
+
+- `monthlyBudgetUsd` (number, USD): 사용자 활성 키들의 월 예산 합계
+- `monthlyBudgetsByKey` (array): 키별 월 예산 목록
+  - `externalApiKeyId` (number)
+  - `provider` (string)
+  - `alias` (string)
+  - `monthlyBudgetUsd` (number, USD)
+
+예시:
+
+```json
+{
+  "monthlyBudgetUsd": 45.5,
+  "monthlyBudgetsByKey": [
+    {
+      "externalApiKeyId": 101,
+      "provider": "OPENAI",
+      "alias": "개인키-1",
+      "monthlyBudgetUsd": 20.5
+    },
+    {
+      "externalApiKeyId": 102,
+      "provider": "GEMINI",
+      "alias": "개인키-2",
+      "monthlyBudgetUsd": 25.0
+    }
+  ]
+}
+```
+
+`billing-service`는 현재 하위 호환을 위해 루트의 `monthlyBudgetUsd`를 계속 사용한다. 404·비활성·오류 시 예산 필드는 생략된다.
 
 ## MSA 원칙
 

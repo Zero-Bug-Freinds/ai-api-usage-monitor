@@ -49,6 +49,10 @@ billing:
       enabled: ${BILLING_RABBIT_COST_OUT_ENABLED:true}
       exchange: ${BILLING_RABBIT_COST_OUT_EXCHANGE:billing.events}
       routing-key: ${BILLING_RABBIT_COST_OUT_ROUTING_KEY:usage.cost.finalized}
+    budget-out:
+      enabled: ${BILLING_RABBIT_BUDGET_OUT_ENABLED:true}
+      exchange: ${BILLING_RABBIT_BUDGET_OUT_EXCHANGE:billing.events}
+      routing-key: ${BILLING_RABBIT_BUDGET_OUT_ROUTING_KEY:billing.budget.threshold.reached}
   gateway:
     shared-secret: ${GATEWAY_SHARED_SECRET:local-dev-gateway-shared-secret-do-not-use-in-prod}
   identity:

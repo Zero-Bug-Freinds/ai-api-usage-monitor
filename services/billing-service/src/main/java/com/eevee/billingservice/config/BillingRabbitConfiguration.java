@@ -24,6 +24,11 @@ public class BillingRabbitConfiguration {
     }
 
     @Bean
+    public TopicExchange billingBudgetEventsExchange(BillingRabbitProperties props) {
+        return new TopicExchange(props.getBudgetOut().getExchange(), true, false);
+    }
+
+    @Bean
     public Queue billingQueue(BillingRabbitProperties props) {
         return new Queue(props.getQueue(), true);
     }

@@ -108,13 +108,19 @@
   - `409` (`success=false`): 팀 API Key가 남아 있어 삭제 선행조건 미충족
   - `404` (`success=false`): 대상 팀이 존재하지 않는 경우
 
-### 5.2 팀 초대·수락/거절 (현행 구현)
+### 5.2 팀 초대·수락/거절/만료 (현행 구현)
 
-- `POST /api/team/v1/teams/{id}/members` 호출 시 Team Service는 **PENDING 초대 행**을 만들고 RabbitMQ로 초대 이벤트를 발행한 뒤, **초대 대상 사용자를 곧바로 팀 멤버(MEMBER)로 추가**하고 `team-member-added` 성격의 이벤트도 발행한다(초대 알림과 멤버십 반영을 분리해 쓰는 흐름).
+- `POST /api/team/v1/teams/{id}/members` 호출 시 Team Service는 **PENDING 초대 행**을 만들고 RabbitMQ로 초대 이벤트(`TEAM_INVITE_CREATED`)를 발행한다. 이 단계에서는 **팀 멤버를 추가하지 않는다**.
 - `GET /api/team/v1/me/team-invitations` 로 내 **대기(PENDING)** 초대 목록을 조회한다.
-- `POST /api/team/v1/me/team-invitations/{invitationId}/accept` 는 아직 멤버가 아니면 멤버로 추가하고 초대를 수락 처리한다. 이미 위 초대 API로 멤버가 된 경우에도 초대 레코드만 `ACCEPTED`로 마무리할 수 있다.
-- `POST /api/team/v1/me/team-invitations/{invitationId}/reject` 성공 시 초대 상태가 `REJECTED`가 된다.
-- 이미 처리된 초대를 다시 수락/거절하면 `400`을 반환한다.
+- `POST /api/team/v1/me/team-invitations/{invitationId}/accept` 성공 시 초대 상태를 `ACCEPTED`로 바꾸고, 초대 대상 사용자를 팀 멤버(MEMBER)로 추가한다(이미 멤버인 경우 중복 추가는 생략).
+- `POST /api/team/v1/me/team-invitations/{invitationId}/reject` 성공 시 초대 상태를 `REJECTED`로 바꾸며, 멤버는 추가되지 않는다.
+- 초대 생성 후 `team.invitation.expiration-days`(기본 7일)를 초과하면 상태가 `EXPIRED`로 자동 전환된다.
+- 만료된(`EXPIRED`) 초대 또는 이미 처리된(`ACCEPTED`/`REJECTED`) 초대를 다시 수락/거절하면 `400`을 반환한다.
+- `GET /api/team/v1/me/team-invitations`는 조회 시점에 만료 스윕을 먼저 수행한 뒤 **여전히 `PENDING`인 초대만** 반환한다.
+- 스케줄러(`TeamInvitationLifecycleScheduler`)가 주기적으로 만료 처리 + 오래된 초대 정리를 수행한다.
+  - `team.invitation.lifecycle-fixed-delay-ms` (기본 3600000)
+  - `team.invitation.lifecycle-initial-delay-ms` (기본 60000)
+  - `team.invitation.cleanup-retention-days` (기본 30): `ACCEPTED`/`REJECTED`/`EXPIRED` 상태 중 `respondedAt`이 보존 기간을 지난 행 삭제
 
 ### 5.3 팀 API Key 등록/조회/수정·삭제 예정
 
@@ -174,6 +180,15 @@
 
 - Team Service는 내부 호출용으로 `GET /internal/teams/{id}`를 제공한다.
 - 응답 `data`는 `teamId`, `teamName`, `createdBy`, `createdAt`를 포함한다.
+- Billing 연동용으로 `GET /internal/teams/users/{userId}/billing-summaries`를 제공한다.
+  - 응답 목록의 각 팀 항목은 `teamId`, `teamAlias`, `monthlyBudgetUsd`, `monthlyBudgetsByKey`, `apiKeys`를 포함한다.
+  - `monthlyBudgetUsd`: 팀 API 키 월 예산 합계(USD)
+  - `monthlyBudgetsByKey`: 키별 월 예산 목록(`apiKeyId`, `provider`, `alias`, `monthlyBudgetUsd`)
+  - `apiKeys`: 기존 하위 호환용 키 목록(현재 `monthlyBudgetsByKey`와 동일 스냅샷)
+- Notification 액션 처리용으로 `POST /internal/v1/team-invitations/{invitationId}/decision`를 제공한다.
+  - 요청 본문: `inviteeUserId`(string), `decision`(`ACCEPT` | `REJECT`)
+  - `decision=ACCEPT`: 초대 수락 처리(`ACCEPTED`) + 멤버 추가
+  - `decision=REJECT`: 초대 거절 처리(`REJECTED`) + 멤버 미추가
 
 ### 6.2 RabbitMQ 이벤트 (`team.events`)
 
