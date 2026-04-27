@@ -13,6 +13,9 @@ import com.zerobugfreinds.team_service.repository.TeamRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -130,6 +133,65 @@ class TeamServiceInvitationDecisionTest {
 				InternalTeamInvitationDecisionRequest.Decision.ACCEPT
 		))
 				.isInstanceOf(InvalidTeamInvitationStateException.class)
-				.hasMessageContaining("이미 처리된 초대");
+				.hasMessageContaining("이미 처리되었거나 만료된 초대");
+	}
+
+	@Test
+	void acceptInvitation_expiredPendingInvitation_throwsInvalidStateException() {
+		TeamRepository teamRepository = mock(TeamRepository.class);
+		TeamMemberRepository teamMemberRepository = mock(TeamMemberRepository.class);
+		TeamInvitationRepository teamInvitationRepository = mock(TeamInvitationRepository.class);
+		TeamApiKeyRepository teamApiKeyRepository = mock(TeamApiKeyRepository.class);
+		TeamDomainEventPublisher teamDomainEventPublisher = mock(TeamDomainEventPublisher.class);
+		IdentityUserSyncService identityUserSyncService = mock(IdentityUserSyncService.class);
+		TeamService teamService = new TeamService(
+				teamRepository,
+				teamMemberRepository,
+				teamInvitationRepository,
+				teamApiKeyRepository,
+				teamDomainEventPublisher,
+				identityUserSyncService
+		);
+		teamService.setInvitationExpirationDays(7);
+
+		TeamInvitationEntity invitation = TeamInvitationEntity.create(103L, "owner@test.com", "member@test.com");
+		ReflectionTestUtils.setField(invitation, "id", 99L);
+		ReflectionTestUtils.setField(invitation, "createdAt", Instant.now().minus(10, ChronoUnit.DAYS));
+		when(teamInvitationRepository.findByIdAndInviteeId(99L, "member@test.com")).thenReturn(Optional.of(invitation));
+
+		assertThatThrownBy(() -> teamService.acceptInvitation("member@test.com", 99L))
+				.isInstanceOf(InvalidTeamInvitationStateException.class)
+				.hasMessageContaining("만료");
+		assertThat(invitation.getStatus()).isEqualTo(TeamInvitationStatus.EXPIRED);
+	}
+
+	@Test
+	void expireStaleInvitations_marksPendingInvitationsExpired() {
+		TeamRepository teamRepository = mock(TeamRepository.class);
+		TeamMemberRepository teamMemberRepository = mock(TeamMemberRepository.class);
+		TeamInvitationRepository teamInvitationRepository = mock(TeamInvitationRepository.class);
+		TeamApiKeyRepository teamApiKeyRepository = mock(TeamApiKeyRepository.class);
+		TeamDomainEventPublisher teamDomainEventPublisher = mock(TeamDomainEventPublisher.class);
+		IdentityUserSyncService identityUserSyncService = mock(IdentityUserSyncService.class);
+		TeamService teamService = new TeamService(
+				teamRepository,
+				teamMemberRepository,
+				teamInvitationRepository,
+				teamApiKeyRepository,
+				teamDomainEventPublisher,
+				identityUserSyncService
+		);
+		teamService.setInvitationExpirationDays(7);
+
+		TeamInvitationEntity oldPending = TeamInvitationEntity.create(201L, "owner@test.com", "member@test.com");
+		when(teamInvitationRepository.findAllByStatusAndCreatedAtBefore(
+				org.mockito.ArgumentMatchers.eq(TeamInvitationStatus.PENDING),
+				org.mockito.ArgumentMatchers.any(Instant.class)
+		)).thenReturn(List.of(oldPending));
+
+		int expired = teamService.expireStaleInvitations();
+
+		assertThat(expired).isEqualTo(1);
+		assertThat(oldPending.getStatus()).isEqualTo(TeamInvitationStatus.EXPIRED);
 	}
 }
