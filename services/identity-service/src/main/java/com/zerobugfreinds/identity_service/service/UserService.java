@@ -142,6 +142,22 @@ public class UserService {
 				.collect(LinkedHashSet::new, Set::add, Set::addAll);
 	}
 
+	@Transactional(readOnly = true)
+	public User findByAuthenticatedPrincipal(String principal) {
+		if (principal == null || principal.isBlank()) {
+			throw new InvalidCredentialsException("인증 사용자 정보가 없습니다");
+		}
+		String normalized = principal.trim();
+		try {
+			Long userId = Long.parseLong(normalized);
+			return userRepository.findById(userId)
+					.orElseThrow(() -> new InvalidCredentialsException("사용자 정보를 찾을 수 없습니다"));
+		} catch (NumberFormatException ignored) {
+			return userRepository.findByEmail(normalized)
+					.orElseThrow(() -> new InvalidCredentialsException("사용자 정보를 찾을 수 없습니다"));
+		}
+	}
+
 	private TokenResponse issueTokenPair(User user, Long activeTeamId) {
 		String accessToken = jwtTokenProvider.createAccessToken(user, activeTeamId);
 		String refreshToken = jwtTokenProvider.createRefreshToken(user, activeTeamId);
