@@ -5,6 +5,7 @@ import com.zerobugfreinds.team_service.domain.TeamInvitationStatus;
 import com.zerobugfreinds.team_service.dto.InternalTeamDetailResponse;
 import com.zerobugfreinds.team_service.dto.InternalBillingTeamApiKeyResponse;
 import com.zerobugfreinds.team_service.dto.InternalBillingTeamSummaryResponse;
+import com.zerobugfreinds.team_service.dto.InternalTeamInvitationDecisionRequest;
 import com.zerobugfreinds.team_service.dto.InternalTeamMembershipVerifyResponse;
 import com.zerobugfreinds.team_service.dto.TeamResponse;
 import com.zerobugfreinds.team_service.dto.TeamInvitationActionResponse;
@@ -34,6 +35,7 @@ import com.zerobugfreinds.team_service.repository.TeamApiKeyRepository;
 import com.zerobugfreinds.team_service.repository.TeamInvitationRepository;
 import com.zerobugfreinds.team_service.repository.TeamMemberRepository;
 import com.zerobugfreinds.team_service.repository.TeamRepository;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -48,6 +50,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.time.temporal.ChronoUnit;
 
 @Service
 public class TeamService {
@@ -57,6 +60,8 @@ public class TeamService {
 	private final TeamApiKeyRepository teamApiKeyRepository;
 	private final TeamDomainEventPublisher teamDomainEventPublisher;
 	private final IdentityUserSyncService identityUserSyncService;
+	private long invitationExpirationDays = 7;
+	private long invitationCleanupRetentionDays = 30;
 
 	public TeamService(
 			TeamRepository teamRepository,
@@ -72,6 +77,16 @@ public class TeamService {
 		this.teamApiKeyRepository = teamApiKeyRepository;
 		this.teamDomainEventPublisher = teamDomainEventPublisher;
 		this.identityUserSyncService = identityUserSyncService;
+	}
+
+	@Value("${team.invitation.expiration-days:7}")
+	public void setInvitationExpirationDays(long invitationExpirationDays) {
+		this.invitationExpirationDays = invitationExpirationDays;
+	}
+
+	@Value("${team.invitation.cleanup-retention-days:30}")
+	public void setInvitationCleanupRetentionDays(long invitationCleanupRetentionDays) {
+		this.invitationCleanupRetentionDays = invitationCleanupRetentionDays;
 	}
 
 	@Transactional
@@ -213,9 +228,15 @@ public class TeamService {
 							apiKey.getMonthlyBudgetUsd()
 					))
 					.toList();
+			java.math.BigDecimal totalMonthlyBudgetUsd = keyResponses.stream()
+					.map(InternalBillingTeamApiKeyResponse::monthlyBudgetUsd)
+					.filter(java.util.Objects::nonNull)
+					.reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
 			result.add(new InternalBillingTeamSummaryResponse(
 					String.valueOf(team.getId()),
 					team.getName(),
+					totalMonthlyBudgetUsd,
+					keyResponses,
 					keyResponses
 			));
 		}
@@ -260,6 +281,7 @@ public class TeamService {
 		if (!StringUtils.hasText(actorUserId)) {
 			throw new IllegalArgumentException("userId는 필수입니다");
 		}
+		expireStaleInvitations(Instant.now());
 		List<TeamInvitationEntity> invitations =
 				teamInvitationRepository.findAllByInviteeIdAndStatusOrderByCreatedAtDesc(actorUserId, TeamInvitationStatus.PENDING);
 		if (invitations.isEmpty()) {
@@ -295,8 +317,9 @@ public class TeamService {
 	@Transactional
 	public TeamInvitationActionResponse acceptInvitation(String actorUserId, Long invitationId) {
 		TeamInvitationEntity invitation = findInvitationForInvitee(actorUserId, invitationId);
+		expireInvitationIfNeeded(invitation, Instant.now());
 		if (invitation.getStatus() != TeamInvitationStatus.PENDING) {
-			throw new InvalidTeamInvitationStateException("이미 처리된 초대입니다");
+			throw new InvalidTeamInvitationStateException("이미 처리되었거나 만료된 초대입니다");
 		}
 
 		TeamEntity team = teamRepository.findById(invitation.getTeamId())
@@ -336,8 +359,9 @@ public class TeamService {
 	@Transactional
 	public TeamInvitationActionResponse rejectInvitation(String actorUserId, Long invitationId) {
 		TeamInvitationEntity invitation = findInvitationForInvitee(actorUserId, invitationId);
+		expireInvitationIfNeeded(invitation, Instant.now());
 		if (invitation.getStatus() != TeamInvitationStatus.PENDING) {
-			throw new InvalidTeamInvitationStateException("이미 처리된 초대입니다");
+			throw new InvalidTeamInvitationStateException("이미 처리되었거나 만료된 초대입니다");
 		}
 
 		TeamEntity team = teamRepository.findById(invitation.getTeamId())
@@ -361,6 +385,18 @@ public class TeamService {
 				invitation.getStatus().name(),
 				respondedAt
 		);
+	}
+
+	@Transactional
+	public TeamInvitationActionResponse processInvitationDecisionInternal(
+			String inviteeUserId,
+			Long invitationId,
+			InternalTeamInvitationDecisionRequest.Decision decision
+	) {
+		if (decision == InternalTeamInvitationDecisionRequest.Decision.ACCEPT) {
+			return acceptInvitation(inviteeUserId, invitationId);
+		}
+		return rejectInvitation(inviteeUserId, invitationId);
 	}
 
 	@Transactional
@@ -417,6 +453,53 @@ public class TeamService {
 		}
 		return teamInvitationRepository.findByIdAndInviteeId(invitationId, actorUserId.trim())
 				.orElseThrow(() -> new TeamInvitationNotFoundException("초대를 찾을 수 없습니다"));
+	}
+
+	@Transactional
+	public int expireStaleInvitations() {
+		return expireStaleInvitations(Instant.now());
+	}
+
+	@Transactional
+	int expireStaleInvitations(Instant now) {
+		if (invitationExpirationDays <= 0) {
+			return 0;
+		}
+		Instant expirationCutoff = now.minus(invitationExpirationDays, ChronoUnit.DAYS);
+		List<TeamInvitationEntity> staleInvitations =
+				teamInvitationRepository.findAllByStatusAndCreatedAtBefore(TeamInvitationStatus.PENDING, expirationCutoff);
+		for (TeamInvitationEntity invitation : staleInvitations) {
+			invitation.expire(now);
+		}
+		return staleInvitations.size();
+	}
+
+	@Transactional
+	public int purgeOldInvitations() {
+		if (invitationCleanupRetentionDays <= 0) {
+			return 0;
+		}
+		Instant cleanupCutoff = Instant.now().minus(invitationCleanupRetentionDays, ChronoUnit.DAYS);
+		return Math.toIntExact(
+				teamInvitationRepository.deleteByStatusInAndRespondedAtBefore(
+						List.of(
+								TeamInvitationStatus.ACCEPTED,
+								TeamInvitationStatus.REJECTED,
+								TeamInvitationStatus.EXPIRED
+						),
+						cleanupCutoff
+				)
+		);
+	}
+
+	private void expireInvitationIfNeeded(TeamInvitationEntity invitation, Instant now) {
+		if (invitation.getStatus() != TeamInvitationStatus.PENDING || invitationExpirationDays <= 0) {
+			return;
+		}
+		Instant expirationCutoff = now.minus(invitationExpirationDays, ChronoUnit.DAYS);
+		if (invitation.getCreatedAt().isBefore(expirationCutoff)) {
+			invitation.expire(now);
+		}
 	}
 
 	private boolean existsUserInTeamDb(String userIdOrEmail) {
