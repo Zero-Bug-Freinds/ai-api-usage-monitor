@@ -289,8 +289,9 @@ services:
       - api-gateway-service
       - notification-service
     environment:
-      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://host.docker.internal:8090}
-      NOTIFICATION_SERVICE_URL: ${WEB_NOTIFICATION_SERVICE_URL:-http://notification-service:8096}
+      NOTIFICATION_HTTP_UPSTREAM: ${NOTIFICATION_HTTP_UPSTREAM:-direct}
+      API_GATEWAY_URL: ${WEB_GATEWAY_URL:-http://api-gateway-service:8080}
+      NOTIFICATION_SERVICE_URL: ${WEB_NOTIFICATION_SERVICE_URL:-http://notification-service:8096/api}
       NOTIFICATION_INTERNAL_SECRET: ${NOTIFICATION_INTERNAL_SECRET:-}
       NEXT_PUBLIC_NOTIFICATION_POLL_MS: ${NEXT_PUBLIC_NOTIFICATION_POLL_MS:-10000}
     extra_hosts:
