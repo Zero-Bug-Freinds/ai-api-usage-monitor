@@ -110,10 +110,10 @@
 
 ### 5.2 팀 초대·수락/거절 (현행 구현)
 
-- `POST /api/team/v1/teams/{id}/members` 호출 시 Team Service는 **PENDING 초대 행**을 만들고 RabbitMQ로 초대 이벤트를 발행한 뒤, **초대 대상 사용자를 곧바로 팀 멤버(MEMBER)로 추가**하고 `team-member-added` 성격의 이벤트도 발행한다(초대 알림과 멤버십 반영을 분리해 쓰는 흐름).
+- `POST /api/team/v1/teams/{id}/members` 호출 시 Team Service는 **PENDING 초대 행**을 만들고 RabbitMQ로 초대 이벤트(`TEAM_INVITE_CREATED`)를 발행한다. 이 단계에서는 **팀 멤버를 추가하지 않는다**.
 - `GET /api/team/v1/me/team-invitations` 로 내 **대기(PENDING)** 초대 목록을 조회한다.
-- `POST /api/team/v1/me/team-invitations/{invitationId}/accept` 는 아직 멤버가 아니면 멤버로 추가하고 초대를 수락 처리한다. 이미 위 초대 API로 멤버가 된 경우에도 초대 레코드만 `ACCEPTED`로 마무리할 수 있다.
-- `POST /api/team/v1/me/team-invitations/{invitationId}/reject` 성공 시 초대 상태가 `REJECTED`가 된다.
+- `POST /api/team/v1/me/team-invitations/{invitationId}/accept` 성공 시 초대 상태를 `ACCEPTED`로 바꾸고, 초대 대상 사용자를 팀 멤버(MEMBER)로 추가한다(이미 멤버인 경우 중복 추가는 생략).
+- `POST /api/team/v1/me/team-invitations/{invitationId}/reject` 성공 시 초대 상태를 `REJECTED`로 바꾸며, 멤버는 추가되지 않는다.
 - 이미 처리된 초대를 다시 수락/거절하면 `400`을 반환한다.
 
 ### 5.3 팀 API Key 등록/조회/수정·삭제 예정
@@ -179,6 +179,10 @@
   - `monthlyBudgetUsd`: 팀 API 키 월 예산 합계(USD)
   - `monthlyBudgetsByKey`: 키별 월 예산 목록(`apiKeyId`, `provider`, `alias`, `monthlyBudgetUsd`)
   - `apiKeys`: 기존 하위 호환용 키 목록(현재 `monthlyBudgetsByKey`와 동일 스냅샷)
+- Notification 액션 처리용으로 `POST /internal/v1/team-invitations/{invitationId}/decision`를 제공한다.
+  - 요청 본문: `inviteeUserId`(string), `decision`(`ACCEPT` | `REJECT`)
+  - `decision=ACCEPT`: 초대 수락 처리(`ACCEPTED`) + 멤버 추가
+  - `decision=REJECT`: 초대 거절 처리(`REJECTED`) + 멤버 미추가
 
 ### 6.2 RabbitMQ 이벤트 (`team.events`)
 

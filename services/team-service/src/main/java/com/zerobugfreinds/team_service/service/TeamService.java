@@ -5,6 +5,7 @@ import com.zerobugfreinds.team_service.domain.TeamInvitationStatus;
 import com.zerobugfreinds.team_service.dto.InternalTeamDetailResponse;
 import com.zerobugfreinds.team_service.dto.InternalBillingTeamApiKeyResponse;
 import com.zerobugfreinds.team_service.dto.InternalBillingTeamSummaryResponse;
+import com.zerobugfreinds.team_service.dto.InternalTeamInvitationDecisionRequest;
 import com.zerobugfreinds.team_service.dto.InternalTeamMembershipVerifyResponse;
 import com.zerobugfreinds.team_service.dto.TeamResponse;
 import com.zerobugfreinds.team_service.dto.TeamInvitationActionResponse;
@@ -367,6 +368,18 @@ public class TeamService {
 				invitation.getStatus().name(),
 				respondedAt
 		);
+	}
+
+	@Transactional
+	public TeamInvitationActionResponse processInvitationDecisionInternal(
+			String inviteeUserId,
+			Long invitationId,
+			InternalTeamInvitationDecisionRequest.Decision decision
+	) {
+		if (decision == InternalTeamInvitationDecisionRequest.Decision.ACCEPT) {
+			return acceptInvitation(inviteeUserId, invitationId);
+		}
+		return rejectInvitation(inviteeUserId, invitationId);
 	}
 
 	@Transactional
