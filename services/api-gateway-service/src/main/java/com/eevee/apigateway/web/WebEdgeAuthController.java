@@ -69,7 +69,7 @@ public class WebEdgeAuthController {
         if (StringUtils.hasText(scopeType)) {
             headers.add(HDR_AUTH_SCOPE_TYPE, scopeType.toUpperCase());
         }
-        return Mono.just(new ResponseEntity<>(headers, HttpStatus.NO_CONTENT));
+        return Mono.just(new ResponseEntity<>(headers, HttpStatus.OK));
     }
 
     private boolean isTrusted(String trustHeader) {
