@@ -13,9 +13,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -49,7 +51,7 @@ class UsageCostFinalizedEventPublisherTest {
                 "c",
                 "u",
                 null,
-                null,
+                "t",
                 "k",
                 "hash",
                 "managed",
@@ -66,13 +68,21 @@ class UsageCostFinalizedEventPublisherTest {
 
         publisher.publish(source, "gpt-4o-mini", new BigDecimal("0.01"));
 
-        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
-        verify(rabbitTemplate).convertAndSend(eq("billing.events"), eq("usage.cost.finalized"), captor.capture());
-        UsageCostFinalizedEvent sent = objectMapper.readValue(captor.getValue(), UsageCostFinalizedEvent.class);
+        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
+        verify(rabbitTemplate).send(eq("billing.events"), eq("usage.cost.finalized"), captor.capture());
+        Message sentMessage = captor.getValue();
+        UsageCostFinalizedEvent sent = objectMapper.readValue(
+                new String(sentMessage.getBody(), StandardCharsets.UTF_8),
+                UsageCostFinalizedEvent.class);
         assertThat(sent.eventId()).isEqualTo(source.eventId());
         assertThat(sent.estimatedCostUsd()).isEqualByComparingTo("0.01");
         assertThat(sent.schemaVersion()).isEqualTo(UsageCostFinalizedEvent.CURRENT_SCHEMA_VERSION);
         assertThat(sent.provider()).isEqualTo(AiProvider.OPENAI);
         assertThat(sent.model()).isEqualTo("gpt-4o-mini");
+
+        assertThat(sentMessage.getMessageProperties().getHeaders().get("subjectType")).isEqualTo("API_KEY");
+        assertThat(sentMessage.getMessageProperties().getHeaders().get("userId")).isEqualTo("u");
+        assertThat(sentMessage.getMessageProperties().getHeaders().get("teamId")).isEqualTo("t");
+        assertThat(sentMessage.getMessageProperties().getHeaders().get("apiKeyId")).isEqualTo("k");
     }
 }
