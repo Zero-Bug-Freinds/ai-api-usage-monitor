@@ -27,7 +27,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * E2E 대체: 운영 JWT 모드에서 {@code sub} → {@code X-User-Id} 정합, 개발 모드에서 클라이언트 {@code X-User-Id} 전달.
+ * E2E 대체: 운영 JWT 모드에서 {@code userId} claim → {@code X-User-Id}/{@code X-Platform-User-Id} 정합,
+ * 개발 모드에서 클라이언트 {@code X-User-Id} 전달.
  * 문서: {@code docs/contracts/gateway-proxy.md} §4.2.
  */
 class ProxyTrustHeadersWebFilterTest {
@@ -150,11 +151,12 @@ class ProxyTrustHeadersWebFilterTest {
     }
 
     @Test
-    void jwtSubjectIsForwardedAsXUserId_forUsagePath() {
+    void jwtUserIdClaimIsForwardedAsXUserId_forUsagePath() {
         gatewayProperties.setDevMode(false);
         Jwt jwt = Jwt.withTokenValue("dummy")
                 .header("alg", "HS256")
                 .subject("user@example.com")
+                .claim("userId", "42")
                 .build();
         JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt);
 
@@ -171,7 +173,7 @@ class ProxyTrustHeadersWebFilterTest {
         StepVerifier.create(filter.applyTrustHeaders(exchange, chain, auth))
                 .verifyComplete();
 
-        assertThat(userIdSeen.get()).isEqualTo("user@example.com");
+        assertThat(userIdSeen.get()).isEqualTo("42");
     }
 
     @Test
@@ -198,6 +200,27 @@ class ProxyTrustHeadersWebFilterTest {
                 .verifyComplete();
 
         assertThat(platformUserIdSeen.get()).isEqualTo("42");
+    }
+
+    @Test
+    void jwtWithoutUserIdClaim_isRejectedInNonDevMode() {
+        gatewayProperties.setDevMode(false);
+        Jwt jwt = Jwt.withTokenValue("dummy")
+                .header("alg", "HS256")
+                .subject("user@example.com")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt);
+
+        MockServerHttpRequest request = MockServerHttpRequest.get("/api/identity/auth/session").build();
+        MockServerWebExchange exchange = MockServerWebExchange.from(request);
+        WebFilterChain chain = ex -> Mono.empty();
+
+        ProxyTrustHeadersWebFilter filter = new ProxyTrustHeadersWebFilter(gatewayProperties);
+
+        StepVerifier.create(filter.applyTrustHeaders(exchange, chain, auth))
+                .expectErrorMatches(t -> t instanceof org.springframework.web.server.ResponseStatusException
+                        && ((org.springframework.web.server.ResponseStatusException) t).getStatusCode().value() == 401)
+                .verify();
     }
 
     @Test

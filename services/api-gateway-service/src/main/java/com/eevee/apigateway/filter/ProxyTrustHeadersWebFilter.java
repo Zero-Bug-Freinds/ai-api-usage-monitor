@@ -146,12 +146,15 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
 
     private Mono<Void> forwardWithJwt(ServerWebExchange exchange, WebFilterChain chain, JwtAuthenticationToken jwtAuth) {
         Jwt jwt = jwtAuth.getToken();
-        ServerHttpRequest.Builder req = exchange.getRequest().mutate();
-        req.header(HDR_USER, jwt.getSubject());
         String platformUserId = jwt.getClaimAsString("userId");
-        if (platformUserId != null && !platformUserId.isBlank()) {
-            req.header(HDR_PLATFORM_USER, platformUserId);
+        if (platformUserId == null || platformUserId.isBlank()) {
+            log.warn("Reject JWT without userId claim path={} subject={}",
+                    exchange.getRequest().getPath().value(), jwt.getSubject());
+            return Mono.error(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing userId claim"));
         }
+        ServerHttpRequest.Builder req = exchange.getRequest().mutate();
+        req.header(HDR_USER, platformUserId);
+        req.header(HDR_PLATFORM_USER, platformUserId);
         copyCorrelation(exchange, req);
         String org = jwt.getClaimAsString("org_id");
         if (org != null && !org.isBlank()) {
@@ -164,7 +167,7 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
         String scopeType = resolveScopeType(jwt, team);
         req.header(HDR_SCOPE_TYPE, scopeType);
         attachGatewayAuth(req);
-        logForwarding(jwt.getSubject(), pathToService(exchange.getRequest().getPath().value()), scopeType, team);
+        logForwarding(platformUserId, pathToService(exchange.getRequest().getPath().value()), scopeType, team);
         return chain.filter(exchange.mutate().request(req.build()).build());
     }
 
