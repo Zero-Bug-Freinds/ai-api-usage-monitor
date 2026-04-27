@@ -52,9 +52,6 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
         String path = exchange.getRequest().getPath().value();
-        if (isNotificationPath(path)) {
-            return chain.filter(exchange);
-        }
         if (!requiresGatewayTrustHeaders(path)) {
             return chain.filter(exchange);
         }
@@ -205,10 +202,6 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
             return claim.toUpperCase();
         }
         return (teamIdClaim != null && !teamIdClaim.isBlank()) ? "TEAM" : "USER";
-    }
-
-    private static boolean isNotificationPath(String path) {
-        return path.startsWith("/api/notification/");
     }
 
     private static String pathToService(String path) {
