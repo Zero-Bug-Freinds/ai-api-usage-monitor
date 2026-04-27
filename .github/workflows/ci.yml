@@ -35,15 +35,6 @@ on:
       - 'pnpm-lock.yaml'
       - 'package.json'
 
-  # Manual run: allow temporarily skipping usage-service tests.
-  workflow_dispatch:
-    inputs:
-      skip_usage_service_tests:
-        description: "Skip usage-service Gradle test task (temporary escape hatch)"
-        type: boolean
-        required: false
-        default: false
-
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -348,9 +339,6 @@ jobs:
     defaults:
       run:
         working-directory: services/usage-service
-    env:
-      # Set via workflow_dispatch input or repository variable (Settings → Variables → Actions).
-      SKIP_USAGE_SERVICE_TESTS: ${{ (github.event_name == 'workflow_dispatch' && inputs.skip_usage_service_tests) || vars.SKIP_USAGE_SERVICE_TESTS || 'false' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -367,13 +355,7 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
       - name: Build and test
-        run: |
-          if [ "${SKIP_USAGE_SERVICE_TESTS}" = "true" ] || [ "${SKIP_USAGE_SERVICE_TESTS}" = "1" ]; then
-            echo "Skipping usage-service tests (SKIP_USAGE_SERVICE_TESTS=${SKIP_USAGE_SERVICE_TESTS})"
-            ./gradlew build --no-daemon -x test
-          else
-            ./gradlew build --no-daemon
-          fi
+        run: ./gradlew build --no-daemon
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
