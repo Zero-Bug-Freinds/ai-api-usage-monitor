@@ -51,6 +51,8 @@ class UsageCostFinalizedPipelineIntegrationTest {
         r.add("spring.datasource.username", postgres::getUsername);
         r.add("spring.datasource.password", postgres::getPassword);
         r.add("spring.jpa.hibernate.ddl-auto", () -> "create-drop");
+        // ✅ integration tests rely on JPA create-drop; disable Flyway migrations
+        r.add("spring.flyway.enabled", () -> "false");
         r.add("usage.gateway.shared-secret", () -> "test-secret");
     }
 
