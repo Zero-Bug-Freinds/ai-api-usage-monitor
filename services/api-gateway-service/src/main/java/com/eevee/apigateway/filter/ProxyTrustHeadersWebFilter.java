@@ -41,6 +41,11 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
     private static final String HDR_SCOPE_TYPE = "X-Scope-Type";
     private static final String HDR_GATEWAY_AUTH = "X-Gateway-Auth";
     private static final String HDR_CORRELATION = "X-Correlation-Id";
+    private static final String HDR_WEB_EDGE_AUTH = "X-Web-Edge-Auth";
+    private static final String HDR_AUTH_SUBJECT = "X-Auth-Subject";
+    private static final String HDR_AUTH_USER_ID = "X-Auth-UserId";
+    private static final String HDR_AUTH_TEAM_ID = "X-Auth-TeamId";
+    private static final String HDR_AUTH_SCOPE_TYPE = "X-Auth-Scope-Type";
     private static final Logger log = LoggerFactory.getLogger(ProxyTrustHeadersWebFilter.class);
 
     private final GatewayProperties gatewayProperties;
@@ -54,6 +59,12 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
         String path = exchange.getRequest().getPath().value();
         if (!requiresGatewayTrustHeaders(path)) {
             return chain.filter(exchange);
+        }
+        if (hasTrustedAuthHeaders(exchange)) {
+            if (!isTrustedWebEdge(exchange)) {
+                return Mono.error(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Untrusted web-edge request"));
+            }
+            return forwardWithTrustedAuthHeaders(exchange, chain);
         }
         log.info("ProxyTrustHeadersWebFilter auth resolution start path={} devMode={}",
                 path, gatewayProperties.isDevMode());
@@ -70,6 +81,40 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
                     }
                     return Mono.error(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthenticated"));
                 }));
+    }
+
+    private Mono<Void> forwardWithTrustedAuthHeaders(ServerWebExchange exchange, WebFilterChain chain) {
+        String path = exchange.getRequest().getPath().value();
+        String service = pathToService(path);
+        String subject = exchange.getRequest().getHeaders().getFirst(HDR_AUTH_SUBJECT);
+        String platformUserId = exchange.getRequest().getHeaders().getFirst(HDR_AUTH_USER_ID);
+        if (subject == null || subject.isBlank() || platformUserId == null || platformUserId.isBlank()) {
+            return Mono.error(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing X-Auth-* headers"));
+        }
+
+        String effectiveUserId = resolveUserIdForService(service, subject, platformUserId);
+        String requestedTeamId = exchange.getRequest().getHeaders().getFirst(HDR_TEAM);
+        String authTeamId = exchange.getRequest().getHeaders().getFirst(HDR_AUTH_TEAM_ID);
+        String teamId = resolveTeamIdForPath(path, requestedTeamId, authTeamId);
+        String requestedScopeType = exchange.getRequest().getHeaders().getFirst(HDR_SCOPE_TYPE);
+        String authScopeType = exchange.getRequest().getHeaders().getFirst(HDR_AUTH_SCOPE_TYPE);
+        String scopeType = resolveScopeTypeFromTrusted(requestedScopeType, authScopeType, teamId);
+
+        ServerHttpRequest.Builder req = exchange.getRequest().mutate();
+        req.header(HDR_USER, effectiveUserId);
+        req.header(HDR_PLATFORM_USER, platformUserId);
+        copyCorrelation(exchange, req);
+        String org = exchange.getRequest().getHeaders().getFirst(HDR_ORG);
+        if (org != null && !org.isBlank()) {
+            req.header(HDR_ORG, org);
+        }
+        if (teamId != null && !teamId.isBlank()) {
+            req.header(HDR_TEAM, teamId);
+        }
+        req.header(HDR_SCOPE_TYPE, scopeType);
+        attachGatewayAuth(req);
+        logForwarding(effectiveUserId, service, scopeType, teamId);
+        return chain.filter(exchange.mutate().request(req.build()).build());
     }
 
     /** Resolves {@link Authentication} from {@link ServerWebExchange#getPrincipal()} when present. */
@@ -179,6 +224,47 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
             return subject;
         }
         return platformUserId;
+    }
+
+    private boolean hasTrustedAuthHeaders(ServerWebExchange exchange) {
+        String subject = exchange.getRequest().getHeaders().getFirst(HDR_AUTH_SUBJECT);
+        String userId = exchange.getRequest().getHeaders().getFirst(HDR_AUTH_USER_ID);
+        return subject != null && !subject.isBlank() && userId != null && !userId.isBlank();
+    }
+
+    private boolean isTrustedWebEdge(ServerWebExchange exchange) {
+        String expected = gatewayProperties.getSharedSecret();
+        String incoming = exchange.getRequest().getHeaders().getFirst(HDR_WEB_EDGE_AUTH);
+        return expected != null && !expected.isBlank() && expected.equals(incoming);
+    }
+
+    private static String resolveTeamIdForPath(String path, String requestedTeamId, String authTeamId) {
+        if (path.startsWith("/api/v1/ai/")) {
+            if (requestedTeamId != null && !requestedTeamId.isBlank()) {
+                return requestedTeamId;
+            }
+            if (authTeamId != null && !authTeamId.isBlank()) {
+                return authTeamId;
+            }
+            return null;
+        }
+        if (requestedTeamId != null && !requestedTeamId.isBlank()) {
+            return requestedTeamId;
+        }
+        if (authTeamId != null && !authTeamId.isBlank()) {
+            return authTeamId;
+        }
+        return null;
+    }
+
+    private static String resolveScopeTypeFromTrusted(String requestedScopeType, String authScopeType, String teamId) {
+        if ("TEAM".equalsIgnoreCase(requestedScopeType) || "USER".equalsIgnoreCase(requestedScopeType)) {
+            return requestedScopeType.toUpperCase();
+        }
+        if ("TEAM".equalsIgnoreCase(authScopeType) || "USER".equalsIgnoreCase(authScopeType)) {
+            return authScopeType.toUpperCase();
+        }
+        return (teamId != null && !teamId.isBlank()) ? "TEAM" : "USER";
     }
 
     private Mono<Void> forwardDevHeaders(ServerWebExchange exchange, WebFilterChain chain) {
