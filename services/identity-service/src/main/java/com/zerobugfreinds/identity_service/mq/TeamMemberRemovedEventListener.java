@@ -1,5 +1,6 @@
 package com.zerobugfreinds.identity_service.mq;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.zerobugfreinds.identity_service.service.RefreshTokenRevocationService;
@@ -47,6 +48,7 @@ public class TeamMemberRemovedEventListener {
         return Long.parseLong(rawUserId.trim());
     }
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
     private record TeamMemberRemovedEvent(
             String eventType,
             String teamId,
