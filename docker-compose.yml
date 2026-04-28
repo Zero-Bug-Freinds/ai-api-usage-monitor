@@ -35,6 +35,7 @@
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-app}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
@@ -43,9 +44,16 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   postgres-team:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-app}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
@@ -67,6 +75,7 @@ services:
 
   postgres-usage:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       # superuser credentials used by docker/postgres/init/02-create-usage-db.sh
       POSTGRES_USER: ${POSTGRES_USER:-app}
@@ -81,9 +90,16 @@ services:
     volumes:
       - postgres_usage_data:/var/lib/postgresql/data
       - ./docker/postgres/init/02-create-usage-db.sh:/docker-entrypoint-initdb.d/02-create-usage-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   postgres-billing:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-app}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
@@ -96,9 +112,16 @@ services:
     volumes:
       - postgres_billing_data:/var/lib/postgresql/data
       - ./docker/postgres/init/03-create-billing-db.sh:/docker-entrypoint-initdb.d/03-create-billing-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   postgres-notification:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-app}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
@@ -111,11 +134,20 @@ services:
     volumes:
       - postgres_notification_data:/var/lib/postgresql/data
       - ./docker/postgres/init/04-create-notification-db.sh:/docker-entrypoint-initdb.d/04-create-notification-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   rabbitmq:
     image: rabbitmq:3-management-alpine
+    restart: unless-stopped
     ports:
+      # AMQP broker port (app-to-broker messaging)
       - "${RABBITMQ_PORT:-5672}:5672"
+      # RabbitMQ Management UI (optional admin dashboard)
       - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
@@ -129,12 +161,14 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
       - "${REDIS_PORT:-6379}:6379"
 
   notification-service:
     profiles:
       - web
+    restart: unless-stopped
     build:
       context: .
       dockerfile: services/notification-service/Dockerfile
@@ -142,7 +176,7 @@ services:
         BACKEND_NODE_DEPS_IMAGE: ${BACKEND_NODE_DEPS_IMAGE:-backend-node-deps:local}
     depends_on:
       postgres-notification:
-        condition: service_started
+        condition: service_healthy
       rabbitmq:
         condition: service_healthy
     environment:
@@ -160,11 +194,13 @@ services:
       - "${NOTIFICATION_SERVICE_PORT:-8096}:8096"
 
   identity-service:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: services/identity-service/Dockerfile
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
@@ -176,12 +212,15 @@ services:
       - "${IDENTITY_SERVICE_PORT:-8090}:8080"
 
   usage-service:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: services/usage-service/Dockerfile
     depends_on:
-      - postgres-usage
-      - rabbitmq
+      postgres-usage:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     environment:
       USAGE_POSTGRES_HOST: postgres-usage
       USAGE_POSTGRES_PORT: 5432
@@ -198,12 +237,15 @@ services:
       - "${USAGE_SERVICE_PORT:-8092}:8092"
 
   billing-service:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: services/billing-service/Dockerfile
     depends_on:
-      - postgres-billing
-      - rabbitmq
+      postgres-billing:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     environment:
       BILLING_POSTGRES_HOST: postgres-billing
       BILLING_POSTGRES_PORT: 5432
@@ -221,6 +263,7 @@ services:
       - "${BILLING_SERVICE_PORT:-8095}:8095"
 
   proxy-service:
+    restart: unless-stopped
     build:
       context: ./services/proxy-service
     depends_on:
@@ -239,13 +282,18 @@ services:
       - "${PROXY_SERVICE_PORT:-8081}:8081"
 
   api-gateway-service:
+    restart: unless-stopped
     build:
       context: ./services/api-gateway-service
     depends_on:
-      - proxy-service
-      - identity-service
-      - usage-service
-      - billing-service
+      proxy-service:
+        condition: service_started
+      identity-service:
+        condition: service_started
+      usage-service:
+        condition: service_started
+      billing-service:
+        condition: service_started
     environment:
       GATEWAY_PROXY_URI: http://proxy-service:8081
       GATEWAY_IDENTITY_URI: ${GATEWAY_IDENTITY_URI:-http://identity-service:8080}
@@ -264,6 +312,7 @@ services:
   identity-web:
     profiles:
       - web
+    restart: unless-stopped
     build:
       context: .
       dockerfile: services/identity-service/web/Dockerfile
@@ -288,6 +337,7 @@ services:
   usage-web:
     profiles:
       - web
+    restart: unless-stopped
     build:
       context: .
       dockerfile: services/usage-service/web/Dockerfile
@@ -309,6 +359,7 @@ services:
   usage-web-mfe:
     profiles:
       - web
+    restart: unless-stopped
     build:
       context: .
       dockerfile: services/usage-service/web-mfe/Dockerfile
@@ -323,6 +374,7 @@ services:
   billing-web:
     profiles:
       - web
+    restart: unless-stopped
     build:
       context: .
       dockerfile: services/billing-service/web/Dockerfile
@@ -347,6 +399,7 @@ services:
   notification-web:
     profiles:
       - web
+    restart: unless-stopped
     build:
       context: .
       dockerfile: services/notification-service/web/Dockerfile
@@ -371,6 +424,7 @@ services:
   team-service:
     profiles:
       - web
+    restart: unless-stopped
     build:
       context: .
       dockerfile: services/team-service/Dockerfile
@@ -402,6 +456,7 @@ services:
   team-web:
     profiles:
       - web
+    restart: unless-stopped
     build:
       context: .
       dockerfile: services/team-service/web/Dockerfile
@@ -421,6 +476,7 @@ services:
   team-web-mfe:
     profiles:
       - web
+    restart: unless-stopped
     build:
       context: .
       dockerfile: services/team-service/web-mfe/Dockerfile
@@ -435,6 +491,7 @@ services:
     profiles:
       - web
     image: nginx:1.27-alpine
+    restart: unless-stopped
     depends_on:
       - identity-web
       - usage-web
