@@ -700,6 +700,9 @@ jobs:
   web-mfe:
     name: Build web-mfe remotes (usage/team)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
     needs:
       - changes
       - build-common-node
@@ -709,6 +712,7 @@ jobs:
       NEXT_PRIVATE_LOCAL_WEBPACK: "true"
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -739,13 +743,49 @@ jobs:
           pnpm --filter usage-web-mfe run build
           pnpm --filter team-web-mfe run build
       - name: Docker image (usage-web-mfe, standalone)
-        # TODO(cache-migration): docker/build-push-action + type=gha 전환 후보
-        #   scope 예시: usage-web-mfe-cache
-        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/usage-service/web-mfe/Dockerfile -t usage-web-mfe:ci .
+        id: docker_usage_web_mfe
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/usage-service/web-mfe/Dockerfile
+          tags: usage-web-mfe:ci
+          load: true
+          push: false
+          build-args: |
+            WEB_NODE_DEPS_IMAGE=web-node-deps:ci
+          cache-from: type=gha,scope=usage-web-mfe
+          # NOTE: 무료 티어(10GB)에서 캐시가 커지면 mode=min으로 유지하는 편이 안정적이다.
+          cache-to: type=gha,mode=min,scope=usage-web-mfe
+      - name: Usage-web-mfe image summary
+        if: always()
+        run: |
+          echo "## Docker image build summary (usage-web-mfe)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Tag: \`usage-web-mfe:ci\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Digest: \`${{ steps.docker_usage_web_mfe.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Cache scope: \`usage-web-mfe\` (type=gha)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
       - name: Docker image (team-web-mfe, standalone)
-        # TODO(cache-migration): docker/build-push-action + type=gha 전환 후보
-        #   scope 예시: team-web-mfe-cache
-        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/team-service/web-mfe/Dockerfile -t team-web-mfe:ci .
+        id: docker_team_web_mfe
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/team-service/web-mfe/Dockerfile
+          tags: team-web-mfe:ci
+          load: true
+          push: false
+          build-args: |
+            WEB_NODE_DEPS_IMAGE=web-node-deps:ci
+          cache-from: type=gha,scope=team-web-mfe
+          # NOTE: 무료 티어(10GB)에서 캐시가 커지면 mode=min으로 유지하는 편이 안정적이다.
+          cache-to: type=gha,mode=min,scope=team-web-mfe
+      - name: Team-web-mfe image summary
+        if: always()
+        run: |
+          echo "## Docker image build summary (team-web-mfe)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Tag: \`team-web-mfe:ci\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Digest: \`${{ steps.docker_team_web_mfe.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Cache scope: \`team-web-mfe\` (type=gha)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
 
   # Single required check for branch protection.
   # Skipped Java/Compose jobs (path filter) do not fail the workflow.
