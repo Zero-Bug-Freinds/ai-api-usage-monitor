@@ -203,6 +203,9 @@ jobs:
   build-common-docker:
     name: Build common docker base layers (Stage A)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
     needs:
       - changes
       - build-common-node

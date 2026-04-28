@@ -22,6 +22,27 @@
 | **Build web (lint/test/build)** | Node 22, **pnpm** 9, 저장소 루트 `pnpm install --frozen-lockfile` 후 각 `web`에 `pnpm --filter …` 로 lint·test·`pnpm run build:web`, **`docker build -f services/…/web/Dockerfile`**(context `.`) 등 — 팀 표준 프론트는 **Next.js 15**·**React 19**(`package.json` 정본). 경로: `services/**/web/**`, `packages/ui/**`, 루트 pnpm·워크플로 변경 시 실행(`web-mfe` 독립 잡은 후속 도입 가능) |
 | **CI summary** | gitleaks 성공 필수, 실행된 빌드·Compose 잡이 `failure`/`cancelled`이면 실패. 스킵된 잡은 허용 (`web` 포함) |
 
+## Docker 빌드 캐시 (로컬 vs CI)
+
+- **로컬 (`docker compose build` / `up --build`)**: 루트 `docker-compose.yml`에는 **container registry 기반 `cache_from` / `cache_to`를 두지 않는다**. 팀원별 GHCR 로그인을 요구하지 않으며, 각 서비스 Dockerfile의 `RUN --mount=type=cache`(pnpm store, Gradle, Next `.next/cache` 등)로 반복 빌드 시간을 줄인다.
+- **CI (GitHub Actions)**: BuildKit **GitHub Actions cache**(`type=gha`)로 베이스 이미지 등을 캐시한다. 워크플로 잡 **`build-common-docker`**에서 `docker/setup-buildx-action`과 `docker/build-push-action`을 사용하며, **`scope`** 로 캐시를 분리한다(`web-node-deps`, `backend-node-deps`). 해당 잡은 캐시 저장을 위해 **`actions: write`** 권한이 필요하다([`.github/workflows/ci.yml`](../.github/workflows/ci.yml) 참고).
+
+동일 패턴으로 다른 이미지를 빌드할 때 예시는 다음과 같다.
+
+```yaml
+- uses: docker/setup-buildx-action@v3
+- uses: docker/build-push-action@v6
+  with:
+    context: .
+    file: path/to/Dockerfile
+    tags: myimage:ci
+    load: true
+    cache-from: type=gha,scope=my-scope
+    cache-to: type=gha,mode=max,scope=my-scope
+```
+
+장기적으로 각 잡의 `docker build` CLI 호출을 위 패턴으로 통일하면 서비스별 **`scope`** 로 GHA 캐시 재사용을 일관되게 적용할 수 있다.
+
 ## 브랜치 보호(Branch protection)
 
 [`docs/branch-conventions.md`](branch-conventions.md) §4에 따라 `develop`/`main`에 **상태 검사**를 걸 때, GitHub에서 표시되는 이름이 **`CI summary`** 인 잡을 필수로 지정하면 된다. (워크플로 이름은 `CI`.)
