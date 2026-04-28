@@ -42,6 +42,7 @@ concurrency:
 permissions:
   contents: read
   actions: read
+  # 기본은 read-only 유지(최소 권한). type=gha cache export가 필요한 job만 actions: write를 부여한다.
 
 jobs:
   changes:
@@ -293,6 +294,8 @@ jobs:
         run: docker load -i .ci-artifacts/common-base-images.tar
         working-directory: .
       - name: Docker image (identity-web, standalone)
+        # TODO(cache-migration): docker/build-push-action + type=gha 전환 후보
+        #   scope 예시: identity-web-cache
         run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/identity-service/web/Dockerfile -t identity-web:ci .
         working-directory: .
 
@@ -387,6 +390,8 @@ jobs:
         run: docker load -i .ci-artifacts/common-base-images.tar
         working-directory: .
       - name: Docker image (usage-web, standalone)
+        # TODO(cache-migration): docker/build-push-action + type=gha 전환 후보
+        #   scope 예시: usage-service-cache (또는 usage-web-cache)
         run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/usage-service/web/Dockerfile -t usage-web:ci .
         working-directory: .
 
@@ -447,6 +452,8 @@ jobs:
         run: docker load -i .ci-artifacts/common-base-images.tar
         working-directory: .
       - name: Docker image (billing-web, standalone)
+        # TODO(cache-migration): docker/build-push-action + type=gha 전환 후보
+        #   scope 예시: billing-web-cache
         run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/billing-service/web/Dockerfile -t billing-web:ci .
         working-directory: .
 
@@ -501,6 +508,8 @@ jobs:
         run: docker load -i .ci-artifacts/common-base-images.tar
         working-directory: .
       - name: Docker image (team-web, standalone)
+        # TODO(cache-migration): docker/build-push-action + type=gha 전환 후보
+        #   scope 예시: team-web-cache
         run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/team-service/web/Dockerfile -t team-web:ci .
         working-directory: .
 
@@ -540,8 +549,12 @@ jobs:
           pnpm --filter notification-web test
           pnpm --filter notification-web run build
       - name: Docker image (notification-service)
+        # TODO(cache-migration): docker/build-push-action + type=gha 전환 후보
+        #   scope 예시: notification-service-cache
         run: docker build --build-arg BACKEND_NODE_DEPS_IMAGE=backend-node-deps:ci -f services/notification-service/Dockerfile -t notification-service:ci .
       - name: Docker image (notification-web, standalone)
+        # TODO(cache-migration): docker/build-push-action + type=gha 전환 후보
+        #   scope 예시: notification-web-cache
         run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/notification-service/web/Dockerfile -t notification-web:ci .
 
   web-host:
@@ -574,6 +587,8 @@ jobs:
         run: |
           node -e "const fs=require('node:fs');const p='apps/web/next.config.mjs';const c=fs.readFileSync(p,'utf8');for(const x of ['NextFederationPlugin','team@','usage@','remoteEntry.js']){if(!c.includes(x)){throw new Error('missing '+x+' in '+p)}}"
       - name: Docker image (web-host, standalone)
+        # TODO(cache-migration): docker/build-push-action + type=gha 전환 후보
+        #   scope 예시: web-node-deps-cache, web-host-cache
         run: docker build -f docker/web-node-deps.Dockerfile -t web-node-deps:ci . && docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f apps/web/Dockerfile -t web-host:ci .
 
   web-mfe:
@@ -618,8 +633,12 @@ jobs:
           pnpm --filter usage-web-mfe run build
           pnpm --filter team-web-mfe run build
       - name: Docker image (usage-web-mfe, standalone)
+        # TODO(cache-migration): docker/build-push-action + type=gha 전환 후보
+        #   scope 예시: usage-web-mfe-cache
         run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/usage-service/web-mfe/Dockerfile -t usage-web-mfe:ci .
       - name: Docker image (team-web-mfe, standalone)
+        # TODO(cache-migration): docker/build-push-action + type=gha 전환 후보
+        #   scope 예시: team-web-mfe-cache
         run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/team-service/web-mfe/Dockerfile -t team-web-mfe:ci .
 
   # Single required check for branch protection.

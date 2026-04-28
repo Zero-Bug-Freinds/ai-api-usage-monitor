@@ -24,8 +24,10 @@
 
 ## Docker 빌드 캐시 (로컬 vs CI)
 
-- **로컬 (`docker compose build` / `up --build`)**: 루트 `docker-compose.yml`에는 **container registry 기반 `cache_from` / `cache_to`를 두지 않는다**. 팀원별 GHCR 로그인을 요구하지 않으며, 각 서비스 Dockerfile의 `RUN --mount=type=cache`(pnpm store, Gradle, Next `.next/cache` 등)로 반복 빌드 시간을 줄인다.
+- **로컬 (`docker compose build` / `up --build`)**: 루트 `docker-compose.yml`에는 **container registry 기반 `cache_from` / `cache_to`를 두지 않는다**. 즉, **팀원은 GHCR 로그인 없이도** 동일한 Compose 명령으로 개발을 시작할 수 있다. 캐시는 각 서비스 Dockerfile의 `RUN --mount=type=cache`(pnpm store, Gradle, Next `.next/cache` 등)로 처리해 반복 빌드 시간을 줄인다.
 - **CI (GitHub Actions)**: BuildKit **GitHub Actions cache**(`type=gha`)로 베이스 이미지 등을 캐시한다. 워크플로 잡 **`build-common-docker`**에서 `docker/setup-buildx-action`과 `docker/build-push-action`을 사용하며, **`scope`** 로 캐시를 분리한다(`web-node-deps`, `backend-node-deps`). 해당 잡은 캐시 저장을 위해 **`actions: write`** 권한이 필요하다([`.github/workflows/ci.yml`](../.github/workflows/ci.yml) 참고).
+
+- **권한 최소화(보안)**: 전역 권한은 `contents: read`, `actions: read`를 유지하고, `cache-to: type=gha`를 실제로 사용하는 잡(현재 `build-common-docker`)에서만 `actions: write`를 잡 단위로 오버라이드한다.
 
 동일 패턴으로 다른 이미지를 빌드할 때 예시는 다음과 같다.
 
