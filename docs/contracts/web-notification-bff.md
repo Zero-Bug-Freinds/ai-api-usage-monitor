@@ -1,6 +1,6 @@
 # Web(Next.js) ↔ Notification Service — Notification BFF 계약
 
-버전: 1.2  
+버전: 1.3  
 관련: [web-split-boundary.md](./web-split-boundary.md), [web-identity-bff.md](./web-identity-bff.md)(세션), [`docker/web-edge/nginx.conf`](../../docker/web-edge/nginx.conf), [architecture.md](../architecture.md) §4.9·§6·§10.2·§13, [web-team-bff.md](./web-team-bff.md) §6.2(팀 도메인 이벤트 스키마), [notification-service-gateway-integration-guide.md](../notification-service-gateway-integration-guide.md) §2(게이트웨이 신뢰 헤더)
 
 **소스 트리:** Notification `web`(UI+BFF)의 **정본**은 `services/notification-service/web/` 이다. Notification 백엔드(Nest+Prisma)는 `services/notification-service/` 이다.
@@ -80,7 +80,48 @@ Notification `web`은 Next `basePath=/notifications`를 사용한다.
 - Direct 모드: `GET {NOTIFICATION_SERVICE_URL}/in-app-notifications/unread-count`
 - 응답: `{ "unreadCount": number }`
 
-### 4.4 캐시 정책
+### 4.4 인앱 알림 meta(JSON) 계약
+
+- `in-app-notifications` 목록 API의 각 아이템에는 `meta`가 포함될 수 있다(없으면 `null` 또는 누락).
+- UI는 `type`별로 `meta`를 해석해 추가 UI/액션을 렌더링할 수 있다.
+
+#### 4.4.1 Team 초대 알림 (`type = team:TEAM_INVITE_CREATED`)
+
+- `meta` 예시(형태; 필드 추가는 하위 호환 유지):
+
+```json
+{
+  "invitationId": "uuid-or-string",
+  "teamId": "string-or-number",
+  "teamName": "Team A",
+  "actions": {
+    "acceptPath": "/team-invitations/<invitationId>/accept",
+    "rejectPath": "/team-invitations/<invitationId>/reject"
+  }
+}
+```
+
+- `actions.*Path`는 **notification-service API 베이스(`/api`) 기준의 상대 경로**로 저장된다.
+- Notification `web` UI는 BFF 프록시 경로(`/notifications/api/notification`) 뒤에 붙여 호출한다(§4.3 규칙 동일).
+  - 예: `POST /notifications/api/notification/team-invitations/<invitationId>/accept`
+
+### 4.5 팀 초대 수락/거절 액션 API (Notification → Team 내부 연동)
+
+팀 초대 알림에서 “수락/거절” 버튼은 Notification Service의 액션 엔드포인트를 호출한다.
+
+- **엔드포인트**
+  - `POST /team-invitations/{invitationId}/accept`
+  - `POST /team-invitations/{invitationId}/reject`
+
+- **브라우저(BFF) 경로 예**
+  - `POST /notifications/api/notification/team-invitations/{invitationId}/accept`
+  - `POST /notifications/api/notification/team-invitations/{invitationId}/reject`
+
+- **인증/헤더**
+  - 동일하게 `access_token` 쿠키 → BFF가 `Authorization: Bearer`로 업스트림에 전달한다(§4.1).
+  - `direct` 모드에서는 `X-User-Id`가 JWT `sub` 기반으로 업스트림에 전달된다(§4.2).
+  - `gateway` 모드에서는 `X-User-Id` 등은 Gateway가 주입하는 모델을 따른다(가이드 §2).
+### 4.6 캐시 정책
 
 - BFF 응답에는 `Cache-Control: no-store`를 강제한다.
 

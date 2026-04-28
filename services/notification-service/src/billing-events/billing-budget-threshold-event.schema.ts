@@ -24,7 +24,7 @@ const billingBudgetThresholdReachedEventSchema = z
 
 export function safeParseBillingBudgetThresholdReachedEventJson(
   raw: unknown,
-): z.SafeParseReturnType<unknown, BillingBudgetThresholdReachedEventPayload> {
+): z.ZodSafeParseResult<BillingBudgetThresholdReachedEventPayload> {
   return billingBudgetThresholdReachedEventSchema.safeParse(raw);
 }
 

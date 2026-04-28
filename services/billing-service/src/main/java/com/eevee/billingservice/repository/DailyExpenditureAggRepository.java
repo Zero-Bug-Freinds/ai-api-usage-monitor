@@ -28,6 +28,18 @@ public interface DailyExpenditureAggRepository extends JpaRepository<DailyExpend
     );
 
     @Query("""
+            select coalesce(sum(d.totalCostUsd), 0)
+            from DailyExpenditureAggEntity d
+            where d.id.userId = :userId
+            and d.id.aggDate >= :fromInclusive and d.id.aggDate <= :toInclusive
+            """)
+    BigDecimal sumTotalCostUsdForUser(
+            @Param("userId") String userId,
+            @Param("fromInclusive") LocalDate fromInclusive,
+            @Param("toInclusive") LocalDate toInclusive
+    );
+
+    @Query("""
             select d.id.aggDate, sum(d.totalCostUsd)
             from DailyExpenditureAggEntity d
             where d.id.userId = :userId and d.id.apiKeyId = :apiKeyId and d.id.provider = :provider
