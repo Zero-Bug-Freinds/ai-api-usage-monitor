@@ -48,7 +48,7 @@
 ### `scope` 네이밍·용량(10GB) 표준
 
 - **네이밍 규칙**: 이미지 태그(`*-web:ci`)와 동일한 문자열을 `scope`로 사용한다.
-  - 예: `identity-web` → `scope=identity-web`, `usage-web` → `scope=usage-web`, `billing-web` → `scope=billing-web`, `team-web` → `scope=team-web`
+  - 예: `identity-web` → `scope=identity-web`, `usage-web` → `scope=usage-web`, `billing-web` → `scope=billing-web`, `team-web` → `scope=team-web`, `notification-web` → `scope=notification-web`
   - 공통 베이스는 별도(`web-node-deps`, `backend-node-deps`)로 유지한다.
 - **용량 정책(무료 티어 10GB)**:
   - 기본값은 **`cache-to: type=gha,mode=min`** (폭증 방지).
