@@ -440,6 +440,9 @@ jobs:
   billing-service:
     name: Build billing-service
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
     needs:
       - changes
       - build-common-java
@@ -493,15 +496,36 @@ jobs:
       - name: Load common docker base images
         run: docker load -i .ci-artifacts/common-base-images.tar
         working-directory: .
-      - name: Docker image (billing-web, standalone)
-        # TODO(cache-migration): docker/build-push-action + type=gha 전환 후보
-        #   scope 예시: billing-web-cache
-        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/billing-service/web/Dockerfile -t billing-web:ci .
-        working-directory: .
+      - uses: docker/setup-buildx-action@v3
+      - name: Docker image (billing-web, standalone) (cache gha)
+        id: docker_billing_web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/billing-service/web/Dockerfile
+          tags: billing-web:ci
+          load: true
+          push: false
+          build-args: |
+            WEB_NODE_DEPS_IMAGE=web-node-deps:ci
+          cache-from: type=gha,scope=billing-web
+          # NOTE: 무료 티어(10GB)에서 캐시가 커지면 mode=min으로 유지하는 편이 안정적이다.
+          cache-to: type=gha,mode=min,scope=billing-web
+      - name: Billing-web image summary
+        if: always()
+        run: |
+          echo "## Docker image build summary (billing-web)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Tag: \\`billing-web:ci\\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Digest: \\`${{ steps.docker_billing_web.outputs.digest }}\\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Cache scope: \\`billing-web\\` (type=gha)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
 
   team-service:
     name: Build team-service
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
     needs:
       - changes
       - build-common-node
@@ -549,11 +573,29 @@ jobs:
       - name: Load common docker base images
         run: docker load -i .ci-artifacts/common-base-images.tar
         working-directory: .
-      - name: Docker image (team-web, standalone)
-        # TODO(cache-migration): docker/build-push-action + type=gha 전환 후보
-        #   scope 예시: team-web-cache
-        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/team-service/web/Dockerfile -t team-web:ci .
-        working-directory: .
+      - uses: docker/setup-buildx-action@v3
+      - name: Docker image (team-web, standalone) (cache gha)
+        id: docker_team_web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/team-service/web/Dockerfile
+          tags: team-web:ci
+          load: true
+          push: false
+          build-args: |
+            WEB_NODE_DEPS_IMAGE=web-node-deps:ci
+          cache-from: type=gha,scope=team-web
+          # NOTE: 무료 티어(10GB)에서 캐시가 커지면 mode=min으로 유지하는 편이 안정적이다.
+          cache-to: type=gha,mode=min,scope=team-web
+      - name: Team-web image summary
+        if: always()
+        run: |
+          echo "## Docker image build summary (team-web)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Tag: \\`team-web:ci\\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Digest: \\`${{ steps.docker_team_web.outputs.digest }}\\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Cache scope: \\`team-web\\` (type=gha)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
 
   notification-service:
     name: Build notification-service

@@ -45,6 +45,16 @@
 
 장기적으로 각 잡의 `docker build` CLI 호출을 위 패턴으로 통일하면 서비스별 **`scope`** 로 GHA 캐시 재사용을 일관되게 적용할 수 있다.
 
+### `scope` 네이밍·용량(10GB) 표준
+
+- **네이밍 규칙**: 이미지 태그(`*-web:ci`)와 동일한 문자열을 `scope`로 사용한다.
+  - 예: `identity-web` → `scope=identity-web`, `usage-web` → `scope=usage-web`, `billing-web` → `scope=billing-web`, `team-web` → `scope=team-web`
+  - 공통 베이스는 별도(`web-node-deps`, `backend-node-deps`)로 유지한다.
+- **용량 정책(무료 티어 10GB)**:
+  - 기본값은 **`cache-to: type=gha,mode=min`** (폭증 방지).
+  - 캐시 히트율이 낮고 용량 여유가 충분할 때만 특정 scope을 **`mode=max`** 로 상향한다.
+- **권한**: `cache-to: type=gha` 를 사용하는 잡은 `actions: write`가 필요하므로 잡 단위로만 부여한다(최소 권한).
+
 ## 브랜치 보호(Branch protection)
 
 [`docs/branch-conventions.md`](branch-conventions.md) §4에 따라 `develop`/`main`에 **상태 검사**를 걸 때, GitHub에서 표시되는 이름이 **`CI summary`** 인 잡을 필수로 지정하면 된다. (워크플로 이름은 `CI`.)
