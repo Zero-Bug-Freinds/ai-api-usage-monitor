@@ -145,6 +145,7 @@ services:
       DATABASE_URL: postgresql://${NOTIFICATION_POSTGRES_USER:-notification_app}:${NOTIFICATION_POSTGRES_PASSWORD:-notification_app}@postgres-notification:5432/${NOTIFICATION_POSTGRES_DB:-notification_db}
       PORT: 8096
       NOTIFICATION_INTERNAL_SECRET: ${NOTIFICATION_INTERNAL_SECRET:-}
+      TEAM_SERVICE_INTERNAL_BASE_URL: ${TEAM_SERVICE_INTERNAL_BASE_URL:-http://team-service:8093}
       # team-service TeamDomainEventPublisher: exchange team.events, routing key team-member-added (application.properties)
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672
       TEAM_EVENTS_CONSUMER_ENABLED: ${TEAM_EVENTS_CONSUMER_ENABLED:-true}

@@ -79,8 +79,9 @@ export class TeamInAppNotificationHandlerService {
                       teamId: payload.teamId,
                       teamName: payload.teamName ?? null,
                       actions: {
-                        acceptPath: `/api/team-invitations/${encodeURIComponent(payload.invitationId)}/accept`,
-                        rejectPath: `/api/team-invitations/${encodeURIComponent(payload.invitationId)}/reject`,
+                        // Stored paths are relative to the notification-service base (compose config already includes `/api`).
+                        acceptPath: `/team-invitations/${encodeURIComponent(payload.invitationId)}/accept`,
+                        rejectPath: `/team-invitations/${encodeURIComponent(payload.invitationId)}/reject`,
                       },
                     } satisfies Prisma.InputJsonObject)
                   : undefined,

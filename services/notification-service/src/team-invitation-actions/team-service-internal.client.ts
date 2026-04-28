@@ -18,6 +18,13 @@ export class TeamServiceInternalClient {
     });
   }
 
+  async rejectInvitation(params: { invitationId: string; inviteeUserId: string }) {
+    return await this.postDecision(params.invitationId, {
+      inviteeUserId: params.inviteeUserId,
+      decision: 'REJECT',
+    });
+  }
+
   private async postDecision(
     invitationId: string,
     body: { inviteeUserId: string; decision: 'ACCEPT' | 'REJECT' },

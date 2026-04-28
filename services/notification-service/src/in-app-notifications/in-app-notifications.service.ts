@@ -41,6 +41,7 @@ export class InAppNotificationsService {
         body: true,
         readAt: true,
         type: true,
+        meta: true,
       },
     });
 
@@ -108,6 +109,7 @@ export class InAppNotificationsService {
         body: true,
         readAt: true,
         type: true,
+        meta: true,
       },
     });
 

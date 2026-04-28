@@ -58,6 +58,25 @@ export class TeamInvitationActionsController {
 
     return result;
   }
+
+  @Post(':invitationId/reject')
+  @ApiOperation({ summary: 'Reject a team invitation (internal action via notification)' })
+  async reject(@Req() req: AuthedRequest, @Param('invitationId') invitationId: string) {
+    const inviteeUserId = requireUserId(req);
+    const correlationId = getTrimmedHeader(req, 'x-correlation-id');
+
+    const result = await this.teamInternal.rejectInvitation({ invitationId, inviteeUserId });
+
+    // Best-effort command publish for async processing / audit; rejection is already applied via internal API.
+    await this.publisher.publishDecision({
+      invitationId,
+      inviteeUserId,
+      decision: 'REJECT',
+      correlationId: correlationId ?? undefined,
+    });
+
+    return result;
+  }
 }
 
 function getTrimmedHeader(req: AuthedRequest, name: string): string | undefined {
