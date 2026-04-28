@@ -54,18 +54,33 @@ http {
     "" "";
   }
 
+  # Allow only known local entry hosts to mitigate Host header injection.
+  map $http_host $is_allowed_host {
+    default 0;
+    "localhost:8888" 1;
+    "127.0.0.1:8888" 1;
+    "localhost" 1;
+    "127.0.0.1" 1;
+  }
+
   server {
     listen 80;
     server_name _;
 
+    if ($is_allowed_host = 0) {
+      return 400;
+    }
+
     proxy_http_version 1.1;
-    proxy_set_header Host $host;
+    proxy_set_header Host $http_host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host $http_host;
+    proxy_set_header X-Forwarded-Port $server_port;
 
     location = /dashboard {
-      return 308 /dashboard/;
+      return 308 $scheme://$http_host/dashboard/;
     }
 
     location ^~ /dashboard/ {
@@ -75,7 +90,7 @@ http {
     }
 
     location = /billing {
-      return 308 /billing/;
+      return 308 $scheme://$http_host/billing/;
     }
 
     location ^~ /billing/ {
@@ -85,7 +100,7 @@ http {
     }
 
     location = /teams {
-      return 308 /teams/;
+      return 308 $scheme://$http_host/teams/;
     }
 
     location ^~ /teams/ {
@@ -95,7 +110,7 @@ http {
     }
 
     location = /notifications {
-      return 308 /notifications/;
+      return 308 $scheme://$http_host/notifications/;
     }
 
     location ^~ /notifications/ {
@@ -105,7 +120,7 @@ http {
     }
 
     location = /api/v1 {
-      return 308 /api/v1/;
+      return 308 $scheme://$http_host/api/v1/;
     }
 
     location ^~ /api/v1/ {

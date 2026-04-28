@@ -71,6 +71,13 @@ pnpm run build:web
 ./gradlew build
 ```
 
+## `.env` / `hybrid.env` 운용 기준
+
+- 기본 로컬 값은 루트 `.env`(원본 Compose 모드) 기준으로 유지한다.
+- `hybrid.env`는 **로컬 오버라이드 변수만** 담는다(예: `GATEWAY_*_URI`, `WEB_IDENTITY_SERVICE_URL`).
+- Compose 환경 변수 우선순위는 일반적으로 **셸 환경 변수 > `--env-file` > `.env` > 파일 내 기본값** 순서를 따른다.
+- 같은 키를 여러 곳에 중복 정의하면 실행 시점 값이 달라질 수 있으므로, 하이브리드 전용 키만 `hybrid.env`에 둔다.
+
 ## 통합 테스트·브로커/DB (향후)
 
 `docs/architecture.md` §6.2(RabbitMQ), §10(Compose)에 맞춰, 통합 테스트를 CI에 넣을 때는 다음 중 하나를 검토한다.

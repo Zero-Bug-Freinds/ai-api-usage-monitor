@@ -72,6 +72,7 @@ public class SecurityConfiguration {
 
         if (gatewayProperties.isDevMode()) {
             http.authorizeExchange(ex -> ex
+                    .pathMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                     .pathMatchers("/api/v1/ai/**").permitAll()
                     .pathMatchers("/api/v1/usage/**").permitAll()
                     .pathMatchers("/api/v1/expenditure/**").permitAll()
@@ -89,6 +90,7 @@ public class SecurityConfiguration {
             }
             http.oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.jwtDecoder(jwtDecoder)));
             http.authorizeExchange(ex -> ex
+                    .pathMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                     .pathMatchers("/api/v1/ai/**").authenticated()
                     .pathMatchers("/api/v1/usage/**").authenticated()
                     .pathMatchers("/api/v1/expenditure/**").authenticated()
@@ -108,8 +110,14 @@ public class SecurityConfiguration {
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource(GatewayProperties gatewayProperties) {
+        List<String> allowedOrigins = gatewayProperties.getCors().getAllowedOrigins();
+        if (allowedOrigins.stream().anyMatch("*"::equals)) {
+            throw new IllegalStateException(
+                    "gateway.cors.allowed-origins must use explicit origins (no wildcard) when credentials are enabled");
+        }
+
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(gatewayProperties.getCors().getAllowedOrigins());
+        config.setAllowedOrigins(allowedOrigins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of(
                 "Authorization",

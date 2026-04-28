@@ -1,11 +1,13 @@
 server:
   port: 8080
+  forward-headers-strategy: framework
 
 spring:
   application:
     name: api-gateway-service
   cloud:
     gateway:
+      preserve-host-header: true
       # SCG 5 + gateway-server-webflux: routes bind under server.webflux (not spring.cloud.gateway.routes).
       server:
         webflux:
