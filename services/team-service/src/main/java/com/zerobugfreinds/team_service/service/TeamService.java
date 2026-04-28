@@ -278,12 +278,21 @@ public class TeamService {
 
 	@Transactional(readOnly = true)
 	public List<TeamInvitationResponse> getMyPendingInvitations(String actorUserId) {
+		return getMyInvitations(actorUserId, false);
+	}
+
+	@Transactional(readOnly = true)
+	public List<TeamInvitationResponse> getMyInvitations(String actorUserId, boolean includeExpired) {
 		if (!StringUtils.hasText(actorUserId)) {
 			throw new IllegalArgumentException("userId는 필수입니다");
 		}
 		expireStaleInvitations(Instant.now());
-		List<TeamInvitationEntity> invitations =
-				teamInvitationRepository.findAllByInviteeIdAndStatusOrderByCreatedAtDesc(actorUserId, TeamInvitationStatus.PENDING);
+		List<TeamInvitationEntity> invitations = includeExpired
+				? teamInvitationRepository.findAllByInviteeIdAndStatusInOrderByCreatedAtDesc(
+						actorUserId,
+						List.of(TeamInvitationStatus.PENDING, TeamInvitationStatus.EXPIRED)
+				)
+				: teamInvitationRepository.findAllByInviteeIdAndStatusOrderByCreatedAtDesc(actorUserId, TeamInvitationStatus.PENDING);
 		if (invitations.isEmpty()) {
 			return List.of();
 		}
@@ -308,7 +317,8 @@ public class TeamService {
 					invitation.getInviterId(),
 					invitation.getInviteeId(),
 					invitation.getStatus().name(),
-					invitation.getCreatedAt()
+					invitation.getCreatedAt(),
+					invitation.getRespondedAt()
 			));
 		}
 		return result;

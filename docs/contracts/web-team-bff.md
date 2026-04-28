@@ -111,12 +111,12 @@
 ### 5.2 팀 초대·수락/거절/만료 (현행 구현)
 
 - `POST /api/team/v1/teams/{id}/members` 호출 시 Team Service는 **PENDING 초대 행**을 만들고 RabbitMQ로 초대 이벤트(`TEAM_INVITE_CREATED`)를 발행한다. 이 단계에서는 **팀 멤버를 추가하지 않는다**.
-- `GET /api/team/v1/me/team-invitations` 로 내 **대기(PENDING)** 초대 목록을 조회한다.
+- `GET /api/team/v1/me/team-invitations` 로 내 초대 목록을 조회한다. 기본은 **대기(PENDING)**만 반환하며, `?includeExpired=true`를 주면 `EXPIRED`도 함께 반환한다.
 - `POST /api/team/v1/me/team-invitations/{invitationId}/accept` 성공 시 초대 상태를 `ACCEPTED`로 바꾸고, 초대 대상 사용자를 팀 멤버(MEMBER)로 추가한다(이미 멤버인 경우 중복 추가는 생략).
 - `POST /api/team/v1/me/team-invitations/{invitationId}/reject` 성공 시 초대 상태를 `REJECTED`로 바꾸며, 멤버는 추가되지 않는다.
 - 초대 생성 후 `team.invitation.expiration-days`(기본 7일)를 초과하면 상태가 `EXPIRED`로 자동 전환된다.
 - 만료된(`EXPIRED`) 초대 또는 이미 처리된(`ACCEPTED`/`REJECTED`) 초대를 다시 수락/거절하면 `400`을 반환한다.
-- `GET /api/team/v1/me/team-invitations`는 조회 시점에 만료 스윕을 먼저 수행한 뒤 **여전히 `PENDING`인 초대만** 반환한다.
+- `GET /api/team/v1/me/team-invitations`는 조회 시점에 만료 스윕을 먼저 수행한다. 응답 객체에는 만료/처리 시점을 위한 `respondedAt`이 포함된다.
 - 스케줄러(`TeamInvitationLifecycleScheduler`)가 주기적으로 만료 처리 + 오래된 초대 정리를 수행한다.
   - `team.invitation.lifecycle-fixed-delay-ms` (기본 3600000)
   - `team.invitation.lifecycle-initial-delay-ms` (기본 60000)

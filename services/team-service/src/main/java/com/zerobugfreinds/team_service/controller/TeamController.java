@@ -75,8 +75,10 @@ public class TeamController {
 	}
 
 	@GetMapping("/me/team-invitations")
-	public ResponseEntity<ApiResponse<List<TeamInvitationResponse>>> getMyPendingInvitations() {
-		List<TeamInvitationResponse> invitations = teamService.getMyPendingInvitations(currentUserId());
+	public ResponseEntity<ApiResponse<List<TeamInvitationResponse>>> getMyPendingInvitations(
+			@RequestParam(name = "includeExpired", defaultValue = "false") boolean includeExpired
+	) {
+		List<TeamInvitationResponse> invitations = teamService.getMyInvitations(currentUserId(), includeExpired);
 		return ResponseEntity.ok(ApiResponse.ok("내 팀 초대 목록 조회에 성공했습니다", invitations));
 	}
 

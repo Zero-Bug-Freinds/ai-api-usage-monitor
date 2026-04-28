@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { cookies } from "next/headers"
 
 const ACCESS_TOKEN_COOKIE = "access_token"
 
@@ -18,10 +19,23 @@ function noStoreHeaders() {
   return { "Cache-Control": "no-store" }
 }
 
-function envIdentityBaseUrl() {
-  const url = process.env.IDENTITY_SERVICE_URL
-  if (!url) return null
-  return url.replace(/\/+$/, "")
+function trimBaseUrl(url: string | undefined): string | null {
+  const normalized = (url ?? "").trim()
+  if (!normalized) return null
+  return normalized.replace(/\/+$/, "")
+}
+
+function resolveSwitchTeamUpstreamUrls(): string[] {
+  const urls: string[] = []
+  const gatewayBase = trimBaseUrl(process.env.GATEWAY_URL) ?? trimBaseUrl(process.env.WEB_GATEWAY_URL)
+  if (gatewayBase) {
+    urls.push(`${gatewayBase}/api/identity/auth/token/switch-team`)
+  }
+  const identityBase = trimBaseUrl(process.env.IDENTITY_SERVICE_URL)
+  if (identityBase) {
+    urls.push(`${identityBase}/api/auth/token/switch-team`)
+  }
+  return urls
 }
 
 function getCookieValue(cookieHeader: string | null, name: string): string | null {
@@ -63,27 +77,33 @@ function isTokenData(data: unknown): data is TokenResponse {
 }
 
 function toMessage(upstreamJson: unknown, fallback: string): string {
-  if (
-    typeof upstreamJson === "object" &&
-    upstreamJson !== null &&
-    "message" in upstreamJson &&
-    typeof (upstreamJson as { message?: unknown }).message === "string"
-  ) {
-    return (upstreamJson as { message: string }).message
+  if (typeof upstreamJson === "object" && upstreamJson !== null) {
+    const obj = upstreamJson as Record<string, unknown>
+    if (typeof obj.message === "string" && obj.message.trim() !== "") return obj.message
+    if (typeof obj.error === "string" && obj.error.trim() !== "") return obj.error
+    if (typeof obj.detail === "string" && obj.detail.trim() !== "") return obj.detail
   }
   return fallback
 }
 
 export async function POST(request: Request) {
-  const token = getCookieValue(request.headers.get("cookie"), ACCESS_TOKEN_COOKIE)
+  let token = getCookieValue(request.headers.get("cookie"), ACCESS_TOKEN_COOKIE)
+  if (!token) {
+    try {
+      const cookieStore = await cookies()
+      token = cookieStore.get(ACCESS_TOKEN_COOKIE)?.value ?? null
+    } catch {
+      token = null
+    }
+  }
   if (!token) {
     return NextResponse.json({ success: false, message: "로그인이 필요합니다", data: null }, { status: 401, headers: noStoreHeaders() })
   }
 
-  const identityBaseUrl = envIdentityBaseUrl()
-  if (!identityBaseUrl) {
+  const upstreamUrls = resolveSwitchTeamUpstreamUrls()
+  if (upstreamUrls.length === 0) {
     return NextResponse.json(
-      { success: false, message: "서버 설정이 필요합니다 (IDENTITY_SERVICE_URL)", data: null },
+      { success: false, message: "서버 설정이 필요합니다 (GATEWAY_URL 또는 IDENTITY_SERVICE_URL)", data: null },
       { status: 500, headers: noStoreHeaders() },
     )
   }
@@ -95,34 +115,52 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, message: "JSON 형식이 올바르지 않습니다", data: null }, { status: 400, headers: noStoreHeaders() })
   }
 
-  let upstream: Response
-  try {
-    upstream = await fetch(`${identityBaseUrl}/api/auth/token/switch-team`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify(payload),
-    })
-  } catch {
+  const requestBody = JSON.stringify(payload)
+  let upstream: Response | null = null
+  let upstreamJson: unknown = null
+  for (let i = 0; i < upstreamUrls.length; i += 1) {
+    const upstreamUrl = upstreamUrls[i]
+    try {
+      upstream = await fetch(upstreamUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: requestBody,
+      })
+    } catch {
+      upstream = null
+      upstreamJson = null
+      continue
+    }
+    try {
+      upstreamJson = await upstream.json()
+    } catch {
+      upstreamJson = null
+    }
+    const isRetriableFailure =
+      !upstream.ok &&
+      i < upstreamUrls.length - 1 &&
+      [404, 502, 503, 504].includes(upstream.status)
+    if (isRetriableFailure) {
+      continue
+    }
+    break
+  }
+
+  if (!upstream) {
     return NextResponse.json(
       { success: false, message: "인증 서비스에 연결할 수 없습니다", data: null },
       { status: 502, headers: noStoreHeaders() },
     )
   }
 
-  let upstreamJson: unknown = null
-  try {
-    upstreamJson = await upstream.json()
-  } catch {
-    upstreamJson = null
-  }
-
   if (!upstream.ok) {
+    const message = toMessage(upstreamJson, `요청 처리에 실패했습니다 (HTTP ${upstream.status})`)
     return NextResponse.json(
-      { success: false, message: toMessage(upstreamJson, "요청 처리에 실패했습니다"), data: null },
+      { success: false, message, data: null },
       { status: upstream.status, headers: noStoreHeaders() },
     )
   }

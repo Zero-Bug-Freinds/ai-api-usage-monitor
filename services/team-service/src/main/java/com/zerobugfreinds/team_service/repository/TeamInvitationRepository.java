@@ -14,6 +14,7 @@ public interface TeamInvitationRepository extends JpaRepository<TeamInvitationEn
 	boolean existsByInviteeIdOrInviterId(String inviteeId, String inviterId);
 
 	List<TeamInvitationEntity> findAllByInviteeIdAndStatusOrderByCreatedAtDesc(String inviteeId, TeamInvitationStatus status);
+	List<TeamInvitationEntity> findAllByInviteeIdAndStatusInOrderByCreatedAtDesc(String inviteeId, List<TeamInvitationStatus> statuses);
 	List<TeamInvitationEntity> findAllByStatusAndCreatedAtBefore(TeamInvitationStatus status, Instant createdAt);
 
 	Optional<TeamInvitationEntity> findByIdAndInviteeId(Long id, String inviteeId);
