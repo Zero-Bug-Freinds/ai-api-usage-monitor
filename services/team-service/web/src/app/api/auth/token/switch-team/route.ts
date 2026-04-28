@@ -86,6 +86,42 @@ function toMessage(upstreamJson: unknown, fallback: string): string {
   return fallback
 }
 
+function decodeJwtUserIdHint(token: string): string | null {
+  const trimmed = token.trim()
+  if (!trimmed) return null
+  const parts = trimmed.split(".")
+  if (parts.length < 2) return null
+  const payload = parts[1]
+  if (!payload) return null
+  try {
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/")
+    const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4)
+    const decoded = Buffer.from(padded, "base64").toString("utf8")
+    const json = JSON.parse(decoded) as Record<string, unknown>
+    const userId = json.userId
+    if (typeof userId === "string" && userId.trim() !== "") {
+      return userId.trim()
+    }
+    if (typeof userId === "number" && Number.isFinite(userId)) {
+      return String(userId)
+    }
+    const platformUserId = json.platformUserId
+    if (typeof platformUserId === "string" && platformUserId.trim() !== "") {
+      return platformUserId.trim()
+    }
+    if (typeof platformUserId === "number" && Number.isFinite(platformUserId)) {
+      return String(platformUserId)
+    }
+    const sub = json.sub
+    if (typeof sub === "string" && sub.trim() !== "") {
+      return sub.trim()
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
 export async function POST(request: Request) {
   let token = getCookieValue(request.headers.get("cookie"), ACCESS_TOKEN_COOKIE)
   if (!token) {
@@ -118,32 +154,49 @@ export async function POST(request: Request) {
   const requestBody = JSON.stringify(payload)
   let upstream: Response | null = null
   let upstreamJson: unknown = null
+  let upstreamRaw = ""
+  const userIdHint = decodeJwtUserIdHint(token)
   for (let i = 0; i < upstreamUrls.length; i += 1) {
     const upstreamUrl = upstreamUrls[i]
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    }
+    if (upstreamUrl.includes("/api/auth/token/switch-team") && userIdHint) {
+      headers["X-User-Id"] = userIdHint
+      headers["X-Platform-User-Id"] = userIdHint
+    }
     try {
       upstream = await fetch(upstreamUrl, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
+        headers,
         body: requestBody,
       })
     } catch {
+      console.warn(`[team-web] switch-team upstream network error url=${upstreamUrl}`)
       upstream = null
       upstreamJson = null
+      upstreamRaw = ""
       continue
     }
     try {
-      upstreamJson = await upstream.json()
+      upstreamRaw = await upstream.text()
+      upstreamJson = upstreamRaw ? (JSON.parse(upstreamRaw) as unknown) : null
     } catch {
       upstreamJson = null
     }
+    const isGatewayIdentityCall = upstreamUrl.includes("/api/identity/auth/token/switch-team")
     const isRetriableFailure =
       !upstream.ok &&
       i < upstreamUrls.length - 1 &&
-      [404, 502, 503, 504].includes(upstream.status)
+      ([404, 500, 502, 503, 504].includes(upstream.status) || (upstream.status === 400 && isGatewayIdentityCall))
+    if (!upstream.ok) {
+      const upstreamMessage = toMessage(upstreamJson, `HTTP ${upstream.status}`)
+      console.warn(
+        `[team-web] switch-team upstream failed url=${upstreamUrl} status=${upstream.status} retriable=${isRetriableFailure} message=${upstreamMessage} body=${upstreamRaw.slice(0, 240)}`,
+      )
+    }
     if (isRetriableFailure) {
       continue
     }

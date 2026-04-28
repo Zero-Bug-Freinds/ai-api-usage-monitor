@@ -29,6 +29,8 @@ type TeamSummaryLike = {
   name: string
 }
 
+type ExternalKeyProvider = "GEMINI" | "OPENAI" | "ANTHROPIC"
+
 type TeamApiKeySummary = {
   id: number
   provider: string
@@ -145,6 +147,7 @@ function parseTeamApiKeyDeletionGraceInput(raw: string):
 }
 
 const TEAM_WEB_BASE_PATH = "/teams"
+const EXTERNAL_KEY_PROVIDER_OPTIONS: ExternalKeyProvider[] = ["GEMINI", "OPENAI", "ANTHROPIC"]
 
 type InviteeFieldRow = { id: string; value: string }
 
@@ -228,6 +231,7 @@ export function TeamManagementView() {
   const [switchingTeamId, setSwitchingTeamId] = React.useState<string | null>(null)
   const [apiKeyAliasByTeamId, setApiKeyAliasByTeamId] = React.useState<Record<string, string>>({})
   const [apiKeyValueByTeamId, setApiKeyValueByTeamId] = React.useState<Record<string, string>>({})
+  const [apiKeyProviderByTeamId, setApiKeyProviderByTeamId] = React.useState<Record<string, ExternalKeyProvider>>({})
   const [apiKeyMonthlyBudgetByTeamId, setApiKeyMonthlyBudgetByTeamId] = React.useState<Record<string, string>>({})
   const [apiKeyLoadingTeamId, setApiKeyLoadingTeamId] = React.useState<string | null>(null)
   const [editingTeamApiKey, setEditingTeamApiKey] = React.useState<{ teamId: string; keyId: number } | null>(null)
@@ -269,7 +273,6 @@ export function TeamManagementView() {
       }
       if (!res.ok || !body?.success || !Array.isArray(body?.data)) {
         setError(body?.message ?? "팀 목록을 불러오지 못했습니다")
-        setTeams([])
         return
       }
       const normalizedTeams = body.data
@@ -281,7 +284,6 @@ export function TeamManagementView() {
         return
       }
       setError("팀 목록을 불러오지 못했습니다")
-      setTeams([])
     } finally {
       if (requestSeq === latestLoadSeqRef.current) {
         setLoading(false)
@@ -389,6 +391,7 @@ export function TeamManagementView() {
 
   React.useEffect(() => {
     if (!message) return
+    if (message.kind === "error") return
     const timeoutId = window.setTimeout(() => setMessage(null), 3500)
     return () => window.clearTimeout(timeoutId)
   }, [message])
@@ -611,7 +614,7 @@ export function TeamManagementView() {
 
   async function _registerTeamApiKey(teamId: string) {
     if (apiKeyLoadingTeamId) return
-    const provider = "OPENAI"
+    const provider = apiKeyProviderByTeamId[teamId] ?? "OPENAI"
     const alias = (apiKeyAliasByTeamId[teamId] ?? "").trim()
     const externalKey = (apiKeyValueByTeamId[teamId] ?? "").trim()
     const budgetTrimmed = (apiKeyMonthlyBudgetByTeamId[teamId] ?? "").trim()
@@ -654,6 +657,7 @@ export function TeamManagementView() {
       setMessage({ kind: "success", text: "팀 API Key가 등록되었습니다" })
       setApiKeyAliasByTeamId((prev) => ({ ...prev, [teamId]: "" }))
       setApiKeyValueByTeamId((prev) => ({ ...prev, [teamId]: "" }))
+      setApiKeyProviderByTeamId((prev) => ({ ...prev, [teamId]: "OPENAI" }))
       setApiKeyMonthlyBudgetByTeamId((prev) => ({ ...prev, [teamId]: "" }))
       await loadTeamApiKeys(teamId)
     } catch {
@@ -810,17 +814,18 @@ export function TeamManagementView() {
       return
     }
     if (switchingTeamId) return
+    setSelectedTeamId(teamId)
+    setInviteInputsByTeamId((prev) => (prev[teamId] !== undefined ? prev : { ...prev, [teamId]: [newInviteeRow()] }))
     setSwitchingTeamId(teamId)
     setMessage(null)
     try {
       await switchActiveTeam(teamId)
-      setSelectedTeamId(teamId)
-      setInviteInputsByTeamId((prev) => (prev[teamId] !== undefined ? prev : { ...prev, [teamId]: [newInviteeRow()] }))
       setMessage({ kind: "success", text: "활성 팀이 전환되었습니다" })
     } catch (e) {
+      const details = e instanceof Error ? e.message : "팀 전환 토큰 갱신에 실패했습니다"
       setMessage({
         kind: "error",
-        text: e instanceof Error ? e.message : "팀 전환 토큰 갱신에 실패했습니다",
+        text: `${details} (상세 UI는 계속 사용 가능합니다)`,
       })
     } finally {
       setSwitchingTeamId(null)
@@ -1252,6 +1257,23 @@ export function TeamManagementView() {
                           <div className="border-t border-zinc-100 pt-3">
                             <p className="text-xs font-semibold text-zinc-800">API Key 목록</p>
                             <div className="mt-2 space-y-2 rounded-md border border-zinc-100 bg-zinc-50 p-2">
+                              <select
+                                className="h-8 w-full rounded-md border border-zinc-300 bg-white px-2 text-xs"
+                                value={apiKeyProviderByTeamId[team.id] ?? "OPENAI"}
+                                onChange={(e) =>
+                                  setApiKeyProviderByTeamId((prev) => ({
+                                    ...prev,
+                                    [team.id]: e.target.value as ExternalKeyProvider,
+                                  }))
+                                }
+                                disabled={apiKeyLoadingTeamId === team.id}
+                              >
+                                {EXTERNAL_KEY_PROVIDER_OPTIONS.map((provider) => (
+                                  <option key={`${team.id}-provider-${provider}`} value={provider}>
+                                    {provider}
+                                  </option>
+                                ))}
+                              </select>
                               <input
                                 className="h-8 w-full rounded-md border border-zinc-300 bg-white px-2 text-xs"
                                 value={apiKeyAliasByTeamId[team.id] ?? ""}

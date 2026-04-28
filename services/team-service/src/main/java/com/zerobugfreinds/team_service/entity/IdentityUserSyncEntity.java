@@ -56,4 +56,8 @@ public class IdentityUserSyncEntity {
     public String getUserId() {
         return userId;
     }
+
+    public String getEmail() {
+        return email;
+    }
 }
