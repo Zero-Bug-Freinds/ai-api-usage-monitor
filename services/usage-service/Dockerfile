@@ -10,11 +10,11 @@ ENV GRADLE_OPTS="-Dorg.gradle.daemon=false"
 COPY services/usage-service/gradlew services/usage-service/settings.gradle services/usage-service/build.gradle ./
 COPY services/usage-service/gradle ./gradle
 COPY libs/usage-events /workspace/libs/usage-events
-RUN --mount=type=cache,target=/root/.gradle \
+RUN --mount=type=cache,id=gradle-usage-service,target=/root/.gradle \
     chmod +x gradlew && sed -i 's/\r$//' gradlew && ./gradlew dependencies --no-daemon
 
 COPY services/usage-service/src ./src
-RUN --mount=type=cache,target=/root/.gradle \
+RUN --mount=type=cache,id=gradle-usage-service,target=/root/.gradle \
     ./gradlew bootJar --no-daemon
 
 FROM eclipse-temurin:21-jre-alpine

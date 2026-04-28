@@ -9,11 +9,11 @@ ENV GRADLE_OPTS="-Dorg.gradle.daemon=false"
 COPY services/identity-service/gradlew services/identity-service/settings.gradle services/identity-service/build.gradle ./
 COPY services/identity-service/gradle ./gradle
 COPY libs/identity-events /workspace/libs/identity-events
-RUN --mount=type=cache,target=/root/.gradle \
+RUN --mount=type=cache,id=gradle-identity-service,target=/root/.gradle \
     chmod +x gradlew && sed -i 's/\r$//' gradlew && ./gradlew dependencies --no-daemon
 
 COPY services/identity-service/src ./src
-RUN --mount=type=cache,target=/root/.gradle \
+RUN --mount=type=cache,id=gradle-identity-service,target=/root/.gradle \
     ./gradlew bootJar --no-daemon
 
 FROM eclipse-temurin:21-jre-alpine
