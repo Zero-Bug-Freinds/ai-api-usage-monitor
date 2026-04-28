@@ -34,6 +34,7 @@ COPY --from=deps /repo/services/billing-service/web/node_modules ./services/bill
 
 COPY packages/ui ./packages/ui
 COPY packages/shell ./packages/shell
+# 앱 소스 전체( public/fonts 포함 )를 빌드 전에 복사 — next/font/local 및 next build 가 정적 폰트를 읽는다.
 COPY services/billing-service/web ./services/billing-service/web
 
 WORKDIR /repo/services/billing-service/web
