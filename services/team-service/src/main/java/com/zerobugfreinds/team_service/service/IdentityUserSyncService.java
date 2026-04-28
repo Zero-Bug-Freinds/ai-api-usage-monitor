@@ -10,7 +10,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.Instant;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 @Service
 public class IdentityUserSyncService {
@@ -59,6 +61,31 @@ public class IdentityUserSyncService {
         }
         return identityUserSyncRepository.existsById(normalized)
                 || identityUserLookupClient.findExistingUserIds(List.of(normalized)).contains(normalized);
+    }
+
+    @Transactional(readOnly = true)
+    public Set<String> resolveMembershipLookupCandidates(String userIdOrEmail) {
+        if (!StringUtils.hasText(userIdOrEmail)) {
+            return Set.of();
+        }
+        String normalized = userIdOrEmail.trim();
+        Set<String> candidates = new LinkedHashSet<>();
+        candidates.add(normalized);
+
+        if (normalized.contains("@")) {
+            String normalizedEmail = normalized.toLowerCase();
+            candidates.add(normalizedEmail);
+            identityUserSyncRepository.findByEmailIgnoreCase(normalizedEmail)
+                    .map(IdentityUserSyncEntity::getUserId)
+                    .filter(StringUtils::hasText)
+                    .ifPresent(id -> candidates.add(id.trim()));
+        } else {
+            identityUserSyncRepository.findById(normalized)
+                    .map(IdentityUserSyncEntity::getEmail)
+                    .filter(StringUtils::hasText)
+                    .ifPresent(email -> candidates.add(email.trim().toLowerCase()));
+        }
+        return candidates;
     }
 
     private static String normalizeRequired(String raw, String fieldName) {

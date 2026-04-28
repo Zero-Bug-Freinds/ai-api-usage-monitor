@@ -13,6 +13,8 @@ import com.zerobugfreinds.identity_service.repository.RefreshTokenRepository;
 import com.zerobugfreinds.identity_service.repository.UserRepository;
 import com.zerobugfreinds.identity_service.security.JwtTokenProvider;
 import io.jsonwebtoken.Claims;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,6 +32,7 @@ import java.util.Set;
  */
 @Service
 public class UserService {
+	private static final Logger log = LoggerFactory.getLogger(UserService.class);
 
 	private final UserRepository userRepository;
 	private final RefreshTokenRepository refreshTokenRepository;
@@ -101,12 +104,25 @@ public class UserService {
 		if (targetTeamId == null) {
 			throw new IllegalArgumentException("targetTeamId는 필수입니다");
 		}
-		boolean isValidMember = teamMembershipVerificationClient.isActiveTeamMember(targetTeamId, authenticatedUserId);
+		User user = userRepository.findById(authenticatedUserId)
+				.orElseThrow(() -> new InvalidCredentialsException("사용자 정보를 찾을 수 없습니다"));
+		boolean matchedByUserId = teamMembershipVerificationClient.isActiveTeamMember(targetTeamId, authenticatedUserId);
+		boolean matchedByEmail = false;
+		if (!matchedByUserId && user.getEmail() != null && !user.getEmail().isBlank()) {
+			matchedByEmail = teamMembershipVerificationClient.isActiveTeamMember(targetTeamId, user.getEmail());
+		}
+		boolean isValidMember = matchedByUserId || matchedByEmail;
+		log.info(
+				"switchTeam membership check userId={} email={} teamId={} matchedByUserId={} matchedByEmail={}",
+				authenticatedUserId,
+				user.getEmail(),
+				targetTeamId,
+				matchedByUserId,
+				matchedByEmail
+		);
 		if (!isValidMember) {
 			throw new IllegalArgumentException("요청한 팀의 활성 멤버가 아닙니다");
 		}
-		User user = userRepository.findById(authenticatedUserId)
-				.orElseThrow(() -> new InvalidCredentialsException("사용자 정보를 찾을 수 없습니다"));
 		return issueTokenPair(user, targetTeamId);
 	}
 

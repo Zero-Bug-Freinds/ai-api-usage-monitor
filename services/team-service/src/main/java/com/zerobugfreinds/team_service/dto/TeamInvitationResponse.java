@@ -9,6 +9,7 @@ public record TeamInvitationResponse(
 		String inviterId,
 		String inviteeId,
 		String status,
-		Instant createdAt
+		Instant createdAt,
+		Instant respondedAt
 ) {
 }
