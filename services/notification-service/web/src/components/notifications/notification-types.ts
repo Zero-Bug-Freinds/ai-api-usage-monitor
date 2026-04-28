@@ -6,6 +6,7 @@ export type InAppNotification = {
   type: string | null
   readAt: string | null
   createdAt: string
+  meta?: unknown | null
 }
 
 export type InAppNotificationListResponse = {

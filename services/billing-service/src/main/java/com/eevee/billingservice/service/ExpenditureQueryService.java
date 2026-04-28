@@ -3,6 +3,7 @@ package com.eevee.billingservice.service;
 import com.eevee.billingservice.api.dto.ApiKeySeenResponse;
 import com.eevee.billingservice.api.dto.DailyExpenditurePoint;
 import com.eevee.billingservice.api.dto.ExpenditureSummaryResponse;
+import com.eevee.billingservice.api.dto.MonthlyBudgetStatusResponse;
 import com.eevee.billingservice.api.dto.MonthlyExpenditurePoint;
 import com.eevee.billingservice.config.BillingProperties;
 import com.eevee.billingservice.domain.BillingUserApiKeySeenEntity;
@@ -48,8 +49,16 @@ public class ExpenditureQueryService {
     public ExpenditureSummaryResponse summary(String userId, String apiKeyId, AiProvider provider, LocalDate from, LocalDate to) {
         Range r = validateRange(from, to);
         BigDecimal total = dailyRepository.sumTotalCostUsd(userId, apiKeyId, provider, r.fromInclusive(), r.toInclusive());
-        BigDecimal budget = identityBudgetClient.fetchMonthlyBudgetUsd(userId).orElse(null);
+        BigDecimal budget = identityBudgetClient.fetchMonthlyBudgetUsdForKey(userId, provider, apiKeyId).orElse(null);
         return new ExpenditureSummaryResponse(r.fromInclusive(), r.toInclusive(), total, budget);
+    }
+
+    @Transactional(readOnly = true)
+    public MonthlyBudgetStatusResponse monthlyBudgetStatus(String userId, LocalDate from, LocalDate to) {
+        Range r = validateRange(from, to);
+        BigDecimal total = dailyRepository.sumTotalCostUsdForUser(userId, r.fromInclusive(), r.toInclusive());
+        BigDecimal budget = identityBudgetClient.fetchMonthlyBudgetUsd(userId).orElse(null);
+        return new MonthlyBudgetStatusResponse(r.fromInclusive(), r.toInclusive(), total, budget);
     }
 
     @Transactional(readOnly = true)

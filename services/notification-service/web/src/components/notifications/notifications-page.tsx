@@ -60,6 +60,42 @@ async function markAllRead(): Promise<void> {
   }
 }
 
+type TeamInviteActionMeta = {
+  invitationId?: string
+  actions?: { acceptPath?: string; rejectPath?: string }
+}
+
+function normalizeNotificationServicePath(path: string): string {
+  const raw = path.trim()
+  if (raw.length === 0) return raw
+  const withSlash = raw.startsWith("/") ? raw : `/${raw}`
+  // Backward compatibility: older notifications stored `/api/...` but the BFF already targets `.../api`.
+  return withSlash.startsWith("/api/") ? withSlash.slice("/api".length) : withSlash
+}
+
+function getTeamInviteActions(meta: unknown): { acceptPath: string; rejectPath: string } | null {
+  if (typeof meta !== "object" || meta === null) return null
+  const m = meta as TeamInviteActionMeta
+  const acceptRaw = m.actions?.acceptPath
+  const rejectRaw = m.actions?.rejectPath
+  if (typeof acceptRaw !== "string" || acceptRaw.length === 0) return null
+  if (typeof rejectRaw !== "string" || rejectRaw.length === 0) return null
+  const acceptPath = normalizeNotificationServicePath(acceptRaw)
+  const rejectPath = normalizeNotificationServicePath(rejectRaw)
+  if (acceptPath.length === 0 || rejectPath.length === 0) return null
+  return { acceptPath, rejectPath }
+}
+
+async function postAction(path: string): Promise<void> {
+  const p = normalizeNotificationServicePath(path)
+  const res = await fetch(apiPath(`/api/notification${p}`), { method: "POST", cache: "no-store" })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    const message = extractMessage(body) ?? "요청에 실패했습니다"
+    throw new Error(message)
+  }
+}
+
 function formatKoreanDate(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
@@ -79,6 +115,7 @@ export function NotificationsPage() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [busyActionId, setBusyActionId] = useState<string | null>(null)
   const [busyAll, setBusyAll] = useState(false)
 
   const unreadCount = useMemo(() => items.filter((n) => !n.readAt).length, [items])
@@ -136,6 +173,28 @@ export function NotificationsPage() {
     }
   }, [])
 
+  const onInviteAction = useCallback(
+    async (notificationId: string, path: string) => {
+      setBusyActionId(notificationId)
+      setError(null)
+      try {
+        await postAction(path)
+        await markRead(notificationId)
+        setItems((prev) =>
+          prev.map((n) =>
+            n.id === notificationId ? { ...n, readAt: new Date().toISOString() } : n,
+          ),
+        )
+        await loadFirst()
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "요청에 실패했습니다")
+      } finally {
+        setBusyActionId(null)
+      }
+    },
+    [loadFirst],
+  )
+
   const onMarkAllRead = useCallback(async () => {
     setBusyAll(true)
     setError(null)
@@ -188,6 +247,9 @@ export function NotificationsPage() {
           {items.map((n) => {
             const unread = !n.readAt
             const busy = busyId === n.id
+            const busyAction = busyActionId === n.id
+            const inviteActions =
+              n.type === "team:TEAM_INVITE_CREATED" ? getTeamInviteActions(n.meta) : null
             return (
               <article
                 key={n.id}
@@ -211,6 +273,27 @@ export function NotificationsPage() {
                     </div>
                     <p className="mt-2 whitespace-pre-wrap text-sm text-foreground/90">{n.body}</p>
                     <p className="mt-3 text-xs text-muted-foreground">{formatKoreanDate(n.createdAt)}</p>
+                    {inviteActions ? (
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          onClick={() => void onInviteAction(n.id, inviteActions.acceptPath)}
+                          disabled={!unread || busyAction}
+                        >
+                          {busyAction ? <Loader2 className="mr-2 size-4 animate-spin" aria-hidden /> : null}
+                          수락
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => void onInviteAction(n.id, inviteActions.rejectPath)}
+                          disabled={!unread || busyAction}
+                        >
+                          {busyAction ? <Loader2 className="mr-2 size-4 animate-spin" aria-hidden /> : null}
+                          거절
+                        </Button>
+                      </div>
+                    ) : null}
                   </div>
                   <div className="shrink-0">
                     <Button
