@@ -10,6 +10,7 @@ import type {
   ApiKeySeen,
   DailyPoint,
   ExpenditureSummary,
+  MonthlyBudgetStatus,
   MonthlyPoint,
   TeamMonthRollup,
 } from "@/lib/expenditure/types";
@@ -102,6 +103,7 @@ export function ExpenditureDashboard() {
   const [customFrom, setCustomFrom] = useState<string>(() => rangeLastDays(30).from);
   const [customTo, setCustomTo] = useState<string>(() => rangeLastDays(30).to);
   const [summary, setSummary] = useState<ExpenditureSummary | null>(null);
+  const [monthlyBudget, setMonthlyBudget] = useState<MonthlyBudgetStatus | null>(null);
   const [daily, setDaily] = useState<DailyPoint[]>([]);
   const [monthly, setMonthly] = useState<MonthlyPoint[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -173,6 +175,25 @@ export function ExpenditureDashboard() {
       .catch(() => setMeUserId(null));
   }, []);
 
+  const loadMonthlyBudget = useCallback(async () => {
+    const monthFrom = currentMonthStartKst();
+    const monthTo = rangeLastDays(1).to;
+    try {
+      const q = new URLSearchParams({ from: monthFrom, to: monthTo });
+      const b = await fetchJson<MonthlyBudgetStatus>(
+        expenditureApiPath(`/api/expenditure/monthly-budget-status?${q.toString()}`)
+      );
+      setMonthlyBudget(b);
+    } catch {
+      setMonthlyBudget(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (viewMode !== "personal") return;
+    void loadMonthlyBudget();
+  }, [loadMonthlyBudget, viewMode]);
+
   const loadSeries = useCallback(async () => {
     if (!apiKeyId) {
       setSummary(null);
@@ -224,12 +245,13 @@ export function ExpenditureDashboard() {
   const refreshPersonal = useCallback(async () => {
     setError(null);
     try {
+      await loadMonthlyBudget();
       await loadApiKeys();
       await loadSeries();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "새로고침에 실패했습니다");
     }
-  }, [loadApiKeys, loadSeries]);
+  }, [loadApiKeys, loadMonthlyBudget, loadSeries]);
 
   const loadTeams = useCallback(async () => {
     setTeamsLoading(true);
@@ -296,6 +318,18 @@ export function ExpenditureDashboard() {
   }, [selectedTeamId, teamMonth]);
 
   const budgetUi = useMemo(() => {
+    const total = monthlyBudget?.totalCostUsd ?? null;
+    const budget = monthlyBudget?.monthlyBudgetUsd ?? null;
+    if (total == null) return null;
+    if (budget == null || budget <= 0) {
+      return { totalCostUsd: total, monthlyBudgetUsd: null as number | null, remainingUsd: null as number | null, pct: null as number | null };
+    }
+    const remaining = Math.max(0, budget - total);
+    const pct = Math.min(100, (total / budget) * 100);
+    return { totalCostUsd: total, monthlyBudgetUsd: budget, remainingUsd: remaining, pct };
+  }, [monthlyBudget]);
+
+  const keyBudgetUi = useMemo(() => {
     const total = summary?.totalCostUsd ?? null;
     const budget = summary?.monthlyBudgetUsd ?? null;
     if (total == null) return null;
@@ -347,20 +381,20 @@ export function ExpenditureDashboard() {
           <span className="opacity-60">•</span>
           <span>
             예산 연동:{" "}
-            {summary?.monthlyBudgetUsd != null
+            {monthlyBudget?.monthlyBudgetUsd != null
               ? "표시됨"
-              : summary
+              : monthlyBudget
                 ? "미표시 (Identity 연동 꺼짐/미설정/예산 없음 가능)"
                 : "—"}
           </span>
         </div>
       </header>
 
-      {viewMode === "personal" && apiKeyId && budgetUi ? (
+      {viewMode === "personal" && budgetUi ? (
         <section className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-sm">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div className="space-y-1">
-              <h2 className="text-sm font-medium text-muted-foreground">월 예산 대비</h2>
+              <h2 className="text-sm font-medium text-muted-foreground">월 예산 대비 (전체)</h2>
               {budgetUi.monthlyBudgetUsd != null ? (
                 <p className="text-xs text-muted-foreground">
                   이번 달 지출 {formatUsd(budgetUi.totalCostUsd)} / 월 예산 ${budgetUi.monthlyBudgetUsd.toFixed(2)} (잔여 $
@@ -654,6 +688,47 @@ export function ExpenditureDashboard() {
                   </p>
                 )}
               </div>
+            </section>
+          ) : null}
+
+          {apiKeyId && keyBudgetUi ? (
+            <section className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-sm">
+              <div className="flex flex-wrap items-end justify-between gap-4">
+                <div className="space-y-1">
+                  <h2 className="text-sm font-medium text-muted-foreground">월 예산 대비 (선택한 키)</h2>
+                  {keyBudgetUi.monthlyBudgetUsd != null ? (
+                    <p className="text-xs text-muted-foreground">
+                      이번 달 지출 {formatUsd(keyBudgetUi.totalCostUsd)} / 월 예산 ${keyBudgetUi.monthlyBudgetUsd.toFixed(2)} (잔여 $
+                      {(keyBudgetUi.remainingUsd ?? 0).toFixed(2)})
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      월 예산: identity HTTP 연동이 없거나 미설정이면 표시되지 않습니다.
+                    </p>
+                  )}
+                </div>
+                {keyBudgetUi.pct != null ? (
+                  <div className="text-right">
+                    <p className="text-xs text-muted-foreground">진행률</p>
+                    <p className="text-lg font-semibold tabular-nums">{keyBudgetUi.pct.toFixed(1)}%</p>
+                  </div>
+                ) : null}
+              </div>
+
+              {keyBudgetUi.pct != null ? (
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>0%</span>
+                    <span>100%</span>
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-primary transition-[width]"
+                      style={{ width: `${Math.min(100, Math.max(0, keyBudgetUi.pct))}%` }}
+                    />
+                  </div>
+                </div>
+              ) : null}
             </section>
           ) : null}
 

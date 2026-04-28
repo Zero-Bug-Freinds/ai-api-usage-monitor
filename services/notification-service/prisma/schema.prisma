@@ -32,6 +32,8 @@ model InAppNotification {
   readAt    DateTime? @map("read_at") @db.Timestamptz(6)
   /// 선택적 분류(예: billing-warning, test)
   type      String?
+  /// UI 렌더링/액션 처리에 필요한 추가 데이터 (예: invitationId, action paths)
+  meta      Json?
 
   @@index([userId, createdAt(sort: Desc)])
   @@map("in_app_notifications")

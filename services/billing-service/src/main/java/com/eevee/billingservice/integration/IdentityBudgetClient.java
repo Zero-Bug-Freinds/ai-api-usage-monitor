@@ -3,6 +3,7 @@ package com.eevee.billingservice.integration;
 import com.eevee.billingservice.config.IdentityProperties;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.eevee.usage.events.AiProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -13,6 +14,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -32,6 +34,30 @@ public class IdentityBudgetClient {
     }
 
     public Optional<BigDecimal> fetchMonthlyBudgetUsd(String userId) {
+        return fetchBudgetEnvelope(userId).map(BudgetEnvelope::monthlyBudgetUsd);
+    }
+
+    public Optional<BigDecimal> fetchMonthlyBudgetUsdForKey(String userId, AiProvider provider, String apiKeyId) {
+        if (provider == null || apiKeyId == null || apiKeyId.isBlank()) {
+            return Optional.empty();
+        }
+        Optional<Long> externalKeyId = tryParseLong(apiKeyId);
+        if (externalKeyId.isEmpty()) {
+            return Optional.empty();
+        }
+
+        String identityProvider = toIdentityProviderName(provider);
+        return fetchBudgetEnvelope(userId)
+                .flatMap(env -> env.monthlyBudgetsByKey().stream()
+                        .filter(v -> v != null && v.externalApiKeyId() != null)
+                        .filter(v -> v.externalApiKeyId().equals(externalKeyId.get()))
+                        .filter(v -> v.provider() != null && v.provider().equalsIgnoreCase(identityProvider))
+                        .findFirst()
+                        .map(BudgetByKeyEnvelope::monthlyBudgetUsd)
+                );
+    }
+
+    private Optional<BudgetEnvelope> fetchBudgetEnvelope(String userId) {
         if (!identityProperties.isEnabled()) {
             return Optional.empty();
         }
@@ -63,7 +89,7 @@ public class IdentityBudgetClient {
                 return Optional.empty();
             }
             BudgetEnvelope env = objectMapper.readValue(body, BudgetEnvelope.class);
-            return Optional.ofNullable(env.monthlyBudgetUsd());
+            return Optional.of(env);
         } catch (RestClientResponseException e) {
             if (e.getStatusCode().value() == 404) {
                 return Optional.empty();
@@ -76,7 +102,30 @@ public class IdentityBudgetClient {
         }
     }
 
+    private static Optional<Long> tryParseLong(String raw) {
+        try {
+            return Optional.of(Long.parseLong(raw.trim()));
+        } catch (Exception e) {
+            return Optional.empty();
+        }
+    }
+
+    private static String toIdentityProviderName(AiProvider provider) {
+        return switch (provider) {
+            case OPENAI -> "OPENAI";
+            case ANTHROPIC -> "ANTHROPIC";
+            case GOOGLE -> "GEMINI";
+        };
+    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
-    private record BudgetEnvelope(BigDecimal monthlyBudgetUsd) {
+    private record BudgetEnvelope(BigDecimal monthlyBudgetUsd, List<BudgetByKeyEnvelope> monthlyBudgetsByKey) {
+        public List<BudgetByKeyEnvelope> monthlyBudgetsByKey() {
+            return monthlyBudgetsByKey != null ? monthlyBudgetsByKey : List.of();
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record BudgetByKeyEnvelope(Long externalApiKeyId, String provider, BigDecimal monthlyBudgetUsd) {
     }
 }

@@ -41,6 +41,6 @@ export function parseTeamDomainEventJson(raw: unknown): TeamDomainEventPayload {
 
 export function safeParseTeamDomainEventJson(
   raw: unknown,
-): z.SafeParseReturnType<unknown, TeamDomainEventPayload> {
+): z.ZodSafeParseResult<TeamDomainEventPayload> {
   return teamDomainEventSchema.safeParse(raw);
 }
