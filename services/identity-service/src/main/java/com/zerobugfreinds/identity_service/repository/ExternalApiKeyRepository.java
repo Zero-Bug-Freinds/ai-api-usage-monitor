@@ -52,6 +52,8 @@ public interface ExternalApiKeyRepository extends JpaRepository<ExternalApiKeyEn
 
 	List<ExternalApiKeyEntity> findAllByUserIdOrderByCreatedAtDesc(Long userId);
 
+	List<ExternalApiKeyEntity> findAllByUserIdAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(Long userId);
+
 	Optional<ExternalApiKeyEntity> findTopByUserIdAndProviderAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(
 			Long userId,
 			ExternalApiKeyProvider provider

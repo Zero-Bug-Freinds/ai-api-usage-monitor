@@ -24,6 +24,7 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -226,19 +227,29 @@ public class ExternalApiKeyService {
 
 	@Transactional(readOnly = true)
 	public Optional<BigDecimal> resolveUserMonthlyBudgetUsd(Long userId) {
-		if (userId == null) {
-			throw new IllegalArgumentException("userId는 필수입니다");
-		}
-		long activeKeyCount = externalApiKeyRepository.countByUserIdAndDeletionRequestedAtIsNull(userId);
-		if (activeKeyCount == 0) {
-			return Optional.empty();
-		}
-		BigDecimal totalBudget = externalApiKeyRepository.sumMonthlyBudgetUsdByUserIdAndDeletionRequestedAtIsNull(userId);
-		return Optional.ofNullable(totalBudget);
+		return resolveUserMonthlyBudgetBreakdown(userId).map(UserMonthlyBudgetBreakdown::monthlyBudgetUsd);
 	}
 
 	@Transactional(readOnly = true)
 	public Optional<BigDecimal> resolveUserMonthlyBudgetUsdByEmail(String email) {
+		return resolveUserMonthlyBudgetBreakdownByEmail(email).map(UserMonthlyBudgetBreakdown::monthlyBudgetUsd);
+	}
+
+	@Transactional(readOnly = true)
+	public Optional<UserMonthlyBudgetBreakdown> resolveUserMonthlyBudgetBreakdown(Long userId) {
+		if (userId == null) {
+			throw new IllegalArgumentException("userId는 필수입니다");
+		}
+		List<ExternalApiKeyEntity> activeKeys =
+				externalApiKeyRepository.findAllByUserIdAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(userId);
+		if (activeKeys.isEmpty()) {
+			return Optional.empty();
+		}
+		return Optional.of(toMonthlyBudgetBreakdown(activeKeys));
+	}
+
+	@Transactional(readOnly = true)
+	public Optional<UserMonthlyBudgetBreakdown> resolveUserMonthlyBudgetBreakdownByEmail(String email) {
 		if (!StringUtils.hasText(email)) {
 			throw new IllegalArgumentException("email은 필수입니다");
 		}
@@ -247,16 +258,44 @@ public class ExternalApiKeyService {
 		if (userId.isEmpty()) {
 			return Optional.empty();
 		}
+		return resolveUserMonthlyBudgetBreakdown(userId.get());
+	}
 
-		long activeBudgetedKeyCount =
-				externalApiKeyRepository.countByUserIdAndDeletionRequestedAtIsNullAndMonthlyBudgetUsdIsNotNull(userId.get());
-		if (activeBudgetedKeyCount == 0) {
-			return Optional.empty();
+	private UserMonthlyBudgetBreakdown toMonthlyBudgetBreakdown(List<ExternalApiKeyEntity> activeKeys) {
+		List<UserMonthlyBudgetByKey> monthlyBudgetsByKey = new ArrayList<>();
+		BigDecimal totalBudget = BigDecimal.ZERO;
+
+		for (ExternalApiKeyEntity key : activeKeys) {
+			BigDecimal budget = key.getMonthlyBudgetUsd();
+			if (budget == null) {
+				continue;
+			}
+			monthlyBudgetsByKey.add(
+					new UserMonthlyBudgetByKey(
+							key.getId(),
+							key.getProvider().name(),
+							key.getKeyAlias(),
+							budget
+					)
+			);
+			totalBudget = totalBudget.add(budget);
 		}
 
-		BigDecimal totalBudget =
-				externalApiKeyRepository.sumMonthlyBudgetUsdByUserIdAndActiveBudgetAssigned(userId.get());
-		return Optional.ofNullable(totalBudget);
+		return new UserMonthlyBudgetBreakdown(totalBudget, monthlyBudgetsByKey);
+	}
+
+	public record UserMonthlyBudgetBreakdown(
+			BigDecimal monthlyBudgetUsd,
+			List<UserMonthlyBudgetByKey> monthlyBudgetsByKey
+	) {
+	}
+
+	public record UserMonthlyBudgetByKey(
+			Long externalApiKeyId,
+			String provider,
+			String alias,
+			BigDecimal monthlyBudgetUsd
+	) {
 	}
 
 	/**
