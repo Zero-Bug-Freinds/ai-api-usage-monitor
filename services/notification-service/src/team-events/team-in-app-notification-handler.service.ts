@@ -72,6 +72,18 @@ export class TeamInAppNotificationHandlerService {
               title: copy.title,
               body: copy.body,
               type: notificationType,
+              meta:
+                eventType === 'TEAM_INVITE_CREATED' && payload.invitationId
+                  ? ({
+                      invitationId: payload.invitationId,
+                      teamId: payload.teamId,
+                      teamName: payload.teamName ?? null,
+                      actions: {
+                        acceptPath: `/api/team-invitations/${encodeURIComponent(payload.invitationId)}/accept`,
+                        rejectPath: `/api/team-invitations/${encodeURIComponent(payload.invitationId)}/reject`,
+                      },
+                    } satisfies Prisma.InputJsonObject)
+                  : undefined,
             },
           });
         });
