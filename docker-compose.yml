@@ -325,7 +325,7 @@ services:
       # identity-web BFF must call gateway so that gateway injects X-User-Id/X-Team-Id.
       GATEWAY_URL: ${WEB_GATEWAY_URL:-http://api-gateway-service:8080}
       WEB_GATEWAY_URL: ${WEB_GATEWAY_URL:-http://api-gateway-service:8080}
-      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://host.docker.internal:8090}
+      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
       USAGE_WEB_INTERNAL_ORIGIN: ${USAGE_WEB_INTERNAL_ORIGIN:-http://host.docker.internal:3001}
       BILLING_WEB_INTERNAL_ORIGIN: ${BILLING_WEB_INTERNAL_ORIGIN:-http://host.docker.internal:3003}
       TEAM_WEB_INTERNAL_ORIGIN: ${TEAM_WEB_INTERNAL_ORIGIN:-http://host.docker.internal:3002}
@@ -349,7 +349,7 @@ services:
       - api-gateway-service
     environment:
       API_GATEWAY_URL: http://api-gateway-service:8080
-      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://host.docker.internal:8090}
+      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
       GATEWAY_DEV_MODE: ${GATEWAY_DEV_MODE:-true}
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -386,7 +386,7 @@ services:
       - identity-web
     environment:
       API_GATEWAY_URL: http://api-gateway-service:8080
-      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://host.docker.internal:8090}
+      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
       GATEWAY_DEV_MODE: ${GATEWAY_DEV_MODE:-true}
       # billing-web 서버 라우트가 컨테이너 내부에서 /api/team/v1/**(identity-web BFF)로 호출할 때 사용할 오리진.
       # Compose 네트워크에서는 서비스 DNS(identity-web:3000)가 가장 안정적이다. 호스트 전용 구성이면 BILLING_TEAM_BFF_BASE_URL 로 덮어쓴다.
@@ -438,7 +438,7 @@ services:
       SPRING_RABBITMQ_PORT: 5672
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
-      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://host.docker.internal:8090}
+      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
       SECURITY_JWT_SECRET: ${JWT_SECRET:-change-this-secret-key-to-at-least-32-bytes}
       TEAM_API_KEY_ENCRYPTION_SECRET: ${TEAM_API_KEY_ENCRYPTION_SECRET:-change-this-team-api-key-encryption-secret-min-32-chars}
       TEAM_SERVICE_PORT: 8093
@@ -467,7 +467,7 @@ services:
     environment:
       GATEWAY_URL: ${WEB_GATEWAY_URL:-http://api-gateway-service:8080}
       TEAM_SERVICE_URL: ${WEB_TEAM_SERVICE_URL:-http://team-service:8093}
-      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://host.docker.internal:8090}
+      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
