@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # Next.js standalone — 패턴은 usage-web 과 동일 (저장소 루트에서 빌드).
 #   docker build -f services/billing-service/web/Dockerfile -t billing-web:local .
 
@@ -10,7 +11,9 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY packages/ui/package.json ./packages/ui/
 COPY packages/shell/package.json ./packages/shell/
 COPY services/billing-service/web/package.json ./services/billing-service/web/
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm config set store-dir /pnpm/store && \
+    pnpm install --frozen-lockfile
 
 FROM ${WEB_NODE_DEPS_IMAGE} AS deps
 
@@ -38,7 +41,10 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV NEXT_PRIVATE_LOCAL_WEBPACK=true
 ARG NEXT_PUBLIC_IDENTITY_WEB_ORIGIN=
 ENV NEXT_PUBLIC_IDENTITY_WEB_ORIGIN=$NEXT_PUBLIC_IDENTITY_WEB_ORIGIN
-RUN pnpm run build
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    --mount=type=cache,target=/repo/services/billing-service/web/.next/cache \
+    pnpm config set store-dir /pnpm/store && \
+    pnpm run build
 
 FROM node:22-alpine AS runner
 ENV NODE_ENV=production

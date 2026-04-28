@@ -27,6 +27,9 @@
 #   Identity BFF는 기본적으로 호스트의 identity-service 를 host.docker.internal 로 향함(WEB_IDENTITY_SERVICE_URL).
 #   단일 도메인: web-edge(Nginx, docker/web-edge/nginx.conf) → 기본 ${WEB_EDGE_PORT:-8888}
 #     /dashboard → 308 /dashboard/; 접두 /dashboard/ 만 usage-web(/dashboard2 는 제외); /api/v1 → 308 /api/v1/; 접두 /api/v1/ 만 api-gateway(버퍼링 끔·긴 timeout); 그 외 → identity-web.
+#
+# BuildKit registry cache: 각 이미지 태그는 서비스 이름과 동일. CI에서는 BUILD_CACHE_REF_PREFIX=ghcr.io/<org>/<repo> 로 설정 (GitHub: ghcr.io/${GITHUB_REPOSITORY}).
+# 로컬에서 GHCR 미사용 시 기본값만으로도 빌드 가능; registry 푸시/풀은 선택.
 
 services:
   postgres:
@@ -136,6 +139,10 @@ services:
       dockerfile: services/notification-service/Dockerfile
       args:
         BACKEND_NODE_DEPS_IMAGE: ${BACKEND_NODE_DEPS_IMAGE:-backend-node-deps:local}
+      cache_from:
+        - type=registry,ref=${BUILD_CACHE_REF_PREFIX:-ghcr.io/local/buildcache}/buildcache:notification-service
+      cache_to:
+        - type=registry,ref=${BUILD_CACHE_REF_PREFIX:-ghcr.io/local/buildcache}/buildcache:notification-service,mode=max
     depends_on:
       postgres-notification:
         condition: service_started
@@ -159,6 +166,10 @@ services:
     build:
       context: .
       dockerfile: services/identity-service/Dockerfile
+      cache_from:
+        - type=registry,ref=${BUILD_CACHE_REF_PREFIX:-ghcr.io/local/buildcache}/buildcache:identity-service
+      cache_to:
+        - type=registry,ref=${BUILD_CACHE_REF_PREFIX:-ghcr.io/local/buildcache}/buildcache:identity-service,mode=max
     depends_on:
       - postgres
     environment:
@@ -175,6 +186,10 @@ services:
     build:
       context: .
       dockerfile: services/usage-service/Dockerfile
+      cache_from:
+        - type=registry,ref=${BUILD_CACHE_REF_PREFIX:-ghcr.io/local/buildcache}/buildcache:usage-service
+      cache_to:
+        - type=registry,ref=${BUILD_CACHE_REF_PREFIX:-ghcr.io/local/buildcache}/buildcache:usage-service,mode=max
     depends_on:
       - postgres-usage
       - rabbitmq
@@ -219,6 +234,10 @@ services:
   proxy-service:
     build:
       context: ./services/proxy-service
+      cache_from:
+        - type=registry,ref=${BUILD_CACHE_REF_PREFIX:-ghcr.io/local/buildcache}/buildcache:proxy-service
+      cache_to:
+        - type=registry,ref=${BUILD_CACHE_REF_PREFIX:-ghcr.io/local/buildcache}/buildcache:proxy-service,mode=max
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -237,6 +256,10 @@ services:
   api-gateway-service:
     build:
       context: ./services/api-gateway-service
+      cache_from:
+        - type=registry,ref=${BUILD_CACHE_REF_PREFIX:-ghcr.io/local/buildcache}/buildcache:api-gateway-service
+      cache_to:
+        - type=registry,ref=${BUILD_CACHE_REF_PREFIX:-ghcr.io/local/buildcache}/buildcache:api-gateway-service,mode=max
     depends_on:
       - proxy-service
       - identity-service
@@ -266,6 +289,10 @@ services:
       args:
         WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
         NEXT_PUBLIC_USAGE_WEB_ORIGIN: ${NEXT_PUBLIC_USAGE_WEB_ORIGIN:-http://usage-web:3000}
+      cache_from:
+        - type=registry,ref=${BUILD_CACHE_REF_PREFIX:-ghcr.io/local/buildcache}/buildcache:identity-web
+      cache_to:
+        - type=registry,ref=${BUILD_CACHE_REF_PREFIX:-ghcr.io/local/buildcache}/buildcache:identity-web,mode=max
     depends_on:
       - api-gateway-service
     environment:
@@ -291,6 +318,10 @@ services:
         WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
         NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${IDENTITY_WEB_PORT:-3000}}
         NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_BASE_PATH:-/dashboard}
+      cache_from:
+        - type=registry,ref=${BUILD_CACHE_REF_PREFIX:-ghcr.io/local/buildcache}/buildcache:usage-web
+      cache_to:
+        - type=registry,ref=${BUILD_CACHE_REF_PREFIX:-ghcr.io/local/buildcache}/buildcache:usage-web,mode=max
     depends_on:
       - api-gateway-service
     environment:
@@ -310,6 +341,10 @@ services:
       dockerfile: services/usage-service/web-mfe/Dockerfile
       args:
         WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
+      cache_from:
+        - type=registry,ref=${BUILD_CACHE_REF_PREFIX:-ghcr.io/local/buildcache}/buildcache:usage-web-mfe
+      cache_to:
+        - type=registry,ref=${BUILD_CACHE_REF_PREFIX:-ghcr.io/local/buildcache}/buildcache:usage-web-mfe,mode=max
     depends_on:
       - usage-web
     expose:
@@ -325,6 +360,10 @@ services:
       args:
         WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
         NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${IDENTITY_WEB_PORT:-3000}}
+      cache_from:
+        - type=registry,ref=${BUILD_CACHE_REF_PREFIX:-ghcr.io/local/buildcache}/buildcache:billing-web
+      cache_to:
+        - type=registry,ref=${BUILD_CACHE_REF_PREFIX:-ghcr.io/local/buildcache}/buildcache:billing-web,mode=max
     depends_on:
       - api-gateway-service
       - identity-web
@@ -350,6 +389,10 @@ services:
       args:
         WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
         NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_NOTIFICATION_BASE_PATH:-/notifications}
+      cache_from:
+        - type=registry,ref=${BUILD_CACHE_REF_PREFIX:-ghcr.io/local/buildcache}/buildcache:notification-web
+      cache_to:
+        - type=registry,ref=${BUILD_CACHE_REF_PREFIX:-ghcr.io/local/buildcache}/buildcache:notification-web,mode=max
     depends_on:
       - api-gateway-service
       - notification-service
@@ -403,6 +446,10 @@ services:
       dockerfile: services/team-service/web/Dockerfile
       args:
         WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
+      cache_from:
+        - type=registry,ref=${BUILD_CACHE_REF_PREFIX:-ghcr.io/local/buildcache}/buildcache:team-web
+      cache_to:
+        - type=registry,ref=${BUILD_CACHE_REF_PREFIX:-ghcr.io/local/buildcache}/buildcache:team-web,mode=max
     depends_on:
       - team-service
     environment:
@@ -422,6 +469,10 @@ services:
       dockerfile: services/team-service/web-mfe/Dockerfile
       args:
         WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
+      cache_from:
+        - type=registry,ref=${BUILD_CACHE_REF_PREFIX:-ghcr.io/local/buildcache}/buildcache:team-web-mfe
+      cache_to:
+        - type=registry,ref=${BUILD_CACHE_REF_PREFIX:-ghcr.io/local/buildcache}/buildcache:team-web-mfe,mode=max
     depends_on:
       - team-web
     expose:

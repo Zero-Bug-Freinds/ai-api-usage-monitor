@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # 패턴 B — usage-service 백엔드 전용 이미지 (docs/architecture.md §10.1).
 # :usage-events 는 ../../libs/usage-events 이므로 build context 는 저장소 루트여야 한다.
 # 빌드(저장소 루트에서):
@@ -8,9 +9,13 @@ WORKDIR /workspace/services/usage-service
 ENV GRADLE_OPTS="-Dorg.gradle.daemon=false"
 COPY services/usage-service/gradlew services/usage-service/settings.gradle services/usage-service/build.gradle ./
 COPY services/usage-service/gradle ./gradle
-COPY services/usage-service/src ./src
 COPY libs/usage-events /workspace/libs/usage-events
-RUN chmod +x gradlew && sed -i 's/\r$//' gradlew && ./gradlew bootJar --no-daemon
+RUN --mount=type=cache,target=/root/.gradle \
+    chmod +x gradlew && sed -i 's/\r$//' gradlew && ./gradlew dependencies --no-daemon
+
+COPY services/usage-service/src ./src
+RUN --mount=type=cache,target=/root/.gradle \
+    ./gradlew bootJar --no-daemon
 
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app

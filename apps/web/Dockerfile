@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # Next.js standalone host shell image
 # Build from repo root:
 #   docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:local -f apps/web/Dockerfile -t web-host:local .
@@ -12,7 +13,9 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY packages/ui/package.json ./packages/ui/
 COPY packages/shell/package.json ./packages/shell/
 COPY apps/web/package.json ./apps/web/
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm config set store-dir /pnpm/store && \
+    pnpm install --frozen-lockfile
 
 FROM ${WEB_NODE_DEPS_IMAGE} AS deps
 
@@ -38,7 +41,10 @@ COPY apps/web ./apps/web
 WORKDIR /repo/apps/web
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NEXT_PRIVATE_LOCAL_WEBPACK=true
-RUN pnpm run build
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    --mount=type=cache,target=/repo/apps/web/.next/cache \
+    pnpm config set store-dir /pnpm/store && \
+    pnpm run build
 
 FROM node:22-alpine AS runner
 ENV NODE_ENV=production

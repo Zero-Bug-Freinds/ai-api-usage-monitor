@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # CI 또는 로컬에서 ./gradlew bootJar 로 생성한 app.jar 를 포함한 컨텍스트로 빌드합니다.
 # (api-gateway-service 디렉터리에서 실행)
 
