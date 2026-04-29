@@ -13,14 +13,55 @@
 
 | 잡 | 설명 |
 |----|------|
-| **Detect changed paths** | `dorny/paths-filter`로 `services/identity-service/**`, `services/proxy-service/**`, `services/api-gateway-service/**`, `services/usage-service/**`, `libs/usage-events/**`, `services/identity-service/web/**`, `services/usage-service/web/**`, `packages/ui/**`, 루트 `pnpm-workspace.yaml`·`package.json`·`pnpm-lock.yaml`, `.github/workflows/**` 변경 감지 |
+| **Detect changed paths** | `dorny/paths-filter`로 `web_edge`, `api_gateway`, `identity`, `proxy`, `usage`, `billing`, `team`, `notification`, `web_host`, `web_mfe`, `web_shared`, `workflows` 변경 감지 |
 | **Secret scan (gitleaks)** | 매 실행마다 저장소 스캔(§8.2). 루트 **`.env.example`** 에는 팀 합의 **로컬 전용 플레이스홀더**(`GATEWAY_SHARED_SECRET` 등)가 문서화되어 있으며, 오탐 방지를 위해 [`.gitleaks.toml`](../.gitleaks.toml) allowlist에 포함한다. |
 | **Validate docker-compose.yml** | `docker compose config`로 문법 검증(§10) |
-| **Build identity-service** | Java 21(Temurin), Gradle 캐시, `./gradlew build` — 위 경로 필터 또는 워크플로 변경 시에만 실행 |
-| **Build proxy-gateway-service** | 동일 — proxy·gateway·`libs/usage-events`·워크플로 변경 시 실행 |
-| **Build usage-service** | 동일 — usage·`libs/usage-events`·워크플로 변경 시 실행 |
-| **Build web (lint/test/build)** | Node 22, **pnpm** 9, 저장소 루트 `pnpm install --frozen-lockfile` 후 각 `web`에 `pnpm --filter …` 로 lint·test·`pnpm run build:web`, **`docker build -f services/…/web/Dockerfile`**(context `.`) 등 — 팀 표준 프론트는 **Next.js 15**·**React 19**(`package.json` 정본). 경로: `services/**/web/**`, `packages/ui/**`, 루트 pnpm·워크플로 변경 시 실행(`web-mfe` 독립 잡은 후속 도입 가능) |
+| **Validate web-edge** | `web_edge` 변경 시 `docker compose config` + `nginx -t`(template envsubst 포함) 검증 |
+| **Build api-gateway-service** | Java 21 + Gradle build/test + `docker/build-push-action@v6` (`type=gha`, scope `api-gateway-service`) |
+| **Build proxy-service** | Java 21 + Gradle build/test + `docker/build-push-action@v6` (`type=gha`, scope `proxy-service`) |
+| **Build usage-service** | Java 21 + usage-web lint/test/build + usage-service/usage-web 이미지 빌드(`type=gha`) |
+| **Build billing-service** | Java 21 + billing-web lint/test/build + billing-service/billing-web 이미지 빌드(`type=gha`) |
+| **Build team-service** | Java 21 + team-web lint/test/build + team-web 이미지 빌드(`type=gha`) |
+| **Build notification-service** | Nest build + notification-web lint/test/build + notification-service/notification-web 이미지 빌드(`type=gha`) |
+| **Build identity-service** | Java 21 + identity-web lint/test/build + identity-web 이미지 빌드(`type=gha`) |
+| **Build web-mfe remotes** | usage/team `web-mfe` lint/typecheck/build + 각 이미지 빌드(`type=gha`) |
+| **Build web-host** | 현재 `if: false`로 비활성(긴급 우회) |
+| **CI observability metrics** | Actions API로 job duration/결과를 수집해 요약 |
 | **CI summary** | gitleaks 성공 필수, 실행된 빌드·Compose 잡이 `failure`/`cancelled`이면 실패. 스킵된 잡은 허용 (`web` 포함) |
+
+## Docker 빌드 캐시 (로컬 vs CI)
+
+- **로컬 (`docker compose build` / `up --build`)**: 루트 `docker-compose.yml`에는 **container registry 기반 `cache_from` / `cache_to`를 두지 않는다**. 즉, **팀원은 GHCR 로그인 없이도** 동일한 Compose 명령으로 개발을 시작할 수 있다. 캐시는 각 서비스 Dockerfile의 `RUN --mount=type=cache`(pnpm store, Gradle, Next `.next/cache` 등)로 처리해 반복 빌드 시간을 줄인다.
+- **CI (GitHub Actions)**: 서비스별 job에서 `docker/build-push-action@v6` + BuildKit **`type=gha` cache**를 사용한다. `scope`는 이미지 단위(`api-gateway-service`, `proxy-service`, `usage-service`, `usage-web`, `billing-service`, `billing-web`, `team-web`, `notification-service`, `notification-web`, `identity-web`, `usage-web-mfe`, `team-web-mfe`)로 분리한다.
+
+- **권한 최소화(보안)**: 전역 권한은 `contents: read`, `actions: read`를 유지하고, `cache-to: type=gha`를 사용하는 서비스 빌드 잡에서만 `actions: write`를 잡 단위로 부여한다.
+
+현재 워크플로의 서비스 이미지 빌드는 아래 패턴으로 통일되어 있다.
+
+```yaml
+- uses: docker/setup-buildx-action@v3
+- uses: docker/build-push-action@v6
+  with:
+    context: .
+    file: path/to/Dockerfile
+    tags: myimage:ci
+    load: true
+    cache-from: type=gha,scope=my-scope
+    cache-to: type=gha,mode=max,scope=my-scope
+```
+
+`ci.yml`은 기존 Stage A 공통 이미지(`build-common-*`) 전략을 제거하고, 변경된 서비스만 독립적으로 빌드하도록 정리되어 있다.
+
+### `scope` 네이밍·용량(10GB) 표준
+
+- **네이밍 규칙**: 이미지 태그(`*-web:ci`)와 동일한 문자열을 `scope`로 사용한다.
+  - 예: `identity-web` → `scope=identity-web`, `usage-web` → `scope=usage-web`, `billing-web` → `scope=billing-web`, `team-web` → `scope=team-web`, `notification-web` → `scope=notification-web`
+  - MFE(remote)도 동일 규칙 적용: `usage-web-mfe` → `scope=usage-web-mfe`, `team-web-mfe` → `scope=team-web-mfe`
+  - 현재 `ci.yml` 기준 공통 Stage A 캐시는 사용하지 않고, 서비스별 scope 중심으로 운영한다.
+- **용량 정책(무료 티어 10GB)**:
+  - 기본값은 **`cache-to: type=gha,mode=min`** (폭증 방지).
+  - 캐시 히트율이 낮고 용량 여유가 충분할 때만 특정 scope을 **`mode=max`** 로 상향한다.
+- **권한**: `cache-to: type=gha` 를 사용하는 잡은 `actions: write`가 필요하므로 잡 단위로만 부여한다(최소 권한).
 
 ## 브랜치 보호(Branch protection)
 
@@ -47,6 +88,13 @@ pnpm run build:web
 # Java (각 모듈 디렉터리에서)
 ./gradlew build
 ```
+
+## `.env` / `hybrid.env` 운용 기준
+
+- 기본 로컬 값은 루트 `.env`(원본 Compose 모드) 기준으로 유지한다.
+- `hybrid.env`는 **로컬 오버라이드 변수만** 담는다(예: `GATEWAY_*_URI`, `WEB_IDENTITY_SERVICE_URL`).
+- Compose 환경 변수 우선순위는 일반적으로 **셸 환경 변수 > `--env-file` > `.env` > 파일 내 기본값** 순서를 따른다.
+- 같은 키를 여러 곳에 중복 정의하면 실행 시점 값이 달라질 수 있으므로, 하이브리드 전용 키만 `hybrid.env`에 둔다.
 
 ## 통합 테스트·브로커/DB (향후)
 

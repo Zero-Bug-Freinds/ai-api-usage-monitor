@@ -197,7 +197,7 @@
 
 ### 6.2 보호 페이지(App Router) 및 미들웨어 (Identity `web/`)
 
-브라우저가 직접 보는 **페이지 라우트** 중 로그인이 필요한 영역은 Next.js **`middleware.ts`** 로 1차 게이트한다. 구현: `services/identity-service/web/middleware.ts`. **대시보드(`/dashboard` 및 `/dashboard/*`)** 는 Usage `web/` 소유이므로 Identity matcher에 포함하지 않는다([web-split-boundary.md](./web-split-boundary.md) §3). **단일 도메인 엣지**에서는 Nginx가 **`/dashboard/`** 접두만 Usage `web`으로 프록시하므로 **`/dashboard2`** 등은 Identity `web`이 받는다(§2.3, [`docker/web-edge/nginx.conf`](../../docker/web-edge/nginx.conf)).
+브라우저가 직접 보는 **페이지 라우트** 중 로그인이 필요한 영역은 Next.js **`middleware.ts`** 로 1차 게이트한다. 구현: `services/identity-service/web/middleware.ts`. **대시보드(`/dashboard` 및 `/dashboard/*`)** 는 Usage `web/` 소유이므로 Identity matcher에 포함하지 않는다([web-split-boundary.md](./web-split-boundary.md) §3). **단일 도메인 엣지**에서는 Nginx가 **`/dashboard`** 및 **`/dashboard/`** 요청을 Usage `web`으로 프록시하고, **`/dashboard2`** 등은 Identity `web`이 받는다(§2.3, [`docker/web-edge/nginx.conf.template`](../../docker/web-edge/nginx.conf.template)).
 
 | 항목 | 내용 |
 |------|------|
@@ -248,7 +248,7 @@ curl -sS -i -X POST "http://localhost:3000/api/auth/signup" \
   `IDENTITY_SERVICE_URL` 예: `http://localhost:8090`(Identity 기본 포트에 맞출 것; 게이트웨이 `8080`과 혼동 방지). 랜딩·로그인 후 Usage로 갈 때 호스트가 다르면 **`NEXT_PUBLIC_USAGE_WEB_ORIGIN`**(예: `http://localhost:3001`)을 맞춘다(§10.1).
 - **루트 `.env` vs 호스트 `bootRun`:** `docker compose`는 저장소 루트의 **`.env`**만 자동 로드한다. **Identity Spring**을 IDE/`./gradlew bootRun`으로만 띄울 때는 루트 `.env`가 **자동으로 읽히지 않는다** — `POSTGRES_*` 등은 실행 구성·쉘 환경변수로 맞춘다. 반면 **Compose로 뜨는** `identity-web`·`usage-web`·`api-gateway-service` 등은 루트 `.env`의 변수를 받는다.
 - **게이트웨이 스택:** Proxy·게이트웨이를 Compose로 올릴 때 **`GATEWAY_SHARED_SECRET`** 은 비어 있지 않게 유지한다([gateway-proxy.md §5.1](./gateway-proxy.md)).
-- **단일 도메인(`profile: web` + `web-edge`):** 브라우저는 기본 **`http://localhost:8888`**(`WEB_EDGE_PORT`) 한 오리진으로 붙고, 경로 분기는 [`docker/web-edge/nginx.conf`](../../docker/web-edge/nginx.conf)·[web-split-boundary.md §2.3](./web-split-boundary.md) 정본을 따른다.
+- **단일 도메인(`profile: web` + `web-edge`):** 브라우저는 기본 **`http://localhost:8888`**(`WEB_EDGE_PORT`) 한 오리진으로 붙고, 경로 분기는 [`docker/web-edge/nginx.conf.template`](../../docker/web-edge/nginx.conf.template)·[web-split-boundary.md §2.3](./web-split-boundary.md) 정본을 따른다.
 - **pnpm workspace:** 호스트에서 Next를 띄우기 전에 저장소 루트에서 **`pnpm install`**(전역 pnpm 없으면 `npx pnpm@9 install`)로 `packages/ui`·각 `web` 의존성을 맞춘다.
 - 로컬 기본 실행 순서: Postgres(RabbitMQ 등) → **identity-service(Spring)** → **Identity `web`**(루트에서 **`pnpm --filter identity-web dev`** 또는 해당 `web/`에서 **`pnpm dev`**, 기본 포트 3000)
 - 포트 충돌: Gateway·Identity·여러 `web` 인스턴스가 같은 포트를 쓰지 않도록 `README.md`·루트 `.env.example`를 본다.

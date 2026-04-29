@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # 패턴 B: 백엔드 전용 이미지 — 저장소 루트에서 빌드:
 #   docker build -f services/notification-service/Dockerfile -t notification-service:local .
 #
@@ -15,7 +16,9 @@ RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY services/notification-service/package.json ./services/notification-service/
-RUN pnpm install --frozen-lockfile --ignore-scripts
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm config set store-dir /pnpm/store && \
+    pnpm install --frozen-lockfile --ignore-scripts
 
 FROM ${BACKEND_NODE_DEPS_IMAGE} AS deps
 
@@ -36,10 +39,17 @@ COPY --from=deps /repo/services/notification-service/node_modules ./services/not
 COPY services/notification-service ./services/notification-service
 # 호스트 소스 COPY 가 서비스 디렉터리의 node_modules(심볼릭 링크)를 덮어쓰므로 워크스페이스 링크를 다시 맞춘다.
 WORKDIR /repo
-RUN pnpm install --frozen-lockfile --ignore-scripts
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm config set store-dir /pnpm/store && \
+    pnpm install --frozen-lockfile --ignore-scripts
 WORKDIR /repo/services/notification-service
-RUN pnpm run prisma:generate
-RUN pnpm run build
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    --mount=type=cache,target=/root/.cache/prisma \
+    pnpm config set store-dir /pnpm/store && \
+    pnpm run prisma:generate
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm config set store-dir /pnpm/store && \
+    pnpm run build
 
 FROM node:22-bookworm-slim AS runner
 WORKDIR /repo

@@ -25,6 +25,8 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.net.URI;
@@ -36,6 +38,7 @@ import java.util.regex.Pattern;
 
 @Service
 public class ProxyRelayService {
+    private static final Logger log = LoggerFactory.getLogger(ProxyRelayService.class);
 
     private static final Pattern PROXY_PATH = Pattern.compile("^/proxy/([^/]+)(/.*)?$");
     private static final Set<String> HOP_BY_HOP = Set.of(
@@ -163,6 +166,10 @@ public class ProxyRelayService {
                     byte[] bytes = bodyStr.getBytes(StandardCharsets.UTF_8);
                     Flux<DataBuffer> flux = Flux.just(bufferFactory.wrap(bytes));
                     return publishUsage(ctx, provider, resolvedApiKey, requestPath, u, safeHost(requestUri), false, status)
+                            .onErrorResume(ex -> {
+                                log.warn("Usage event publish failed but proxy response is preserved: {}", ex.getMessage());
+                                return Mono.empty();
+                            })
                             .thenReturn(ResponseEntity.status(status).headers(responseHeaders).body(flux));
                 });
     }
@@ -232,7 +239,7 @@ public class ProxyRelayService {
     private static HttpHeaders copyAndSanitizeHeaders(HttpHeaders incoming, ProviderHandler handler) {
         HttpHeaders out = new HttpHeaders();
         incoming.forEach((name, values) -> {
-            if (shouldDrop(name, handler)) {
+            if (shouldDrop(name)) {
                 return;
             }
             out.addAll(name, values);
@@ -243,7 +250,7 @@ public class ProxyRelayService {
         return out;
     }
 
-    private static boolean shouldDrop(String name, ProviderHandler handler) {
+    private static boolean shouldDrop(String name) {
         String lower = name.toLowerCase(Locale.ROOT);
         if (HOP_BY_HOP.contains(lower)) {
             return true;

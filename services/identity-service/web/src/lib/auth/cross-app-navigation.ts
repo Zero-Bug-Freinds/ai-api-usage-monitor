@@ -15,6 +15,12 @@ export function usageAppHref(path: string): string {
  * `/dashboard`·`/billing` 은 rewrite 대상 앱으로 전체 네비게이션으로 이동한다.
  */
 export function navigateAfterLogin(nextPath: string, router: RouterLike): void {
+  // Defense-in-depth: only allow same-origin absolute paths to prevent open redirect.
+  if (!nextPath.startsWith("/") || nextPath.startsWith("//")) {
+    router.replace("/dashboard")
+    return
+  }
+
   if (nextPath.startsWith("/dashboard") || nextPath.startsWith("/billing")) {
     window.location.assign(usageAppHref(nextPath))
     return

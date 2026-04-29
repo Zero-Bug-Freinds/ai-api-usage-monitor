@@ -10,8 +10,8 @@
 # identity·usage 백엔드는 패턴 B Dockerfile 이 Gradle 을 이미지 안에서 실행(사전 JAR 불필요).
 #   usage 백엔드: 저장소 루트에서 docker build -f services/usage-service/Dockerfile -t usage-service:local .
 #
-# identity-service, usage-service Spring 앱은 기본 Compose 에는 없고 호스트 실행 또는
-# services/<svc>/docker-compose.yml 로 백+Next 스택 기동(루트 compose 와 DB·게이트웨이 맞출 것).
+# identity-service, usage-service, billing-service Spring 앱은
+# 루트 Compose 에서 컨테이너 네트워크(service DNS)로 함께 기동한다.
 #
 # [Next] 빌드: 저장소 루트에서 pnpm install 후 `pnpm build:web` 또는 각 web 에서 build.
 #   Docker 이미지: build context 는 루트(.), dockerfile 은 services/<svc>/web/Dockerfile (workspace `packages/ui`).
@@ -27,10 +27,15 @@
 #   Identity BFF는 기본적으로 호스트의 identity-service 를 host.docker.internal 로 향함(WEB_IDENTITY_SERVICE_URL).
 #   단일 도메인: web-edge(Nginx, docker/web-edge/nginx.conf) → 기본 ${WEB_EDGE_PORT:-8888}
 #     /dashboard → 308 /dashboard/; 접두 /dashboard/ 만 usage-web(/dashboard2 는 제외); /api/v1 → 308 /api/v1/; 접두 /api/v1/ 만 api-gateway(버퍼링 끔·긴 timeout); 그 외 → identity-web.
+#
+# Docker 빌드 캐시: 로컬 Compose에는 registry cache_from/cache_to 를 두지 않는다(팀원 GHCR 로그인 불필요).
+# 각 Dockerfile 의 RUN --mount=type=cache(pnpm store, Gradle, .next/cache 등)로 로컬 빌드 속도를 유지한다.
+# CI(GitHub Actions)에서는 .github/workflows/ci.yml 및 docs/CI.md 의 docker/build-push-action + type=gha 패턴을 사용한다.
 
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-app}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
@@ -39,9 +44,16 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   postgres-team:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-app}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
@@ -63,6 +75,7 @@ services:
 
   postgres-usage:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       # superuser credentials used by docker/postgres/init/02-create-usage-db.sh
       POSTGRES_USER: ${POSTGRES_USER:-app}
@@ -77,9 +90,16 @@ services:
     volumes:
       - postgres_usage_data:/var/lib/postgresql/data
       - ./docker/postgres/init/02-create-usage-db.sh:/docker-entrypoint-initdb.d/02-create-usage-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   postgres-billing:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-app}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
@@ -92,9 +112,16 @@ services:
     volumes:
       - postgres_billing_data:/var/lib/postgresql/data
       - ./docker/postgres/init/03-create-billing-db.sh:/docker-entrypoint-initdb.d/03-create-billing-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   postgres-notification:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-app}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
@@ -107,11 +134,20 @@ services:
     volumes:
       - postgres_notification_data:/var/lib/postgresql/data
       - ./docker/postgres/init/04-create-notification-db.sh:/docker-entrypoint-initdb.d/04-create-notification-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   rabbitmq:
     image: rabbitmq:3-management-alpine
+    restart: unless-stopped
     ports:
+      # AMQP broker port (app-to-broker messaging)
       - "${RABBITMQ_PORT:-5672}:5672"
+      # RabbitMQ Management UI (optional admin dashboard)
       - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
@@ -119,18 +155,21 @@ services:
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+      timeout: 10s
+      retries: 10
+      # RabbitMQ 플러그인/메시지스토어 복구 시간이 30s를 초과할 수 있어 startup grace를 늘린다.
+      start_period: 60s
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
       - "${REDIS_PORT:-6379}:6379"
 
   notification-service:
     profiles:
       - web
+    restart: unless-stopped
     build:
       context: .
       dockerfile: services/notification-service/Dockerfile
@@ -138,7 +177,7 @@ services:
         BACKEND_NODE_DEPS_IMAGE: ${BACKEND_NODE_DEPS_IMAGE:-backend-node-deps:local}
     depends_on:
       postgres-notification:
-        condition: service_started
+        condition: service_healthy
       rabbitmq:
         condition: service_healthy
     environment:
@@ -156,7 +195,83 @@ services:
     ports:
       - "${NOTIFICATION_SERVICE_PORT:-8096}:8096"
 
+  identity-service:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: services/identity-service/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      JWT_SECRET: ${GATEWAY_JWT_SECRET:-change-this-secret-key-to-at-least-32-bytes}
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+    ports:
+      - "${IDENTITY_SERVICE_PORT:-8090}:8080"
+
+  usage-service:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: services/usage-service/Dockerfile
+    depends_on:
+      postgres-usage:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      USAGE_POSTGRES_HOST: postgres-usage
+      USAGE_POSTGRES_PORT: 5432
+      USAGE_POSTGRES_DB: ${USAGE_POSTGRES_DB:-usage_db}
+      USAGE_POSTGRES_USER: ${USAGE_POSTGRES_USER:-usage_app}
+      USAGE_POSTGRES_PASSWORD: ${USAGE_POSTGRES_PASSWORD:-usage_app}
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET:-}
+      USAGE_SERVICE_PORT: 8092
+    ports:
+      - "${USAGE_SERVICE_PORT:-8092}:8092"
+
+  billing-service:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: services/billing-service/Dockerfile
+    depends_on:
+      postgres-billing:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      BILLING_POSTGRES_HOST: postgres-billing
+      BILLING_POSTGRES_PORT: 5432
+      BILLING_POSTGRES_DB: ${BILLING_POSTGRES_DB:-billing_db}
+      BILLING_POSTGRES_USER: ${BILLING_POSTGRES_USER:-billing_app}
+      BILLING_POSTGRES_PASSWORD: ${BILLING_POSTGRES_PASSWORD:-billing_app}
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      BILLING_SERVICE_PORT: 8095
+      GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET:-}
+      BILLING_IDENTITY_BASE_URL: http://identity-service:8080
+    ports:
+      - "${BILLING_SERVICE_PORT:-8095}:8095"
+
   proxy-service:
+    restart: unless-stopped
     build:
       context: ./services/proxy-service
     depends_on:
@@ -164,7 +279,7 @@ services:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: docker
-      PROXY_KEY_SERVICE_BASE_URL: ${PROXY_KEY_SERVICE_BASE_URL:-http://host.docker.internal:8090}
+      PROXY_KEY_SERVICE_BASE_URL: ${PROXY_KEY_SERVICE_BASE_URL:-http://identity-service:8080}
       PROXY_OPENAI_TEST_API_KEY: ${PROXY_OPENAI_TEST_API_KEY:-}
       PROXY_GOOGLE_TEST_API_KEY: ${PROXY_GOOGLE_TEST_API_KEY:-}
       PROXY_MOCK_KEY_FALLBACK: ${PROXY_MOCK_KEY_FALLBACK:-}
@@ -175,17 +290,25 @@ services:
       - "${PROXY_SERVICE_PORT:-8081}:8081"
 
   api-gateway-service:
+    restart: unless-stopped
     build:
       context: ./services/api-gateway-service
     depends_on:
-      - proxy-service
+      proxy-service:
+        condition: service_started
+      identity-service:
+        condition: service_started
+      usage-service:
+        condition: service_started
+      billing-service:
+        condition: service_started
     environment:
       GATEWAY_PROXY_URI: http://proxy-service:8081
-      GATEWAY_IDENTITY_URI: ${GATEWAY_IDENTITY_URI:-http://host.docker.internal:8090}
-      GATEWAY_USAGE_URI: ${GATEWAY_USAGE_URI:-http://host.docker.internal:8092}
+      GATEWAY_IDENTITY_URI: ${GATEWAY_IDENTITY_URI:-http://identity-service:8080}
+      GATEWAY_USAGE_URI: ${GATEWAY_USAGE_URI:-http://usage-service:8092}
+      GATEWAY_TEAM_URI: ${GATEWAY_TEAM_URI:-http://team-service:8093}
       GATEWAY_NOTIFICATION_URI: ${GATEWAY_NOTIFICATION_URI:-http://notification-service:8096}
-      # Host-run billing (bootRun default 8095). Override if billing runs elsewhere.
-      GATEWAY_BILLING_URI: ${GATEWAY_BILLING_URI:-http://host.docker.internal:8095}
+      GATEWAY_BILLING_URI: ${GATEWAY_BILLING_URI:-http://billing-service:8095}
       GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET:-}
       GATEWAY_JWT_SECRET: ${GATEWAY_JWT_SECRET:-}
       GATEWAY_DEV_MODE: ${GATEWAY_DEV_MODE:-true}
@@ -197,6 +320,7 @@ services:
   identity-web:
     profiles:
       - web
+    restart: unless-stopped
     build:
       context: .
       dockerfile: services/identity-service/web/Dockerfile
@@ -209,7 +333,7 @@ services:
       # identity-web BFF must call gateway so that gateway injects X-User-Id/X-Team-Id.
       GATEWAY_URL: ${WEB_GATEWAY_URL:-http://api-gateway-service:8080}
       WEB_GATEWAY_URL: ${WEB_GATEWAY_URL:-http://api-gateway-service:8080}
-      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://host.docker.internal:8090}
+      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
       USAGE_WEB_INTERNAL_ORIGIN: ${USAGE_WEB_INTERNAL_ORIGIN:-http://host.docker.internal:3001}
       BILLING_WEB_INTERNAL_ORIGIN: ${BILLING_WEB_INTERNAL_ORIGIN:-http://host.docker.internal:3003}
       TEAM_WEB_INTERNAL_ORIGIN: ${TEAM_WEB_INTERNAL_ORIGIN:-http://host.docker.internal:3002}
@@ -221,6 +345,7 @@ services:
   usage-web:
     profiles:
       - web
+    restart: unless-stopped
     build:
       context: .
       dockerfile: services/usage-service/web/Dockerfile
@@ -232,7 +357,7 @@ services:
       - api-gateway-service
     environment:
       API_GATEWAY_URL: http://api-gateway-service:8080
-      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://host.docker.internal:8090}
+      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
       GATEWAY_DEV_MODE: ${GATEWAY_DEV_MODE:-true}
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -242,6 +367,7 @@ services:
   usage-web-mfe:
     profiles:
       - web
+    restart: unless-stopped
     build:
       context: .
       dockerfile: services/usage-service/web-mfe/Dockerfile
@@ -256,6 +382,7 @@ services:
   billing-web:
     profiles:
       - web
+    restart: unless-stopped
     build:
       context: .
       dockerfile: services/billing-service/web/Dockerfile
@@ -267,7 +394,7 @@ services:
       - identity-web
     environment:
       API_GATEWAY_URL: http://api-gateway-service:8080
-      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://host.docker.internal:8090}
+      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
       GATEWAY_DEV_MODE: ${GATEWAY_DEV_MODE:-true}
       # billing-web 서버 라우트가 컨테이너 내부에서 /api/team/v1/**(identity-web BFF)로 호출할 때 사용할 오리진.
       # Compose 네트워크에서는 서비스 DNS(identity-web:3000)가 가장 안정적이다. 호스트 전용 구성이면 BILLING_TEAM_BFF_BASE_URL 로 덮어쓴다.
@@ -280,6 +407,7 @@ services:
   notification-web:
     profiles:
       - web
+    restart: unless-stopped
     build:
       context: .
       dockerfile: services/notification-service/web/Dockerfile
@@ -304,6 +432,7 @@ services:
   team-service:
     profiles:
       - web
+    restart: unless-stopped
     build:
       context: .
       dockerfile: services/team-service/Dockerfile
@@ -317,7 +446,7 @@ services:
       SPRING_RABBITMQ_PORT: 5672
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
-      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://host.docker.internal:8090}
+      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
       SECURITY_JWT_SECRET: ${JWT_SECRET:-change-this-secret-key-to-at-least-32-bytes}
       TEAM_API_KEY_ENCRYPTION_SECRET: ${TEAM_API_KEY_ENCRYPTION_SECRET:-change-this-team-api-key-encryption-secret-min-32-chars}
       TEAM_SERVICE_PORT: 8093
@@ -335,6 +464,7 @@ services:
   team-web:
     profiles:
       - web
+    restart: unless-stopped
     build:
       context: .
       dockerfile: services/team-service/web/Dockerfile
@@ -345,7 +475,7 @@ services:
     environment:
       GATEWAY_URL: ${WEB_GATEWAY_URL:-http://api-gateway-service:8080}
       TEAM_SERVICE_URL: ${WEB_TEAM_SERVICE_URL:-http://team-service:8093}
-      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://host.docker.internal:8090}
+      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -354,6 +484,7 @@ services:
   team-web-mfe:
     profiles:
       - web
+    restart: unless-stopped
     build:
       context: .
       dockerfile: services/team-service/web-mfe/Dockerfile
@@ -368,6 +499,7 @@ services:
     profiles:
       - web
     image: nginx:1.27-alpine
+    restart: unless-stopped
     depends_on:
       - identity-web
       - usage-web
@@ -375,10 +507,17 @@ services:
       - team-web
       - notification-web
       - api-gateway-service
+    environment:
+      GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET:-}
+    command: >
+      /bin/sh -c "envsubst '$$GATEWAY_SHARED_SECRET'
+      < /etc/nginx/nginx.conf.template
+      > /etc/nginx/nginx.conf
+      && nginx -g 'daemon off;'"
     ports:
       - "${WEB_EDGE_PORT:-8888}:80"
     volumes:
-      - ./docker/web-edge/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/web-edge/nginx.conf.template:/etc/nginx/nginx.conf.template:ro
 
 volumes:
   postgres_data:
