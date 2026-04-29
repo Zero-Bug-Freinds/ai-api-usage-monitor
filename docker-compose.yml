@@ -155,9 +155,10 @@ services:
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+      timeout: 10s
+      retries: 10
+      # RabbitMQ 플러그인/메시지스토어 복구 시간이 30s를 초과할 수 있어 startup grace를 늘린다.
+      start_period: 60s
 
   redis:
     image: redis:7-alpine
@@ -202,6 +203,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
@@ -209,6 +212,10 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-app}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
       JWT_SECRET: ${GATEWAY_JWT_SECRET:-change-this-secret-key-to-at-least-32-bytes}
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
     ports:
       - "${IDENTITY_SERVICE_PORT:-8090}:8080"
 
