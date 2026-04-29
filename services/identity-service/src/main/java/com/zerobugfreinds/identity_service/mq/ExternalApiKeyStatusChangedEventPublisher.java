@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.zerobugfreinds.identity.events.ExternalApiKeyDeletedEvent;
+import com.zerobugfreinds.identity.events.ExternalApiKeyBudgetChangedEvent;
 import com.zerobugfreinds.identity.events.ExternalApiKeyStatusChangedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,6 +54,17 @@ public class ExternalApiKeyStatusChangedEventPublisher {
 				event.apiKeyId(),
 				event.userId(),
 				event.retainLogs()
+		);
+	}
+
+	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+	public void onExternalApiKeyBudgetChanged(ExternalApiKeyBudgetChangedEvent event) {
+		publishJson(
+				event,
+				"ExternalApiKeyBudgetChangedEvent",
+				event.keyId(),
+				event.userId(),
+				event.monthlyBudgetUsd()
 		);
 	}
 

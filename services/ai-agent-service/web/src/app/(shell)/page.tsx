@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 
 type BudgetForecastResponse = {
   healthStatus: "HEALTHY" | "WARNING" | "CRITICAL" | string
@@ -13,99 +13,27 @@ type BudgetForecastResponse = {
   recommendedActions: string[]
 }
 
-type KeyUsagePreset = {
-  keyId: string
+type AvailableKeyContext = {
+  keyId: number
   keyLabel: string
   provider: string
-  model: string
-  teamId: string
   monthlyBudgetUsd: number
-  currentSpendUsd: number
-  remainingTokens: number
-  averageDailyTokenUsage: number
-  averageDailySpendUsd: number
-  recentDailySpendUsd: number[]
-}
-
-type TeamPreset = {
-  teamId: string
-  teamName: string
-  keys: KeyUsagePreset[]
+  status: string
+  providerStats: {
+    currentSpendUsd: number
+    averageDailySpendUsd: number
+    averageDailyTokenUsage: number
+    recentDailySpendUsd: number[]
+  }
 }
 
 type AnalysisResult = {
-  keyId: string
+  keyId: number
   keyLabel: string
+  provider: string
   data?: BudgetForecastResponse
   error?: string
 }
-
-const TEAM_PRESETS: TeamPreset[] = [
-  {
-    teamId: "team-001",
-    teamName: "Platform Team",
-    keys: [
-      {
-        keyId: "key-agent-prod",
-        keyLabel: "Agent Prod Key",
-        provider: "google",
-        model: "gemini-1.5-flash",
-        teamId: "team-001",
-        monthlyBudgetUsd: 160,
-        currentSpendUsd: 124,
-        remainingTokens: 240000,
-        averageDailyTokenUsage: 32000,
-        averageDailySpendUsd: 9.8,
-        recentDailySpendUsd: [8.2, 9.1, 9.0, 11.4],
-      },
-      {
-        keyId: "key-rag-dev",
-        keyLabel: "RAG Dev Key",
-        provider: "google",
-        model: "gemini-1.5-flash",
-        teamId: "team-001",
-        monthlyBudgetUsd: 80,
-        currentSpendUsd: 41,
-        remainingTokens: 520000,
-        averageDailyTokenUsage: 18000,
-        averageDailySpendUsd: 3.1,
-        recentDailySpendUsd: [2.8, 3.0, 3.4, 3.2],
-      },
-      {
-        keyId: "key-ops-batch",
-        keyLabel: "Ops Batch Key",
-        provider: "google",
-        model: "gemini-1.5-flash",
-        teamId: "team-001",
-        monthlyBudgetUsd: 120,
-        currentSpendUsd: 117,
-        remainingTokens: 90000,
-        averageDailyTokenUsage: 19000,
-        averageDailySpendUsd: 8.4,
-        recentDailySpendUsd: [6.1, 6.4, 7.0, 12.8],
-      },
-    ],
-  },
-  {
-    teamId: "team-002",
-    teamName: "Data Team",
-    keys: [
-      {
-        keyId: "key-data-pipeline",
-        keyLabel: "Data Pipeline Key",
-        provider: "google",
-        model: "gemini-1.5-flash",
-        teamId: "team-002",
-        monthlyBudgetUsd: 220,
-        currentSpendUsd: 75,
-        remainingTokens: 680000,
-        averageDailyTokenUsage: 23000,
-        averageDailySpendUsd: 5.6,
-        recentDailySpendUsd: [5.0, 5.3, 5.7, 6.1],
-      },
-    ],
-  },
-]
 
 function buildBillingCycleEndDate(): string {
   const date = new Date()
@@ -120,27 +48,77 @@ function statusClassName(status: string): string {
 }
 
 export default function AgentPage() {
-  const [selectedTeamId, setSelectedTeamId] = useState<string>(TEAM_PRESETS[0]?.teamId ?? "")
+  const [selectedTeamId, setSelectedTeamId] = useState<string>("team-001")
   const [loading, setLoading] = useState<boolean>(false)
   const [loadingMessage, setLoadingMessage] = useState<string>("")
   const [results, setResults] = useState<AnalysisResult[]>([])
+  const [keys, setKeys] = useState<AvailableKeyContext[]>([])
+  const [bootstrapError, setBootstrapError] = useState<string>("")
+  const [note, setNote] = useState<string>("")
 
-  const selectedTeam = useMemo(
-    () => TEAM_PRESETS.find((team) => team.teamId === selectedTeamId) ?? TEAM_PRESETS[0],
-    [selectedTeamId],
-  )
+  const selectedTeam = useMemo(() => ({ teamId: selectedTeamId, teamName: "Identity 연동 팀 컨텍스트" }), [selectedTeamId])
+
+  useEffect(() => {
+    void loadAvailableContext()
+  }, [])
+
+  const loadAvailableContext = async () => {
+    setBootstrapError("")
+    try {
+      const response = await fetch("/agent/api/v1/agents/available-context", { cache: "no-store" })
+      if (!response.ok) {
+        const message = await response.text()
+        throw new Error(message || "컨텍스트 조회 실패")
+      }
+      const payload = (await response.json()) as {
+        note?: string
+        data?: Array<{
+          keyId: number
+          alias: string
+          provider: string
+          monthlyBudgetUsd: number
+          status: string
+          providerStats: {
+            currentSpendUsd: number
+            averageDailySpendUsd: number
+            averageDailyTokenUsage: number
+            recentDailySpendUsd: number[]
+          }
+        }>
+      }
+
+      const normalized =
+        payload.data?.map((item) => ({
+          keyId: item.keyId,
+          keyLabel: item.alias,
+          provider: item.provider,
+          monthlyBudgetUsd: item.monthlyBudgetUsd,
+          status: item.status,
+          providerStats: item.providerStats,
+        })) ?? []
+      setKeys(normalized)
+      setNote(payload.note ?? "")
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "컨텍스트 조회 실패"
+      setBootstrapError(message)
+    }
+  }
 
   const runTeamAnalysis = async () => {
-    if (!selectedTeam) return
+    if (!selectedTeam || keys.length === 0) return
 
     setLoading(true)
     setResults([])
+    if (keys.length === 0) {
+      setLoading(false)
+      return
+    }
     const billingCycleEndDate = buildBillingCycleEndDate()
     const nextResults: AnalysisResult[] = []
 
-    for (let i = 0; i < selectedTeam.keys.length; i += 1) {
-      const keyPreset = selectedTeam.keys[i]
-      setLoadingMessage(`${selectedTeam.teamId}의 최근 사용량을 분석 중입니다... (${i + 1}/${selectedTeam.keys.length})`)
+    for (let i = 0; i < keys.length; i += 1) {
+      const keyItem = keys[i]
+      setLoadingMessage(`${selectedTeam.teamId}의 최근 사용량을 분석 중입니다... (${i + 1}/${keys.length})`)
 
       try {
         const response = await fetch("/agent/api/v1/agents/budget-forecast-assistant", {
@@ -148,16 +126,16 @@ export default function AgentPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             userId: "team-bot",
-            teamId: keyPreset.teamId,
-            provider: keyPreset.provider,
-            model: keyPreset.model,
-            monthlyBudgetUsd: keyPreset.monthlyBudgetUsd,
-            currentSpendUsd: keyPreset.currentSpendUsd,
-            remainingTokens: keyPreset.remainingTokens,
-            averageDailyTokenUsage: keyPreset.averageDailyTokenUsage,
-            averageDailySpendUsd: keyPreset.averageDailySpendUsd,
+            teamId: selectedTeam.teamId,
+            provider: keyItem.provider,
+            model: "identity-linked-model",
+            monthlyBudgetUsd: keyItem.monthlyBudgetUsd,
+            currentSpendUsd: keyItem.providerStats.currentSpendUsd,
+            remainingTokens: Math.max(Math.round(keyItem.providerStats.averageDailyTokenUsage * 14), 1),
+            averageDailyTokenUsage: keyItem.providerStats.averageDailyTokenUsage,
+            averageDailySpendUsd: keyItem.providerStats.averageDailySpendUsd,
             billingCycleEndDate,
-            recentDailySpendUsd: keyPreset.recentDailySpendUsd,
+            recentDailySpendUsd: keyItem.providerStats.recentDailySpendUsd,
           }),
         })
 
@@ -168,15 +146,17 @@ export default function AgentPage() {
 
         const data = (await response.json()) as BudgetForecastResponse
         nextResults.push({
-          keyId: keyPreset.keyId,
-          keyLabel: keyPreset.keyLabel,
+          keyId: keyItem.keyId,
+          keyLabel: keyItem.keyLabel,
+          provider: keyItem.provider,
           data,
         })
       } catch (error) {
         const message = error instanceof Error ? error.message : "분석 요청 실패"
         nextResults.push({
-          keyId: keyPreset.keyId,
-          keyLabel: keyPreset.keyLabel,
+          keyId: keyItem.keyId,
+          keyLabel: keyItem.keyLabel,
+          provider: keyItem.provider,
           error: message,
         })
       }
@@ -198,20 +178,22 @@ export default function AgentPage() {
             onChange={(event) => setSelectedTeamId(event.target.value)}
             disabled={loading}
           >
-            {TEAM_PRESETS.map((team) => (
-              <option key={team.teamId} value={team.teamId}>
-                {team.teamId} ({team.teamName})
-              </option>
-            ))}
+            <option value={selectedTeamId}>
+              {selectedTeamId} ({selectedTeam.teamName})
+            </option>
           </select>
         </div>
 
         <div className="space-y-2">
           <h3 className="text-sm font-semibold">팀 API 키</h3>
+          {bootstrapError ? (
+            <div className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700">{bootstrapError}</div>
+          ) : null}
+          {note ? <p className="text-xs text-muted-foreground">{note}</p> : null}
           <ul className="space-y-1 text-sm text-muted-foreground">
-            {selectedTeam?.keys.map((item) => (
+            {keys.map((item) => (
               <li key={item.keyId} className="rounded-md border px-2 py-1">
-                {item.keyLabel}
+                {item.keyLabel} ({item.provider}) · ${item.monthlyBudgetUsd}
               </li>
             ))}
           </ul>
@@ -219,9 +201,18 @@ export default function AgentPage() {
 
         <button
           type="button"
+          className="w-full rounded-md border px-4 py-2 text-sm font-medium"
+          onClick={loadAvailableContext}
+          disabled={loading}
+        >
+          지금 가능한 데이터 새로고침
+        </button>
+
+        <button
+          type="button"
           className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60"
           onClick={runTeamAnalysis}
-          disabled={loading}
+          disabled={loading || keys.length === 0}
         >
           {loading ? "분석 중..." : "팀 분석 시작"}
         </button>
@@ -241,7 +232,7 @@ export default function AgentPage() {
           ? results.map((result) => (
               <article key={result.keyId} className="space-y-3 rounded-xl border bg-card p-4">
                 <div className="flex items-center justify-between gap-2">
-                  <h2 className="text-lg font-semibold">{result.keyLabel}</h2>
+                  <h2 className="text-lg font-semibold">{result.keyLabel} ({result.provider})</h2>
                   {result.data ? (
                     <span className={`rounded-full px-2 py-1 text-xs font-semibold ${statusClassName(result.data.healthStatus)}`}>
                       {result.data.healthStatus}
