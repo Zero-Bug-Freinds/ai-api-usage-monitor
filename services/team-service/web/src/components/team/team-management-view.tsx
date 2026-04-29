@@ -785,9 +785,7 @@ export function TeamManagementView() {
   async function _respondInvitation(invitationId: string, decision: "accept" | "reject") {
     if (invitationActionLoadingId) return
     setInvitationActionLoadingId(invitationId)
-    if (message?.kind === "error") {
-      setMessage(null)
-    }
+    setMessage(null)
     try {
       const { res, body } = await requestApi(
         `/api/team/v1/me/team-invitations/${encodeURIComponent(invitationId)}/${decision}`,
@@ -797,6 +795,10 @@ export function TeamManagementView() {
         setMessage({ kind: "error", text: body?.message ?? "초대 처리에 실패했습니다" })
         return
       }
+      setMessage({
+        kind: "success",
+        text: decision === "accept" ? "팀 초대를 수락했습니다" : "팀 초대를 거절했습니다",
+      })
       await Promise.all([loadMyInvitations(), loadTeams(debouncedKeyword)])
     } catch {
       setMessage({ kind: "error", text: "초대 처리에 실패했습니다" })
