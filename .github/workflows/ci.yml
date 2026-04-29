@@ -211,10 +211,16 @@ jobs:
       - name: Validate nginx template syntax
         run: |
           docker run --rm \
+            --add-host identity-web:127.0.0.1 \
+            --add-host usage-web:127.0.0.1 \
+            --add-host team-web:127.0.0.1 \
+            --add-host billing-web:127.0.0.1 \
+            --add-host notification-web:127.0.0.1 \
+            --add-host api-gateway-service:127.0.0.1 \
             -v "${{ github.workspace }}/docker/web-edge/nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro" \
             -e GATEWAY_SHARED_SECRET=ci-web-edge-shared-secret \
             nginx:1.27-alpine \
-            sh -lc 'apk add --no-cache gettext >/dev/null && envsubst '"'"'${GATEWAY_SHARED_SECRET}'"'"' < /etc/nginx/templates/nginx.conf.template > /tmp/nginx.conf && nginx -t -c /tmp/nginx.conf'
+            sh -lc 'set -eu; apk add --no-cache gettext >/dev/null; envsubst '"'"'${GATEWAY_SHARED_SECRET}'"'"' < /etc/nginx/templates/nginx.conf.template > /tmp/nginx.conf; nginx -t -c /tmp/nginx.conf'
 
   api-gateway-service:
     name: Build api-gateway-service
