@@ -42,15 +42,11 @@ type TeamApiKeySummary = {
   deletionGraceDays?: number | null
 }
 
-type TeamInvitationSummary = {
+type TeamInvitationNotice = {
   invitationId: string
-  teamId: string
   teamName: string
-  inviterId: string
-  inviteeId: string
-  status: "PENDING" | "ACCEPTED" | "REJECTED" | "EXPIRED"
-  createdAt: string
-  respondedAt?: string | null
+  viewerRole: "INVITER" | "INVITEE" | "UNKNOWN"
+  respondedAt: string | null
 }
 
 function asApiResponse(value: unknown): ApiResponse<unknown> | null {
@@ -100,29 +96,6 @@ function normalizeTeamApiKeySummary(item: unknown): TeamApiKeySummary | null {
     deletionRequestedAt: typeof delReq === "string" ? delReq : null,
     permanentDeletionAt: typeof delPerm === "string" ? delPerm : null,
     deletionGraceDays,
-  }
-}
-
-function normalizeTeamInvitationSummary(item: unknown): TeamInvitationSummary | null {
-  if (!item || typeof item !== "object") return null
-  const v = item as Record<string, unknown>
-  if (typeof v.invitationId !== "string") return null
-  if (typeof v.teamId !== "string") return null
-  if (typeof v.teamName !== "string") return null
-  if (typeof v.inviterId !== "string") return null
-  if (typeof v.inviteeId !== "string") return null
-  if (typeof v.status !== "string") return null
-  if (typeof v.createdAt !== "string") return null
-  if (!["PENDING", "ACCEPTED", "REJECTED", "EXPIRED"].includes(v.status)) return null
-  return {
-    invitationId: v.invitationId,
-    teamId: v.teamId,
-    teamName: v.teamName,
-    inviterId: v.inviterId,
-    inviteeId: v.inviteeId,
-    status: v.status as TeamInvitationSummary["status"],
-    createdAt: v.createdAt,
-    respondedAt: typeof v.respondedAt === "string" ? v.respondedAt : null,
   }
 }
 
@@ -225,9 +198,9 @@ export function TeamManagementView() {
   const [inviteInputsByTeamId, setInviteInputsByTeamId] = React.useState<Record<string, InviteeFieldRow[]>>({})
   const [inviteLoadingTeamId, setInviteLoadingTeamId] = React.useState<string | null>(null)
   const [teamApiKeysByTeamId, setTeamApiKeysByTeamId] = React.useState<Record<string, TeamApiKeySummary[]>>({})
-  const [myInvitations, setMyInvitations] = React.useState<TeamInvitationSummary[]>([])
-  const [invitationLoading, setInvitationLoading] = React.useState(false)
-  const [invitationActionLoadingId, setInvitationActionLoadingId] = React.useState<string | null>(null)
+  const [expiredInvitationNotices, setExpiredInvitationNotices] = React.useState<TeamInvitationNotice[]>([])
+  const [dismissedInvitationNoticeIds, setDismissedInvitationNoticeIds] = React.useState<Record<string, true>>({})
+  const [expiredInvitationLoading, setExpiredInvitationLoading] = React.useState(false)
   const [switchingTeamId, setSwitchingTeamId] = React.useState<string | null>(null)
   const [apiKeyAliasByTeamId, setApiKeyAliasByTeamId] = React.useState<Record<string, string>>({})
   const [apiKeyValueByTeamId, setApiKeyValueByTeamId] = React.useState<Record<string, string>>({})
@@ -339,22 +312,37 @@ export function TeamManagementView() {
     }
   }, [])
 
-  const loadMyInvitations = React.useCallback(async () => {
-    setInvitationLoading(true)
+  const loadExpiredInvitationNotices = React.useCallback(async () => {
+    setExpiredInvitationLoading(true)
     try {
       const { res, body } = await requestApi("/api/team/v1/me/team-invitations?includeExpired=true", { method: "GET" })
       if (!res.ok || !body?.success || !Array.isArray(body.data)) {
-        setMyInvitations([])
+        setExpiredInvitationNotices([])
         return
       }
-      const invitations = (body.data as unknown[])
-        .map((item) => normalizeTeamInvitationSummary(item))
-        .filter((item): item is TeamInvitationSummary => item !== null)
-      setMyInvitations(invitations)
+      const notices: TeamInvitationNotice[] = (body.data as unknown[])
+        .map((item) => {
+          if (!item || typeof item !== "object") return null
+          const v = item as Record<string, unknown>
+          if (typeof v.invitationId !== "string") return null
+          if (typeof v.teamName !== "string") return null
+          if (v.status !== "EXPIRED") return null
+          const viewerRole = v.viewerRole
+          const normalizedRole: TeamInvitationNotice["viewerRole"] =
+            viewerRole === "INVITER" || viewerRole === "INVITEE" ? viewerRole : "UNKNOWN"
+          return {
+            invitationId: v.invitationId,
+            teamName: v.teamName,
+            viewerRole: normalizedRole,
+            respondedAt: typeof v.respondedAt === "string" ? v.respondedAt : null,
+          }
+        })
+        .filter((item): item is TeamInvitationNotice => item !== null)
+      setExpiredInvitationNotices(notices)
     } catch {
-      setMyInvitations([])
+      setExpiredInvitationNotices([])
     } finally {
-      setInvitationLoading(false)
+      setExpiredInvitationLoading(false)
     }
   }, [])
 
@@ -363,8 +351,8 @@ export function TeamManagementView() {
   }, [loadTeams, debouncedKeyword])
 
   React.useEffect(() => {
-    void loadMyInvitations()
-  }, [loadMyInvitations])
+    void loadExpiredInvitationNotices()
+  }, [loadExpiredInvitationNotices])
 
   React.useEffect(() => {
     if (teams.length === 0) {
@@ -782,29 +770,6 @@ export function TeamManagementView() {
     }
   }
 
-  async function _respondInvitation(invitationId: string, decision: "accept" | "reject") {
-    if (invitationActionLoadingId) return
-    setInvitationActionLoadingId(invitationId)
-    if (message?.kind === "error") {
-      setMessage(null)
-    }
-    try {
-      const { res, body } = await requestApi(
-        `/api/team/v1/me/team-invitations/${encodeURIComponent(invitationId)}/${decision}`,
-        { method: "POST" },
-      )
-      if (!res.ok || !body?.success) {
-        setMessage({ kind: "error", text: body?.message ?? "초대 처리에 실패했습니다" })
-        return
-      }
-      await Promise.all([loadMyInvitations(), loadTeams(debouncedKeyword)])
-    } catch {
-      setMessage({ kind: "error", text: "초대 처리에 실패했습니다" })
-    } finally {
-      setInvitationActionLoadingId(null)
-    }
-  }
-
   async function _selectTeam(teamId: string, isSelected: boolean) {
     cancelEditTeamApiKey()
     if (isSelected) {
@@ -833,6 +798,9 @@ export function TeamManagementView() {
   const teamDeletionModalParsed = teamApiKeyDeletionModal
     ? parseTeamApiKeyDeletionGraceInput(teamApiKeyDeletionModal.graceDaysInput)
     : null
+  const visibleExpiredInvitationNotices = expiredInvitationNotices.filter(
+    (notice) => dismissedInvitationNoticeIds[notice.invitationId] !== true,
+  )
 
   return (
     <main className="flex min-h-screen overflow-hidden bg-white">
@@ -1060,76 +1028,59 @@ export function TeamManagementView() {
                 {message.text}
               </div>
             ) : null}
-            <div className="mb-3 rounded-lg border border-zinc-200 bg-white p-3">
+            <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-semibold text-zinc-800">내 초대</p>
+                <p className="text-xs font-semibold text-amber-800">만료된 초대 알림</p>
                 <button
                   type="button"
-                  className="h-7 rounded border border-zinc-300 bg-white px-2 text-[11px] text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
-                  onClick={() => void loadMyInvitations()}
-                  disabled={invitationLoading}
+                  className="h-7 rounded border border-amber-300 bg-white px-2 text-[11px] text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+                  onClick={() => void loadExpiredInvitationNotices()}
+                  disabled={expiredInvitationLoading}
                 >
-                  {invitationLoading ? "불러오는 중…" : "새로고침"}
+                  {expiredInvitationLoading ? "불러오는 중…" : "새로고침"}
                 </button>
               </div>
-              {invitationLoading ? (
-                <p className="mt-2 text-xs text-zinc-500">초대 목록을 불러오는 중…</p>
-              ) : myInvitations.length === 0 ? (
-                <p className="mt-2 text-xs text-zinc-500">표시할 초대가 없습니다.</p>
+              {expiredInvitationLoading ? (
+                <p className="mt-2 text-xs text-amber-800">만료된 초대 알림을 불러오는 중…</p>
+              ) : visibleExpiredInvitationNotices.length === 0 ? (
+                <p className="mt-2 text-xs text-amber-800">표시할 만료된 초대 알림이 없습니다.</p>
               ) : (
                 <ul className="mt-2 space-y-2">
-                  {myInvitations.map((inv) => {
-                    const pending = inv.status === "PENDING"
-                    const expired = inv.status === "EXPIRED"
-                    const statusClass = expired
-                      ? "bg-amber-100 text-amber-800"
-                      : pending
-                        ? "bg-blue-100 text-blue-800"
-                        : inv.status === "ACCEPTED"
-                          ? "bg-emerald-100 text-emerald-800"
-                          : "bg-zinc-200 text-zinc-700"
-                    return (
-                      <li key={inv.invitationId} className="rounded-md border border-zinc-200 bg-zinc-50 p-2">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="truncate text-xs font-medium text-zinc-900">{inv.teamName}</p>
-                            <p className="truncate text-[11px] text-zinc-500">초대자: {inv.inviterId}</p>
-                          </div>
-                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${statusClass}`}>
-                            {inv.status}
-                          </span>
+                  {visibleExpiredInvitationNotices.map((notice) => (
+                    <li
+                      key={`expired-invitation-${notice.invitationId}`}
+                      className="rounded-md border border-amber-200 bg-white px-2 py-2"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-semibold text-zinc-900">{notice.teamName}</p>
+                          <p className="mt-1 text-[11px] text-zinc-700">
+                            {notice.viewerRole === "INVITER"
+                              ? "보낸 초대가 만료되었습니다. 다시 초대를 보내주세요."
+                              : "받은 초대가 만료되었습니다."}
+                          </p>
+                          {notice.respondedAt ? (
+                            <p className="mt-1 text-[10px] text-zinc-500">만료 처리: {formatDateTime(notice.respondedAt)}</p>
+                          ) : null}
                         </div>
-                        <p className="mt-1 text-[11px] text-zinc-500">생성: {formatDateTime(inv.createdAt)}</p>
-                        {inv.respondedAt ? (
-                          <p className="text-[11px] text-zinc-500">처리: {formatDateTime(inv.respondedAt)}</p>
-                        ) : null}
-                        {pending ? (
-                          <div className="mt-2 flex gap-1">
-                            <button
-                              type="button"
-                              className="h-7 rounded bg-black px-2 text-[11px] font-medium text-white disabled:opacity-60"
-                              disabled={invitationActionLoadingId === inv.invitationId}
-                              onClick={() => void _respondInvitation(inv.invitationId, "accept")}
-                            >
-                              수락
-                            </button>
-                            <button
-                              type="button"
-                              className="h-7 rounded border border-zinc-300 bg-white px-2 text-[11px] font-medium disabled:opacity-60"
-                              disabled={invitationActionLoadingId === inv.invitationId}
-                              onClick={() => void _respondInvitation(inv.invitationId, "reject")}
-                            >
-                              거절
-                            </button>
-                          </div>
-                        ) : null}
-                      </li>
-                    )
-                  })}
+                        <button
+                          type="button"
+                          className="h-6 rounded border border-zinc-300 bg-white px-1.5 text-[10px] text-zinc-700 hover:bg-zinc-50"
+                          onClick={() =>
+                            setDismissedInvitationNoticeIds((prev) => ({
+                              ...prev,
+                              [notice.invitationId]: true,
+                            }))
+                          }
+                        >
+                          X
+                        </button>
+                      </div>
+                    </li>
+                  ))}
                 </ul>
               )}
             </div>
-
             {loading ? <p className="px-2 py-3 text-sm text-zinc-500">{isSearching ? "검색 중..." : "불러오는 중…"}</p> : null}
             {error && !loading ? <p className="px-2 py-3 text-sm text-red-600">{error}</p> : null}
             {!loading && !error && teams.length === 0 ? (
