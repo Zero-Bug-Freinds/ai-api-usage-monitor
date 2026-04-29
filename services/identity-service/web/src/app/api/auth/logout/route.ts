@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import type { ApiResponse } from "@/lib/api/identity/types"
 
 const ACCESS_TOKEN_COOKIE = "access_token"
+const LOGGED_IN_COOKIE = "is_logged_in"
 
 function noStoreHeaders() {
   return { "Cache-Control": "no-store" }
@@ -21,6 +22,21 @@ function isSecureCookie(request: Request): boolean {
     return new URL(request.url).protocol === "https:"
   } catch {
     return process.env.NODE_ENV === "production"
+  }
+}
+
+function resolveCookieDomain(request: Request): string | undefined {
+  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host")
+  if (host) {
+    const hostname = host.split(",")[0]?.trim().split(":")[0]?.toLowerCase()
+    if (hostname === "localhost") return "localhost"
+    return undefined
+  }
+  try {
+    const hostname = new URL(request.url).hostname.toLowerCase()
+    return hostname === "localhost" ? "localhost" : undefined
+  } catch {
+    return undefined
   }
 }
 
@@ -48,6 +64,7 @@ function getCookieValue(cookieHeader: string | null, name: string): string | nul
 }
 
 function clearAccessTokenCookie(request: Request, res: NextResponse) {
+  const cookieDomain = resolveCookieDomain(request)
   res.cookies.set({
     name: ACCESS_TOKEN_COOKIE,
     value: "",
@@ -55,6 +72,18 @@ function clearAccessTokenCookie(request: Request, res: NextResponse) {
     secure: isSecureCookie(request),
     sameSite: "lax",
     path: "/",
+    domain: cookieDomain,
+    maxAge: 0,
+    expires: new Date(0),
+  })
+  res.cookies.set({
+    name: LOGGED_IN_COOKIE,
+    value: "",
+    httpOnly: false,
+    secure: isSecureCookie(request),
+    sameSite: "lax",
+    path: "/",
+    domain: cookieDomain,
     maxAge: 0,
     expires: new Date(0),
   })

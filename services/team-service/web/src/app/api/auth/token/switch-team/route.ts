@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { cookies } from "next/headers"
 
 const ACCESS_TOKEN_COOKIE = "access_token"
+const LOGGED_IN_COOKIE = "is_logged_in"
 
 type ApiResponse<T> = {
   success: boolean
@@ -63,6 +64,21 @@ function isSecureCookie(request: Request): boolean {
     return new URL(request.url).protocol === "https:"
   } catch {
     return process.env.NODE_ENV === "production"
+  }
+}
+
+function resolveCookieDomain(request: Request): string | undefined {
+  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host")
+  if (host) {
+    const hostname = host.split(",")[0]?.trim().split(":")[0]?.toLowerCase()
+    if (hostname === "localhost") return "localhost"
+    return undefined
+  }
+  try {
+    const hostname = new URL(request.url).hostname.toLowerCase()
+    return hostname === "localhost" ? "localhost" : undefined
+  } catch {
+    return undefined
   }
 }
 
@@ -230,6 +246,7 @@ export async function POST(request: Request) {
     { success: true, message: body.message || "팀 전환이 완료되었습니다", data: null },
     { status: 200, headers: noStoreHeaders() },
   )
+  const cookieDomain = resolveCookieDomain(request)
   response.cookies.set({
     name: ACCESS_TOKEN_COOKIE,
     value: body.data.accessToken,
@@ -237,6 +254,17 @@ export async function POST(request: Request) {
     secure: isSecureCookie(request),
     sameSite: "lax",
     path: "/",
+    domain: cookieDomain,
+    maxAge: body.data.expiresInSeconds,
+  })
+  response.cookies.set({
+    name: LOGGED_IN_COOKIE,
+    value: "true",
+    httpOnly: false,
+    secure: isSecureCookie(request),
+    sameSite: "lax",
+    path: "/",
+    domain: cookieDomain,
     maxAge: body.data.expiresInSeconds,
   })
   return response
