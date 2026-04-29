@@ -118,48 +118,6 @@ jobs:
               - 'docker/web-node-deps.Dockerfile'
             workflows:
               - '.github/workflows/**'
-<<<<<<< HEAD
-            common_java:
-              - 'services/agent-service/**'
-              - 'libs/identity-events/**'
-              - 'libs/usage-events/**'
-              - 'services/proxy-service/**'
-              - 'services/api-gateway-service/**'
-              - 'services/usage-service/**'
-              - 'services/billing-service/**'
-              - '.github/workflows/**'
-            common_node:
-              - 'services/agent-service/web/**'
-              - 'services/identity-service/web/**'
-              - 'services/usage-service/web/**'
-              - 'services/billing-service/web/**'
-              - 'services/team-service/web/**'
-              - 'services/notification-service/web/**'
-              - 'services/usage-service/web-mfe/**'
-              - 'services/team-service/web-mfe/**'
-              - 'apps/web/**'
-              - 'packages/ui/**'
-              - 'packages/shell/**'
-              - 'pnpm-workspace.yaml'
-              - 'package.json'
-              - 'pnpm-lock.yaml'
-              - '.github/workflows/**'
-            common_docker:
-              - 'docker/web-node-deps.Dockerfile'
-              - 'docker/backend-node-deps.Dockerfile'
-              - 'services/agent-service/web/**'
-              - 'services/identity-service/web/**'
-              - 'services/usage-service/web/**'
-              - 'services/billing-service/web/**'
-              - 'services/team-service/web/**'
-              - 'services/notification-service/**'
-              - 'services/usage-service/web-mfe/**'
-              - 'services/team-service/web-mfe/**'
-              - 'packages/ui/**'
-              - 'packages/shell/**'
-              - '.github/workflows/**'
-=======
->>>>>>> aedeccc40c9e05e7d21faddf39bad4cf06d5ec66
 
   gitleaks:
     name: Secret scan (gitleaks)
@@ -245,14 +203,14 @@ jobs:
           echo "- Cache scope: \`identity-web\` (type=gha)" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
-<<<<<<< HEAD
   agent-service:
     name: Build agent-service
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
     needs:
       - changes
-      - build-common-node
-      - build-common-docker
     if: needs.changes.outputs.ai_agent == 'true' || needs.changes.outputs.web_shared == 'true'
     defaults:
       run:
@@ -270,6 +228,8 @@ jobs:
             libs/usage-events/build.gradle
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: current
       - name: Build and test
         run: gradle build --no-daemon
       - uses: pnpm/action-setup@v4
@@ -290,24 +250,29 @@ jobs:
           pnpm --filter agent-web run lint
           pnpm --filter agent-web run build
         working-directory: .
-      - name: Download common docker base images
-        uses: actions/download-artifact@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Docker image (agent-web, standalone) (cache gha)
+        id: docker_agent_web
+        uses: docker/build-push-action@v6
         with:
-          name: common-base-images
-          path: .ci-artifacts
-      - name: Load common docker base images
-        run: docker load -i .ci-artifacts/common-base-images.tar
-        working-directory: .
-      - name: Docker image (agent-web, standalone)
-        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/agent-service/web/Dockerfile -t agent-web:ci .
-        working-directory: .
+          context: .
+          file: services/agent-service/web/Dockerfile
+          tags: agent-web:ci
+          load: true
+          push: false
+          cache-from: type=gha,scope=agent-web
+          cache-to: type=gha,mode=min,scope=agent-web
+      - name: Agent-web image summary
+        if: always()
+        run: |
+          echo "## Docker image build summary (agent-web)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Tag: \`agent-web:ci\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Digest: \`${{ steps.docker_agent_web.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Cache scope: \`agent-web\` (type=gha)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
 
-  proxy-gateway-service:
-    name: Build proxy-gateway-service
-=======
   web-edge:
     name: Validate web-edge
->>>>>>> aedeccc40c9e05e7d21faddf39bad4cf06d5ec66
     runs-on: ubuntu-latest
     needs:
       - changes
@@ -802,12 +767,8 @@ jobs:
       - web-edge
       - api-gateway-service
       - identity-service
-<<<<<<< HEAD
       - agent-service
-      - proxy-gateway-service
-=======
       - proxy-service
->>>>>>> aedeccc40c9e05e7d21faddf39bad4cf06d5ec66
       - usage-service
       - billing-service
       - team-service
@@ -854,12 +815,8 @@ jobs:
       - web-edge
       - api-gateway-service
       - identity-service
-<<<<<<< HEAD
       - agent-service
-      - proxy-gateway-service
-=======
       - proxy-service
->>>>>>> aedeccc40c9e05e7d21faddf39bad4cf06d5ec66
       - usage-service
       - billing-service
       - team-service
@@ -883,21 +840,13 @@ jobs:
             echo "compose-validate did not succeed: ${{ needs.compose-validate.result }}"
             exit 1
           fi
-<<<<<<< HEAD
-          for name in build-common-java build-common-node build-common-docker identity-service agent-service proxy-gateway-service usage-service billing-service team-service notification-service web-host web-mfe ci-observability; do
-=======
-          for name in web-edge api-gateway-service identity-service proxy-service usage-service billing-service team-service notification-service web-host web-mfe ci-observability; do
->>>>>>> aedeccc40c9e05e7d21faddf39bad4cf06d5ec66
+          for name in web-edge api-gateway-service identity-service agent-service proxy-service usage-service billing-service team-service notification-service web-host web-mfe ci-observability; do
             case "$name" in
               web-edge) v="${{ needs['web-edge'].result }}" ;;
               api-gateway-service) v="${{ needs['api-gateway-service'].result }}" ;;
               identity-service) v="${{ needs.identity-service.result }}" ;;
-<<<<<<< HEAD
               agent-service) v="${{ needs.agent-service.result }}" ;;
-              proxy-gateway-service) v="${{ needs.proxy-gateway-service.result }}" ;;
-=======
               proxy-service) v="${{ needs.proxy-service.result }}" ;;
->>>>>>> aedeccc40c9e05e7d21faddf39bad4cf06d5ec66
               usage-service) v="${{ needs.usage-service.result }}" ;;
               billing-service) v="${{ needs.billing-service.result }}" ;;
               team-service) v="${{ needs.team-service.result }}" ;;
