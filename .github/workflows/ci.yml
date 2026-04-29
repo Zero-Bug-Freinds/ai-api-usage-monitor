@@ -42,12 +42,15 @@ concurrency:
 permissions:
   contents: read
   actions: read
+  # 기본은 read-only 유지(최소 권한). type=gha cache export가 필요한 job만 actions: write를 부여한다.
 
 jobs:
   changes:
     name: Detect changed paths
     runs-on: ubuntu-latest
     outputs:
+      web_edge: ${{ steps.filter.outputs.web_edge }}
+      api_gateway: ${{ steps.filter.outputs.api_gateway }}
       identity: ${{ steps.filter.outputs.identity }}
       ai_agent: ${{ steps.filter.outputs.ai_agent }}
       proxy: ${{ steps.filter.outputs.proxy }}
@@ -59,15 +62,20 @@ jobs:
       web_mfe: ${{ steps.filter.outputs.web_mfe }}
       web_shared: ${{ steps.filter.outputs.web_shared }}
       workflows: ${{ steps.filter.outputs.workflows }}
-      common_java: ${{ steps.filter.outputs.common_java }}
-      common_node: ${{ steps.filter.outputs.common_node }}
-      common_docker: ${{ steps.filter.outputs.common_docker }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v2
         id: filter
         with:
           filters: |
+            web_edge:
+              - 'docker/web-edge/**'
+              - 'docker-compose.yml'
+              - '.github/workflows/**'
+            api_gateway:
+              - 'services/api-gateway-service/**'
+              - 'docker-compose.yml'
+              - '.github/workflows/**'
             identity:
               - 'services/identity-service/**'
             ai_agent:
@@ -76,19 +84,26 @@ jobs:
               - 'libs/usage-events/**'
             proxy:
               - 'services/proxy-service/**'
-              - 'services/api-gateway-service/**'
               - 'libs/usage-events/**'
+              - 'docker-compose.yml'
+              - '.github/workflows/**'
             usage:
               - 'services/usage-service/**'
               - 'libs/usage-events/**'
+              - 'docker-compose.yml'
+              - '.github/workflows/**'
             billing:
               - 'services/billing-service/**'
               - 'libs/usage-events/**'
+              - 'docker-compose.yml'
+              - '.github/workflows/**'
             team:
               - 'services/team-service/**'
             notification:
               - 'services/notification-service/**'
               - 'docker/backend-node-deps.Dockerfile'
+              - 'docker-compose.yml'
+              - '.github/workflows/**'
             web_host:
               - 'apps/web/**'
             web_mfe:
@@ -103,6 +118,7 @@ jobs:
               - 'docker/web-node-deps.Dockerfile'
             workflows:
               - '.github/workflows/**'
+<<<<<<< HEAD
             common_java:
               - 'services/agent-service/**'
               - 'libs/identity-events/**'
@@ -142,6 +158,8 @@ jobs:
               - 'packages/ui/**'
               - 'packages/shell/**'
               - '.github/workflows/**'
+=======
+>>>>>>> aedeccc40c9e05e7d21faddf39bad4cf06d5ec66
 
   gitleaks:
     name: Secret scan (gitleaks)
@@ -162,99 +180,14 @@ jobs:
       - uses: actions/checkout@v4
       - run: docker compose -f docker-compose.yml config
 
-  build-common-java:
-    name: Build common Java artifacts (Stage A)
-    runs-on: ubuntu-latest
-    needs: changes
-    if: needs.changes.outputs.common_java == 'true'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: gradle
-          cache-dependency-path: |
-            services/usage-service/build.gradle
-            libs/usage-events/build.gradle
-      - name: Grant execute permission for gradlew (usage-service)
-        run: chmod +x services/usage-service/gradlew
-      - name: Build usage-events JAR
-        run: ./gradlew :usage-events:jar --no-daemon
-        working-directory: services/usage-service
-      - name: Upload usage-events artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: usage-events-jar
-          path: libs/usage-events/build/libs/*.jar
-          if-no-files-found: error
-          retention-days: 1
-
-  build-common-node:
-    name: Warm Node workspace cache (Stage A)
-    runs-on: ubuntu-latest
-    needs: changes
-    if: needs.changes.outputs.common_node == 'true'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - id: setup-node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-      - name: Install workspace
-        run: pnpm install --frozen-lockfile
-      - name: Node cache status
-        run: echo "setup-node cache-hit=${{ steps.setup-node.outputs.cache-hit }}"
-
-  build-common-docker:
-    name: Build common docker base layers (Stage A)
-    runs-on: ubuntu-latest
-    needs:
-      - changes
-      - build-common-node
-    if: needs.changes.outputs.common_docker == 'true'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - name: Build web-node-deps base (cache gha)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: docker/web-node-deps.Dockerfile
-          tags: web-node-deps:ci
-          load: true
-          cache-from: type=gha,scope=web-node-deps
-          cache-to: type=gha,mode=max,scope=web-node-deps
-      - name: Build backend-node-deps base (cache gha)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: docker/backend-node-deps.Dockerfile
-          tags: backend-node-deps:ci
-          load: true
-          cache-from: type=gha,scope=backend-node-deps
-          cache-to: type=gha,mode=max,scope=backend-node-deps
-      - name: Export common docker base images
-        run: |
-          docker save web-node-deps:ci backend-node-deps:ci -o /tmp/common-base-images.tar
-      - name: Upload docker base image bundle
-        uses: actions/upload-artifact@v4
-        with:
-          name: common-base-images
-          path: /tmp/common-base-images.tar
-          if-no-files-found: error
-          retention-days: 1
-
   identity-service:
     name: Build identity-service
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
     needs:
       - changes
-      - build-common-node
-      - build-common-docker
     if: needs.changes.outputs.identity == 'true' || needs.changes.outputs.web_shared == 'true'
     defaults:
       run:
@@ -290,18 +223,29 @@ jobs:
           pnpm --filter identity-web test
           pnpm run build:identity-web
         working-directory: .
-      - name: Download common docker base images
-        uses: actions/download-artifact@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Docker image (identity-web, standalone) (cache gha)
+        id: docker_identity_web
+        uses: docker/build-push-action@v6
         with:
-          name: common-base-images
-          path: .ci-artifacts
-      - name: Load common docker base images
-        run: docker load -i .ci-artifacts/common-base-images.tar
-        working-directory: .
-      - name: Docker image (identity-web, standalone)
-        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/identity-service/web/Dockerfile -t identity-web:ci .
-        working-directory: .
+          context: .
+          file: services/identity-service/web/Dockerfile
+          tags: identity-web:ci
+          load: true
+          push: false
+          cache-from: type=gha,scope=identity-web
+          # NOTE: 무료 티어(10GB)에서 캐시가 커지면 mode=min으로 유지하는 편이 안정적이다.
+          cache-to: type=gha,mode=min,scope=identity-web
+      - name: Identity-web image summary
+        if: always()
+        run: |
+          echo "## Docker image build summary (identity-web)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Tag: \`identity-web:ci\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Digest: \`${{ steps.docker_identity_web.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Cache scope: \`identity-web\` (type=gha)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
 
+<<<<<<< HEAD
   agent-service:
     name: Build agent-service
     runs-on: ubuntu-latest
@@ -360,21 +304,82 @@ jobs:
 
   proxy-gateway-service:
     name: Build proxy-gateway-service
+=======
+  web-edge:
+    name: Validate web-edge
+>>>>>>> aedeccc40c9e05e7d21faddf39bad4cf06d5ec66
     runs-on: ubuntu-latest
     needs:
       - changes
-      - build-common-java
+    if: needs.changes.outputs.web_edge == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate web-edge compose config
+        run: docker compose -f docker-compose.yml config
+      - name: Validate nginx template syntax
+        run: |
+          docker run --rm \
+            --add-host identity-web:127.0.0.1 \
+            --add-host usage-web:127.0.0.1 \
+            --add-host team-web:127.0.0.1 \
+            --add-host billing-web:127.0.0.1 \
+            --add-host notification-web:127.0.0.1 \
+            --add-host api-gateway-service:127.0.0.1 \
+            -v "${{ github.workspace }}/docker/web-edge/nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro" \
+            -e GATEWAY_SHARED_SECRET=ci-web-edge-shared-secret \
+            nginx:1.27-alpine \
+            sh -lc 'set -eu; apk add --no-cache gettext >/dev/null; envsubst '"'"'${GATEWAY_SHARED_SECRET}'"'"' < /etc/nginx/templates/nginx.conf.template > /tmp/nginx.conf; nginx -t -c /tmp/nginx.conf'
+
+  api-gateway-service:
+    name: Build api-gateway-service
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    needs:
+      - changes
+    if: needs.changes.outputs.api_gateway == 'true'
+    defaults:
+      run:
+        working-directory: services/api-gateway-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+          cache-dependency-path: services/api-gateway-service/build.gradle
+      - name: Grant execute permission for gradlew
+        run: chmod +x ./gradlew
+      - name: Build and test
+        run: ./gradlew build --no-daemon
+      - uses: docker/setup-buildx-action@v3
+      - name: Docker image (api-gateway-service) (cache gha)
+        uses: docker/build-push-action@v6
+        with:
+          context: services/api-gateway-service
+          file: services/api-gateway-service/Dockerfile
+          tags: api-gateway-service:ci
+          load: true
+          push: false
+          cache-from: type=gha,scope=api-gateway-service
+          cache-to: type=gha,mode=max,scope=api-gateway-service
+
+  proxy-service:
+    name: Build proxy-service
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    needs:
+      - changes
     if: needs.changes.outputs.proxy == 'true'
     defaults:
       run:
         working-directory: services/proxy-service
     steps:
       - uses: actions/checkout@v4
-      - name: Download usage-events artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: usage-events-jar
-          path: .ci-artifacts/usage-events
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -386,20 +391,26 @@ jobs:
       - name: Build and test
         run: ./gradlew build --no-daemon
 
-      # api-gateway-service는 proxy-service/아래에서 함께 빌드
-      - name: Grant execute permission for api-gateway-service gradlew
-        run: chmod +x ../api-gateway-service/gradlew
-      - name: Build and test (api-gateway-service)
-        run: cd ../api-gateway-service && ./gradlew build --no-daemon
+      - uses: docker/setup-buildx-action@v3
+      - name: Docker image (proxy-service) (cache gha)
+        uses: docker/build-push-action@v6
+        with:
+          context: services/proxy-service
+          file: services/proxy-service/Dockerfile
+          tags: proxy-service:ci
+          load: true
+          push: false
+          cache-from: type=gha,scope=proxy-service
+          cache-to: type=gha,mode=max,scope=proxy-service
 
   usage-service:
     name: Build usage-service
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
     needs:
       - changes
-      - build-common-java
-      - build-common-node
-      - build-common-docker
     if: needs.changes.outputs.usage == 'true' || needs.changes.outputs.web_shared == 'true'
     defaults:
       run:
@@ -412,11 +423,6 @@ jobs:
           java-version: '21'
           cache: gradle
           cache-dependency-path: services/usage-service/build.gradle
-      - name: Download usage-events artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: usage-events-jar
-          path: .ci-artifacts/usage-events
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
       - name: Build and test
@@ -440,37 +446,52 @@ jobs:
           pnpm --filter usage-web test
           pnpm run build:usage-web
         working-directory: .
-      - name: Download common docker base images
-        uses: actions/download-artifact@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Docker image (usage-service) (cache gha)
+        uses: docker/build-push-action@v6
         with:
-          name: common-base-images
-          path: .ci-artifacts
-      - name: Load common docker base images
-        run: docker load -i .ci-artifacts/common-base-images.tar
-        working-directory: .
-      - name: Docker image (usage-web, standalone)
-        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/usage-service/web/Dockerfile -t usage-web:ci .
-        working-directory: .
+          context: .
+          file: services/usage-service/Dockerfile
+          tags: usage-service:ci
+          load: true
+          push: false
+          cache-from: type=gha,scope=usage-service
+          cache-to: type=gha,mode=max,scope=usage-service
+      - name: Docker image (usage-web, standalone) (cache gha)
+        id: docker_usage_web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/usage-service/web/Dockerfile
+          tags: usage-web:ci
+          load: true
+          push: false
+          cache-from: type=gha,scope=usage-web
+          # NOTE: 무료 티어(10GB)에서 캐시가 커지면 mode=min으로 유지하는 편이 안정적이다.
+          cache-to: type=gha,mode=min,scope=usage-web
+      - name: Usage-web image summary
+        if: always()
+        run: |
+          echo "## Docker image build summary (usage-web)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Tag: \`usage-web:ci\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Digest: \`${{ steps.docker_usage_web.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Cache scope: \`usage-web\` (type=gha)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
 
   billing-service:
     name: Build billing-service
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
     needs:
       - changes
-      - build-common-java
-      - build-common-node
-      - build-common-docker
     if: needs.changes.outputs.billing == 'true' || needs.changes.outputs.web_shared == 'true'
     defaults:
       run:
         working-directory: services/billing-service
     steps:
       - uses: actions/checkout@v4
-      - name: Download usage-events artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: usage-events-jar
-          path: .ci-artifacts/usage-events
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -500,25 +521,46 @@ jobs:
           pnpm --filter billing-web test
           pnpm run build:billing-web
         working-directory: .
-      - name: Download common docker base images
-        uses: actions/download-artifact@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Docker image (billing-service) (cache gha)
+        uses: docker/build-push-action@v6
         with:
-          name: common-base-images
-          path: .ci-artifacts
-      - name: Load common docker base images
-        run: docker load -i .ci-artifacts/common-base-images.tar
-        working-directory: .
-      - name: Docker image (billing-web, standalone)
-        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/billing-service/web/Dockerfile -t billing-web:ci .
-        working-directory: .
+          context: .
+          file: services/billing-service/Dockerfile
+          tags: billing-service:ci
+          load: true
+          push: false
+          cache-from: type=gha,scope=billing-service
+          cache-to: type=gha,mode=max,scope=billing-service
+      - name: Docker image (billing-web, standalone) (cache gha)
+        id: docker_billing_web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/billing-service/web/Dockerfile
+          tags: billing-web:ci
+          load: true
+          push: false
+          cache-from: type=gha,scope=billing-web
+          # NOTE: 무료 티어(10GB)에서 캐시가 커지면 mode=min으로 유지하는 편이 안정적이다.
+          cache-to: type=gha,mode=min,scope=billing-web
+      - name: Billing-web image summary
+        if: always()
+        run: |
+          echo "## Docker image build summary (billing-web)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Tag: \\`billing-web:ci\\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Digest: \\`${{ steps.docker_billing_web.outputs.digest }}\\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Cache scope: \\`billing-web\\` (type=gha)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
 
   team-service:
     name: Build team-service
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
     needs:
       - changes
-      - build-common-node
-      - build-common-docker
     if: needs.changes.outputs.team == 'true' || needs.changes.outputs.web_shared == 'true'
     defaults:
       run:
@@ -554,28 +596,40 @@ jobs:
           pnpm --filter team-web test
           pnpm run build:team-web
         working-directory: .
-      - name: Download common docker base images
-        uses: actions/download-artifact@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Docker image (team-web, standalone) (cache gha)
+        id: docker_team_web
+        uses: docker/build-push-action@v6
         with:
-          name: common-base-images
-          path: .ci-artifacts
-      - name: Load common docker base images
-        run: docker load -i .ci-artifacts/common-base-images.tar
-        working-directory: .
-      - name: Docker image (team-web, standalone)
-        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/team-service/web/Dockerfile -t team-web:ci .
-        working-directory: .
+          context: .
+          file: services/team-service/web/Dockerfile
+          tags: team-web:ci
+          load: true
+          push: false
+          cache-from: type=gha,scope=team-web
+          # NOTE: 무료 티어(10GB)에서 캐시가 커지면 mode=min으로 유지하는 편이 안정적이다.
+          cache-to: type=gha,mode=min,scope=team-web
+      - name: Team-web image summary
+        if: always()
+        run: |
+          echo "## Docker image build summary (team-web)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Tag: \\`team-web:ci\\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Digest: \\`${{ steps.docker_team_web.outputs.digest }}\\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Cache scope: \\`team-web\\` (type=gha)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
 
   notification-service:
     name: Build notification-service
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
     needs:
       - changes
-      - build-common-node
-      - build-common-docker
     if: needs.changes.outputs.notification == 'true' || needs.changes.outputs.web_shared == 'true'
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -588,23 +642,42 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build (Nest)
         run: pnpm --filter notification-service run build
-      - name: Download common docker base images
-        uses: actions/download-artifact@v4
+      - name: Docker image (notification-service) (cache gha)
+        uses: docker/build-push-action@v6
         with:
-          name: common-base-images
-          path: .ci-artifacts
-      - name: Load common docker base images
-        run: docker load -i .ci-artifacts/common-base-images.tar
+          context: .
+          file: services/notification-service/Dockerfile
+          tags: notification-service:ci
+          load: true
+          push: false
+          cache-from: type=gha,scope=notification-service
+          cache-to: type=gha,mode=max,scope=notification-service
       # ESLint: omit --max-warnings so only errors fail the step; warnings do not stop CI
       - name: Lint / test / build (notification-web)
         run: |
           pnpm --filter notification-web run lint
           pnpm --filter notification-web test
           pnpm --filter notification-web run build
-      - name: Docker image (notification-service)
-        run: docker build --build-arg BACKEND_NODE_DEPS_IMAGE=backend-node-deps:ci -f services/notification-service/Dockerfile -t notification-service:ci .
       - name: Docker image (notification-web, standalone)
-        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/notification-service/web/Dockerfile -t notification-web:ci .
+        id: docker_notification_web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/notification-service/web/Dockerfile
+          tags: notification-web:ci
+          load: true
+          push: false
+          cache-from: type=gha,scope=notification-web
+          # NOTE: 무료 티어(10GB)에서 캐시가 커지면 mode=min으로 유지하는 편이 안정적이다.
+          cache-to: type=gha,mode=min,scope=notification-web
+      - name: Notification-web image summary
+        if: always()
+        run: |
+          echo "## Docker image build summary (notification-web)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Tag: \`notification-web:ci\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Digest: \`${{ steps.docker_notification_web.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Cache scope: \`notification-web\` (type=gha)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
 
   web-host:
     name: Build web-host (apps/web)
@@ -636,20 +709,24 @@ jobs:
         run: |
           node -e "const fs=require('node:fs');const p='apps/web/next.config.mjs';const c=fs.readFileSync(p,'utf8');for(const x of ['NextFederationPlugin','team@','usage@','remoteEntry.js']){if(!c.includes(x)){throw new Error('missing '+x+' in '+p)}}"
       - name: Docker image (web-host, standalone)
+        # TODO(cache-migration): docker/build-push-action + type=gha 전환 후보
+        #   scope 예시: web-node-deps-cache, web-host-cache
         run: docker build -f docker/web-node-deps.Dockerfile -t web-node-deps:ci . && docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f apps/web/Dockerfile -t web-host:ci .
 
   web-mfe:
     name: Build web-mfe remotes (usage/team)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
     needs:
       - changes
-      - build-common-node
-      - build-common-docker
     if: needs.changes.outputs.web_mfe == 'true' || needs.changes.outputs.web_shared == 'true'
     env:
       NEXT_PRIVATE_LOCAL_WEBPACK: "true"
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -660,13 +737,6 @@ jobs:
         run: pnpm store prune
       - name: Install workspace
         run: pnpm install --frozen-lockfile
-      - name: Download common docker base images
-        uses: actions/download-artifact@v4
-        with:
-          name: common-base-images
-          path: .ci-artifacts
-      - name: Load common docker base images
-        run: docker load -i .ci-artifacts/common-base-images.tar
       - name: Verify MF plugin settings (usage/team remotes)
         run: |
           node -e "const fs=require('node:fs');const checks=[['services/usage-service/web-mfe/next.config.ts',['NextFederationPlugin','name: \"usage\"','filename: \"static/chunks/remoteEntry.js\"']],['services/team-service/web-mfe/next.config.ts',['NextFederationPlugin','name: \"team\"','filename: \"static/chunks/remoteEntry.js\"']]];for(const [p,needles] of checks){const c=fs.readFileSync(p,'utf8');for(const n of needles){if(!c.includes(n)){throw new Error('missing '+n+' in '+p)}}}"
@@ -680,9 +750,45 @@ jobs:
           pnpm --filter usage-web-mfe run build
           pnpm --filter team-web-mfe run build
       - name: Docker image (usage-web-mfe, standalone)
-        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/usage-service/web-mfe/Dockerfile -t usage-web-mfe:ci .
+        id: docker_usage_web_mfe
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/usage-service/web-mfe/Dockerfile
+          tags: usage-web-mfe:ci
+          load: true
+          push: false
+          cache-from: type=gha,scope=usage-web-mfe
+          # NOTE: 무료 티어(10GB)에서 캐시가 커지면 mode=min으로 유지하는 편이 안정적이다.
+          cache-to: type=gha,mode=min,scope=usage-web-mfe
+      - name: Usage-web-mfe image summary
+        if: always()
+        run: |
+          echo "## Docker image build summary (usage-web-mfe)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Tag: \`usage-web-mfe:ci\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Digest: \`${{ steps.docker_usage_web_mfe.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Cache scope: \`usage-web-mfe\` (type=gha)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
       - name: Docker image (team-web-mfe, standalone)
-        run: docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f services/team-service/web-mfe/Dockerfile -t team-web-mfe:ci .
+        id: docker_team_web_mfe
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/team-service/web-mfe/Dockerfile
+          tags: team-web-mfe:ci
+          load: true
+          push: false
+          cache-from: type=gha,scope=team-web-mfe
+          # NOTE: 무료 티어(10GB)에서 캐시가 커지면 mode=min으로 유지하는 편이 안정적이다.
+          cache-to: type=gha,mode=min,scope=team-web-mfe
+      - name: Team-web-mfe image summary
+        if: always()
+        run: |
+          echo "## Docker image build summary (team-web-mfe)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Tag: \`team-web-mfe:ci\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Digest: \`${{ steps.docker_team_web_mfe.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Cache scope: \`team-web-mfe\` (type=gha)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
 
   # Single required check for branch protection.
   # Skipped Java/Compose jobs (path filter) do not fail the workflow.
@@ -693,12 +799,15 @@ jobs:
       - changes
       - gitleaks
       - compose-validate
-      - build-common-java
-      - build-common-node
-      - build-common-docker
+      - web-edge
+      - api-gateway-service
       - identity-service
+<<<<<<< HEAD
       - agent-service
       - proxy-gateway-service
+=======
+      - proxy-service
+>>>>>>> aedeccc40c9e05e7d21faddf39bad4cf06d5ec66
       - usage-service
       - billing-service
       - team-service
@@ -730,7 +839,7 @@ jobs:
           fi
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "### Cache/Container observation notes" >> "$GITHUB_STEP_SUMMARY"
-          echo "- setup-node cache-hit 값은 Stage A build-common-node 로그를 참고" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Node cache hit 여부는 각 서비스 setup-node step 로그를 참고" >> "$GITHUB_STEP_SUMMARY"
           echo "- Docker 단계 시간은 각 Job step duration(표)에서 Docker step 포함 Job을 비교" >> "$GITHUB_STEP_SUMMARY"
           echo "- usage 통합테스트 컨테이너 기동 여유는 withStartupTimeout(5m) 적용 상태" >> "$GITHUB_STEP_SUMMARY"
           echo "- web-mfe Docker cache hit 여부는 build-push-action 로그의 CACHED 레이어 비율로 확인" >> "$GITHUB_STEP_SUMMARY"
@@ -742,12 +851,15 @@ jobs:
       - changes
       - gitleaks
       - compose-validate
-      - build-common-java
-      - build-common-node
-      - build-common-docker
+      - web-edge
+      - api-gateway-service
       - identity-service
+<<<<<<< HEAD
       - agent-service
       - proxy-gateway-service
+=======
+      - proxy-service
+>>>>>>> aedeccc40c9e05e7d21faddf39bad4cf06d5ec66
       - usage-service
       - billing-service
       - team-service
@@ -771,14 +883,21 @@ jobs:
             echo "compose-validate did not succeed: ${{ needs.compose-validate.result }}"
             exit 1
           fi
+<<<<<<< HEAD
           for name in build-common-java build-common-node build-common-docker identity-service agent-service proxy-gateway-service usage-service billing-service team-service notification-service web-host web-mfe ci-observability; do
+=======
+          for name in web-edge api-gateway-service identity-service proxy-service usage-service billing-service team-service notification-service web-host web-mfe ci-observability; do
+>>>>>>> aedeccc40c9e05e7d21faddf39bad4cf06d5ec66
             case "$name" in
-              build-common-java) v="${{ needs['build-common-java'].result }}" ;;
-              build-common-node) v="${{ needs['build-common-node'].result }}" ;;
-              build-common-docker) v="${{ needs['build-common-docker'].result }}" ;;
+              web-edge) v="${{ needs['web-edge'].result }}" ;;
+              api-gateway-service) v="${{ needs['api-gateway-service'].result }}" ;;
               identity-service) v="${{ needs.identity-service.result }}" ;;
+<<<<<<< HEAD
               agent-service) v="${{ needs.agent-service.result }}" ;;
               proxy-gateway-service) v="${{ needs.proxy-gateway-service.result }}" ;;
+=======
+              proxy-service) v="${{ needs.proxy-service.result }}" ;;
+>>>>>>> aedeccc40c9e05e7d21faddf39bad4cf06d5ec66
               usage-service) v="${{ needs.usage-service.result }}" ;;
               billing-service) v="${{ needs.billing-service.result }}" ;;
               team-service) v="${{ needs.team-service.result }}" ;;

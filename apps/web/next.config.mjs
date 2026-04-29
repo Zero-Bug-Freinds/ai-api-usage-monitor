@@ -4,8 +4,8 @@ import NextFederationPlugin from "@module-federation/nextjs-mf";
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const teamRemoteOrigin = process.env.NEXT_PUBLIC_MFE_TEAM_REMOTE_URL ?? "http://localhost:3012";
-const usageRemoteOrigin = process.env.NEXT_PUBLIC_MFE_USAGE_REMOTE_URL ?? "http://localhost:3011";
+const teamRemoteOrigin = process.env.NEXT_PUBLIC_MFE_TEAM_REMOTE_URL ?? "http://localhost:8888/teams";
+const usageRemoteOrigin = process.env.NEXT_PUBLIC_MFE_USAGE_REMOTE_URL ?? "http://localhost:8888/dashboard";
 
 /** @type {import("next").NextConfig} */
 const nextConfig = {

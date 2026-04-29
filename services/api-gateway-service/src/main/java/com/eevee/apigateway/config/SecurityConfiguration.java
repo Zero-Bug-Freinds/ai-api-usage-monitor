@@ -1,9 +1,14 @@
 package com.eevee.apigateway.config;
 
-import org.springframework.beans.factory.annotation.Autowired;
+import com.eevee.apigateway.filter.WebEdgePreAuthWebFilter;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import com.eevee.apigateway.filter.ProxyTrustHeadersWebFilter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.SecurityWebFiltersOrder;
@@ -20,12 +25,46 @@ import java.util.List;
 @EnableWebFluxSecurity
 public class SecurityConfiguration {
 
+    private static final Logger log = LoggerFactory.getLogger(SecurityConfiguration.class);
+
     @Bean
+    @Order(Ordered.HIGHEST_PRECEDENCE)
+    public SecurityWebFilterChain internalSecurityWebFilterChain() {
+        ServerHttpSecurity http = ServerHttpSecurity.http();
+        http.securityMatcher(exchange -> {
+            String path = exchange.getRequest().getPath().value();
+            boolean matched = path.startsWith("/internal/") || path.startsWith("/actuator/");
+            log.debug("[SecurityChain:internal] path={} matched={}", path, matched);
+            return matched
+                    ? org.springframework.security.web.server.util.matcher.ServerWebExchangeMatcher.MatchResult.match()
+                    : org.springframework.security.web.server.util.matcher.ServerWebExchangeMatcher.MatchResult.notMatch();
+        });
+        http.csrf(ServerHttpSecurity.CsrfSpec::disable);
+        http.httpBasic(ServerHttpSecurity.HttpBasicSpec::disable);
+        http.formLogin(ServerHttpSecurity.FormLoginSpec::disable);
+        http.authorizeExchange(ex -> ex
+                .pathMatchers("/internal/web-edge/auth/resolve").permitAll()
+                .pathMatchers("/actuator/health", "/actuator/info").permitAll()
+                .anyExchange().denyAll()
+        );
+        return http.build();
+    }
+
+    @Bean
+    @Order(Ordered.HIGHEST_PRECEDENCE + 1)
     public SecurityWebFilterChain securityWebFilterChain(
-            ServerHttpSecurity http,
             GatewayProperties gatewayProperties,
-            @Autowired(required = false) ReactiveJwtDecoder jwtDecoder
+            ObjectProvider<ReactiveJwtDecoder> jwtDecoderProvider
     ) {
+        ServerHttpSecurity http = ServerHttpSecurity.http();
+        http.securityMatcher(exchange -> {
+            String path = exchange.getRequest().getPath().value();
+            boolean matched = path.startsWith("/api/");
+            log.debug("[SecurityChain:api] path={} matched={}", path, matched);
+            return matched
+                    ? org.springframework.security.web.server.util.matcher.ServerWebExchangeMatcher.MatchResult.match()
+                    : org.springframework.security.web.server.util.matcher.ServerWebExchangeMatcher.MatchResult.notMatch();
+        });
         http.csrf(ServerHttpSecurity.CsrfSpec::disable);
         http.httpBasic(ServerHttpSecurity.HttpBasicSpec::disable);
         http.formLogin(ServerHttpSecurity.FormLoginSpec::disable);
@@ -33,7 +72,7 @@ public class SecurityConfiguration {
 
         if (gatewayProperties.isDevMode()) {
             http.authorizeExchange(ex -> ex
-                    .pathMatchers("/actuator/health", "/actuator/info").permitAll()
+                    .pathMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                     .pathMatchers("/api/v1/ai/**").permitAll()
                     .pathMatchers("/api/v1/usage/**").permitAll()
                     .pathMatchers("/api/v1/expenditure/**").permitAll()
@@ -45,13 +84,13 @@ public class SecurityConfiguration {
                     .anyExchange().denyAll()
             );
         } else {
+            ReactiveJwtDecoder jwtDecoder = jwtDecoderProvider.getIfAvailable();
             if (jwtDecoder == null) {
-                throw new IllegalStateException(
-                        "gateway.dev-mode=false requires gateway.jwt.secret and a ReactiveJwtDecoder bean");
+                throw new IllegalStateException("ReactiveJwtDecoder bean is required when gateway.dev-mode=false");
             }
             http.oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.jwtDecoder(jwtDecoder)));
             http.authorizeExchange(ex -> ex
-                    .pathMatchers("/actuator/health", "/actuator/info").permitAll()
+                    .pathMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                     .pathMatchers("/api/v1/ai/**").authenticated()
                     .pathMatchers("/api/v1/usage/**").authenticated()
                     .pathMatchers("/api/v1/expenditure/**").authenticated()
@@ -64,14 +103,21 @@ public class SecurityConfiguration {
             );
         }
 
+        http.addFilterBefore(new WebEdgePreAuthWebFilter(gatewayProperties), SecurityWebFiltersOrder.AUTHENTICATION);
         http.addFilterAfter(new ProxyTrustHeadersWebFilter(gatewayProperties), SecurityWebFiltersOrder.AUTHORIZATION);
         return http.build();
     }
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource(GatewayProperties gatewayProperties) {
+        List<String> allowedOrigins = gatewayProperties.getCors().getAllowedOrigins();
+        if (allowedOrigins.stream().anyMatch("*"::equals)) {
+            throw new IllegalStateException(
+                    "gateway.cors.allowed-origins must use explicit origins (no wildcard) when credentials are enabled");
+        }
+
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(gatewayProperties.getCors().getAllowedOrigins());
+        config.setAllowedOrigins(allowedOrigins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of(
                 "Authorization",

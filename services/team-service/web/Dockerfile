@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 ARG WEB_NODE_DEPS_IMAGE=deps-local
 
 FROM node:22-alpine AS deps-local
@@ -10,8 +11,10 @@ COPY packages/ui/package.json ./packages/ui/
 COPY packages/shell/package.json ./packages/shell/
 COPY services/team-service/web/package.json ./services/team-service/web/
 
-# 의존성 설치
-RUN pnpm install --frozen-lockfile
+# 의존성 설치 (pnpm store BuildKit cache)
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm config set store-dir /pnpm/store && \
+    pnpm install --frozen-lockfile
 
 FROM ${WEB_NODE_DEPS_IMAGE} AS deps
 FROM node:22-alpine AS builder
@@ -36,11 +39,14 @@ COPY --from=deps /repo/services/team-service/web/node_modules ./services/team-se
 COPY packages ./packages
 COPY services/team-service/web ./services/team-service/web
 
-# 빌드 진행
+# 빌드 진행 (Next.js 캐시 + pnpm store)
 WORKDIR /repo/services/team-service/web
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NEXT_PRIVATE_LOCAL_WEBPACK=true
-RUN pnpm run build
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    --mount=type=cache,target=/repo/services/team-service/web/.next/cache \
+    pnpm config set store-dir /pnpm/store && \
+    pnpm run build
 
 # 2. 실행 스테이지
 FROM node:22-alpine AS runner

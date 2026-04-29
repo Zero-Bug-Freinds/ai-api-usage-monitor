@@ -44,14 +44,6 @@ export const CONSOLE_MAIN_NAV_ORDER: ConsoleNavId[] = [
   "assistant",
 ]
 
-/**
- * Identity web origin for split ports (e.g. usage on :3001 -> identity on :3000).
- * Empty when apps are served on the same browser origin (e.g. :3000 + rewrite).
- */
-export function identityWebOrigin(): string {
-  return (process.env.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN ?? "").replace(/\/$/, "")
-}
-
 function normalizePath(path: string): string {
   if (!path.startsWith("/")) return `/${path}`
   return path
@@ -59,13 +51,10 @@ function normalizePath(path: string): string {
 
 /**
  * Resolves a root-absolute path for `<a href>` so it is not prefixed by Next `basePath`
- * (usage `/dashboard`, billing `/billing`). When `NEXT_PUBLIC_IDENTITY_WEB_ORIGIN` is set,
- * returns a full URL to that origin.
+ * (usage `/dashboard`, billing `/billing`).
  */
 export function anchorHrefForPublicPath(publicPath: string): string {
   const path = normalizePath(publicPath)
-  const origin = identityWebOrigin()
-  if (origin) return `${origin}${path}`
   return path
 }
 
@@ -131,12 +120,19 @@ export function resolveConsoleNavLink(profile: ConsoleProfile, id: ConsoleNavId)
   throw new Error(`Unexpected profile: ${_never}`)
 }
 
-/** Public dashboard URL for links from billing or CTAs (split-origin aware). */
+/** Public dashboard URL for links from billing or CTAs (same-origin relative path). */
 export function usageDashboardHref(): string {
-  const usageBase = (process.env.NEXT_PUBLIC_USAGE_WEB_ORIGIN ?? "").replace(/\/$/, "")
   const basePath = (process.env.NEXT_PUBLIC_USAGE_BASE_PATH ?? "/dashboard").replace(/\/$/, "")
-  if (!usageBase) return basePath || "/"
-  return `${usageBase}${basePath}` || usageBase
+  return basePath || "/"
+}
+
+/**
+ * Legacy compatibility helper.
+ * Returns identity web origin when explicitly configured; otherwise empty string
+ * so callers can safely build same-origin relative paths.
+ */
+export function identityWebOrigin(): string {
+  return (process.env.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN ?? "").replace(/\/$/, "")
 }
 
 /**

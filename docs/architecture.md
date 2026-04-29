@@ -71,14 +71,14 @@
 ## 3. 전체 아키텍처(High-Level)
 
 ### 3.1 서비스 흐름(요청 흐름)
-1) 개인 사용자 또는 조직 소속 개발자가 플랫폼 프록시 서버로 AI 요청 전송  
-2) Proxy Service가 요청을 Provider로 중계  
-3) Proxy Service가 usage/비용 정보를 계산하거나 Provider usage를 추출  
-4) Usage Tracking Service(또는 usage 저장 로직)가 usage 로그 저장  
-5) Billing/Analytics/Quota가 데이터를 사용해 집계 및 제한/알림 판단  
-6) 대시보드에서 개인/팀/조직별 비용 및 사용량을 확인  
-7) Quota 초과 상태가 되면 Notification(경고/차단)에 반영  
-8) 정산 리포트를 생성
+1) 사용자 요청은 단일 진입점 **web-edge(`:8888`)** 로 들어온다.  
+2) web-edge가 `/api/v1/*` 를 **api-gateway-service** 로 전달하고 인증 경계 헤더를 주입한다.  
+3) api-gateway가 경로별로 각 서비스(Proxy/Usage/Billing/Team/Notification/Identity)로 라우팅한다.  
+4) AI 경로(`/api/v1/ai/**`)는 Proxy Service가 Provider로 중계한다.  
+5) Proxy Service가 usage/비용 정보를 계산·추출해 **RabbitMQ `usage.events` / `usage.recorded`** 를 발행한다.  
+6) Usage Service가 이벤트를 소비해 usage 로그를 저장하고, Billing/Analytics/Quota가 데이터를 사용해 집계·판단한다.  
+7) 대시보드에서 개인/팀/조직별 비용·사용량을 조회한다.  
+8) Quota/정산/알림 파이프라인이 후속 정책(경고·리포트)을 반영한다.
 
 **((§3.1 3)–4) 단계와 병행** : usage 적재가 HTTP 동기 호출이 아니라 **메시지 브로커 이벤트**로 이어질 수 있다.
 
@@ -385,9 +385,7 @@
 운영·로컬 통합 진입점에서 **호스트명은 하나**로 두고, **경로 prefix**로 트래픽을 나누는 것을 권장한다.
 
 - **엣지:** Nginx·Traefik 등 **리버스 프록시** 한 계층에서 `location`(또는 동등 규칙)으로 upstream을 고정한다.
-- **로컬 Compose(`profile: web`):** **`web-edge`** 서비스(이미지 `nginx`, 설정 **`docker/web-edge/nginx.conf`**)가 기본 **`${WEB_EDGE_PORT:-8888}:80`** 으로 호스트에 노출된다. 현재 저장소 규칙(정본은 설정 파일): **`/dashboard`** 는 **`308`** 으로 **`/dashboard/`** 로 보내고, **`/dashboard/`** 로 시작하는 경로만 **usage `web`** 으로 프록시한다(`/dashboard2` 등은 매칭되지 않아 **identity `web`**). **`/api/v1`** 은 **`/api/v1/`** 로 **`308`** 리다이렉트 후, **`/api/v1/*`** 는 **API Gateway**로 프록시한다(스트리밍 대비 **`proxy_buffering off`**·긴 read timeout). **그 외**는 **identity `web`**. (운영 엣지는 팀이 동일한 의미로 맞춘다.)
-- 동일 `web-edge` 설정에서 **`/teams`** 는 **`308`** 으로 **`/teams/`** 로 보내고, **`/teams/`** 로 시작하는 경로는 **team `web`** 으로 프록시한다(Next **`basePath=/teams`**).
-- 동일 `web-edge` 설정에서 **`/notifications`** 는 **`308`** 으로 **`/notifications/`** 로 보내고, **`/notifications/`** 로 시작하는 경로는 **notification `web`** 으로 프록시한다(Next **`basePath=/notifications`**).
+- **로컬 Compose(`profile: web`):** **`web-edge`** 서비스(이미지 `nginx`, 설정 **`docker/web-edge/nginx.conf.template`**)가 기본 **`${WEB_EDGE_PORT:-8888}:80`** 으로 호스트에 노출된다. 현재 저장소 규칙(정본은 설정 파일): `/dashboard`, `/billing`, `/teams`, `/notifications` 는 각각 해당 `web` 서비스로 프록시하고, `/api/v1`·`/api/v1/*` 는 **API Gateway**로 프록시한다(스트리밍 대비 **`proxy_buffering off`**·긴 read timeout). 그 외 경로는 기본적으로 **identity `web`** 으로 전달한다. (운영 엣지는 팀이 동일한 의미로 맞춘다.)
 - **Usage Next `basePath`:** 단일 도메인에서 `/_next` 등 충돌을 피하기 위해 Usage 쪽 기본값은 **`/dashboard`**(`NEXT_PUBLIC_BASE_PATH`, Compose 빌드 args). 브라우저의 Usage BFF는 **`/dashboard/api/usage/...`** 형태가 된다(`docs/contracts/web-split-boundary.md`, `web-gateway-bff.md`).
 - Team `web`은 단일 도메인에서 **`/teams`** 접두를 **`basePath`** 로 쓸 수 있다(구현: `services/team-service/web`).
 - **쿠키·세션:** 동일 **`Site`/도메인**에서 경로만 나뉘면 `httpOnly` 세션 쿠키는 대부분 유지 가능하지만, **`Path`·`SameSite`** 는 분리 후 반드시 재검증한다(BFF 계약: `docs/contracts/web-identity-bff.md`).
@@ -484,7 +482,7 @@
 - **Identity `web`을 통한 앱 간 연결(고속도로):** `services/identity-service/web/next.config.ts`의 **`async rewrites()`** 는 브라우저 요청 경로를 **내부 오리진**(Compose·로컬에서 `USAGE_WEB_INTERNAL_ORIGIN`, `TEAM_WEB_INTERNAL_ORIGIN` 등)의 **Usage·Team·Billing·Notification `web`** 으로 넘긴다. 단일 호스트·단일 오리진 UX를 유지하면서 서비스별 Next 앱을 나란히 두는 **정본 라우팅 계층**이며, 운영·로컬에서 Nginx **`web-edge`**(§10.2)와 함께 “어떤 URL이 어느 컨테이너로 가는지”를 정의한다.
 - **`usage-service`·`team-service`의 디렉터리 분리:** 각각 **`web/`**(App Router·BFF·운영 UI)과 **`web-mfe/`**(Pages Router·**Module Federation** remote 전용)로 나뉜다. **`web-mfe`** 는 원격 엔트리(`exposes`)만 노출하고, 호스트는 **`apps/web`(web-host)** 등에서 `remotes`로 붙인다. 상세·작업 절차는 **`docs/mfe-pages-only-remote-split-guidance-20260414.md`**.
 - **공통 UI:** 사이드바·헤더·콘솔 네비는 **`packages/shell`** · **`packages/ui`** 를 사용한다(`docs/repository-structure.md` §6).
-- **라우트 변경 시:** 새 **최상위 브라우저 접두**를 도입하거나 BFF 경로를 바꿀 때는 **Identity `rewrites`**(및 필요 시 **`docker/web-edge/nginx.conf`**)를 함께 갱신한다(`docs/contracts/web-split-boundary.md`, `docs/howto-add-console-sidebar-route.md`).
+- **라우트 변경 시:** 새 **최상위 브라우저 접두**를 도입하거나 BFF 경로를 바꿀 때는 **Identity `rewrites`**(및 필요 시 **`docker/web-edge/nginx.conf.template`**)를 함께 갱신한다(`docs/contracts/web-split-boundary.md`, `docs/howto-add-console-sidebar-route.md`).
 
 ```mermaid
 flowchart LR

@@ -18,22 +18,15 @@ export function middleware(request: NextRequest) {
   }
 
   const idOrigin = (process.env.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN ?? "").replace(/\/$/, "")
-  const loginUrl = idOrigin
-    ? new URL(`${idOrigin}/login`)
-    : new URL("/login", request.url)
-  const nextPath = pathname + request.nextUrl.search
+  const loginUrl = idOrigin ? new URL(`${idOrigin}/login`) : new URL("/login", request.url)
+  const nextPath = (pathname === "/" ? "/notifications" : pathname) + request.nextUrl.search
   loginUrl.searchParams.set("next", nextPath)
   return NextResponse.redirect(loginUrl)
 }
 
 /**
- * basePath=/dashboard 이므로 정적 청크는 /dashboard/_next/* 이다.
- * (?!_next/) 만 쓰면 첫 세그먼트가 dashboard 라서 미들웨어가 정적 요청까지 가로챈다.
+ * basePath=/notifications 환경에서도 app 페이지 요청을 가로챈다.
  */
 export const config = {
-  matcher: [
-    "/dashboard",
-    "/dashboard/",
-    "/dashboard/((?!_next/|api/).+)",
-  ],
+  matcher: ["/", "/((?!_next/|api/).*)"],
 }

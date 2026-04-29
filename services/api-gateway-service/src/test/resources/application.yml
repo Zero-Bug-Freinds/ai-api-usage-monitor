@@ -2,3 +2,5 @@
 gateway:
   dev-mode: true
   shared-secret: junit-test-gateway-shared-secret-not-for-production
+  jwt:
+    secret: junit-test-jwt-secret-at-least-32-characters

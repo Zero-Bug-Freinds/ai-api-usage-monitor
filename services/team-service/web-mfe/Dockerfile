@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 ARG WEB_NODE_DEPS_IMAGE=deps-local
 
 FROM node:22-alpine AS deps-local
@@ -9,7 +10,9 @@ COPY packages/ui/package.json ./packages/ui/
 COPY packages/shell/package.json ./packages/shell/
 COPY services/team-service/web/package.json ./services/team-service/web/
 COPY services/team-service/web-mfe/package.json ./services/team-service/web-mfe/
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm config set store-dir /pnpm/store && \
+    pnpm install --frozen-lockfile
 
 FROM ${WEB_NODE_DEPS_IMAGE} AS deps
 
@@ -38,7 +41,10 @@ COPY services/team-service/web-mfe ./services/team-service/web-mfe
 WORKDIR /repo/services/team-service/web-mfe
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NEXT_PRIVATE_LOCAL_WEBPACK=true
-RUN pnpm run build
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    --mount=type=cache,target=/repo/services/team-service/web-mfe/.next/cache \
+    pnpm config set store-dir /pnpm/store && \
+    pnpm run build
 
 FROM node:22-alpine AS runner
 ENV NODE_ENV=production
