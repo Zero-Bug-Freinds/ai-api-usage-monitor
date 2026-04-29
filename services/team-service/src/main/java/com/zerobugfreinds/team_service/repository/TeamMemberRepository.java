@@ -9,6 +9,7 @@ import java.util.Optional;
 
 public interface TeamMemberRepository extends JpaRepository<TeamMemberEntity, Long> {
 	List<TeamMemberEntity> findAllByUserId(String userId);
+	List<TeamMemberEntity> findAllByUserIdIn(List<String> userIds);
 	List<TeamMemberEntity> findAllByTeamId(Long teamId);
 	@Query("select distinct teamMember.userId from TeamMemberEntity teamMember")
 	List<String> findDistinctUserIds();

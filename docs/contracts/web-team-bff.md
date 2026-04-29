@@ -1,6 +1,6 @@
 # Web(Next.js) ↔ Team Service BFF 계약
 
-버전: 0.7  
+버전: 0.8  
 관련: [web-split-boundary.md](./web-split-boundary.md), [web-identity-bff.md](./web-identity-bff.md) — `/teams` UI 소유·경로: §2.3
 
 ---
@@ -111,12 +111,19 @@
 ### 5.2 팀 초대·수락/거절/만료 (현행 구현)
 
 - `POST /api/team/v1/teams/{id}/members` 호출 시 Team Service는 **PENDING 초대 행**을 만들고 RabbitMQ로 초대 이벤트(`TEAM_INVITE_CREATED`)를 발행한다. 이 단계에서는 **팀 멤버를 추가하지 않는다**.
-- `GET /api/team/v1/me/team-invitations` 로 내 **대기(PENDING)** 초대 목록을 조회한다.
+- `GET /api/team/v1/me/team-invitations` 로 내 초대 목록을 조회한다. 기본은 **대기(PENDING)**만 반환한다.
+- `GET /api/team/v1/me/team-invitations?includeExpired=true` 호출 시:
+  - `invitee` 기준 `PENDING` + `EXPIRED`를 반환한다.
+  - 추가로 `inviter` 기준 `EXPIRED`도 함께 반환한다(중복 `invitationId`는 서버에서 1건으로 정리).
+- 응답 항목에는 `viewerRole`이 포함된다.
+  - `INVITER`: 조회 사용자가 초대한 사람
+  - `INVITEE`: 조회 사용자가 초대받은 사람
+  - `UNKNOWN`: 식별자 매칭 실패 시 fallback 값
 - `POST /api/team/v1/me/team-invitations/{invitationId}/accept` 성공 시 초대 상태를 `ACCEPTED`로 바꾸고, 초대 대상 사용자를 팀 멤버(MEMBER)로 추가한다(이미 멤버인 경우 중복 추가는 생략).
 - `POST /api/team/v1/me/team-invitations/{invitationId}/reject` 성공 시 초대 상태를 `REJECTED`로 바꾸며, 멤버는 추가되지 않는다.
 - 초대 생성 후 `team.invitation.expiration-days`(기본 7일)를 초과하면 상태가 `EXPIRED`로 자동 전환된다.
 - 만료된(`EXPIRED`) 초대 또는 이미 처리된(`ACCEPTED`/`REJECTED`) 초대를 다시 수락/거절하면 `400`을 반환한다.
-- `GET /api/team/v1/me/team-invitations`는 조회 시점에 만료 스윕을 먼저 수행한 뒤 **여전히 `PENDING`인 초대만** 반환한다.
+- `GET /api/team/v1/me/team-invitations`는 조회 시점에 만료 스윕을 먼저 수행한다. 응답 객체에는 만료/처리 시점을 위한 `respondedAt`이 포함된다.
 - 스케줄러(`TeamInvitationLifecycleScheduler`)가 주기적으로 만료 처리 + 오래된 초대 정리를 수행한다.
   - `team.invitation.lifecycle-fixed-delay-ms` (기본 3600000)
   - `team.invitation.lifecycle-initial-delay-ms` (기본 60000)
@@ -248,3 +255,7 @@
 
 - 동일 도메인 로직을 **Team 전용 Next**에서도 볼 수 있다. UI 패턴(팀 만들기·접이식 목록 등)은 `team-management-view.tsx`가 대응한다. 브라우저 진입점으로는 보통 Identity의 **`/teams`** 를 쓴다([web-split-boundary.md](./web-split-boundary.md) §2.3).
 - `team-management-view`는 팀 API Key **목록·삭제 예정 안내(영구 삭제 예정 시각 등)** 를 볼 수 있으나, **삭제 예정 등록·삭제 취소** 전용 버튼은 Identity `/teams`와 다를 수 있다(필요 시 동일 API로 확장 가능).
+- `team-management-view`의 초대 알림 영역은 **만료(`EXPIRED`) 초대만 표시**한다.
+  - 수락/거절 버튼은 Team `web`에서 제공하지 않는다(해당 액션은 Notification 흐름 사용).
+  - 문구는 `viewerRole` 기준으로 분기한다: `INVITER`는 재초대 안내, `INVITEE`는 만료 안내.
+  - 항목 우측 `X` 버튼으로 현재 화면에서 개별 알림을 dismiss 할 수 있다.

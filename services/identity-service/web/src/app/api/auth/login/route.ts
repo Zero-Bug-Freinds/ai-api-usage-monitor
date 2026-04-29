@@ -3,6 +3,7 @@ import { loginRequestSchema } from "@/lib/api/identity/login.schema"
 import type { ApiResponse, LoginResponse } from "@/lib/api/identity/types"
 
 const ACCESS_TOKEN_COOKIE = "access_token"
+const LOGGED_IN_COOKIE = "is_logged_in"
 
 function noStoreHeaders() {
   return { "Cache-Control": "no-store" }
@@ -22,6 +23,21 @@ function isSecureCookie(request: Request): boolean {
     return new URL(request.url).protocol === "https:"
   } catch {
     return process.env.NODE_ENV === "production"
+  }
+}
+
+function resolveCookieDomain(request: Request): string | undefined {
+  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host")
+  if (host) {
+    const hostname = host.split(",")[0]?.trim().split(":")[0]?.toLowerCase()
+    if (hostname === "localhost") return "localhost"
+    return undefined
+  }
+  try {
+    const hostname = new URL(request.url).hostname.toLowerCase()
+    return hostname === "localhost" ? "localhost" : undefined
+  } catch {
+    return undefined
   }
 }
 
@@ -103,6 +119,7 @@ export async function POST(request: Request) {
       message: body.message || "로그인되었습니다",
       data: null,
     })
+    const cookieDomain = resolveCookieDomain(request)
     response.cookies.set({
       name: ACCESS_TOKEN_COOKIE,
       value: body.data.accessToken,
@@ -110,6 +127,17 @@ export async function POST(request: Request) {
       secure: isSecureCookie(request),
       sameSite: "lax",
       path: "/",
+      domain: cookieDomain,
+      maxAge: body.data.expiresInSeconds,
+    })
+    response.cookies.set({
+      name: LOGGED_IN_COOKIE,
+      value: "true",
+      httpOnly: false,
+      secure: isSecureCookie(request),
+      sameSite: "lax",
+      path: "/",
+      domain: cookieDomain,
       maxAge: body.data.expiresInSeconds,
     })
     return response

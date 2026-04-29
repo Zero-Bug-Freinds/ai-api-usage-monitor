@@ -17,6 +17,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
 	 */
 	boolean existsByEmail(String email);
 
+	boolean existsByEmailIgnoreCase(String email);
+
 	/**
 	 * 로그인 시 이메일로 사용자 조회.
 	 *
@@ -24,4 +26,6 @@ public interface UserRepository extends JpaRepository<User, Long> {
 	 * @return 사용자 Optional
 	 */
 	Optional<User> findByEmail(String email);
+
+	Optional<User> findByEmailIgnoreCase(String email);
 }
