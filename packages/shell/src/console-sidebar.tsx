@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   LayoutDashboard,
+  MessageCircle,
   ScrollText,
   Settings,
   UsersRound,
@@ -40,6 +41,7 @@ const ICONS: Record<ConsoleNavId, ReactNode> = {
   settings: <Settings className="size-[1.125rem] shrink-0" aria-hidden />,
   organizations: <Building2 className="size-[1.125rem] shrink-0" aria-hidden />,
   teams: <UsersRound className="size-[1.125rem] shrink-0" aria-hidden />,
+  assistant: <MessageCircle className="size-[1.125rem] shrink-0" aria-hidden />,
   identityLanding: <ChevronLeft className="size-[1.125rem] shrink-0" aria-hidden />,
 }
 

@@ -7,5 +7,6 @@ packages:
   - "services/billing-service/web"
   - "services/team-service/web"
   - "services/team-service/web-mfe"
+  - "services/ai-agent-service/web"
   - "services/notification-service/web"
   - "services/notification-service"

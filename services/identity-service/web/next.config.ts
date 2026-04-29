@@ -32,6 +32,14 @@ function notificationOrigin(): string {
   ).replace(/\/+$/, "");
 }
 
+function agentOrigin(): string {
+  return (
+    process.env.AI_AGENT_WEB_INTERNAL_ORIGIN ??
+    process.env.NEXT_PUBLIC_AI_AGENT_WEB_ORIGIN ??
+    "http://host.docker.internal:3005"
+  ).replace(/\/+$/, "");
+}
+
 const nextConfig: NextConfig = {
   /* Docker(패턴 B): 루트 컨텍스트 빌드, `packages/ui` 트랜스파일 */
   output: "standalone",
@@ -43,6 +51,7 @@ const nextConfig: NextConfig = {
     const team = teamOrigin();
     const billing = billingOrigin();
     const notification = notificationOrigin();
+    const agent = agentOrigin();
     return [
       {
         source: "/dashboard",
@@ -75,6 +84,14 @@ const nextConfig: NextConfig = {
       {
         source: "/teams/:path*",
         destination: `${team}/teams/:path*`,
+      },
+      {
+        source: "/agent",
+        destination: `${agent}/agent`,
+      },
+      {
+        source: "/agent/:path*",
+        destination: `${agent}/agent/:path*`,
       },
       {
         source: "/api/team/v1/:path*",
