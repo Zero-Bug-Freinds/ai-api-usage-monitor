@@ -157,7 +157,7 @@ importers:
         specifier: ^5
         version: 5.9.3
 
-  services/ai-agent-service/web:
+  services/agent-service/web:
     dependencies:
       '@ai-usage/shell':
         specifier: workspace:*

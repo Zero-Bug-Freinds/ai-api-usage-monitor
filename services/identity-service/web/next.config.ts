@@ -34,6 +34,8 @@ function notificationOrigin(): string {
 
 function agentOrigin(): string {
   return (
+    process.env.AGENT_WEB_INTERNAL_ORIGIN ??
+    process.env.NEXT_PUBLIC_AGENT_WEB_ORIGIN ??
     process.env.AI_AGENT_WEB_INTERNAL_ORIGIN ??
     process.env.NEXT_PUBLIC_AI_AGENT_WEB_ORIGIN ??
     "http://host.docker.internal:3005"
