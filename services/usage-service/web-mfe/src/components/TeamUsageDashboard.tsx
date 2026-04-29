@@ -1,9 +1,23 @@
 "use client";
 
+import { useMemo, useState } from "react";
+import TeamDashboard from "./TeamDashboard";
+import TeamMemberUsageLog from "./TeamMemberUsageLog";
+
 export default function TeamUsageDashboard() {
+  const [selectedUserId, setSelectedUserId] = useState<string>("");
+  const teamId = useMemo(() => {
+    if (typeof window === "undefined") {
+      return "";
+    }
+    const m = window.location.pathname.match(/\/teams\/([^/]+)/);
+    return m?.[1] ?? "";
+  }, []);
+
   return (
-    <div className="flex min-h-[16rem] w-full items-center justify-center rounded-lg border border-dashed border-border bg-muted/30 p-8 text-center">
-      <p className="text-sm font-medium text-foreground">Usage-Service의 대시보드 영역</p>
+    <div className="space-y-4">
+      <TeamDashboard teamId={teamId} onSelectUser={setSelectedUserId} />
+      <TeamMemberUsageLog teamId={teamId} userId={selectedUserId} />
     </div>
   );
 }

@@ -15,6 +15,8 @@ const nextConfig: NextConfig = {
         filename: "static/chunks/remoteEntry.js",
         exposes: {
           "./TeamUsageDashboard": "./src/components/TeamUsageDashboard.tsx",
+          "./TeamDashboard": "./src/components/TeamDashboard.tsx",
+          "./TeamMemberUsageLog": "./src/components/TeamMemberUsageLog.tsx",
         },
         shared: {
           react: { singleton: true, strictVersion: true, requiredVersion: "19.2.4", eager: true },

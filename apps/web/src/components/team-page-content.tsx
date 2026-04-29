@@ -9,6 +9,10 @@ const TeamManagement = dynamic(() => import("team/TeamManagement"), {
   ssr: false,
   loading: () => <p className="text-sm text-muted-foreground">Team remote loading...</p>,
 });
+const TeamUsageDashboard = dynamic(() => import("usage/TeamUsageDashboard"), {
+  ssr: false,
+  loading: () => <p className="text-sm text-muted-foreground">Usage remote loading...</p>,
+});
 
 type TeamPageContentProps = {
   section?: TeamRouteSection;
@@ -17,11 +21,18 @@ type TeamPageContentProps = {
 export function TeamPageContent({ section = "dashboard" }: TeamPageContentProps) {
   if (section === "dashboard") {
     return (
-      <RemoteErrorBoundary
-        fallback={<p className="p-4 text-sm text-muted-foreground">Team remote를 불러오지 못했습니다.</p>}
-      >
-        <TeamManagement />
-      </RemoteErrorBoundary>
+      <div className="space-y-4">
+        <RemoteErrorBoundary
+          fallback={<p className="p-4 text-sm text-muted-foreground">Team remote를 불러오지 못했습니다.</p>}
+        >
+          <TeamManagement />
+        </RemoteErrorBoundary>
+        <RemoteErrorBoundary
+          fallback={<p className="p-4 text-sm text-muted-foreground">Usage remote를 불러오지 못했습니다.</p>}
+        >
+          <TeamUsageDashboard />
+        </RemoteErrorBoundary>
+      </div>
     );
   }
 
