@@ -216,7 +216,8 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
     }
 
     private static String resolveUserIdForService(String service, String subject, String platformUserId) {
-        if (("usage-service".equals(service)
+        if (("proxy-service".equals(service)
+                || "usage-service".equals(service)
                 || "team-service".equals(service)
                 || "billing-service".equals(service)
                 || "notification-service".equals(service))

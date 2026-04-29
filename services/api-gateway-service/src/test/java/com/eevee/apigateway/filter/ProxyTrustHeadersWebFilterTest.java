@@ -437,7 +437,7 @@ class ProxyTrustHeadersWebFilterTest {
         StepVerifier.create(filter.filter(exchange, chain))
                 .verifyComplete();
 
-        assertThat(userIdSeen.get()).isEqualTo("42");
+        assertThat(userIdSeen.get()).isEqualTo("user@example.com");
         assertThat(teamIdSeen.get()).isEqualTo("team-99");
         assertThat(scopeSeen.get()).isEqualTo("TEAM");
     }
