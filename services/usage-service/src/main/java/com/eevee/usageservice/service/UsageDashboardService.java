@@ -79,12 +79,36 @@ public class UsageDashboardService {
     }
 
     @Transactional(readOnly = true)
+    public UsageSummaryResponse summaryByTeam(String teamId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
+        Range r = validateRange(from, toInclusive);
+        return analyticsJdbcRepository.aggregateSummaryByTeam(teamId, r.from(), r.toExclusive(), provider);
+    }
+
+    @Transactional(readOnly = true)
+    public UsageSummaryResponse summaryByTeamAndUser(String teamId, String userId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
+        Range r = validateRange(from, toInclusive);
+        return analyticsJdbcRepository.aggregateSummaryByTeamAndUser(teamId, userId, r.from(), r.toExclusive(), provider);
+    }
+
+    @Transactional(readOnly = true)
     public List<DailyUsagePoint> dailySeries(String userId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
         Range r = validateRange(from, toInclusive);
         long startedAt = System.nanoTime();
         List<DailyUsagePoint> rows = analyticsJdbcRepository.aggregateDaily(userId, r.from(), r.toExclusive(), provider);
         log.debug("dashboard.daily dbMs={} rows={} range={}~{} provider={}", (System.nanoTime() - startedAt) / 1_000_000, rows.size(), from, toInclusive, provider);
         return rows;
+    }
+
+    @Transactional(readOnly = true)
+    public List<DailyUsagePoint> dailySeriesByTeam(String teamId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
+        Range r = validateRange(from, toInclusive);
+        return analyticsJdbcRepository.aggregateDailyByTeam(teamId, r.from(), r.toExclusive(), provider);
+    }
+
+    @Transactional(readOnly = true)
+    public List<DailyUsagePoint> dailySeriesByTeamAndUser(String teamId, String userId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
+        Range r = validateRange(from, toInclusive);
+        return analyticsJdbcRepository.aggregateDailyByTeamAndUser(teamId, userId, r.from(), r.toExclusive(), provider);
     }
 
     @Transactional(readOnly = true)
@@ -97,12 +121,36 @@ public class UsageDashboardService {
     }
 
     @Transactional(readOnly = true)
+    public List<MonthlyUsagePoint> monthlySeriesByTeam(String teamId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
+        Range r = validateRange(from, toInclusive);
+        return analyticsJdbcRepository.aggregateMonthlyByTeam(teamId, r.from(), r.toExclusive(), provider);
+    }
+
+    @Transactional(readOnly = true)
+    public List<MonthlyUsagePoint> monthlySeriesByTeamAndUser(String teamId, String userId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
+        Range r = validateRange(from, toInclusive);
+        return analyticsJdbcRepository.aggregateMonthlyByTeamAndUser(teamId, userId, r.from(), r.toExclusive(), provider);
+    }
+
+    @Transactional(readOnly = true)
     public List<ModelUsageAggregate> byModel(String userId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
         Range r = validateRange(from, toInclusive);
         long startedAt = System.nanoTime();
         List<ModelUsageAggregate> rows = analyticsJdbcRepository.aggregateByModel(userId, r.from(), r.toExclusive(), provider);
         log.debug("dashboard.byModel dbMs={} rows={} range={}~{} provider={}", (System.nanoTime() - startedAt) / 1_000_000, rows.size(), from, toInclusive, provider);
         return rows;
+    }
+
+    @Transactional(readOnly = true)
+    public List<ModelUsageAggregate> byModelForTeam(String teamId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
+        Range r = validateRange(from, toInclusive);
+        return analyticsJdbcRepository.aggregateByModelForTeam(teamId, r.from(), r.toExclusive(), provider);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ModelUsageAggregate> byModelForTeamAndUser(String teamId, String userId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
+        Range r = validateRange(from, toInclusive);
+        return analyticsJdbcRepository.aggregateByModelForTeamAndUser(teamId, userId, r.from(), r.toExclusive(), provider);
     }
 
     @Transactional(readOnly = true)
@@ -248,6 +296,74 @@ public class UsageDashboardService {
                 p.getTotalElements(),
                 p.getTotalPages()
         );
+    }
+
+    @Transactional(readOnly = true)
+    public PagedLogsResponse logsByTeam(
+            String teamId,
+            LocalDate from,
+            LocalDate toInclusive,
+            AiProvider provider,
+            String apiKeyId,
+            Boolean requestSuccessful,
+            String modelMask,
+            String reasoningPresence,
+            int page,
+            int size
+    ) {
+        Range r = validateRange(from, toInclusive);
+        int pageIndex = Math.max(0, page);
+        int pageSize = Math.min(200, Math.max(1, size));
+        String keyFilter = apiKeyId != null && apiKeyId.isBlank() ? null : apiKeyId;
+        String reasoningFilter = normalizeReasoningPresence(reasoningPresence);
+        Page<UsageRecordedLogEntity> p = logRepository.pageLogsByTeam(
+                teamId,
+                r.from(),
+                r.toExclusive(),
+                provider,
+                keyFilter,
+                requestSuccessful,
+                modelMask,
+                reasoningFilter,
+                PageRequest.of(pageIndex, pageSize, Sort.by(Sort.Direction.DESC, "occurredAt"))
+        );
+        List<UsageLogEntryResponse> content = p.getContent().stream().map(this::toLogDto).toList();
+        return new PagedLogsResponse(content, p.getNumber(), p.getSize(), p.getTotalElements(), p.getTotalPages());
+    }
+
+    @Transactional(readOnly = true)
+    public PagedLogsResponse logsByTeamAndUser(
+            String teamId,
+            String userId,
+            LocalDate from,
+            LocalDate toInclusive,
+            AiProvider provider,
+            String apiKeyId,
+            Boolean requestSuccessful,
+            String modelMask,
+            String reasoningPresence,
+            int page,
+            int size
+    ) {
+        Range r = validateRange(from, toInclusive);
+        int pageIndex = Math.max(0, page);
+        int pageSize = Math.min(200, Math.max(1, size));
+        String keyFilter = apiKeyId != null && apiKeyId.isBlank() ? null : apiKeyId;
+        String reasoningFilter = normalizeReasoningPresence(reasoningPresence);
+        Page<UsageRecordedLogEntity> p = logRepository.pageLogsByTeamAndUser(
+                teamId,
+                userId,
+                r.from(),
+                r.toExclusive(),
+                provider,
+                keyFilter,
+                requestSuccessful,
+                modelMask,
+                reasoningFilter,
+                PageRequest.of(pageIndex, pageSize, Sort.by(Sort.Direction.DESC, "occurredAt"))
+        );
+        List<UsageLogEntryResponse> content = p.getContent().stream().map(this::toLogDto).toList();
+        return new PagedLogsResponse(content, p.getNumber(), p.getSize(), p.getTotalElements(), p.getTotalPages());
     }
 
     @Transactional(readOnly = true)

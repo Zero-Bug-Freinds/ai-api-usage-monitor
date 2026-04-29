@@ -100,4 +100,99 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
             @Param("toExclusive") Instant toExclusive,
             @Param("provider") AiProvider provider
     );
+
+    @Query(
+            value = """
+                    select u from UsageRecordedLogEntity u
+                    left join fetch u.apiKeyMetadata m
+                    where u.teamId = :teamId
+                    and u.occurredAt >= :from
+                    and u.occurredAt < :toExclusive
+                    and (:provider is null or u.provider = :provider)
+                    and (:apiKeyId is null or :apiKeyId = '' or u.apiKeyId = :apiKeyId)
+                    and (:requestSuccessful is null or u.requestSuccessful = :requestSuccessful)
+                    and (:modelMask is null or :modelMask = '' or lower(coalesce(u.model, '')) like lower(concat('%', :modelMask, '%')))
+                    and (
+                        :reasoningPresence is null or :reasoningPresence = ''
+                        or (:reasoningPresence = 'present' and u.estimatedReasoningTokens is not null and u.estimatedReasoningTokens > 0)
+                        or (:reasoningPresence = 'absent' and (u.estimatedReasoningTokens is null or u.estimatedReasoningTokens <= 0))
+                    )
+                    order by u.occurredAt desc
+                    """,
+            countQuery = """
+                    select count(u) from UsageRecordedLogEntity u
+                    where u.teamId = :teamId
+                    and u.occurredAt >= :from
+                    and u.occurredAt < :toExclusive
+                    and (:provider is null or u.provider = :provider)
+                    and (:apiKeyId is null or :apiKeyId = '' or u.apiKeyId = :apiKeyId)
+                    and (:requestSuccessful is null or u.requestSuccessful = :requestSuccessful)
+                    and (:modelMask is null or :modelMask = '' or lower(coalesce(u.model, '')) like lower(concat('%', :modelMask, '%')))
+                    and (
+                        :reasoningPresence is null or :reasoningPresence = ''
+                        or (:reasoningPresence = 'present' and u.estimatedReasoningTokens is not null and u.estimatedReasoningTokens > 0)
+                        or (:reasoningPresence = 'absent' and (u.estimatedReasoningTokens is null or u.estimatedReasoningTokens <= 0))
+                    )
+                    """
+    )
+    Page<UsageRecordedLogEntity> pageLogsByTeam(
+            @Param("teamId") String teamId,
+            @Param("from") Instant from,
+            @Param("toExclusive") Instant toExclusive,
+            @Param("provider") AiProvider provider,
+            @Param("apiKeyId") String apiKeyId,
+            @Param("requestSuccessful") Boolean requestSuccessful,
+            @Param("modelMask") String modelMask,
+            @Param("reasoningPresence") String reasoningPresence,
+            Pageable pageable
+    );
+
+    @Query(
+            value = """
+                    select u from UsageRecordedLogEntity u
+                    left join fetch u.apiKeyMetadata m
+                    where u.teamId = :teamId
+                    and u.userId = :userId
+                    and u.occurredAt >= :from
+                    and u.occurredAt < :toExclusive
+                    and (:provider is null or u.provider = :provider)
+                    and (:apiKeyId is null or :apiKeyId = '' or u.apiKeyId = :apiKeyId)
+                    and (:requestSuccessful is null or u.requestSuccessful = :requestSuccessful)
+                    and (:modelMask is null or :modelMask = '' or lower(coalesce(u.model, '')) like lower(concat('%', :modelMask, '%')))
+                    and (
+                        :reasoningPresence is null or :reasoningPresence = ''
+                        or (:reasoningPresence = 'present' and u.estimatedReasoningTokens is not null and u.estimatedReasoningTokens > 0)
+                        or (:reasoningPresence = 'absent' and (u.estimatedReasoningTokens is null or u.estimatedReasoningTokens <= 0))
+                    )
+                    order by u.occurredAt desc
+                    """,
+            countQuery = """
+                    select count(u) from UsageRecordedLogEntity u
+                    where u.teamId = :teamId
+                    and u.userId = :userId
+                    and u.occurredAt >= :from
+                    and u.occurredAt < :toExclusive
+                    and (:provider is null or u.provider = :provider)
+                    and (:apiKeyId is null or :apiKeyId = '' or u.apiKeyId = :apiKeyId)
+                    and (:requestSuccessful is null or u.requestSuccessful = :requestSuccessful)
+                    and (:modelMask is null or :modelMask = '' or lower(coalesce(u.model, '')) like lower(concat('%', :modelMask, '%')))
+                    and (
+                        :reasoningPresence is null or :reasoningPresence = ''
+                        or (:reasoningPresence = 'present' and u.estimatedReasoningTokens is not null and u.estimatedReasoningTokens > 0)
+                        or (:reasoningPresence = 'absent' and (u.estimatedReasoningTokens is null or u.estimatedReasoningTokens <= 0))
+                    )
+                    """
+    )
+    Page<UsageRecordedLogEntity> pageLogsByTeamAndUser(
+            @Param("teamId") String teamId,
+            @Param("userId") String userId,
+            @Param("from") Instant from,
+            @Param("toExclusive") Instant toExclusive,
+            @Param("provider") AiProvider provider,
+            @Param("apiKeyId") String apiKeyId,
+            @Param("requestSuccessful") Boolean requestSuccessful,
+            @Param("modelMask") String modelMask,
+            @Param("reasoningPresence") String reasoningPresence,
+            Pageable pageable
+    );
 }
