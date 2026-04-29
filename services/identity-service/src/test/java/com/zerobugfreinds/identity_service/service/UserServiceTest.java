@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
@@ -34,6 +35,8 @@ class UserServiceTest {
 	private JwtTokenProvider jwtTokenProvider;
 	@Mock
 	private TeamMembershipVerificationClient teamMembershipVerificationClient;
+	@Mock
+	private ApplicationEventPublisher applicationEventPublisher;
 
 	private UserService userService;
 
@@ -44,7 +47,8 @@ class UserServiceTest {
 				refreshTokenRepository,
 				passwordEncoder,
 				jwtTokenProvider,
-				teamMembershipVerificationClient
+				teamMembershipVerificationClient,
+				applicationEventPublisher
 		);
 	}
 
