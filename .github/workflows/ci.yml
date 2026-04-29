@@ -214,7 +214,7 @@ jobs:
             -v "${{ github.workspace }}/docker/web-edge/nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro" \
             -e GATEWAY_SHARED_SECRET=ci-web-edge-shared-secret \
             nginx:1.27-alpine \
-            sh -lc 'apk add --no-cache gettext >/dev/null && envsubst < /etc/nginx/templates/nginx.conf.template > /tmp/nginx.conf && nginx -t -c /tmp/nginx.conf'
+            sh -lc 'apk add --no-cache gettext >/dev/null && envsubst '"'"'${GATEWAY_SHARED_SECRET}'"'"' < /etc/nginx/templates/nginx.conf.template > /tmp/nginx.conf && nginx -t -c /tmp/nginx.conf'
 
   api-gateway-service:
     name: Build api-gateway-service
