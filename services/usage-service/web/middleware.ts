@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
 
 /**
- * 보호 페이지 진입 시 access_token 쿠키를 검사한다.
+ * 보호 페이지 진입 시 access_token 또는 로그인 마커 쿠키를 검사한다.
  * Route Handler(BFF)는 자체 세션 검증하므로 `/api/**` 는 통과시킨다.
  */
 export function middleware(request: NextRequest) {
