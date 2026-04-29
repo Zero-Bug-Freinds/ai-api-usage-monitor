@@ -227,7 +227,6 @@ export function TeamManagementView() {
   const [teamApiKeysByTeamId, setTeamApiKeysByTeamId] = React.useState<Record<string, TeamApiKeySummary[]>>({})
   const [myInvitations, setMyInvitations] = React.useState<TeamInvitationSummary[]>([])
   const [invitationLoading, setInvitationLoading] = React.useState(false)
-  const [invitationActionLoadingId, setInvitationActionLoadingId] = React.useState<string | null>(null)
   const [switchingTeamId, setSwitchingTeamId] = React.useState<string | null>(null)
   const [apiKeyAliasByTeamId, setApiKeyAliasByTeamId] = React.useState<Record<string, string>>({})
   const [apiKeyValueByTeamId, setApiKeyValueByTeamId] = React.useState<Record<string, string>>({})
@@ -342,7 +341,7 @@ export function TeamManagementView() {
   const loadMyInvitations = React.useCallback(async () => {
     setInvitationLoading(true)
     try {
-      const { res, body } = await requestApi("/api/team/v1/me/team-invitations?includeExpired=true", { method: "GET" })
+      const { res, body } = await requestApi("/api/team/v1/me/team-invitations", { method: "GET" })
       if (!res.ok || !body?.success || !Array.isArray(body.data)) {
         setMyInvitations([])
         return
@@ -782,29 +781,6 @@ export function TeamManagementView() {
     }
   }
 
-  async function _respondInvitation(invitationId: string, decision: "accept" | "reject") {
-    if (invitationActionLoadingId) return
-    setInvitationActionLoadingId(invitationId)
-    if (message?.kind === "error") {
-      setMessage(null)
-    }
-    try {
-      const { res, body } = await requestApi(
-        `/api/team/v1/me/team-invitations/${encodeURIComponent(invitationId)}/${decision}`,
-        { method: "POST" },
-      )
-      if (!res.ok || !body?.success) {
-        setMessage({ kind: "error", text: body?.message ?? "초대 처리에 실패했습니다" })
-        return
-      }
-      await Promise.all([loadMyInvitations(), loadTeams(debouncedKeyword)])
-    } catch {
-      setMessage({ kind: "error", text: "초대 처리에 실패했습니다" })
-    } finally {
-      setInvitationActionLoadingId(null)
-    }
-  }
-
   async function _selectTeam(teamId: string, isSelected: boolean) {
     cancelEditTeamApiKey()
     if (isSelected) {
@@ -1075,19 +1051,12 @@ export function TeamManagementView() {
               {invitationLoading ? (
                 <p className="mt-2 text-xs text-zinc-500">초대 목록을 불러오는 중…</p>
               ) : myInvitations.length === 0 ? (
-                <p className="mt-2 text-xs text-zinc-500">표시할 초대가 없습니다.</p>
+                <p className="mt-2 text-xs text-zinc-500">처리할 대기 초대가 없습니다.</p>
               ) : (
                 <ul className="mt-2 space-y-2">
                   {myInvitations.map((inv) => {
-                    const pending = inv.status === "PENDING"
-                    const expired = inv.status === "EXPIRED"
-                    const statusClass = expired
-                      ? "bg-amber-100 text-amber-800"
-                      : pending
-                        ? "bg-blue-100 text-blue-800"
-                        : inv.status === "ACCEPTED"
-                          ? "bg-emerald-100 text-emerald-800"
-                          : "bg-zinc-200 text-zinc-700"
+                    const statusClass =
+                      inv.status === "PENDING" ? "bg-blue-100 text-blue-800" : "bg-zinc-200 text-zinc-700"
                     return (
                       <li key={inv.invitationId} className="rounded-md border border-zinc-200 bg-zinc-50 p-2">
                         <div className="flex items-start justify-between gap-2">
@@ -1103,26 +1072,9 @@ export function TeamManagementView() {
                         {inv.respondedAt ? (
                           <p className="text-[11px] text-zinc-500">처리: {formatDateTime(inv.respondedAt)}</p>
                         ) : null}
-                        {pending ? (
-                          <div className="mt-2 flex gap-1">
-                            <button
-                              type="button"
-                              className="h-7 rounded bg-black px-2 text-[11px] font-medium text-white disabled:opacity-60"
-                              disabled={invitationActionLoadingId === inv.invitationId}
-                              onClick={() => void _respondInvitation(inv.invitationId, "accept")}
-                            >
-                              수락
-                            </button>
-                            <button
-                              type="button"
-                              className="h-7 rounded border border-zinc-300 bg-white px-2 text-[11px] font-medium disabled:opacity-60"
-                              disabled={invitationActionLoadingId === inv.invitationId}
-                              onClick={() => void _respondInvitation(inv.invitationId, "reject")}
-                            >
-                              거절
-                            </button>
-                          </div>
-                        ) : null}
+                        <p className="mt-2 text-[11px] text-zinc-500">
+                          수락/거절 처리는 Notification 화면에서 진행하세요.
+                        </p>
                       </li>
                     )
                   })}
