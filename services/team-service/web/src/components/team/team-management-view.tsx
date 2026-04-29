@@ -10,6 +10,15 @@ type ApiResponse<T> = {
   data: T | null
 }
 
+function extractErrorMessage(value: unknown): string | null {
+  if (!value || typeof value !== "object") return null
+  const obj = value as Record<string, unknown>
+  if (typeof obj.message === "string" && obj.message.trim() !== "") return obj.message
+  if (typeof obj.error === "string" && obj.error.trim() !== "") return obj.error
+  if (typeof obj.detail === "string" && obj.detail.trim() !== "") return obj.detail
+  return null
+}
+
 type TeamSummary = {
   id: string
   name: string
@@ -20,6 +29,8 @@ type TeamSummaryLike = {
   name: string
 }
 
+type ExternalKeyProvider = "GEMINI" | "OPENAI" | "ANTHROPIC"
+
 type TeamApiKeySummary = {
   id: number
   provider: string
@@ -29,6 +40,13 @@ type TeamApiKeySummary = {
   deletionRequestedAt?: string | null
   permanentDeletionAt?: string | null
   deletionGraceDays?: number | null
+}
+
+type TeamInvitationNotice = {
+  invitationId: string
+  teamName: string
+  viewerRole: "INVITER" | "INVITEE" | "UNKNOWN"
+  respondedAt: string | null
 }
 
 function asApiResponse(value: unknown): ApiResponse<unknown> | null {
@@ -102,6 +120,7 @@ function parseTeamApiKeyDeletionGraceInput(raw: string):
 }
 
 const TEAM_WEB_BASE_PATH = "/teams"
+const EXTERNAL_KEY_PROVIDER_OPTIONS: ExternalKeyProvider[] = ["GEMINI", "OPENAI", "ANTHROPIC"]
 
 type InviteeFieldRow = { id: string; value: string }
 
@@ -136,40 +155,56 @@ async function requestApi(path: string, init?: RequestInit) {
   return { res, body: asApiResponse(json) }
 }
 
+function formatDateTime(iso: string | null | undefined): string {
+  if (!iso) return "-"
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return iso
+  return date.toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })
+}
+
 async function switchActiveTeam(teamId: string) {
-  const res = await fetch("/api/auth/token/switch-team", {
+  const numericTeamId = Number.parseInt(teamId, 10)
+  if (!Number.isFinite(numericTeamId)) {
+    throw new Error("유효하지 않은 팀 ID입니다")
+  }
+  const res = await fetch(`${TEAM_WEB_BASE_PATH}/api/auth/token/switch-team`, {
     method: "POST",
     credentials: "include",
     cache: "no-store",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ targetTeamId: Number(teamId) }),
+    body: JSON.stringify({ targetTeamId: numericTeamId }),
   })
   if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as ApiResponse<unknown> | null
-    throw new Error(body?.message ?? "팀 전환 토큰 갱신에 실패했습니다")
+    const body = (await res.json().catch(() => null)) as unknown
+    const message = extractErrorMessage(body)
+    throw new Error(message ?? `팀 전환 토큰 갱신에 실패했습니다 (HTTP ${res.status})`)
   }
 }
 
 export function TeamManagementView() {
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
+  const [message, setMessage] = React.useState<{ kind: "success" | "error"; text: string } | null>(null)
   const [teams, setTeams] = React.useState<TeamSummary[]>([])
   const [keyword, setKeyword] = React.useState("")
   const debouncedKeyword = useDebounce(keyword, 500)
   const [isSearching, setIsSearching] = React.useState(false)
   const [teamMemberIdsByTeamId, setTeamMemberIdsByTeamId] = React.useState<Record<string, string[]>>({})
-  const [isTeamOwnerByTeamId, setIsTeamOwnerByTeamId] = React.useState<Record<string, boolean>>({})
+  const [isTeamOwnerByTeamId, setIsTeamOwnerByTeamId] = React.useState<Record<string, boolean | null>>({})
   const [showCreateForm, setShowCreateForm] = React.useState(false)
   const [teamName, setTeamName] = React.useState("")
   const [inviteesOnCreate, setInviteesOnCreate] = React.useState<InviteeFieldRow[]>(() => [newInviteeRow()])
   const [createLoading, setCreateLoading] = React.useState(false)
   const [inviteInputsByTeamId, setInviteInputsByTeamId] = React.useState<Record<string, InviteeFieldRow[]>>({})
   const [inviteLoadingTeamId, setInviteLoadingTeamId] = React.useState<string | null>(null)
-  const [, setMessage] = React.useState<{ kind: "success" | "error"; text: string } | null>(null)
-
   const [teamApiKeysByTeamId, setTeamApiKeysByTeamId] = React.useState<Record<string, TeamApiKeySummary[]>>({})
+  const [expiredInvitationNotices, setExpiredInvitationNotices] = React.useState<TeamInvitationNotice[]>([])
+  const [dismissedInvitationNoticeIds, setDismissedInvitationNoticeIds] = React.useState<Record<string, true>>({})
+  const [expiredInvitationLoading, setExpiredInvitationLoading] = React.useState(false)
+  const [switchingTeamId, setSwitchingTeamId] = React.useState<string | null>(null)
   const [apiKeyAliasByTeamId, setApiKeyAliasByTeamId] = React.useState<Record<string, string>>({})
   const [apiKeyValueByTeamId, setApiKeyValueByTeamId] = React.useState<Record<string, string>>({})
+  const [apiKeyProviderByTeamId, setApiKeyProviderByTeamId] = React.useState<Record<string, ExternalKeyProvider>>({})
   const [apiKeyMonthlyBudgetByTeamId, setApiKeyMonthlyBudgetByTeamId] = React.useState<Record<string, string>>({})
   const [apiKeyLoadingTeamId, setApiKeyLoadingTeamId] = React.useState<string | null>(null)
   const [editingTeamApiKey, setEditingTeamApiKey] = React.useState<{ teamId: string; keyId: number } | null>(null)
@@ -211,7 +246,6 @@ export function TeamManagementView() {
       }
       if (!res.ok || !body?.success || !Array.isArray(body?.data)) {
         setError(body?.message ?? "팀 목록을 불러오지 못했습니다")
-        setTeams([])
         return
       }
       const normalizedTeams = body.data
@@ -223,7 +257,6 @@ export function TeamManagementView() {
         return
       }
       setError("팀 목록을 불러오지 못했습니다")
-      setTeams([])
     } finally {
       if (requestSeq === latestLoadSeqRef.current) {
         setLoading(false)
@@ -247,15 +280,16 @@ export function TeamManagementView() {
   }, [])
 
   const loadTeamOwnerFlag = React.useCallback(async (teamId: string) => {
+    setIsTeamOwnerByTeamId((prev) => ({ ...prev, [teamId]: null }))
     try {
       const { res, body } = await requestApi(`/api/team/v1/teams/${encodeURIComponent(teamId)}/owner`, { method: "GET" })
       if (!res.ok || !body?.success || typeof body.data !== "boolean") {
-        setIsTeamOwnerByTeamId((prev) => ({ ...prev, [teamId]: false }))
+        setIsTeamOwnerByTeamId((prev) => ({ ...prev, [teamId]: null }))
         return
       }
       setIsTeamOwnerByTeamId((prev) => ({ ...prev, [teamId]: body.data as boolean }))
     } catch {
-      setIsTeamOwnerByTeamId((prev) => ({ ...prev, [teamId]: false }))
+      setIsTeamOwnerByTeamId((prev) => ({ ...prev, [teamId]: null }))
     }
   }, [])
 
@@ -278,9 +312,47 @@ export function TeamManagementView() {
     }
   }, [])
 
+  const loadExpiredInvitationNotices = React.useCallback(async () => {
+    setExpiredInvitationLoading(true)
+    try {
+      const { res, body } = await requestApi("/api/team/v1/me/team-invitations?includeExpired=true", { method: "GET" })
+      if (!res.ok || !body?.success || !Array.isArray(body.data)) {
+        setExpiredInvitationNotices([])
+        return
+      }
+      const notices: TeamInvitationNotice[] = (body.data as unknown[])
+        .map((item) => {
+          if (!item || typeof item !== "object") return null
+          const v = item as Record<string, unknown>
+          if (typeof v.invitationId !== "string") return null
+          if (typeof v.teamName !== "string") return null
+          if (v.status !== "EXPIRED") return null
+          const viewerRole = v.viewerRole
+          const normalizedRole: TeamInvitationNotice["viewerRole"] =
+            viewerRole === "INVITER" || viewerRole === "INVITEE" ? viewerRole : "UNKNOWN"
+          return {
+            invitationId: v.invitationId,
+            teamName: v.teamName,
+            viewerRole: normalizedRole,
+            respondedAt: typeof v.respondedAt === "string" ? v.respondedAt : null,
+          }
+        })
+        .filter((item): item is TeamInvitationNotice => item !== null)
+      setExpiredInvitationNotices(notices)
+    } catch {
+      setExpiredInvitationNotices([])
+    } finally {
+      setExpiredInvitationLoading(false)
+    }
+  }, [])
+
   React.useEffect(() => {
     void loadTeams(debouncedKeyword)
   }, [loadTeams, debouncedKeyword])
+
+  React.useEffect(() => {
+    void loadExpiredInvitationNotices()
+  }, [loadExpiredInvitationNotices])
 
   React.useEffect(() => {
     if (teams.length === 0) {
@@ -304,6 +376,13 @@ export function TeamManagementView() {
     void loadTeamMembers(selectedTeamId)
     void loadTeamApiKeys(selectedTeamId)
   }, [selectedTeamId, teams, loadTeamApiKeys, loadTeamMembers, loadTeamOwnerFlag])
+
+  React.useEffect(() => {
+    if (!message) return
+    if (message.kind === "error") return
+    const timeoutId = window.setTimeout(() => setMessage(null), 3500)
+    return () => window.clearTimeout(timeoutId)
+  }, [message])
 
   async function createTeam(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -523,7 +602,7 @@ export function TeamManagementView() {
 
   async function _registerTeamApiKey(teamId: string) {
     if (apiKeyLoadingTeamId) return
-    const provider = "OPENAI"
+    const provider = apiKeyProviderByTeamId[teamId] ?? "OPENAI"
     const alias = (apiKeyAliasByTeamId[teamId] ?? "").trim()
     const externalKey = (apiKeyValueByTeamId[teamId] ?? "").trim()
     const budgetTrimmed = (apiKeyMonthlyBudgetByTeamId[teamId] ?? "").trim()
@@ -566,6 +645,7 @@ export function TeamManagementView() {
       setMessage({ kind: "success", text: "팀 API Key가 등록되었습니다" })
       setApiKeyAliasByTeamId((prev) => ({ ...prev, [teamId]: "" }))
       setApiKeyValueByTeamId((prev) => ({ ...prev, [teamId]: "" }))
+      setApiKeyProviderByTeamId((prev) => ({ ...prev, [teamId]: "OPENAI" }))
       setApiKeyMonthlyBudgetByTeamId((prev) => ({ ...prev, [teamId]: "" }))
       await loadTeamApiKeys(teamId)
     } catch {
@@ -690,9 +770,37 @@ export function TeamManagementView() {
     }
   }
 
+  async function _selectTeam(teamId: string, isSelected: boolean) {
+    cancelEditTeamApiKey()
+    if (isSelected) {
+      setSelectedTeamId(null)
+      return
+    }
+    if (switchingTeamId) return
+    setSelectedTeamId(teamId)
+    setInviteInputsByTeamId((prev) => (prev[teamId] !== undefined ? prev : { ...prev, [teamId]: [newInviteeRow()] }))
+    setSwitchingTeamId(teamId)
+    setMessage(null)
+    try {
+      await switchActiveTeam(teamId)
+      setMessage({ kind: "success", text: "활성 팀이 전환되었습니다" })
+    } catch (e) {
+      const details = e instanceof Error ? e.message : "팀 전환 토큰 갱신에 실패했습니다"
+      setMessage({
+        kind: "error",
+        text: `${details} (상세 UI는 계속 사용 가능합니다)`,
+      })
+    } finally {
+      setSwitchingTeamId(null)
+    }
+  }
+
   const teamDeletionModalParsed = teamApiKeyDeletionModal
     ? parseTeamApiKeyDeletionGraceInput(teamApiKeyDeletionModal.graceDaysInput)
     : null
+  const visibleExpiredInvitationNotices = expiredInvitationNotices.filter(
+    (notice) => dismissedInvitationNoticeIds[notice.invitationId] !== true,
+  )
 
   return (
     <main className="flex min-h-screen overflow-hidden bg-white">
@@ -908,6 +1016,71 @@ export function TeamManagementView() {
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto p-3">
+            {message ? (
+              <div
+                className={`mb-3 rounded-md border px-3 py-2 text-xs ${
+                  message.kind === "success"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : "border-red-200 bg-red-50 text-red-700"
+                }`}
+                role="status"
+              >
+                {message.text}
+              </div>
+            ) : null}
+            <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold text-amber-800">만료된 초대 알림</p>
+                <button
+                  type="button"
+                  className="h-7 rounded border border-amber-300 bg-white px-2 text-[11px] text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+                  onClick={() => void loadExpiredInvitationNotices()}
+                  disabled={expiredInvitationLoading}
+                >
+                  {expiredInvitationLoading ? "불러오는 중…" : "새로고침"}
+                </button>
+              </div>
+              {expiredInvitationLoading ? (
+                <p className="mt-2 text-xs text-amber-800">만료된 초대 알림을 불러오는 중…</p>
+              ) : visibleExpiredInvitationNotices.length === 0 ? (
+                <p className="mt-2 text-xs text-amber-800">표시할 만료된 초대 알림이 없습니다.</p>
+              ) : (
+                <ul className="mt-2 space-y-2">
+                  {visibleExpiredInvitationNotices.map((notice) => (
+                    <li
+                      key={`expired-invitation-${notice.invitationId}`}
+                      className="rounded-md border border-amber-200 bg-white px-2 py-2"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-semibold text-zinc-900">{notice.teamName}</p>
+                          <p className="mt-1 text-[11px] text-zinc-700">
+                            {notice.viewerRole === "INVITER"
+                              ? "보낸 초대가 만료되었습니다. 다시 초대를 보내주세요."
+                              : "받은 초대가 만료되었습니다."}
+                          </p>
+                          {notice.respondedAt ? (
+                            <p className="mt-1 text-[10px] text-zinc-500">만료 처리: {formatDateTime(notice.respondedAt)}</p>
+                          ) : null}
+                        </div>
+                        <button
+                          type="button"
+                          className="h-6 rounded border border-zinc-300 bg-white px-1.5 text-[10px] text-zinc-700 hover:bg-zinc-50"
+                          onClick={() =>
+                            setDismissedInvitationNoticeIds((prev) => ({
+                              ...prev,
+                              [notice.invitationId]: true,
+                            }))
+                          }
+                        >
+                          X
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
             {loading ? <p className="px-2 py-3 text-sm text-zinc-500">{isSearching ? "검색 중..." : "불러오는 중…"}</p> : null}
             {error && !loading ? <p className="px-2 py-3 text-sm text-red-600">{error}</p> : null}
             {!loading && !error && teams.length === 0 ? (
@@ -926,24 +1099,8 @@ export function TeamManagementView() {
                             ? "border-zinc-900 bg-white shadow-sm"
                             : "border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50"
                         }`}
-                        onClick={() => {
-                          cancelEditTeamApiKey()
-                          if (isSelected) {
-                            setSelectedTeamId(null)
-                            return
-                          }
-                          setSelectedTeamId(team.id)
-                          setInviteInputsByTeamId((prev) =>
-                            prev[team.id] !== undefined ? prev : { ...prev, [team.id]: [newInviteeRow()] },
-                          )
-                          void switchActiveTeam(team.id)
-                            .catch((e) => {
-                              setMessage({
-                                kind: "error",
-                                text: e instanceof Error ? e.message : "팀 전환 토큰 갱신에 실패했습니다",
-                              })
-                            })
-                        }}
+                        onClick={() => void _selectTeam(team.id, isSelected)}
+                        disabled={switchingTeamId !== null && switchingTeamId !== team.id}
                       >
                         <div className="flex items-center gap-2">
                           {isSelected ? (
@@ -952,6 +1109,9 @@ export function TeamManagementView() {
                             <ChevronRight className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden />
                           )}
                           <span className="truncate text-sm font-medium text-zinc-900">{team.name}</span>
+                          {switchingTeamId === team.id ? (
+                            <span className="rounded bg-zinc-200 px-1.5 py-0.5 text-[10px] text-zinc-700">전환 중…</span>
+                          ) : null}
                         </div>
                       </button>
                       {isSelected ? (
@@ -967,7 +1127,7 @@ export function TeamManagementView() {
                               {(teamMemberIdsByTeamId[team.id] ?? []).map((memberId) => (
                                 <li key={`${team.id}-member-inline-${memberId}`} className="flex items-center justify-between gap-2">
                                   <span className="truncate">{memberId}</span>
-                                  {isTeamOwnerByTeamId[team.id] ? (
+                                  {isTeamOwnerByTeamId[team.id] === true ? (
                                     <button
                                       type="button"
                                       className="rounded border border-red-300 bg-white px-2 py-1 text-[11px] text-red-600 disabled:opacity-50"
@@ -1046,6 +1206,23 @@ export function TeamManagementView() {
                           <div className="border-t border-zinc-100 pt-3">
                             <p className="text-xs font-semibold text-zinc-800">API Key 목록</p>
                             <div className="mt-2 space-y-2 rounded-md border border-zinc-100 bg-zinc-50 p-2">
+                              <select
+                                className="h-8 w-full rounded-md border border-zinc-300 bg-white px-2 text-xs"
+                                value={apiKeyProviderByTeamId[team.id] ?? "OPENAI"}
+                                onChange={(e) =>
+                                  setApiKeyProviderByTeamId((prev) => ({
+                                    ...prev,
+                                    [team.id]: e.target.value as ExternalKeyProvider,
+                                  }))
+                                }
+                                disabled={apiKeyLoadingTeamId === team.id}
+                              >
+                                {EXTERNAL_KEY_PROVIDER_OPTIONS.map((provider) => (
+                                  <option key={`${team.id}-provider-${provider}`} value={provider}>
+                                    {provider}
+                                  </option>
+                                ))}
+                              </select>
                               <input
                                 className="h-8 w-full rounded-md border border-zinc-300 bg-white px-2 text-xs"
                                 value={apiKeyAliasByTeamId[team.id] ?? ""}
@@ -1178,7 +1355,7 @@ export function TeamManagementView() {
                               <p className="mt-1 text-xs text-zinc-500">등록된 팀 API Key가 없습니다.</p>
                             )}
                           </div>
-                          {isTeamOwnerByTeamId[team.id] ? (
+                          {isTeamOwnerByTeamId[team.id] === true ? (
                             <div className="rounded-md border border-red-200 bg-red-50 p-2">
                               <p className="text-[11px] text-zinc-600">팀장은 팀 API 키를 모두 정리한 뒤 팀을 삭제할 수 있습니다.</p>
                               <button
@@ -1190,7 +1367,17 @@ export function TeamManagementView() {
                                 {deleteTeamLoadingId === team.id ? "팀 삭제 중…" : "팀 삭제"}
                               </button>
                             </div>
-                          ) : null}
+                          ) : isTeamOwnerByTeamId[team.id] === false ? (
+                            <div className="rounded-md border border-zinc-200 bg-zinc-50 p-2">
+                              <p className="text-[11px] text-zinc-600">
+                                팀 삭제는 팀장만 가능합니다. (현재 계정은 팀장 권한이 아닙니다)
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="rounded-md border border-zinc-200 bg-zinc-50 p-2">
+                              <p className="text-[11px] text-zinc-600">팀장 권한을 확인하는 중입니다.</p>
+                            </div>
+                          )}
                         </div>
                       ) : null}
                     </li>

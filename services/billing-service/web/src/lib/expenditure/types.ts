@@ -7,6 +7,13 @@ export type ExpenditureSummary = {
   monthlyBudgetUsd: number | null;
 };
 
+export type MonthlyBudgetStatus = {
+  from: string;
+  to: string;
+  totalCostUsd: number;
+  monthlyBudgetUsd: number | null;
+};
+
 export type DailyPoint = { date: string; costUsd: number };
 
 export type MonthlyPoint = {

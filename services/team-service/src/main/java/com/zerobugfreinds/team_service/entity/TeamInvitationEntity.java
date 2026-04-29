@@ -62,6 +62,11 @@ public class TeamInvitationEntity {
 		this.respondedAt = Instant.now();
 	}
 
+	public void expire(Instant now) {
+		this.status = TeamInvitationStatus.EXPIRED;
+		this.respondedAt = now;
+	}
+
 	public Long getId() {
 		return id;
 	}

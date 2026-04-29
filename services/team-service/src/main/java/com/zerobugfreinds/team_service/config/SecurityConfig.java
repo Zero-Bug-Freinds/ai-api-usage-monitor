@@ -32,6 +32,8 @@ public class SecurityConfig {
 				.exceptionHandling(exception -> exception.authenticationEntryPoint(restAuthenticationEntryPoint))
 				.authorizeHttpRequests(auth -> auth
 						.requestMatchers("/internal/teams/**").permitAll()
+						.requestMatchers("/internal/v1/teams/**").permitAll()
+						.requestMatchers("/internal/v1/team-invitations/**").permitAll()
 						.requestMatchers("/internal/admin/**").permitAll()
 						.requestMatchers("/error").permitAll()
 						.anyRequest().authenticated()

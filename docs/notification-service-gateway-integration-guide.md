@@ -25,9 +25,9 @@
 ### 2.3 글로벌 필터(ProxyTrustHeadersWebFilter)
 
 - 게이트웨이 표준 전파 헤더(JWT 검증 후 `forwardWithJwt` 적용 경로 기준):
-  - `X-User-Id` ← JWT 클레임 **`userId`** (플랫폼 사용자 ID 문자열). **`sub`(이메일 등)은 `X-User-Id`로 전달하지 않음.**
-  - `X-Platform-User-Id` ← 동일하게 JWT 클레임 **`userId`** 값을 사용한다.
-  - JWT에 **`userId` 클레임이 없거나 빈 문자열이면** 요청은 조용히 통과하지 않고 **401**(Missing userId claim)으로 처리한다.
+  - `X-User-Id` ← JWT 클레임 **`sub`** (이메일; notification/team/billing/usage 등 서비스 경로에서 사용).
+  - `X-Platform-User-Id` ← JWT 클레임 **`userId`** (플랫폼 내부 사용자 ID).
+  - JWT에 **`sub`가 없거나 빈 문자열이면** 요청은 조용히 통과하지 않고 **401**으로 처리한다.
   - `X-Org-Id` (`org_id`)
   - `X-Team-Id` (`team_id`)
   - `X-Scope-Type` (`scope_type`, 없으면 `team_id` 기반 추론)
@@ -58,9 +58,8 @@
 ## 3.3 프런트 BFF 연계 상태
 
 - `services/notification-service/web/src/app/api/notification/[[...path]]/route.ts`는 아직 Gateway 경유가 아닌 **notification-service 직접 호출** 구조다.
-- 이 BFF는 Identity `/api/auth/session`으로 이메일을 조회해 `X-User-Id`를 생성/전달한다.
-- Gateway 경로에서 내려오는 `X-User-Id`는 **플랫폼 숫자 `userId`** 이고, 위 BFF 경로에서 보내는 값은 **이메일 문자열**일 수 있다. 인앱 알림 도메인에서 기준 식별자를 하나로 정할지(또는 양쪽을 구분할지)는 통합 완료 시점에 정합성 검토가 필요하다.
-- 따라서 notification 백엔드는 현재 "Gateway 헤더"와 "BFF 생성 헤더"를 모두 받을 수 있는 상태다.
+- 이 BFF는 `access_token` JWT 페이로드의 **`sub`(이메일)** 을 읽어 `direct` 모드에서 `X-User-Id`로 전달한다.
+- Gateway 경로에서도 `X-User-Id`는 **JWT `sub`(이메일)** 이고, 플랫폼 내부 ID는 `X-Platform-User-Id`로 구분된다.
 
 ## 4) 전환 전략 (제안만, 미적용)
 

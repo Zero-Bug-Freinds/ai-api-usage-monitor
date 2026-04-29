@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { resolveGatewayBaseUrl } from "@/lib/env/gateway-base-url"
 
 const ACCESS_TOKEN_COOKIE = "access_token"
 
@@ -8,13 +9,13 @@ function noStoreHeaders(): HeadersInit {
 
 /** Gateway base URL (no trailing slash). */
 function envGatewayBaseUrl(): string | null {
-  const raw = (process.env.GATEWAY_URL ?? "").trim()
-  if (raw) return raw.replace(/\/+$/, "")
+  const configured = resolveGatewayBaseUrl()
+  if (configured) return configured
 
   if (process.env.NODE_ENV === "development") {
     console.warn(
-      "[team-web] GATEWAY_URL is not set; using http://127.0.0.1:8888. " +
-        "Set GATEWAY_URL in .env.local when gateway uses a different address.",
+      "[team-web] GATEWAY_URL/WEB_GATEWAY_URL is not set; using http://127.0.0.1:8888. " +
+        "Set GATEWAY_URL or WEB_GATEWAY_URL in .env.local when gateway uses a different address.",
     )
     return "http://127.0.0.1:8888"
   }

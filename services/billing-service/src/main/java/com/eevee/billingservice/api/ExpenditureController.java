@@ -3,6 +3,7 @@ package com.eevee.billingservice.api;
 import com.eevee.billingservice.api.dto.ApiKeySeenResponse;
 import com.eevee.billingservice.api.dto.DailyExpenditurePoint;
 import com.eevee.billingservice.api.dto.ExpenditureSummaryResponse;
+import com.eevee.billingservice.api.dto.MonthlyBudgetStatusResponse;
 import com.eevee.billingservice.api.dto.MonthlyExpenditurePoint;
 import com.eevee.billingservice.api.dto.TeamMonthRollupRequest;
 import com.eevee.billingservice.api.dto.TeamMonthRollupResponse;
@@ -51,6 +52,16 @@ public class ExpenditureController {
     ) {
         String userId = currentUser(request);
         return expenditureQueryService.summary(userId, apiKeyId, provider, from, to);
+    }
+
+    @GetMapping("/monthly-budget-status")
+    public MonthlyBudgetStatusResponse monthlyBudgetStatus(
+            HttpServletRequest request,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
+    ) {
+        String userId = currentUser(request);
+        return expenditureQueryService.monthlyBudgetStatus(userId, from, to);
     }
 
     @GetMapping("/daily")

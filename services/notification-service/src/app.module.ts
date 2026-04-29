@@ -2,9 +2,11 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { BillingEventsModule } from './billing-events/billing-events.module';
 import { InAppNotificationsModule } from './in-app-notifications/in-app-notifications.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { TeamEventsModule } from './team-events/team-events.module';
+import { TeamInvitationActionsModule } from './team-invitation-actions/team-invitation-actions.module';
 
 @Module({
   imports: [
@@ -14,7 +16,9 @@ import { TeamEventsModule } from './team-events/team-events.module';
     }),
     PrismaModule,
     InAppNotificationsModule,
+    TeamInvitationActionsModule,
     TeamEventsModule,
+    BillingEventsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

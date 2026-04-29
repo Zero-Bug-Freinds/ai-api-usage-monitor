@@ -87,6 +87,45 @@ class AuthSwitchTeamE2ETest {
     }
 
     @Test
+    void switchTeam_fallsBackToEmailWhenUserIdMembershipLookupFails() throws Exception {
+        String email = "switch-fallback@local.test";
+        signup(email, "switch-fallback");
+
+        MvcResult loginResult = mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "%s",
+                                  "password": "test1234!"
+                                }
+                                """.formatted(email)))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        String firstAccessToken = accessTokenFrom(loginResult);
+        Long userId = claimAsLong(payloadClaims(firstAccessToken).path("userId"));
+        Long targetTeamId = 702L;
+
+        when(teamMembershipVerificationClient.isActiveTeamMember(eq(targetTeamId), eq(userId))).thenReturn(false);
+        when(teamMembershipVerificationClient.isActiveTeamMember(eq(targetTeamId), eq(email))).thenReturn(true);
+
+        MvcResult switchResult = mockMvc.perform(post("/api/auth/token/switch-team")
+                        .header(GatewayHeaderInterceptor.USER_ID_HEADER, userId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "targetTeamId": 702
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        String switchedAccessToken = accessTokenFrom(switchResult);
+        JsonNode switchedClaims = payloadClaims(switchedAccessToken);
+        assertThat(claimAsLong(switchedClaims.path("active_team_id"))).isEqualTo(targetTeamId);
+    }
+
+    @Test
     void personalExternalApiKeyFlow_stillWorksWithUpdatedJwtStructure() throws Exception {
         signup("apikey-user@local.test", "apikey-user");
 
