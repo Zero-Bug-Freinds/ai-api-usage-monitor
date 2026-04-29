@@ -381,4 +381,84 @@ class ProxyTrustHeadersWebFilterTest {
                         && ((org.springframework.web.server.ResponseStatusException) t).getStatusCode().value() == 401)
                 .verify();
     }
+
+    @Test
+    void trustedWebEdgeHeaders_forwardNumericUserId_forIdentityPath() {
+        gatewayProperties.setDevMode(false);
+        gatewayProperties.setSharedSecret("local-dev-gateway-shared-secret-do-not-use-in-prod");
+
+        MockServerHttpRequest request = MockServerHttpRequest.get("/api/identity/auth/session")
+                .header("X-Web-Edge-Auth", "local-dev-gateway-shared-secret-do-not-use-in-prod")
+                .header("X-Auth-Subject", "user@example.com")
+                .header("X-Auth-UserId", "42")
+                .build();
+        ServerWebExchange exchange = MockServerWebExchange.from(request);
+        AtomicReference<String> userIdSeen = new AtomicReference<>();
+        AtomicReference<String> platformUserIdSeen = new AtomicReference<>();
+        WebFilterChain chain = ex -> {
+            userIdSeen.set(ex.getRequest().getHeaders().getFirst("X-User-Id"));
+            platformUserIdSeen.set(ex.getRequest().getHeaders().getFirst("X-Platform-User-Id"));
+            return Mono.empty();
+        };
+
+        ProxyTrustHeadersWebFilter filter = new ProxyTrustHeadersWebFilter(gatewayProperties);
+
+        StepVerifier.create(filter.filter(exchange, chain))
+                .verifyComplete();
+
+        assertThat(userIdSeen.get()).isEqualTo("42");
+        assertThat(platformUserIdSeen.get()).isEqualTo("42");
+    }
+
+    @Test
+    void trustedWebEdgeHeaders_forwardEmailAndTeam_forAiPath() {
+        gatewayProperties.setDevMode(false);
+        gatewayProperties.setSharedSecret("local-dev-gateway-shared-secret-do-not-use-in-prod");
+
+        MockServerHttpRequest request = MockServerHttpRequest.get("/api/v1/ai/openai/v1/chat/completions")
+                .header("X-Web-Edge-Auth", "local-dev-gateway-shared-secret-do-not-use-in-prod")
+                .header("X-Auth-Subject", "user@example.com")
+                .header("X-Auth-UserId", "42")
+                .header("X-Auth-TeamId", "team-99")
+                .build();
+        ServerWebExchange exchange = MockServerWebExchange.from(request);
+        AtomicReference<String> userIdSeen = new AtomicReference<>();
+        AtomicReference<String> teamIdSeen = new AtomicReference<>();
+        AtomicReference<String> scopeSeen = new AtomicReference<>();
+        WebFilterChain chain = ex -> {
+            userIdSeen.set(ex.getRequest().getHeaders().getFirst("X-User-Id"));
+            teamIdSeen.set(ex.getRequest().getHeaders().getFirst("X-Team-Id"));
+            scopeSeen.set(ex.getRequest().getHeaders().getFirst("X-Scope-Type"));
+            return Mono.empty();
+        };
+
+        ProxyTrustHeadersWebFilter filter = new ProxyTrustHeadersWebFilter(gatewayProperties);
+
+        StepVerifier.create(filter.filter(exchange, chain))
+                .verifyComplete();
+
+        assertThat(userIdSeen.get()).isEqualTo("user@example.com");
+        assertThat(teamIdSeen.get()).isEqualTo("team-99");
+        assertThat(scopeSeen.get()).isEqualTo("TEAM");
+    }
+
+    @Test
+    void trustedWebEdgeHeaders_rejectedWhenTrustSecretMissing() {
+        gatewayProperties.setDevMode(false);
+        gatewayProperties.setSharedSecret("local-dev-gateway-shared-secret-do-not-use-in-prod");
+
+        MockServerHttpRequest request = MockServerHttpRequest.get("/api/v1/usage/dashboard/summary")
+                .header("X-Auth-Subject", "user@example.com")
+                .header("X-Auth-UserId", "42")
+                .build();
+        ServerWebExchange exchange = MockServerWebExchange.from(request);
+        WebFilterChain chain = ex -> Mono.empty();
+
+        ProxyTrustHeadersWebFilter filter = new ProxyTrustHeadersWebFilter(gatewayProperties);
+
+        StepVerifier.create(filter.filter(exchange, chain))
+                .expectErrorMatches(t -> t instanceof org.springframework.web.server.ResponseStatusException
+                        && ((org.springframework.web.server.ResponseStatusException) t).getStatusCode().value() == 401)
+                .verify();
+    }
 }

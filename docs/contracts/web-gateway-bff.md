@@ -68,11 +68,11 @@
 
 ### 3.3 샘플 curl (로컬)
 
-Compose·루트 `.env.example` 기본값과 같이 **Identity `web`은 호스트 `3000`**, **Usage `web`은 `3001`**(`USAGE_WEB_PORT`)을 쓴다고 가정한다. 게이트웨이는 `http://localhost:8080`, 개발 모드에서 `access_token` 쿠키·`X-User-Id` 보강이 되는 전제를 둔다(브라우저 쿠키가 필요하면 BFF curl은 아래와 같이 쿠키를 넣는다).
+Compose·루트 `.env.example` 기본값과 같이 **Identity `web`은 호스트 `3000`**, **Usage `web`은 `3001`**(`USAGE_WEB_PORT`)을 쓴다고 가정한다. 외부 호출 기본 진입점은 `web-edge`의 `http://localhost:8888`이며, 개발 모드에서 `access_token` 쿠키·`X-User-Id` 보강이 되는 전제를 둔다(브라우저 쿠키가 필요하면 BFF curl은 아래와 같이 쿠키를 넣는다).
 
 ```bash
 # 게이트웨이 → Usage (개발 모드: X-User-Id 필수)
-curl -sS -i "http://localhost:8080/api/v1/usage/dashboard/summary" \
+curl -sS -i "http://localhost:8888/api/v1/usage/dashboard/summary" \
   -H "X-User-Id: user@example.com"
 
 # Usage BFF 경유(세션 쿠키 필요, Usage web basePath=/dashboard)

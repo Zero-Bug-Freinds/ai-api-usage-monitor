@@ -1,7 +1,7 @@
 # Web(Next.js) ↔ Notification Service — Notification BFF 계약
 
 버전: 1.3  
-관련: [web-split-boundary.md](./web-split-boundary.md), [web-identity-bff.md](./web-identity-bff.md)(세션), [`docker/web-edge/nginx.conf`](../../docker/web-edge/nginx.conf), [architecture.md](../architecture.md) §4.9·§6·§10.2·§13, [web-team-bff.md](./web-team-bff.md) §6.2(팀 도메인 이벤트 스키마), [notification-service-gateway-integration-guide.md](../notification-service-gateway-integration-guide.md) §2(게이트웨이 신뢰 헤더)
+관련: [web-split-boundary.md](./web-split-boundary.md), [web-identity-bff.md](./web-identity-bff.md)(세션), [`docker/web-edge/nginx.conf.template`](../../docker/web-edge/nginx.conf.template), [architecture.md](../architecture.md) §4.9·§6·§10.2·§13, [web-team-bff.md](./web-team-bff.md) §6.2(팀 도메인 이벤트 스키마), [notification-service-gateway-integration-guide.md](../notification-service-gateway-integration-guide.md) §2(게이트웨이 신뢰 헤더)
 
 **소스 트리:** Notification `web`(UI+BFF)의 **정본**은 `services/notification-service/web/` 이다. Notification 백엔드(Nest+Prisma)는 `services/notification-service/` 이다.
 
@@ -25,7 +25,7 @@ Notification `web`은 Next `basePath=/notifications`를 사용한다.
 | UI | `/notifications/*` |
 | Notification BFF | `/notifications/api/notification/*` |
 
-엣지(Nginx)는 `/notifications` → `308 /notifications/`, `/notifications/` 접두만 notification-web으로 프록시한다(정본: `docker/web-edge/nginx.conf`).
+엣지(Nginx)는 `/notifications`, `/notifications/`, `/notifications/*`를 notification-web으로 프록시한다(정본: `docker/web-edge/nginx.conf.template`).
 
 ---
 
@@ -130,7 +130,7 @@ Notification `web`은 Next `basePath=/notifications`를 사용한다.
 ## 5. 유지보수 규칙
 
 - Notification 백엔드(Nest) 엔드포인트/헤더 계약을 바꾸면 **본 문서**와 `web-split-boundary.md`를 함께 갱신한다.
-- 단일 도메인 라우팅 규칙 변경(접두 추가/변경)은 `docker/web-edge/nginx.conf`와 `docs/architecture.md` §10.2를 함께 갱신한다.
+- 단일 도메인 라우팅 규칙 변경(접두 추가/변경)은 `docker/web-edge/nginx.conf.template`와 `docs/architecture.md` §10.2를 함께 갱신한다.
 
 ---
 

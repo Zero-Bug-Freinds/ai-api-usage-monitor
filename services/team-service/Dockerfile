@@ -1,10 +1,16 @@
-FROM gradle:8.14.3-jdk21 AS builder
-WORKDIR /workspace
-
-COPY services/team-service/ /workspace/services/team-service/
-COPY libs/identity-events/ /workspace/libs/identity-events/
+# syntax=docker/dockerfile:1.7
+FROM eclipse-temurin:21-jdk-alpine AS builder
 WORKDIR /workspace/services/team-service
-RUN gradle --no-daemon bootJar
+ENV GRADLE_OPTS="-Dorg.gradle.daemon=false"
+COPY services/team-service/gradlew services/team-service/settings.gradle services/team-service/build.gradle ./
+COPY services/team-service/gradle ./gradle
+COPY libs/identity-events /workspace/libs/identity-events
+RUN --mount=type=cache,id=gradle-team-service,target=/root/.gradle \
+    chmod +x gradlew && sed -i 's/\r$//' gradlew && ./gradlew dependencies --no-daemon
+
+COPY services/team-service/src ./src
+RUN --mount=type=cache,id=gradle-team-service,target=/root/.gradle \
+    ./gradlew bootJar --no-daemon
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app

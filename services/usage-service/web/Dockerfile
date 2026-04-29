@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # Next.js standalone — docs/architecture.md §10.1 (패턴 B: 프론트 전용 이미지)
 # `packages/ui` workspace 포함. 빌드(저장소 루트에서):
 #   docker build -f services/usage-service/web/Dockerfile -t usage-web:local .
@@ -11,7 +12,9 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY packages/ui/package.json ./packages/ui/
 COPY packages/shell/package.json ./packages/shell/
 COPY services/usage-service/web/package.json ./services/usage-service/web/
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm config set store-dir /pnpm/store && \
+    pnpm install --frozen-lockfile
 
 FROM ${WEB_NODE_DEPS_IMAGE} AS deps
 
@@ -41,7 +44,10 @@ ARG NEXT_PUBLIC_IDENTITY_WEB_ORIGIN=
 ENV NEXT_PUBLIC_IDENTITY_WEB_ORIGIN=$NEXT_PUBLIC_IDENTITY_WEB_ORIGIN
 ARG NEXT_PUBLIC_BASE_PATH=/dashboard
 ENV NEXT_PUBLIC_BASE_PATH=$NEXT_PUBLIC_BASE_PATH
-RUN pnpm run build
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    --mount=type=cache,target=/repo/services/usage-service/web/.next/cache \
+    pnpm config set store-dir /pnpm/store && \
+    pnpm run build
 
 FROM node:22-alpine AS runner
 ENV NODE_ENV=production

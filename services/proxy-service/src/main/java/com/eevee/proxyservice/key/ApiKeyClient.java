@@ -5,6 +5,7 @@ import com.eevee.usage.events.AiProvider;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.LoadingCache;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
@@ -15,6 +16,9 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.HexFormat;
+
+import static org.springframework.http.HttpStatus.BAD_GATEWAY;
+import static org.springframework.http.HttpStatus.BAD_REQUEST;
 
 /**
  * Resolves provider API keys from API Key Service (or mock). Keys are never logged.
@@ -77,7 +81,7 @@ public class ApiKeyClient {
                     .bodyToMono(KeyResponse.class)
                     .block(Duration.ofSeconds(10));
             if (body == null || body.plainKey() == null || body.plainKey().isBlank()) {
-                throw new IllegalStateException("key service returned empty key");
+                throw new ResponseStatusException(BAD_GATEWAY, "Identity key lookup returned empty key");
             }
             return new ResolvedApiKey(
                     body.plainKey(),
@@ -86,7 +90,14 @@ public class ApiKeyClient {
                     "managed"
             );
         } catch (WebClientResponseException e) {
-            throw new IllegalStateException("key service error: " + e.getStatusCode(), e);
+            if (e.getStatusCode().value() == 404) {
+                throw new ResponseStatusException(BAD_REQUEST, "No registered provider API key", e);
+            }
+            throw new ResponseStatusException(BAD_GATEWAY, "Identity key lookup failed: " + e.getStatusCode(), e);
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ResponseStatusException(BAD_GATEWAY, "Identity key lookup connection failed", e);
         }
     }
 
