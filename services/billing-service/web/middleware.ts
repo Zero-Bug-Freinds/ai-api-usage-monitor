@@ -12,8 +12,7 @@ export function middleware(request: NextRequest) {
   }
 
   const token = request.cookies.get("access_token")?.value;
-  const isLoggedIn = request.cookies.get("is_logged_in")?.value === "true";
-  if (token || isLoggedIn) {
+  if (token) {
     return NextResponse.next();
   }
 
