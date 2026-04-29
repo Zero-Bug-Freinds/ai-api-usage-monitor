@@ -35,6 +35,8 @@ import com.zerobugfreinds.team_service.repository.TeamApiKeyRepository;
 import com.zerobugfreinds.team_service.repository.TeamInvitationRepository;
 import com.zerobugfreinds.team_service.repository.TeamMemberRepository;
 import com.zerobugfreinds.team_service.repository.TeamRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -45,6 +47,7 @@ import org.springframework.util.StringUtils;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -54,6 +57,7 @@ import java.time.temporal.ChronoUnit;
 
 @Service
 public class TeamService {
+	private static final Logger log = LoggerFactory.getLogger(TeamService.class);
 	private final TeamRepository teamRepository;
 	private final TeamMemberRepository teamMemberRepository;
 	private final TeamInvitationRepository teamInvitationRepository;
@@ -109,11 +113,15 @@ public class TeamService {
 		if (!StringUtils.hasText(actorUserId)) {
 			throw new IllegalArgumentException("userId는 필수입니다");
 		}
-		List<TeamMemberEntity> memberships = teamMemberRepository.findAllByUserId(actorUserId);
+		List<String> lookupCandidates = resolveLookupCandidates(actorUserId);
+		List<TeamMemberEntity> memberships = teamMemberRepository.findAllByUserIdIn(lookupCandidates);
 		if (memberships.isEmpty()) {
 			return List.of();
 		}
-		List<Long> teamIds = memberships.stream().map(TeamMemberEntity::getTeamId).toList();
+		List<Long> teamIds = memberships.stream()
+				.map(TeamMemberEntity::getTeamId)
+				.distinct()
+				.toList();
 		Map<Long, TeamEntity> teamById = teamRepository.findAllById(teamIds).stream()
 				.collect(Collectors.toMap(TeamEntity::getId, t -> t));
 
@@ -260,7 +268,13 @@ public class TeamService {
 
 	@Transactional(readOnly = true)
 	public InternalTeamMembershipVerifyResponse verifyTeamMembershipInternal(Long teamId, String userId) {
-		boolean isValid = teamMemberRepository.existsByTeamIdAndUserId(teamId, userId);
+		Set<String> candidates = identityUserSyncService.resolveMembershipLookupCandidates(userId);
+		if (candidates == null || candidates.isEmpty()) {
+			candidates = Set.of(userId);
+		}
+		boolean isValid = candidates.stream()
+				.anyMatch(candidate -> teamMemberRepository.existsByTeamIdAndUserId(teamId, candidate));
+		log.info("team membership verify teamId={} identifier={} candidates={} matched={}", teamId, userId, candidates, isValid);
 		return new InternalTeamMembershipVerifyResponse(teamId, userId, isValid);
 	}
 
@@ -278,15 +292,29 @@ public class TeamService {
 
 	@Transactional(readOnly = true)
 	public List<TeamInvitationResponse> getMyPendingInvitations(String actorUserId) {
+		return getMyInvitations(actorUserId, false);
+	}
+
+	@Transactional(readOnly = true)
+	public List<TeamInvitationResponse> getMyInvitations(String actorUserId, boolean includeExpired) {
 		if (!StringUtils.hasText(actorUserId)) {
 			throw new IllegalArgumentException("userId는 필수입니다");
 		}
 		expireStaleInvitations(Instant.now());
-		List<TeamInvitationEntity> invitations =
-				teamInvitationRepository.findAllByInviteeIdAndStatusOrderByCreatedAtDesc(actorUserId, TeamInvitationStatus.PENDING);
+		List<String> lookupCandidates = resolveLookupCandidates(actorUserId);
+		List<TeamInvitationEntity> invitations = includeExpired
+				? teamInvitationRepository.findAllByInviteeIdInAndStatusInOrderByCreatedAtDesc(
+						lookupCandidates,
+						List.of(TeamInvitationStatus.PENDING, TeamInvitationStatus.EXPIRED)
+				)
+				: teamInvitationRepository.findAllByInviteeIdInAndStatusOrderByCreatedAtDesc(
+						lookupCandidates,
+						TeamInvitationStatus.PENDING
+				);
 		if (invitations.isEmpty()) {
 			return List.of();
 		}
+		invitations = deduplicateInvitationsById(invitations);
 
 		Set<Long> teamIds = new HashSet<>();
 		for (TeamInvitationEntity invitation : invitations) {
@@ -308,7 +336,8 @@ public class TeamService {
 					invitation.getInviterId(),
 					invitation.getInviteeId(),
 					invitation.getStatus().name(),
-					invitation.getCreatedAt()
+					invitation.getCreatedAt(),
+					invitation.getRespondedAt()
 			));
 		}
 		return result;
@@ -506,5 +535,25 @@ public class TeamService {
 		return teamMemberRepository.existsByUserId(userIdOrEmail)
 				|| teamInvitationRepository.existsByInviteeIdOrInviterId(userIdOrEmail, userIdOrEmail)
 				|| identityUserSyncService.existsUser(userIdOrEmail);
+	}
+
+	private List<String> resolveLookupCandidates(String actorUserId) {
+		Set<String> candidates = identityUserSyncService.resolveMembershipLookupCandidates(actorUserId);
+		if (candidates == null || candidates.isEmpty()) {
+			return List.of(actorUserId.trim());
+		}
+		return candidates.stream()
+				.filter(StringUtils::hasText)
+				.map(String::trim)
+				.distinct()
+				.toList();
+	}
+
+	private List<TeamInvitationEntity> deduplicateInvitationsById(List<TeamInvitationEntity> invitations) {
+		Map<Long, TeamInvitationEntity> byId = new LinkedHashMap<>();
+		for (TeamInvitationEntity invitation : invitations) {
+			byId.putIfAbsent(invitation.getId(), invitation);
+		}
+		return new ArrayList<>(byId.values());
 	}
 }
