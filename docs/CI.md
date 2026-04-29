@@ -13,23 +13,30 @@
 
 | 잡 | 설명 |
 |----|------|
-| **Detect changed paths** | `dorny/paths-filter`로 `services/identity-service/**`, `services/proxy-service/**`, `services/api-gateway-service/**`, `services/usage-service/**`, `libs/usage-events/**`, `services/identity-service/web/**`, `services/usage-service/web/**`, `packages/ui/**`, 루트 `pnpm-workspace.yaml`·`package.json`·`pnpm-lock.yaml`, `.github/workflows/**` 변경 감지 |
+| **Detect changed paths** | `dorny/paths-filter`로 `web_edge`, `api_gateway`, `identity`, `proxy`, `usage`, `billing`, `team`, `notification`, `web_host`, `web_mfe`, `web_shared`, `workflows` 변경 감지 |
 | **Secret scan (gitleaks)** | 매 실행마다 저장소 스캔(§8.2). 루트 **`.env.example`** 에는 팀 합의 **로컬 전용 플레이스홀더**(`GATEWAY_SHARED_SECRET` 등)가 문서화되어 있으며, 오탐 방지를 위해 [`.gitleaks.toml`](../.gitleaks.toml) allowlist에 포함한다. |
 | **Validate docker-compose.yml** | `docker compose config`로 문법 검증(§10) |
-| **Build identity-service** | Java 21(Temurin), Gradle 캐시, `./gradlew build` — 위 경로 필터 또는 워크플로 변경 시에만 실행 |
-| **Build proxy-gateway-service** | 동일 — proxy·gateway·`libs/usage-events`·워크플로 변경 시 실행 |
-| **Build usage-service** | 동일 — usage·`libs/usage-events`·워크플로 변경 시 실행 |
-| **Build web (lint/test/build)** | Node 22, **pnpm** 9, 저장소 루트 `pnpm install --frozen-lockfile` 후 각 `web`에 `pnpm --filter …` 로 lint·test·`pnpm run build:web`, **`docker build -f services/…/web/Dockerfile`**(context `.`) 등 — 팀 표준 프론트는 **Next.js 15**·**React 19**(`package.json` 정본). 경로: `services/**/web/**`, `packages/ui/**`, 루트 pnpm·워크플로 변경 시 실행(`web-mfe` 독립 잡은 후속 도입 가능) |
+| **Validate web-edge** | `web_edge` 변경 시 `docker compose config` + `nginx -t`(template envsubst 포함) 검증 |
+| **Build api-gateway-service** | Java 21 + Gradle build/test + `docker/build-push-action@v6` (`type=gha`, scope `api-gateway-service`) |
+| **Build proxy-service** | Java 21 + Gradle build/test + `docker/build-push-action@v6` (`type=gha`, scope `proxy-service`) |
+| **Build usage-service** | Java 21 + usage-web lint/test/build + usage-service/usage-web 이미지 빌드(`type=gha`) |
+| **Build billing-service** | Java 21 + billing-web lint/test/build + billing-service/billing-web 이미지 빌드(`type=gha`) |
+| **Build team-service** | Java 21 + team-web lint/test/build + team-web 이미지 빌드(`type=gha`) |
+| **Build notification-service** | Nest build + notification-web lint/test/build + notification-service/notification-web 이미지 빌드(`type=gha`) |
+| **Build identity-service** | Java 21 + identity-web lint/test/build + identity-web 이미지 빌드(`type=gha`) |
+| **Build web-mfe remotes** | usage/team `web-mfe` lint/typecheck/build + 각 이미지 빌드(`type=gha`) |
+| **Build web-host** | 현재 `if: false`로 비활성(긴급 우회) |
+| **CI observability metrics** | Actions API로 job duration/결과를 수집해 요약 |
 | **CI summary** | gitleaks 성공 필수, 실행된 빌드·Compose 잡이 `failure`/`cancelled`이면 실패. 스킵된 잡은 허용 (`web` 포함) |
 
 ## Docker 빌드 캐시 (로컬 vs CI)
 
 - **로컬 (`docker compose build` / `up --build`)**: 루트 `docker-compose.yml`에는 **container registry 기반 `cache_from` / `cache_to`를 두지 않는다**. 즉, **팀원은 GHCR 로그인 없이도** 동일한 Compose 명령으로 개발을 시작할 수 있다. 캐시는 각 서비스 Dockerfile의 `RUN --mount=type=cache`(pnpm store, Gradle, Next `.next/cache` 등)로 처리해 반복 빌드 시간을 줄인다.
-- **CI (GitHub Actions)**: BuildKit **GitHub Actions cache**(`type=gha`)로 베이스 이미지 등을 캐시한다. 워크플로 잡 **`build-common-docker`**에서 `docker/setup-buildx-action`과 `docker/build-push-action`을 사용하며, **`scope`** 로 캐시를 분리한다(`web-node-deps`, `backend-node-deps`). 해당 잡은 캐시 저장을 위해 **`actions: write`** 권한이 필요하다([`.github/workflows/ci.yml`](../.github/workflows/ci.yml) 참고).
+- **CI (GitHub Actions)**: 서비스별 job에서 `docker/build-push-action@v6` + BuildKit **`type=gha` cache**를 사용한다. `scope`는 이미지 단위(`api-gateway-service`, `proxy-service`, `usage-service`, `usage-web`, `billing-service`, `billing-web`, `team-web`, `notification-service`, `notification-web`, `identity-web`, `usage-web-mfe`, `team-web-mfe`)로 분리한다.
 
-- **권한 최소화(보안)**: 전역 권한은 `contents: read`, `actions: read`를 유지하고, `cache-to: type=gha`를 실제로 사용하는 잡(현재 `build-common-docker`)에서만 `actions: write`를 잡 단위로 오버라이드한다.
+- **권한 최소화(보안)**: 전역 권한은 `contents: read`, `actions: read`를 유지하고, `cache-to: type=gha`를 사용하는 서비스 빌드 잡에서만 `actions: write`를 잡 단위로 부여한다.
 
-동일 패턴으로 다른 이미지를 빌드할 때 예시는 다음과 같다.
+현재 워크플로의 서비스 이미지 빌드는 아래 패턴으로 통일되어 있다.
 
 ```yaml
 - uses: docker/setup-buildx-action@v3
@@ -43,14 +50,14 @@
     cache-to: type=gha,mode=max,scope=my-scope
 ```
 
-장기적으로 각 잡의 `docker build` CLI 호출을 위 패턴으로 통일하면 서비스별 **`scope`** 로 GHA 캐시 재사용을 일관되게 적용할 수 있다.
+`ci.yml`은 기존 Stage A 공통 이미지(`build-common-*`) 전략을 제거하고, 변경된 서비스만 독립적으로 빌드하도록 정리되어 있다.
 
 ### `scope` 네이밍·용량(10GB) 표준
 
 - **네이밍 규칙**: 이미지 태그(`*-web:ci`)와 동일한 문자열을 `scope`로 사용한다.
   - 예: `identity-web` → `scope=identity-web`, `usage-web` → `scope=usage-web`, `billing-web` → `scope=billing-web`, `team-web` → `scope=team-web`, `notification-web` → `scope=notification-web`
   - MFE(remote)도 동일 규칙 적용: `usage-web-mfe` → `scope=usage-web-mfe`, `team-web-mfe` → `scope=team-web-mfe`
-  - 공통 베이스는 별도(`web-node-deps`, `backend-node-deps`)로 유지한다.
+  - 현재 `ci.yml` 기준 공통 Stage A 캐시는 사용하지 않고, 서비스별 scope 중심으로 운영한다.
 - **용량 정책(무료 티어 10GB)**:
   - 기본값은 **`cache-to: type=gha,mode=min`** (폭증 방지).
   - 캐시 히트율이 낮고 용량 여유가 충분할 때만 특정 scope을 **`mode=max`** 로 상향한다.

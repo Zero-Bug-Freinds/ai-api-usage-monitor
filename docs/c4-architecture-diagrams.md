@@ -3,7 +3,7 @@
 이 문서는 목표 설계가 아니라, 현재 저장소에 존재하는 구현 코드 기준으로
 시스템 아키텍처를 C4 모델(C1 → C4)로 정리한다.
 
-**문서 버전:** 0.8 (Billing web 팀 월 롤업 BFF 하드닝·`BILLING_TEAM_BFF_BASE_URL` 반영)
+**문서 버전:** 0.9 (web-edge `:8888` 단일 진입·Gateway 계층·Proxy→Usage RabbitMQ 비동기 흐름 정합 반영)
 
 분석 대상:
 - **`services/identity-service/web`** (정본: 랜딩·인증·설정/org UI + `/api/auth/**`·`/api/identity/**` BFF)
@@ -36,6 +36,7 @@ flowchart TB
 
     subgraph platform["AI Usage Platform (As-Is)"]
       direction TB
+      webEdge["web-edge<br/>nginx :8888"]
       identityWeb["Identity Web<br/>services/identity-service/web"]
       usageWeb["Usage Web<br/>services/usage-service/web"]
       billingWeb["Billing Web<br/>services/billing-service/web"]
@@ -65,16 +66,18 @@ flowchart TB
       notifDb["PostgreSQL (notification_db)"]
     end
 
-    browser -->|HTTPS| identityWeb
-    browser -->|HTTPS<br/>/dashboard 등| usageWeb
-    browser -->|HTTPS<br/>지출 등| billingWeb
-    browser -->|HTTPS<br/>/notifications| notifWeb
+    browser -->|HTTP 8888| webEdge
+    webEdge -->|/| identityWeb
+    webEdge -->|/dashboard*| usageWeb
+    webEdge -->|/billing*| billingWeb
+    webEdge -->|/notifications*| notifWeb
+    webEdge -->|/api/v1*| gateway
     identityWeb -->|BFF /api/auth·identity| identity
     usageWeb -->|BFF /api/usage| gateway
     billingWeb -->|BFF → /api/v1/expenditure| gateway
     notifWeb -->|BFF| notification
     client -->|Auth API| identity
-    client -->|AI API| gateway
+    client -->|AI API via web-edge| webEdge
     gateway -->|/proxy| proxy
     gateway -->|/api/v1/expenditure| billing
 
@@ -106,6 +109,7 @@ Person(client, "Developer/User", "Auth and AI API consumer")
 Person(browserUser, "Browser user", "Web UI and same-origin BFF")
 
 System_Boundary(platform, "AI Usage Platform") {
+    Container(webEdge, "web-edge", "Nginx", "단일 진입점 :8888; /api/v1*→Gateway; path 기반 web 분기")
     Container(idWeb, "Identity Web", "Next.js 15", "랜딩·인증·설정; rewrites→타 도메인 web; /api/auth/* · /api/identity/* BFF")
     Container(usWeb, "Usage Web", "Next.js 15", "대시보드; /api/usage/* BFF → Gateway; web-mfe=MF remote")
     Container(billWeb, "Billing Web", "Next.js 15", "지출·비용; /api/expenditure/* BFF → Gateway /api/v1/expenditure")
@@ -116,7 +120,7 @@ System_Boundary(platform, "AI Usage Platform") {
     Container(usage, "Usage Service", "Spring + MQ + JPA", "Consume usage-recorded + usage.cost.finalized; usage log + api key metadata")
     Container(billing, "Billing Service", "Spring + MQ + JPA", "Consume usage-recorded; cost aggregates; publish usage.cost.finalized; optional Identity budget HTTP")
     Container(team, "Team Service", "Spring + JPA + MQ", "Team domain + account deletion coordination listener")
-    Container(notification, "Notification Service", "NestJS + Prisma", "In-app notifications API; MQ consumer는 로드맵(architecture §12)")
+    Container(notification, "Notification Service", "NestJS + Prisma", "In-app notifications API + team.events MQ consumer")
 
     ContainerQueue(rabbit, "RabbitMQ", "AMQP", "usage.events(usage.recorded), billing.events(usage.cost.finalized), account-deletion events")
     ContainerDb(appDb, "PostgreSQL (app)", "RDB", "Identity domain data")
@@ -129,16 +133,18 @@ System_Ext(openai, "OpenAI API", "LLM provider")
 System_Ext(anthropic, "Anthropic API", "LLM provider")
 System_Ext(google, "Google Gemini API", "LLM provider")
 
-Rel(browserUser, idWeb, "HTTPS UI + rewrites로 /dashboard 등 위임", "HTTPS")
-Rel(browserUser, usWeb, "HTTPS /dashboard + /api/usage/*", "HTTPS")
-Rel(browserUser, billWeb, "HTTPS 지출 UI + /api/expenditure/* BFF", "HTTPS")
-Rel(browserUser, ntfWeb, "HTTPS /notifications + BFF", "HTTPS")
+Rel(browserUser, webEdge, "HTTP :8888 단일 진입", "HTTP")
+Rel(webEdge, idWeb, "default /", "HTTP")
+Rel(webEdge, usWeb, "/dashboard* + usage BFF", "HTTP")
+Rel(webEdge, billWeb, "/billing* + expenditure BFF", "HTTP")
+Rel(webEdge, ntfWeb, "/notifications* + notification BFF", "HTTP")
+Rel(webEdge, gateway, "/api/v1*", "HTTP")
 Rel(idWeb, identity, "auth/settings/org BFF → Identity REST", "HTTPS")
 Rel(usWeb, gateway, "usage BFF → /api/v1/usage/...", "HTTPS")
 Rel(billWeb, gateway, "expenditure BFF → /api/v1/expenditure", "HTTPS")
 Rel(ntfWeb, notification, "notification BFF → REST", "HTTPS")
 Rel(client, identity, "auth API direct", "HTTPS")
-Rel(client, gateway, "AI request", "HTTPS")
+Rel(client, webEdge, "AI request /api/v1/ai/**", "HTTP")
 Rel(gateway, proxy, "forward + trust headers", "HTTP")
 Rel(gateway, billing, "billing-http route", "HTTP")
 
@@ -228,7 +234,7 @@ flowchart TB
   BL -.->|IdentityBudgetClient (optional)| ID
 ```
 
-**C3 보충:** `Notification Service` 는 브라우저 BFF → REST·DB 중심이며, 본 절의 핵심 메시지 흐름(Proxy→MQ→Usage/Billing)과는 별도로 `docs/architecture.md` §12·`docs/contracts/web-notification-bff.md` 를 본다.
+**C3 보충:** `Notification Service` 는 브라우저 BFF → REST·DB 경로 외에도 team 도메인 RabbitMQ 이벤트를 소비한다. 본 절 핵심은 Proxy→MQ→Usage/Billing 비동기 체인이며, 알림 경로는 `docs/architecture.md` §6·§12 및 `docs/contracts/web-notification-bff.md`를 함께 본다.
 
 ## C4 - Code Diagram (Proxy Relay Core)
 

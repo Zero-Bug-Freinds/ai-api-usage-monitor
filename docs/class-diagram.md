@@ -24,6 +24,8 @@ class GatewaySecurityConfiguration
 class JwtDecoderConfiguration
 class GatewayProperties
 class ReactiveJwtDecoder
+class SecurityWebFiltersOrder
+class UserContextResolver
 class UsageAnalyticsController
 class UsageDashboardService
 class UsageRecordedEventListener
@@ -42,6 +44,8 @@ BillingUsageRecordedEventListener --> BillingRecordedService
 BillingUsageRecordedEventListener ..> UsageRecordedEvent : deserializes
 
 ProxyTrustHeadersWebFilter --> GatewayProperties
+ProxyTrustHeadersWebFilter ..> SecurityWebFiltersOrder : runs after AUTHORIZATION
+ProxyTrustHeadersWebFilter --> UserContextResolver : downstream X-User-Id source
 GatewaySecurityConfiguration --> GatewayProperties
 GatewaySecurityConfiguration ..> ReactiveJwtDecoder
 JwtDecoderConfiguration --> GatewayProperties
@@ -261,6 +265,7 @@ UsageJacksonConfiguration ..> ObjectMapper
 UsageRecordedEventListener --> ObjectMapper
 UsageRecordedEventListener --> UsageRecordedService
 UsageRecordedEventListener ..> UsageRecordedEvent
+UsageRecordedEventListener --> UsageRabbitProperties : listens usage.rabbit.queue
 UsageCostFinalizedEventListener --> ObjectMapper
 UsageCostFinalizedEventListener --> UsageCostFinalizedService
 UsageRecordedService --> UsageRecordedLogRepository
