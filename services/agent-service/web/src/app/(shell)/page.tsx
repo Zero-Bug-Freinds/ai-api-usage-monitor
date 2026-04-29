@@ -28,6 +28,22 @@ type AvailableKeyContext = {
   billingThresholdPct?: number
 }
 
+type TeamBoardItem = {
+  teamId: number
+  teamApiKeyId: number
+  ownerUserId?: string | null
+  visibility?: string | null
+  alias: string
+  provider: string
+  status: string
+}
+
+type UserContext = {
+  userId: number
+  activeTeamId?: number | null
+  role?: string | null
+}
+
 type AnalysisResult = {
   keyId: number
   keyLabel: string
@@ -48,11 +64,19 @@ function statusClassName(status: string): string {
   return "bg-emerald-100 text-emerald-700"
 }
 
+function formatThresholdPercent(value?: number): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return ""
+  const normalized = value <= 1 ? value * 100 : value
+  return `${Math.round(normalized)}%`
+}
+
 export default function AgentPage() {
   const [loading, setLoading] = useState<boolean>(false)
   const [loadingMessage, setLoadingMessage] = useState<string>("")
   const [results, setResults] = useState<AnalysisResult[]>([])
   const [keys, setKeys] = useState<AvailableKeyContext[]>([])
+  const [teamBoard, setTeamBoard] = useState<TeamBoardItem[]>([])
+  const [userContext, setUserContext] = useState<UserContext | null>(null)
   const [bootstrapError, setBootstrapError] = useState<string>("")
   const [note, setNote] = useState<string>("")
 
@@ -72,6 +96,8 @@ export default function AgentPage() {
       }
       const payload = (await response.json()) as {
         note?: string
+        userContext?: UserContext | null
+        teamBoard?: TeamBoardItem[]
         data?: Array<{
           keyId: number
           alias: string
@@ -97,6 +123,8 @@ export default function AgentPage() {
           providerStats: item.providerStats,
         })) ?? []
       setKeys(normalized)
+      setTeamBoard(payload.teamBoard ?? [])
+      setUserContext(payload.userContext ?? null)
       setNote(payload.note ?? "")
     } catch (error) {
       const message = error instanceof Error ? error.message : "컨텍스트 조회 실패"
@@ -109,10 +137,6 @@ export default function AgentPage() {
 
     setLoading(true)
     setResults([])
-    if (keys.length === 0) {
-      setLoading(false)
-      return
-    }
     const billingCycleEndDate = buildBillingCycleEndDate()
     const nextResults: AnalysisResult[] = []
 
@@ -182,12 +206,32 @@ export default function AgentPage() {
           ) : null}
           {note ? <p className="text-xs text-muted-foreground">{note}</p> : null}
           <ul className="space-y-1 text-sm text-muted-foreground">
-            {keys.map((item) => (
+            {keys.map((item: AvailableKeyContext) => (
               <li key={item.keyId} className="rounded-md border px-2 py-1">
                 {item.keyLabel} ({item.provider}) · ${item.monthlyBudgetUsd}
-                {item.billingThresholdPct ? ` · 임계치 ${Math.round(item.billingThresholdPct * 100)}%` : ""}
+                {item.billingThresholdPct ? ` · 임계치 ${formatThresholdPercent(item.billingThresholdPct)}` : ""}
               </li>
             ))}
+          </ul>
+        </div>
+
+        <div className="space-y-2">
+          <h3 className="text-sm font-semibold">팀 보드</h3>
+          <p className="text-xs text-muted-foreground">
+            {userContext?.activeTeamId
+              ? `활성 팀: ${userContext.activeTeamId} / 역할: ${userContext.role ?? "-"}`
+              : "활성 팀 컨텍스트가 없습니다."}
+          </p>
+          <ul className="space-y-1 text-sm text-muted-foreground">
+            {teamBoard.map((item: TeamBoardItem) => (
+              <li key={`${item.teamId}-${item.teamApiKeyId}`} className="rounded-md border px-2 py-1">
+                T{item.teamId} · {item.alias} ({item.provider}) · {item.status}
+                {item.visibility ? ` · ${item.visibility}` : ""}
+              </li>
+            ))}
+            {teamBoard.length === 0 ? (
+              <li className="rounded-md border border-dashed px-2 py-1 text-xs">표시할 팀 키가 없습니다.</li>
+            ) : null}
           </ul>
         </div>
 
@@ -221,7 +265,7 @@ export default function AgentPage() {
         ) : null}
 
         {!loading && results.length > 0
-          ? results.map((result) => (
+          ? results.map((result: AnalysisResult) => (
               <article key={result.keyId} className="space-y-3 rounded-xl border bg-card p-4">
                 <div className="flex items-center justify-between gap-2">
                   <h2 className="text-lg font-semibold">{result.keyLabel} ({result.provider})</h2>
@@ -249,7 +293,7 @@ export default function AgentPage() {
                     <div className="rounded-md bg-muted p-3 text-sm">{result.data.assistantMessage}</div>
 
                     <ul className="list-disc space-y-1 pl-5 text-sm">
-                      {result.data.recommendedActions.map((action) => (
+                      {result.data.recommendedActions.map((action: string) => (
                         <li key={`${result.keyId}-${action}`}>{action}</li>
                       ))}
                     </ul>

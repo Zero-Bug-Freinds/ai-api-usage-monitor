@@ -458,6 +458,8 @@ public sealed interface TeamDomainOutboundEvent permits
 			@JsonProperty("teamId")
 			Long teamIdValue,
 			Long teamApiKeyId,
+			String ownerUserId,
+			String visibility,
 			String alias,
 			String provider,
 			TeamApiKeyStatus status,
@@ -473,6 +475,8 @@ public sealed interface TeamDomainOutboundEvent permits
 		public static TeamApiKeyStatusChangedEvent of(
 				Long teamId,
 				Long teamApiKeyId,
+				String ownerUserId,
+				String visibility,
 				String alias,
 				String provider,
 				TeamApiKeyStatus status,
@@ -485,6 +489,8 @@ public sealed interface TeamDomainOutboundEvent permits
 					Instant.now(),
 					teamId,
 					teamApiKeyId,
+					ownerUserId,
+					visibility,
 					alias,
 					provider,
 					status,

@@ -437,11 +437,21 @@ public class TeamApiKeyService {
                 TeamApiKeyStatusChangedEvent.of(
                         teamId,
                         teamApiKeyId,
+                        resolveOwnerUserId(teamId),
+                        "TEAM",
                         alias,
                         provider,
                         status,
                         retainLogs
                 )
         );
+    }
+
+    private String resolveOwnerUserId(Long teamId) {
+        return teamMemberRepository.findAllByTeamId(teamId).stream()
+                .filter(member -> member.getRole() == TeamMemberRole.OWNER)
+                .map(TeamMemberEntity::getUserId)
+                .findFirst()
+                .orElse(null);
     }
 }

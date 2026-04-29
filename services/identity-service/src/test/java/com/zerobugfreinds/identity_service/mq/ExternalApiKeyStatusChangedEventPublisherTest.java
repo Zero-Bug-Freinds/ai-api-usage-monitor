@@ -34,7 +34,8 @@ class ExternalApiKeyStatusChangedEventPublisherTest {
 		ExternalApiKeyStatusChangedEventPublisher publisher = new ExternalApiKeyStatusChangedEventPublisher(
 				rabbitTemplate,
 				"identity.events",
-				"identity.external-api-key.status-changed"
+				"identity.external-api-key.status-changed",
+				"identity.user.context-changed"
 		);
 
 		ExternalApiKeyStatusChangedEvent event = ExternalApiKeyStatusChangedEvent.of(
@@ -59,6 +60,7 @@ class ExternalApiKeyStatusChangedEventPublisherTest {
 		assertThat(node.get("keyId").asLong()).isEqualTo(10L);
 		assertThat(node.get("alias").asText()).isEqualTo("Main key");
 		assertThat(node.get("userId").asLong()).isEqualTo(99L);
+		assertThat(node.get("visibility").asText()).isEqualTo("PRIVATE");
 		assertThat(node.get("provider").asText()).isEqualTo("OPENAI");
 		assertThat(node.get("status").asText()).isEqualTo("ACTIVE");
 		assertThat(node.hasNonNull("occurredAt")).isTrue();
@@ -69,7 +71,8 @@ class ExternalApiKeyStatusChangedEventPublisherTest {
 		ExternalApiKeyStatusChangedEventPublisher publisher = new ExternalApiKeyStatusChangedEventPublisher(
 				rabbitTemplate,
 				"identity.events",
-				"identity.external-api-key.status-changed"
+				"identity.external-api-key.status-changed",
+				"identity.user.context-changed"
 		);
 
 		ExternalApiKeyDeletedEvent deleted = ExternalApiKeyDeletedEvent.of(
@@ -105,7 +108,8 @@ class ExternalApiKeyStatusChangedEventPublisherTest {
 		ExternalApiKeyStatusChangedEventPublisher publisher = new ExternalApiKeyStatusChangedEventPublisher(
 				rabbitTemplate,
 				"identity.events",
-				"identity.external-api-key.status-changed"
+				"identity.external-api-key.status-changed",
+				"identity.user.context-changed"
 		);
 
 		ExternalApiKeyBudgetChangedEvent event = ExternalApiKeyBudgetChangedEvent.of(
@@ -131,6 +135,7 @@ class ExternalApiKeyStatusChangedEventPublisherTest {
 		assertThat(node.get("schemaVersion").asInt()).isEqualTo(ExternalApiKeyBudgetChangedEvent.CURRENT_SCHEMA_VERSION);
 		assertThat(node.get("keyId").asLong()).isEqualTo(10L);
 		assertThat(node.get("userId").asLong()).isEqualTo(99L);
+		assertThat(node.get("visibility").asText()).isEqualTo("PRIVATE");
 		assertThat(node.get("monthlyBudgetUsd").asText()).isEqualTo("123.45");
 		assertThat(node.get("status").asText()).isEqualTo("ACTIVE");
 		assertThat(node.hasNonNull("occurredAt")).isTrue();

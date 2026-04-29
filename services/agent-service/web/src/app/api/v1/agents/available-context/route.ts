@@ -2,10 +2,28 @@ import { NextResponse } from "next/server"
 
 type IdentitySnapshot = {
   keyId: number
+  userId: number
+  alias: string
+  provider: string
+  visibility?: string
+  status: string
+  monthlyBudgetUsd?: number | null
+}
+
+type UserContextSnapshot = {
+  userId: number
+  activeTeamId?: number | null
+  role?: string | null
+}
+
+type TeamApiKeySnapshot = {
+  teamId: number
+  teamApiKeyId: number
+  ownerUserId?: string | null
+  visibility?: string | null
   alias: string
   provider: string
   status: string
-  monthlyBudgetUsd?: number | null
 }
 
 type BillingSignal = {
@@ -19,7 +37,7 @@ type BillingSignal = {
 }
 
 function backendOrigin(): string {
-  return (process.env.AI_AGENT_SERVICE_INTERNAL_ORIGIN ?? "http://host.docker.internal:8096").replace(/\/$/, "")
+  return (process.env.AI_AGENT_SERVICE_INTERNAL_ORIGIN ?? "http://agent-service:8096").replace(/\/$/, "")
 }
 
 function toNumber(value: unknown, fallback = 0): number {
@@ -33,16 +51,20 @@ function toNumber(value: unknown, fallback = 0): number {
 
 export async function GET() {
   try {
-    const [keysRes, billingRes] = await Promise.all([
+    const [keysRes, billingRes, userContextsRes, teamKeysRes] = await Promise.all([
       fetch(`${backendOrigin()}/api/v1/agents/identity-api-keys`, { cache: "no-store" }),
       fetch(`${backendOrigin()}/api/v1/agents/billing-signals`, { cache: "no-store" }),
+      fetch(`${backendOrigin()}/api/v1/agents/user-contexts`, { cache: "no-store" }),
+      fetch(`${backendOrigin()}/api/v1/agents/team-api-keys`, { cache: "no-store" }),
     ])
 
     const keys = (keysRes.ok ? ((await keysRes.json()) as IdentitySnapshot[]) : []) ?? []
     const billingSignals = (billingRes.ok ? ((await billingRes.json()) as BillingSignal[]) : []) ?? []
+    const userContexts = (userContextsRes.ok ? ((await userContextsRes.json()) as UserContextSnapshot[]) : []) ?? []
+    const teamApiKeys = (teamKeysRes.ok ? ((await teamKeysRes.json()) as TeamApiKeySnapshot[]) : []) ?? []
     const billingByKeyId = new Map<string, BillingSignal>(billingSignals.map((item) => [item.apiKeyId, item]))
 
-    const data = keys.map((key) => {
+    const personalKeys = keys.map((key) => {
       const signal = billingByKeyId.get(String(key.keyId))
       const currentSpendUsd = toNumber(signal?.latestEstimatedCostUsd, 0)
       const thresholdPct = toNumber(signal?.budgetThreshold?.thresholdPct, 0)
@@ -64,9 +86,28 @@ export async function GET() {
       }
     })
 
+    const activeTeamContext = userContexts.find((ctx) => ctx.activeTeamId != null) ?? null
+    const activeTeamId = activeTeamContext?.activeTeamId ?? null
+    const teamBoard =
+      activeTeamId == null
+        ? []
+        : teamApiKeys
+            .filter((item) => item.teamId === activeTeamId)
+            .map((item) => ({
+              teamId: item.teamId,
+              teamApiKeyId: item.teamApiKeyId,
+              ownerUserId: item.ownerUserId,
+              visibility: item.visibility ?? "TEAM",
+              alias: item.alias,
+              provider: item.provider,
+              status: item.status,
+            }))
+
     return NextResponse.json({
-      data,
-      note: "RabbitMQ 이벤트 스냅샷 기반(Identity + Billing). 테스트 DB 조회는 사용하지 않습니다.",
+      data: personalKeys,
+      userContext: activeTeamContext,
+      teamBoard,
+      note: "RabbitMQ 이벤트 스냅샷 기반(Identity + Team + Billing). 테스트 DB 조회는 사용하지 않습니다.",
     })
   } catch {
     return NextResponse.json(

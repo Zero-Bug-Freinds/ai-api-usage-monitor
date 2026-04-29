@@ -25,8 +25,10 @@ coverage/
 
 # --- Gradle ---
 .gradle/
+.gradle-agent-temp-cache/
 # IDE/ stray outputs next to services (sources live under src/; prefer build/)
 services/*/bin/
+*.hprof
 
 # --- IDE / OS ---
 .idea/

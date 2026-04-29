@@ -4,10 +4,12 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zerobugfreinds.ai_agent_service.service.EventDebugService;
 import com.zerobugfreinds.ai_agent_service.service.IdentityApiKeySnapshotService;
+import com.zerobugfreinds.ai_agent_service.service.UserContextSnapshotService;
 import com.zerobugfreinds.identity.events.ExternalApiKeyBudgetChangedEvent;
 import com.zerobugfreinds.identity.events.ExternalApiKeyDeletedEvent;
 import com.zerobugfreinds.identity.events.ExternalApiKeyStatusChangedEvent;
 import com.zerobugfreinds.identity.events.IdentityExternalApiKeyEventTypes;
+import com.zerobugfreinds.identity.events.UserContextChangedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.Message;
@@ -32,15 +34,18 @@ public class IdentityExternalApiKeyEventListener {
 
 	private final ObjectMapper objectMapper;
 	private final IdentityApiKeySnapshotService snapshotService;
+	private final UserContextSnapshotService userContextSnapshotService;
 	private final EventDebugService eventDebugService;
 
 	public IdentityExternalApiKeyEventListener(
 			ObjectMapper objectMapper,
 			IdentityApiKeySnapshotService snapshotService,
+			UserContextSnapshotService userContextSnapshotService,
 			EventDebugService eventDebugService
 	) {
 		this.objectMapper = objectMapper;
 		this.snapshotService = snapshotService;
+		this.userContextSnapshotService = userContextSnapshotService;
 		this.eventDebugService = eventDebugService;
 	}
 
@@ -65,6 +70,12 @@ public class IdentityExternalApiKeyEventListener {
 					snapshotService.upsertBudget(budgetChanged);
 					return;
 				}
+				if (IdentityExternalApiKeyEventTypes.USER_CONTEXT_CHANGED.equals(eventType)) {
+					UserContextChangedEvent userContextChanged =
+							objectMapper.treeToValue(root, UserContextChangedEvent.class);
+					userContextSnapshotService.upsert(userContextChanged);
+					return;
+				}
 			}
 			if (root.has("schemaVersion")) {
 				eventDebugService.record("ExternalApiKeyStatusChangedEvent", headers, json);
@@ -76,8 +87,9 @@ public class IdentityExternalApiKeyEventListener {
 			eventDebugService.record("UNKNOWN_IDENTITY_EVENT", headers, json);
 			log.warn("Unrecognized identity external API key event payload");
 		} catch (Exception ex) {
-			log.error("Failed to handle identity external API key event", ex);
-			throw new IllegalStateException("identity external api key event handling failed", ex);
+			String messageId = message.getMessageProperties().getMessageId();
+			log.error("Failed to handle identity external API key event. messageId={}", messageId, ex);
+			throw new IllegalStateException("Failed to process identity external API key event", ex);
 		}
 	}
 

@@ -33,6 +33,7 @@ public class IdentityApiKeySnapshotService {
 						event.userId(),
 						event.alias(),
 						event.provider(),
+						event.visibility(),
 						event.status().name(),
 						budget,
 						updatedAt
@@ -56,6 +57,10 @@ public class IdentityApiKeySnapshotService {
 		if ((provider == null || provider.isBlank()) && current != null) {
 			provider = current.provider();
 		}
+		String visibility = event.visibility();
+		if ((visibility == null || visibility.isBlank()) && current != null) {
+			visibility = current.visibility();
+		}
 		String status = event.status() != null ? event.status().name() : (current != null ? current.status() : "ACTIVE");
 
 		userKeys.put(
@@ -65,6 +70,7 @@ public class IdentityApiKeySnapshotService {
 						event.userId(),
 						alias,
 						provider,
+						visibility,
 						status,
 						event.monthlyBudgetUsd(),
 						updatedAt
@@ -105,6 +111,7 @@ public class IdentityApiKeySnapshotService {
 			Long userId,
 			String alias,
 			String provider,
+			String visibility,
 			String status,
 			BigDecimal monthlyBudgetUsd,
 			Instant updatedAt

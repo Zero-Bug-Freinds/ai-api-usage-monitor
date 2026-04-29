@@ -30,6 +30,9 @@ public record ExternalApiKeyBudgetChangedEvent(
 		@JsonProperty("userId")
 		Long userId,
 
+		@JsonProperty("visibility")
+		String visibility,
+
 		@JsonProperty("provider")
 		String provider,
 
@@ -56,6 +59,7 @@ public record ExternalApiKeyBudgetChangedEvent(
 				keyId,
 				alias,
 				userId,
+				"PRIVATE",
 				provider,
 				status,
 				monthlyBudgetUsd

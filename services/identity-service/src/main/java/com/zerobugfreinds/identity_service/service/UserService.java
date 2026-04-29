@@ -12,10 +12,12 @@ import com.zerobugfreinds.identity_service.exception.InvalidSignupRequestExcepti
 import com.zerobugfreinds.identity_service.repository.RefreshTokenRepository;
 import com.zerobugfreinds.identity_service.repository.UserRepository;
 import com.zerobugfreinds.identity_service.security.JwtTokenProvider;
+import com.zerobugfreinds.identity.events.UserContextChangedEvent;
 import io.jsonwebtoken.Claims;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,19 +43,22 @@ public class UserService {
 	private final PasswordEncoder passwordEncoder;
 	private final JwtTokenProvider jwtTokenProvider;
 	private final TeamMembershipVerificationClient teamMembershipVerificationClient;
+	private final ApplicationEventPublisher applicationEventPublisher;
 
 	public UserService(
 			UserRepository userRepository,
 			RefreshTokenRepository refreshTokenRepository,
 			PasswordEncoder passwordEncoder,
 			JwtTokenProvider jwtTokenProvider,
-			TeamMembershipVerificationClient teamMembershipVerificationClient
+			TeamMembershipVerificationClient teamMembershipVerificationClient,
+			ApplicationEventPublisher applicationEventPublisher
 	) {
 		this.userRepository = userRepository;
 		this.refreshTokenRepository = refreshTokenRepository;
 		this.passwordEncoder = passwordEncoder;
 		this.jwtTokenProvider = jwtTokenProvider;
 		this.teamMembershipVerificationClient = teamMembershipVerificationClient;
+		this.applicationEventPublisher = applicationEventPublisher;
 	}
 
 	/**
@@ -191,6 +196,9 @@ public class UserService {
 		String accessToken = jwtTokenProvider.createAccessToken(user, activeTeamId);
 		String refreshToken = jwtTokenProvider.createRefreshToken(user, activeTeamId);
 		replaceRefreshToken(user.getId(), refreshToken, activeTeamId);
+		applicationEventPublisher.publishEvent(
+				UserContextChangedEvent.of(user.getId(), activeTeamId, user.getRole().name())
+		);
 		return new TokenResponse(
 				accessToken,
 				refreshToken,
