@@ -13,7 +13,8 @@ param(
         'team-service',
         'billing-service',
         'api-gateway-service',
-        'proxy-service'
+        'proxy-service',
+        'llm-proxy-service'
     )]
     [string] $Service,
 
@@ -44,6 +45,7 @@ switch ($Service) {
     'usage-service' { if (-not $env:USAGE_SERVICE_PORT) { $env:USAGE_SERVICE_PORT = '8092' } }
     'team-service' { if (-not $env:TEAM_SERVICE_PORT) { $env:TEAM_SERVICE_PORT = '8094' } }
     'billing-service' { if (-not $env:BILLING_SERVICE_PORT) { $env:BILLING_SERVICE_PORT = '8095' } }
+    'llm-proxy-service' { if (-not $env:LLM_PROXY_SERVICE_PORT) { $env:LLM_PROXY_SERVICE_PORT = '8096' } }
     Default { }
 }
 
