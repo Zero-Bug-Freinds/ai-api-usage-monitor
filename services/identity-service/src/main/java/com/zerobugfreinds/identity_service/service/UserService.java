@@ -15,6 +15,7 @@ import com.zerobugfreinds.identity_service.security.JwtTokenProvider;
 import io.jsonwebtoken.Claims;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,6 +26,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 /**
@@ -60,18 +62,24 @@ public class UserService {
 	@Transactional
 	public SignupResponse signup(SignupRequest request) {
 		validateSignupRequest(request);
+		String normalizedEmail = normalizeEmail(request.email());
 
-		if (userRepository.existsByEmail(request.email())) {
+		if (userRepository.existsByEmailIgnoreCase(normalizedEmail)) {
 			throw new DuplicateEmailException("이미 사용 중인 이메일입니다");
 		}
 		String encodedPassword = passwordEncoder.encode(request.password());
 		User user = new User(
-				request.email(),
+				normalizedEmail,
 				encodedPassword,
 				request.name(),
 				request.role()
 		);
-		User saved = userRepository.save(user);
+		User saved;
+		try {
+			saved = userRepository.save(user);
+		} catch (DataIntegrityViolationException ex) {
+			throw new DuplicateEmailException("이미 사용 중인 이메일입니다");
+		}
 		return new SignupResponse(saved.getId(), saved.getEmail(), saved.getName(), saved.getRole());
 	}
 
@@ -86,7 +94,8 @@ public class UserService {
 	 */
 	@Transactional
 	public TokenResponse login(LoginRequest request) {
-		User user = userRepository.findByEmail(request.email())
+		String normalizedEmail = normalizeEmail(request.email());
+		User user = userRepository.findByEmailIgnoreCase(normalizedEmail)
 				.orElseThrow(() -> new InvalidCredentialsException("이메일 또는 비밀번호가 올바르지 않습니다"));
 
 		if (!passwordEncoder.matches(request.password(), user.getPassword())) {
@@ -131,7 +140,7 @@ public class UserService {
 		if (email == null || email.isBlank()) {
 			return false;
 		}
-		return userRepository.existsByEmail(email.trim());
+		return userRepository.existsByEmailIgnoreCase(normalizeEmail(email));
 	}
 
 	@Transactional(readOnly = true)
@@ -169,9 +178,13 @@ public class UserService {
 			return userRepository.findById(userId)
 					.orElseThrow(() -> new InvalidCredentialsException("사용자 정보를 찾을 수 없습니다"));
 		} catch (NumberFormatException ignored) {
-			return userRepository.findByEmail(normalized)
+			return userRepository.findByEmailIgnoreCase(normalizeEmail(normalized))
 					.orElseThrow(() -> new InvalidCredentialsException("사용자 정보를 찾을 수 없습니다"));
 		}
+	}
+
+	private static String normalizeEmail(String email) {
+		return email.trim().toLowerCase(Locale.ROOT);
 	}
 
 	private TokenResponse issueTokenPair(User user, Long activeTeamId) {
