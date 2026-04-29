@@ -311,6 +311,18 @@ public class TeamService {
 						lookupCandidates,
 						TeamInvitationStatus.PENDING
 				);
+		if (includeExpired) {
+			List<TeamInvitationEntity> inviterExpiredInvitations =
+					teamInvitationRepository.findAllByInviterIdInAndStatusOrderByCreatedAtDesc(
+							lookupCandidates,
+							TeamInvitationStatus.EXPIRED
+					);
+			if (!inviterExpiredInvitations.isEmpty()) {
+				List<TeamInvitationEntity> merged = new ArrayList<>(invitations);
+				merged.addAll(inviterExpiredInvitations);
+				invitations = merged;
+			}
+		}
 		if (invitations.isEmpty()) {
 			return List.of();
 		}
@@ -335,6 +347,7 @@ public class TeamService {
 					team.getName(),
 					invitation.getInviterId(),
 					invitation.getInviteeId(),
+					resolveViewerRole(invitation, lookupCandidates),
 					invitation.getStatus().name(),
 					invitation.getCreatedAt(),
 					invitation.getRespondedAt()
@@ -555,5 +568,16 @@ public class TeamService {
 			byId.putIfAbsent(invitation.getId(), invitation);
 		}
 		return new ArrayList<>(byId.values());
+	}
+
+	private String resolveViewerRole(TeamInvitationEntity invitation, List<String> lookupCandidates) {
+		Set<String> candidateSet = new HashSet<>(lookupCandidates);
+		if (candidateSet.contains(invitation.getInviterId())) {
+			return "INVITER";
+		}
+		if (candidateSet.contains(invitation.getInviteeId())) {
+			return "INVITEE";
+		}
+		return "UNKNOWN";
 	}
 }

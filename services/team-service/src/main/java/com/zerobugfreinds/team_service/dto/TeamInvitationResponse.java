@@ -8,6 +8,7 @@ public record TeamInvitationResponse(
 		String teamName,
 		String inviterId,
 		String inviteeId,
+		String viewerRole,
 		String status,
 		Instant createdAt,
 		Instant respondedAt
