@@ -13,16 +13,6 @@
 
 | 잡 | 설명 |
 |----|------|
-<<<<<<< HEAD
-| **Detect changed paths** | `dorny/paths-filter`로 `services/identity-service/**`, `services/agent-service/**`, `services/proxy-service/**`, `services/api-gateway-service/**`, `services/usage-service/**`, `libs/identity-events/**`, `libs/usage-events/**`, `services/*/web/**`, `packages/ui/**`, 루트 `pnpm-workspace.yaml`·`package.json`·`pnpm-lock.yaml`, `.github/workflows/**` 변경 감지 |
-| **Secret scan (gitleaks)** | 매 실행마다 저장소 스캔(§8.2). 루트 **`.env.example`** 에는 팀 합의 **로컬 전용 플레이스홀더**(`GATEWAY_SHARED_SECRET` 등)가 문서화되어 있으며, 오탐 방지를 위해 [`.gitleaks.toml`](../.gitleaks.toml) allowlist에 포함한다. |
-| **Validate docker-compose.yml** | `docker compose config`로 문법 검증(§10) |
-| **Build identity-service** | Java 21(Temurin), Gradle 캐시, `./gradlew build` — 위 경로 필터 또는 워크플로 변경 시에만 실행 |
-| **Build agent-service** | Java 21(Temurin), Gradle 캐시, `gradle build` + `services/agent-service/web` lint/build + web Docker build — agent/공통 web 변경 시 실행 |
-| **Build proxy-gateway-service** | 동일 — proxy·gateway·`libs/usage-events`·워크플로 변경 시 실행 |
-| **Build usage-service** | 동일 — usage·`libs/usage-events`·워크플로 변경 시 실행 |
-| **Build web (lint/test/build)** | Node 22, **pnpm** 9, 저장소 루트 `pnpm install --frozen-lockfile` 후 각 `web`에 `pnpm --filter …` 로 lint·test·`pnpm run build:web`, **`docker build -f services/…/web/Dockerfile`**(context `.`) 등 — 팀 표준 프론트는 **Next.js 15**·**React 19**(`package.json` 정본). 경로: `services/**/web/**`, `packages/ui/**`, 루트 pnpm·워크플로 변경 시 실행(`web-mfe` 독립 잡은 후속 도입 가능) |
-=======
 | **Detect changed paths** | `dorny/paths-filter`로 `web_edge`, `api_gateway`, `identity`, `proxy`, `usage`, `billing`, `team`, `notification`, `web_host`, `web_mfe`, `web_shared`, `workflows` 변경 감지 |
 | **Secret scan (gitleaks)** | 매 실행마다 저장소 스캔(§8.2). 루트 **`.env.example`** 에는 팀 합의 **로컬 전용 플레이스홀더**(`GATEWAY_SHARED_SECRET` 등)가 문서화되어 있으며, 오탐 방지를 위해 [`.gitleaks.toml`](../.gitleaks.toml) allowlist에 포함한다. |
 | **Validate docker-compose.yml** | `docker compose config`로 문법 검증(§10) |
@@ -37,7 +27,6 @@
 | **Build web-mfe remotes** | usage/team `web-mfe` lint/typecheck/build + 각 이미지 빌드(`type=gha`) |
 | **Build web-host** | 현재 `if: false`로 비활성(긴급 우회) |
 | **CI observability metrics** | Actions API로 job duration/결과를 수집해 요약 |
->>>>>>> aedeccc40c9e05e7d21faddf39bad4cf06d5ec66
 | **CI summary** | gitleaks 성공 필수, 실행된 빌드·Compose 잡이 `failure`/`cancelled`이면 실패. 스킵된 잡은 허용 (`web` 포함) |
 
 ## Docker 빌드 캐시 (로컬 vs CI)
