@@ -57,6 +57,7 @@
 
 - `GET /agent/api/v1/agents/available-context`
   - 개인 API Key + 팀 API Key + Billing Signal + User Context를 합쳐 UI에 전달
+  - 팀명은 괄호 메타정보를 제거한 표시명으로 정규화한다. 예: `Platform Team (T-12)` -> `Platform Team`
 - `POST /agent/api/v1/agents/budget-forecast-assistant`
   - 백엔드 `budget-forecast-assistant` API 프록시
 
@@ -87,3 +88,5 @@
 - `available-context`와 `budget-forecast-assistant` BFF의 기본 백엔드 오리진을 동일하게 정리했다.
 - Identity 이벤트 리스너에서 예외를 삼키지 않고 재전파하도록 수정했다.
 - UI의 임계치 퍼센트 표기 로직을 보정하고, 중복된 빈 목록 가드를 제거했다.
+- 팀 보드 목록은 팀명 대신 팀 API Key 별명(alias) 중심으로 표시하도록 조정했다.
+- `available-context` 응답의 팀명은 괄호 포함 부가 텍스트를 제거한 값으로 통일했다.
