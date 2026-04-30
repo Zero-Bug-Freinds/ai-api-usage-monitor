@@ -178,7 +178,7 @@ export async function GET(request: Request) {
     ])
     const teamCatalog = await fetchTeamCatalogFromTeamService(request)
 
-    let teamApiKeys = teamCatalog.keys.length > 0 ? teamCatalog.keys : snapshotTeamApiKeys
+    const teamApiKeys = teamCatalog.keys.length > 0 ? teamCatalog.keys : snapshotTeamApiKeys
     const billingByKeyId = new Map<string, BillingSignal>(billingSignals.map((item) => [item.apiKeyId, item]))
 
     const personalKeys = keys.map((key) => {
