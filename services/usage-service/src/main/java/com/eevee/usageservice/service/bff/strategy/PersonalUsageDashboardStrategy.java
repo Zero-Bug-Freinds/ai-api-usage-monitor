@@ -32,6 +32,8 @@ public class PersonalUsageDashboardStrategy extends BaseUsageDashboardStrategy {
                 usageDashboardService.dailySeries(userId, query.from(), query.to(), query.provider()),
                 usageDashboardService.monthlySeries(userId, query.from(), query.to(), query.provider()),
                 usageDashboardService.byModel(userId, query.from(), query.to(), query.provider()),
+                java.util.List.of(),
+                null,
                 usageDashboardService.logs(
                         userId,
                         query.from(),

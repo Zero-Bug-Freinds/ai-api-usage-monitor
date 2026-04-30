@@ -31,21 +31,30 @@ public class TeamTotalUsageDashboardStrategy extends BaseUsageDashboardStrategy 
     public UsageBffDashboardResponse fetch(UsageDashboardQuery query) {
         String teamId = requireTeamId(query);
         TeamEnrichmentResult enrichment = teamServiceClient.loadTeamEnrichment(query.requestUserId(), teamId).join();
+        UsageDashboardService.TeamUsageSeriesBundle seriesBundle = usageDashboardService.teamUsageSeriesForBff(
+                teamId,
+                query.from(),
+                query.to(),
+                query.provider(),
+                query.apiKeyId()
+        );
         return response(
                 mode(),
                 teamId,
                 null,
                 enrichment.teamName(),
-                usageDashboardService.summaryByTeam(teamId, query.from(), query.to(), query.provider()),
-                usageDashboardService.dailySeriesByTeam(teamId, query.from(), query.to(), query.provider()),
-                usageDashboardService.monthlySeriesByTeam(teamId, query.from(), query.to(), query.provider()),
-                usageDashboardService.byModelForTeam(teamId, query.from(), query.to(), query.provider()),
+                usageDashboardService.summaryByTeam(teamId, query.from(), query.to(), query.provider(), query.apiKeyId()),
+                usageDashboardService.dailySeriesByTeam(teamId, query.from(), query.to(), query.provider(), query.apiKeyId()),
+                usageDashboardService.monthlySeriesByTeam(teamId, query.from(), query.to(), query.provider(), query.apiKeyId()),
+                usageDashboardService.byModelForTeam(teamId, query.from(), query.to(), query.provider(), query.apiKeyId()),
+                seriesBundle.points(),
+                seriesBundle.unit(),
                 usageDashboardService.logsByTeam(
                         teamId,
                         query.from(),
                         query.to(),
                         query.provider(),
-                        null,
+                        query.apiKeyId(),
                         null,
                         null,
                         null,

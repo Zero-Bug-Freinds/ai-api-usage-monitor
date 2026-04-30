@@ -35,6 +35,7 @@ public class UsageBffDashboardController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(required = false) AiProvider provider,
+            @RequestParam(required = false) String apiKeyId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
@@ -48,6 +49,7 @@ public class UsageBffDashboardController {
                 from,
                 to,
                 provider,
+                blankToNull(apiKeyId),
                 page,
                 size
         ));

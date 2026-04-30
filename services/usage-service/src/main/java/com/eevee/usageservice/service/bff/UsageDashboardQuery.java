@@ -13,6 +13,7 @@ public record UsageDashboardQuery(
         LocalDate from,
         LocalDate to,
         AiProvider provider,
+        String apiKeyId,
         int page,
         int size
 ) {

@@ -4,6 +4,8 @@ import com.eevee.usageservice.api.dto.DailyUsagePoint;
 import com.eevee.usageservice.api.dto.ModelUsageAggregate;
 import com.eevee.usageservice.api.dto.MonthlyUsagePoint;
 import com.eevee.usageservice.api.dto.PagedLogsResponse;
+import com.eevee.usageservice.api.dto.UsageSeriesPoint;
+import com.eevee.usageservice.api.dto.UsageSeriesUnit;
 import com.eevee.usageservice.api.dto.UsageSummaryResponse;
 import com.eevee.usageservice.api.dto.bff.TeamMemberProfile;
 import com.eevee.usageservice.api.dto.bff.UsageBffDashboardResponse;
@@ -22,6 +24,8 @@ abstract class BaseUsageDashboardStrategy implements UsageDashboardStrategy {
             List<DailyUsagePoint> daily,
             List<MonthlyUsagePoint> monthly,
             List<ModelUsageAggregate> byModel,
+            List<UsageSeriesPoint> usageSeries,
+            UsageSeriesUnit usageSeriesUnit,
             PagedLogsResponse logs,
             List<TeamMemberProfile> memberProfiles,
             UsageDashboardEnrichment enrichment
@@ -35,6 +39,8 @@ abstract class BaseUsageDashboardStrategy implements UsageDashboardStrategy {
                 daily,
                 monthly,
                 byModel,
+                usageSeries,
+                usageSeriesUnit,
                 logs,
                 memberProfiles,
                 enrichment

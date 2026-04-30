@@ -568,4 +568,219 @@ public class UsageAnalyticsJdbcRepository {
         }
         return out;
     }
+
+    private static final String TEAM_API_KEY_FILTER = " AND ((?::text) = '' OR api_key_id = (?::text))";
+
+    /**
+     * Hour buckets for one KST day, team scope (logs). {@code apiKeyFilter} empty string = all keys for team.
+     */
+    public List<HourlyUsagePoint> aggregateHourlyForKstDayForTeam(
+            String teamId,
+            Instant kstDayStartUtc,
+            Instant kstDayEndExclusiveUtc,
+            AiProvider provider,
+            String apiKeyFilter
+    ) {
+        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        String sql = """
+                SELECT (EXTRACT(HOUR FROM (occurred_at AT TIME ZONE '%s')))::int AS h,
+                       COUNT(*)::bigint,
+                       COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0)::bigint,
+                       COALESCE(SUM(estimated_cost), 0)
+                FROM usage_recorded_log
+                WHERE team_id = ?
+                  AND occurred_at >= ? AND occurred_at < ?%s%s
+                GROUP BY 1
+                ORDER BY 1
+                """.formatted(BUCKET_ZONE, ERR_PRED, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+        String p1 = provider == null ? null : provider.name();
+        List<HourlyUsagePoint> rows = jdbc.query(
+                sql,
+                (rs, rowNum) -> new HourlyUsagePoint(
+                        rs.getInt("h"),
+                        rs.getLong(2),
+                        rs.getLong(3),
+                        rs.getBigDecimal(4) != null ? rs.getBigDecimal(4) : BigDecimal.ZERO
+                ),
+                teamId,
+                Timestamp.from(kstDayStartUtc),
+                Timestamp.from(kstDayEndExclusiveUtc),
+                af,
+                af,
+                p1,
+                p1
+        );
+        Map<Integer, HourlyUsagePoint> byHour = new HashMap<>();
+        for (HourlyUsagePoint row : rows) {
+            byHour.put(row.hour(), row);
+        }
+        List<HourlyUsagePoint> out = new ArrayList<>(24);
+        for (int h = 0; h < 24; h++) {
+            HourlyUsagePoint existing = byHour.get(h);
+            if (existing != null) {
+                out.add(existing);
+            } else {
+                out.add(new HourlyUsagePoint(h, 0L, 0L, BigDecimal.ZERO));
+            }
+        }
+        return out;
+    }
+
+    public UsageSummaryResponse aggregateSummaryForTeamFromLogs(
+            String teamId,
+            Instant from,
+            Instant toExclusive,
+            AiProvider provider,
+            String apiKeyFilter
+    ) {
+        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        String sql = """
+                SELECT COUNT(*)::bigint,
+                       COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0)::bigint,
+                       COALESCE(SUM(prompt_tokens), 0)::bigint,
+                       COALESCE(SUM(estimated_cost), 0)
+                FROM usage_recorded_log
+                WHERE team_id = ?
+                  AND occurred_at >= ? AND occurred_at < ?%s%s
+                """.formatted(ERR_PRED, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+        String p1 = provider == null ? null : provider.name();
+        return jdbc.queryForObject(
+                sql,
+                (rs, rowNum) -> new UsageSummaryResponse(
+                        rs.getLong(1),
+                        rs.getLong(2),
+                        rs.getLong(3),
+                        rs.getBigDecimal(4) != null ? rs.getBigDecimal(4) : BigDecimal.ZERO
+                ),
+                teamId,
+                Timestamp.from(from),
+                Timestamp.from(toExclusive),
+                af,
+                af,
+                p1,
+                p1
+        );
+    }
+
+    public List<DailyUsagePoint> aggregateDailyForTeamFromLogs(
+            String teamId,
+            Instant from,
+            Instant toExclusive,
+            AiProvider provider,
+            String apiKeyFilter
+    ) {
+        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        String sql = """
+                SELECT ((occurred_at AT TIME ZONE '%s'))::date AS d,
+                       COUNT(*)::bigint,
+                       COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0)::bigint,
+                       COALESCE(SUM(prompt_tokens), 0)::bigint,
+                       COALESCE(SUM(estimated_cost), 0)
+                FROM usage_recorded_log
+                WHERE team_id = ?
+                  AND occurred_at >= ? AND occurred_at < ?%s%s
+                GROUP BY 1
+                ORDER BY 1
+                """.formatted(BUCKET_ZONE, ERR_PRED, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+        String p1 = provider == null ? null : provider.name();
+        return jdbc.query(
+                sql,
+                (rs, rowNum) -> new DailyUsagePoint(
+                        rs.getDate("d").toLocalDate(),
+                        rs.getLong(2),
+                        rs.getLong(3),
+                        rs.getLong(4),
+                        rs.getBigDecimal(5) != null ? rs.getBigDecimal(5) : BigDecimal.ZERO
+                ),
+                teamId,
+                Timestamp.from(from),
+                Timestamp.from(toExclusive),
+                af,
+                af,
+                p1,
+                p1
+        );
+    }
+
+    public List<MonthlyUsagePoint> aggregateMonthlyForTeamFromLogs(
+            String teamId,
+            Instant from,
+            Instant toExclusive,
+            AiProvider provider,
+            String apiKeyFilter
+    ) {
+        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        String sql = """
+                SELECT to_char((occurred_at AT TIME ZONE '%s'), 'YYYY-MM') AS ym,
+                       COUNT(*)::bigint,
+                       COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0)::bigint,
+                       COALESCE(SUM(prompt_tokens), 0)::bigint,
+                       COALESCE(SUM(estimated_cost), 0)
+                FROM usage_recorded_log
+                WHERE team_id = ?
+                  AND occurred_at >= ? AND occurred_at < ?%s%s
+                GROUP BY 1
+                ORDER BY 1
+                """.formatted(BUCKET_ZONE, ERR_PRED, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+        String p1 = provider == null ? null : provider.name();
+        return jdbc.query(
+                sql,
+                (rs, rowNum) -> new MonthlyUsagePoint(
+                        rs.getString("ym"),
+                        rs.getLong(2),
+                        rs.getLong(3),
+                        rs.getLong(4),
+                        rs.getBigDecimal(5) != null ? rs.getBigDecimal(5) : BigDecimal.ZERO
+                ),
+                teamId,
+                Timestamp.from(from),
+                Timestamp.from(toExclusive),
+                af,
+                af,
+                p1,
+                p1
+        );
+    }
+
+    public List<ModelUsageAggregate> aggregateByModelForTeamFromLogs(
+            String teamId,
+            Instant from,
+            Instant toExclusive,
+            AiProvider provider,
+            String apiKeyFilter
+    ) {
+        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        String sql = """
+                SELECT COALESCE(NULLIF(TRIM(model), ''), LOWER(provider::text) || '_unknown') AS m,
+                       provider::text,
+                       COUNT(*)::bigint,
+                       COALESCE(SUM(prompt_tokens), 0)::bigint,
+                       COALESCE(SUM(estimated_reasoning_tokens), 0)::bigint,
+                       COALESCE(SUM(completion_tokens), 0)::bigint
+                FROM usage_recorded_log
+                WHERE team_id = ?
+                  AND occurred_at >= ? AND occurred_at < ?%s%s
+                GROUP BY model, provider
+                ORDER BY COUNT(*) DESC
+                """.formatted(TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+        String p1 = provider == null ? null : provider.name();
+        return jdbc.query(
+                sql,
+                (rs, rowNum) -> new ModelUsageAggregate(
+                        rs.getString("m"),
+                        rs.getString("provider"),
+                        rs.getLong(3),
+                        rs.getLong(4),
+                        rs.getLong(5),
+                        rs.getLong(6)
+                ),
+                teamId,
+                Timestamp.from(from),
+                Timestamp.from(toExclusive),
+                af,
+                af,
+                p1,
+                p1
+        );
+    }
 }
