@@ -128,7 +128,7 @@ async function fetchTeamCatalogFromTeamService(request: Request): Promise<TeamCa
         const teamId = toNumber(summary.teamId, 0)
         if (teamId <= 0) continue
 
-        const teamName = (summary.teamAlias ?? "").trim() || `Team ${teamId}`
+        const teamName = normalizeTeamName(summary.teamAlias, teamId)
         teams.push({ teamId, teamName })
 
         const teamKeys = summary.apiKeys ?? []
@@ -165,6 +165,13 @@ function toNumber(value: unknown, fallback = 0): number {
     if (Number.isFinite(parsed)) return parsed
   }
   return fallback
+}
+
+function normalizeTeamName(value: string | null | undefined, teamId: number): string {
+  const trimmed = (value ?? "").trim()
+  const withoutParentheses = trimmed.replace(/\s*\([^)]*\)\s*/g, " ").replace(/\s+/g, " ").trim()
+  if (withoutParentheses.length > 0) return withoutParentheses
+  return `Team ${teamId}`
 }
 
 export async function GET(request: Request) {
@@ -210,7 +217,7 @@ export async function GET(request: Request) {
       const thresholdPct = toNumber(signal?.budgetThreshold?.thresholdPct, 0)
       return {
         teamId: item.teamId,
-        teamName: item.teamName?.trim() || `Team ${item.teamId}`,
+        teamName: normalizeTeamName(item.teamName, item.teamId),
         teamApiKeyId: item.teamApiKeyId,
         ownerUserId: item.ownerUserId,
         visibility: item.visibility ?? "TEAM",
@@ -232,17 +239,17 @@ export async function GET(request: Request) {
     for (const item of teamCatalog.teams) {
       const teamId = toNumber(item.teamId, 0)
       if (teamId <= 0) continue
-      const teamName = item.teamName?.trim() || `Team ${teamId}`
+      const teamName = normalizeTeamName(item.teamName, teamId)
       teamNameById.set(teamId, teamName)
     }
     for (const snapshot of teamSnapshots) {
       const teamId = toNumber(snapshot.teamId, 0)
       if (teamId <= 0) continue
-      const teamName = snapshot.teamName?.trim() || `Team ${teamId}`
+      const teamName = normalizeTeamName(snapshot.teamName, teamId)
       teamNameById.set(teamId, teamName)
     }
     for (const item of teamBoard) {
-      const teamName = item.teamName?.trim() || `Team ${item.teamId}`
+      const teamName = normalizeTeamName(item.teamName, item.teamId)
       if (!teamNameById.has(item.teamId)) {
         teamNameById.set(item.teamId, teamName)
       }

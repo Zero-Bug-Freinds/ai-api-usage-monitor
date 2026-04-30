@@ -316,8 +316,7 @@ export default function AgentPage() {
             <ul className="space-y-1 text-sm text-muted-foreground">
               {selectedTeamKeys.map((item: TeamBoardItem) => (
                 <li key={`${item.teamId}-${item.teamApiKeyId}`} className="rounded-md border px-2 py-1">
-                  {item.teamName ?? `T${item.teamId}`} · {item.alias} ({item.provider}) · {item.status}
-                  {item.visibility ? ` · ${item.visibility}` : ""}
+                  {item.alias}
                 </li>
               ))}
               {selectedTeamId != null && selectedTeamKeys.length === 0 ? (
