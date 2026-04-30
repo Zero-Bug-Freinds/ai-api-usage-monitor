@@ -284,7 +284,7 @@ export default function AgentPage() {
               className="rounded-md border px-2 py-1 text-xs"
               onClick={() => setShowTeamList((prev: boolean) => !prev)}
             >
-              {showTeamList ? "팀 목록 숨기기" : "팀 목록 보기"}
+              {showTeamList ? "팀 키 숨기기" : "팀 키 보기"}
             </button>
           </div>
           <label className="text-xs text-muted-foreground" htmlFor="team-selector">

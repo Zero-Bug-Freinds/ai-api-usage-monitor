@@ -32,6 +32,7 @@ const TEAM_SUB_MENU = [
   { key: "members", label: "멤버 관리", suffix: "members" },
   { key: "apiKeys", label: "API 및 설정", suffix: "api-keys" },
 ] as const
+const LOCAL_STORAGE_KEYS_TO_PRESERVE_ON_LOGOUT = ["team.dismissedExpiredInvitationNoticeIds"] as const
 
 const ICONS: Record<ConsoleNavId, ReactNode> = {
   usageHome: <LayoutDashboard className="size-[1.125rem] shrink-0" aria-hidden />,
@@ -175,6 +176,19 @@ export function ConsoleSidebar({
     }
   }, [])
 
+  function clearLocalStoragePreservingKeys() {
+    if (typeof localStorage === "undefined") return
+    const preservedEntries = LOCAL_STORAGE_KEYS_TO_PRESERVE_ON_LOGOUT
+      .map((key) => [key, localStorage.getItem(key)] as const)
+      .filter((entry) => entry[1] !== null)
+    localStorage.clear()
+    for (const [key, value] of preservedEntries) {
+      if (value !== null) {
+        localStorage.setItem(key, value)
+      }
+    }
+  }
+
   async function handleLogout() {
     setLogoutPending(true)
     try {
@@ -191,9 +205,7 @@ export function ConsoleSidebar({
       if (typeof sessionStorage !== "undefined") {
         sessionStorage.clear()
       }
-      if (typeof localStorage !== "undefined") {
-        localStorage.clear()
-      }
+      clearLocalStoragePreservingKeys()
     } catch {
       // Storage 접근 오류가 있어도 로그아웃 리다이렉트는 진행한다.
     }
