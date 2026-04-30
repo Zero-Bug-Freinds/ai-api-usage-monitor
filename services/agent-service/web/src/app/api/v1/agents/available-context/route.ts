@@ -67,9 +67,32 @@ type TeamCatalog = {
   keys: TeamApiKeySnapshot[]
 }
 
+type IdentityBudgetByKey = {
+  externalApiKeyId?: number | string
+  provider?: string | null
+  alias?: string | null
+  monthlyBudgetUsd?: number | null
+}
+
+type IdentityBudgetResponse = {
+  monthlyBudgetsByKey?: IdentityBudgetByKey[] | null
+}
+
 function backendOriginCandidates(): string[] {
   const configured = (process.env.AI_AGENT_SERVICE_INTERNAL_ORIGIN ?? "").trim().replace(/\/$/, "")
   const defaults = ["http://localhost:8096", "http://host.docker.internal:8096", "http://agent-service:8096"]
+  return Array.from(new Set([configured, ...defaults].filter((value) => value.length > 0)))
+}
+
+function identityServiceOriginCandidates(): string[] {
+  const configured = (process.env.IDENTITY_SERVICE_INTERNAL_ORIGIN ?? "").trim().replace(/\/$/, "")
+  const defaults = [
+    "http://localhost:8090",
+    "http://host.docker.internal:8090",
+    "http://localhost:8080",
+    "http://host.docker.internal:8080",
+    "http://identity-service:8080",
+  ]
   return Array.from(new Set([configured, ...defaults].filter((value) => value.length > 0)))
 }
 
@@ -104,6 +127,84 @@ function userIdFromHeaders(request: Request): string {
   const fallbackUserId = (process.env.AI_AGENT_FALLBACK_USER_ID ?? "").trim()
   if (fallbackUserId.length > 0) return fallbackUserId
   return ""
+}
+
+function userIdAsNumber(request: Request): number | null {
+  const raw = userIdFromHeaders(request)
+  const parsed = Number(raw)
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null
+  }
+  return parsed
+}
+
+function userIdentifierFromHeaders(request: Request): { userId: number | null; email: string | null } {
+  const raw = userIdFromHeaders(request).trim()
+  if (!raw) {
+    return { userId: null, email: null }
+  }
+  const numeric = Number(raw)
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return { userId: numeric, email: null }
+  }
+  if (raw.includes("@")) {
+    return { userId: null, email: raw }
+  }
+  return { userId: null, email: null }
+}
+
+function resolveCurrentUserId(
+  request: Request,
+  keys: IdentitySnapshot[],
+  userContexts: UserContextSnapshot[],
+): number | null {
+  const fromHeader = userIdAsNumber(request)
+  if (fromHeader != null) {
+    return fromHeader
+  }
+
+  const fromContext = userContexts.find((item) => Number.isFinite(item.userId) && item.userId > 0)?.userId ?? null
+  if (fromContext != null) {
+    return fromContext
+  }
+
+  const fromKeys = keys.find((item) => Number.isFinite(item.userId) && item.userId > 0)?.userId ?? null
+  return fromKeys
+}
+
+async function fetchIdentityBudgetKeys(
+  userId: number | null,
+  email: string | null,
+  fallbackEmails: string[] = [],
+): Promise<IdentityBudgetByKey[]> {
+  const queries: string[] = []
+  if (userId != null) {
+    queries.push(`/api/identity/v1/users/${userId}/budget`)
+  }
+  if (email != null) {
+    queries.push(`/api/identity/v1/users/budget?email=${encodeURIComponent(email)}`)
+  }
+  for (const fallbackEmail of fallbackEmails) {
+    queries.push(`/api/identity/v1/users/budget?email=${encodeURIComponent(fallbackEmail)}`)
+  }
+  if (queries.length === 0) return []
+
+  for (const query of queries) {
+    for (const origin of identityServiceOriginCandidates()) {
+      try {
+        const response = await fetch(`${origin}${query}`, { cache: "no-store" })
+        if (!response.ok) continue
+        const payload = (await response.json()) as IdentityBudgetResponse
+        const keys = payload.monthlyBudgetsByKey ?? []
+        if (keys.length > 0) {
+          return keys
+        }
+      } catch {
+        // try next candidate
+      }
+    }
+  }
+  return []
 }
 
 async function fetchTeamCatalogFromTeamService(request: Request): Promise<TeamCatalog> {
@@ -184,14 +285,26 @@ export async function GET(request: Request) {
       fetchJsonWithFallback<TeamSnapshot>("/api/v1/agents/teams"),
     ])
     const teamCatalog = await fetchTeamCatalogFromTeamService(request)
+    const headerIdentifier = userIdentifierFromHeaders(request)
+    const currentUserId = resolveCurrentUserId(request, keys, userContexts)
+    const keysForCurrentUser = currentUserId == null ? [] : keys.filter((key) => key.userId === currentUserId)
+    const userContextsForCurrentUser =
+      currentUserId == null ? [] : userContexts.filter((context) => context.userId === currentUserId)
 
     const teamApiKeys = teamCatalog.keys.length > 0 ? teamCatalog.keys : snapshotTeamApiKeys
+    const fallbackEmails = Array.from(
+      new Set(
+        teamApiKeys
+          .map((item) => (item.ownerUserId ?? "").trim())
+          .filter((value) => value.includes("@")),
+      ),
+    )
     const billingByKeyId = new Map<string, BillingSignal>(billingSignals.map((item) => [item.apiKeyId, item]))
+    const identityBudgetKeys = await fetchIdentityBudgetKeys(currentUserId, headerIdentifier.email, fallbackEmails)
 
-    const personalKeys = keys.map((key) => {
+    const personalKeysFromSnapshot = keysForCurrentUser.map((key) => {
       const signal = billingByKeyId.get(String(key.keyId))
       const currentSpendUsd = toNumber(signal?.latestEstimatedCostUsd, 0)
-      const thresholdPct = toNumber(signal?.budgetThreshold?.thresholdPct, 0)
       const recentDailySpendUsd = currentSpendUsd > 0 ? [currentSpendUsd] : []
 
       return {
@@ -206,15 +319,37 @@ export async function GET(request: Request) {
           averageDailyTokenUsage: 1,
           recentDailySpendUsd,
         },
-        billingThresholdPct: thresholdPct,
       }
     })
+    const personalKeysFromIdentity = identityBudgetKeys
+      .map((key) => {
+        const keyId = toNumber(key.externalApiKeyId, 0)
+        if (keyId <= 0) {
+          return null
+        }
+        const signal = billingByKeyId.get(String(keyId))
+        const currentSpendUsd = toNumber(signal?.latestEstimatedCostUsd, 0)
+        return {
+          keyId,
+          alias: (key.alias ?? "").trim() || `key-${keyId}`,
+          provider: (key.provider ?? "").trim() || "UNKNOWN",
+          monthlyBudgetUsd: toNumber(key.monthlyBudgetUsd, 0),
+          status: "ACTIVE",
+          providerStats: {
+            currentSpendUsd,
+            averageDailySpendUsd: Math.max(currentSpendUsd / 7, 0.01),
+            averageDailyTokenUsage: 1,
+            recentDailySpendUsd: currentSpendUsd > 0 ? [currentSpendUsd] : [],
+          },
+        }
+      })
+      .filter((item): item is NonNullable<typeof item> => item != null)
+    const personalKeys = personalKeysFromIdentity.length > 0 ? personalKeysFromIdentity : personalKeysFromSnapshot
 
-    const activeTeamContext = userContexts.find((ctx) => ctx.activeTeamId != null) ?? null
+    const activeTeamContext = userContextsForCurrentUser.find((ctx) => ctx.activeTeamId != null) ?? null
     const teamBoard = teamApiKeys.map((item) => {
       const signal = billingByKeyId.get(String(item.teamApiKeyId))
       const currentSpendUsd = toNumber(signal?.latestEstimatedCostUsd, 0)
-      const thresholdPct = toNumber(signal?.budgetThreshold?.thresholdPct, 0)
       return {
         teamId: item.teamId,
         teamName: normalizeTeamName(item.teamName, item.teamId),
@@ -231,7 +366,6 @@ export async function GET(request: Request) {
           averageDailyTokenUsage: 1,
           recentDailySpendUsd: currentSpendUsd > 0 ? [currentSpendUsd] : [],
         },
-        billingThresholdPct: thresholdPct,
       }
     })
 
@@ -265,7 +399,6 @@ export async function GET(request: Request) {
       userContext: activeTeamContext,
       teamBoard,
       teamGroups,
-      note: "RabbitMQ 이벤트 스냅샷 기반(Identity + Team + Billing). 이벤트가 아직 없으면 목록이 비어 있을 수 있습니다.",
     })
   } catch {
     return NextResponse.json(

@@ -25,7 +25,6 @@ type AvailableKeyContext = {
     averageDailyTokenUsage: number
     recentDailySpendUsd: number[]
   }
-  billingThresholdPct?: number
 }
 
 type TeamBoardItem = {
@@ -44,13 +43,6 @@ type TeamBoardItem = {
     averageDailyTokenUsage: number
     recentDailySpendUsd: number[]
   }
-  billingThresholdPct?: number
-}
-
-type UserContext = {
-  userId: number
-  activeTeamId?: number | null
-  role?: string | null
 }
 
 type AnalysisResult = {
@@ -82,8 +74,6 @@ type AvailableContextKeyPayload = {
 }
 
 type AvailableContextPayload = {
-  note?: string
-  userContext?: UserContext | null
   teamBoard?: TeamBoardItem[]
   teamGroups?: TeamGroup[]
   data?: AvailableContextKeyPayload[]
@@ -101,12 +91,6 @@ function statusClassName(status: string): string {
   return "bg-emerald-100 text-emerald-700"
 }
 
-function formatThresholdPercent(value?: number): string {
-  if (typeof value !== "number" || !Number.isFinite(value)) return ""
-  const normalized = value <= 1 ? value * 100 : value
-  return `${Math.round(normalized)}%`
-}
-
 export default function AgentPage() {
   const [loading, setLoading] = useState<boolean>(false)
   const [loadingMessage, setLoadingMessage] = useState<string>("")
@@ -116,11 +100,8 @@ export default function AgentPage() {
   const [teamGroups, setTeamGroups] = useState<TeamGroup[]>([])
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null)
   const [showTeamList, setShowTeamList] = useState<boolean>(true)
-  const [userContext, setUserContext] = useState<UserContext | null>(null)
   const [bootstrapError, setBootstrapError] = useState<string>("")
-  const [note, setNote] = useState<string>("")
 
-  const contextTitle = useMemo(() => "개인 API Key 이벤트 컨텍스트", [])
   const selectedTeamKeys = useMemo(
     () => (selectedTeamId == null ? [] : teamBoard.filter((item: TeamBoardItem) => item.teamId === selectedTeamId)),
     [teamBoard, selectedTeamId],
@@ -160,12 +141,8 @@ export default function AgentPage() {
       setTeamGroups(nextTeamGroups)
       setSelectedTeamId((prev: number | null) => {
         if (prev != null && nextTeamGroups.some((group: TeamGroup) => group.teamId === prev)) return prev
-        const activeTeamId = payload.userContext?.activeTeamId
-        if (activeTeamId != null && nextTeamGroups.some((group: TeamGroup) => group.teamId === activeTeamId)) return activeTeamId
         return nextTeamGroups[0]?.teamId ?? null
       })
-      setUserContext(payload.userContext ?? null)
-      setNote(payload.note ?? "")
     } catch (error) {
       const message = error instanceof Error ? error.message : "컨텍스트 조회 실패"
       setBootstrapError(message)
@@ -188,7 +165,6 @@ export default function AgentPage() {
               averageDailyTokenUsage: 1,
               recentDailySpendUsd: [],
             },
-            billingThresholdPct: item.billingThresholdPct,
           }))
     if (targetKeys.length === 0) return
 
@@ -255,24 +231,21 @@ export default function AgentPage() {
   return (
     <div className="grid min-h-[70vh] gap-4 p-4 md:grid-cols-12">
       <aside className="space-y-4 rounded-xl border bg-card p-4 md:col-span-3">
-        <div className="space-y-1">
-          <h2 className="text-sm font-semibold">{contextTitle}</h2>
-          <p className="text-xs text-muted-foreground">RabbitMQ로 수신한 이벤트 스냅샷만 사용합니다.</p>
-        </div>
-
         <div className="space-y-2">
           <h3 className="text-sm font-semibold">개인 API 키</h3>
           {bootstrapError ? (
             <div className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700">{bootstrapError}</div>
           ) : null}
-          {note ? <p className="text-xs text-muted-foreground">{note}</p> : null}
           <ul className="space-y-1 text-sm text-muted-foreground">
             {keys.map((item: AvailableKeyContext) => (
               <li key={item.keyId} className="rounded-md border px-2 py-1">
-                {item.keyLabel} ({item.provider}) · ${item.monthlyBudgetUsd}
-                {item.billingThresholdPct ? ` · 임계치 ${formatThresholdPercent(item.billingThresholdPct)}` : ""}
+                {item.keyLabel}
+                <span className="text-xs"> ({item.provider})</span>
               </li>
             ))}
+            {keys.length === 0 ? (
+              <li className="rounded-md border border-dashed px-2 py-1 text-xs">표시할 개인 API 키가 없습니다.</li>
+            ) : null}
           </ul>
         </div>
 
@@ -307,11 +280,6 @@ export default function AgentPage() {
               </option>
             ))}
           </select>
-          <p className="text-xs text-muted-foreground">
-            {userContext?.activeTeamId
-              ? `활성 팀: ${userContext.activeTeamId} / 역할: ${userContext.role ?? "-"}`
-              : "활성 팀 컨텍스트가 없습니다."}
-          </p>
           {showTeamList ? (
             <ul className="space-y-1 text-sm text-muted-foreground">
               {selectedTeamKeys.map((item: TeamBoardItem) => (
@@ -330,18 +298,9 @@ export default function AgentPage() {
               ) : null}
             </ul>
           ) : (
-            <p className="rounded-md border border-dashed px-2 py-1 text-xs text-muted-foreground">팀 목록이 숨겨져 있습니다.</p>
+            <p className="rounded-md border border-dashed px-2 py-1 text-xs text-muted-foreground">팀 키 목록이 숨겨져 있습니다.</p>
           )}
         </div>
-
-        <button
-          type="button"
-          className="w-full rounded-md border px-4 py-2 text-sm font-medium"
-          onClick={loadAvailableContext}
-          disabled={loading}
-        >
-          지금 가능한 데이터 새로고침
-        </button>
 
         <button
           type="button"
