@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useRouter } from "next/router";
 import { RemoteErrorBoundary } from "@/components/remote-error-boundary";
 
 export type TeamRouteSection = "dashboard" | "members" | "api-keys";
@@ -13,6 +14,13 @@ const TeamUsageDashboard = dynamic(() => import("usage/TeamUsageDashboard"), {
   ssr: false,
   loading: () => <p className="text-sm text-muted-foreground">Usage remote loading...</p>,
 });
+
+function TeamUsageRouteHost() {
+  const router = useRouter();
+  const raw = router.query.id;
+  const teamId = typeof raw === "string" ? raw : Array.isArray(raw) ? raw[0] : "";
+  return <TeamUsageDashboard teamId={teamId} />;
+}
 
 type TeamPageContentProps = {
   section?: TeamRouteSection;
@@ -30,7 +38,7 @@ export function TeamPageContent({ section = "dashboard" }: TeamPageContentProps)
         <RemoteErrorBoundary
           fallback={<p className="p-4 text-sm text-muted-foreground">Usage remote를 불러오지 못했습니다.</p>}
         >
-          <TeamUsageDashboard />
+          <TeamUsageRouteHost />
         </RemoteErrorBoundary>
       </div>
     );
