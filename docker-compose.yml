@@ -357,6 +357,7 @@ services:
     environment:
       NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${IDENTITY_WEB_PORT:-3000}}
       AI_AGENT_SERVICE_INTERNAL_ORIGIN: ${AI_AGENT_SERVICE_INTERNAL_ORIGIN:-http://host.docker.internal:8096}
+      AI_AGENT_FALLBACK_USER_ID: ${AI_AGENT_FALLBACK_USER_ID:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { type ChangeEvent, useEffect, useMemo, useState } from "react"
 
 type BudgetForecastResponse = {
   healthStatus: "HEALTHY" | "WARNING" | "CRITICAL" | string
@@ -30,12 +30,21 @@ type AvailableKeyContext = {
 
 type TeamBoardItem = {
   teamId: number
+  teamName?: string
   teamApiKeyId: number
   ownerUserId?: string | null
   visibility?: string | null
   alias: string
   provider: string
   status: string
+  monthlyBudgetUsd?: number
+  providerStats?: {
+    currentSpendUsd: number
+    averageDailySpendUsd: number
+    averageDailyTokenUsage: number
+    recentDailySpendUsd: number[]
+  }
+  billingThresholdPct?: number
 }
 
 type UserContext = {
@@ -50,6 +59,34 @@ type AnalysisResult = {
   provider: string
   data?: BudgetForecastResponse
   error?: string
+}
+
+type TeamGroup = {
+  teamId: number
+  teamName: string
+  keys: TeamBoardItem[]
+}
+
+type AvailableContextKeyPayload = {
+  keyId: number
+  alias: string
+  provider: string
+  monthlyBudgetUsd: number
+  status: string
+  providerStats: {
+    currentSpendUsd: number
+    averageDailySpendUsd: number
+    averageDailyTokenUsage: number
+    recentDailySpendUsd: number[]
+  }
+}
+
+type AvailableContextPayload = {
+  note?: string
+  userContext?: UserContext | null
+  teamBoard?: TeamBoardItem[]
+  teamGroups?: TeamGroup[]
+  data?: AvailableContextKeyPayload[]
 }
 
 function buildBillingCycleEndDate(): string {
@@ -76,11 +113,22 @@ export default function AgentPage() {
   const [results, setResults] = useState<AnalysisResult[]>([])
   const [keys, setKeys] = useState<AvailableKeyContext[]>([])
   const [teamBoard, setTeamBoard] = useState<TeamBoardItem[]>([])
+  const [teamGroups, setTeamGroups] = useState<TeamGroup[]>([])
+  const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null)
+  const [showTeamList, setShowTeamList] = useState<boolean>(true)
   const [userContext, setUserContext] = useState<UserContext | null>(null)
   const [bootstrapError, setBootstrapError] = useState<string>("")
   const [note, setNote] = useState<string>("")
 
   const contextTitle = useMemo(() => "개인 API Key 이벤트 컨텍스트", [])
+  const selectedTeamKeys = useMemo(
+    () => (selectedTeamId == null ? [] : teamBoard.filter((item: TeamBoardItem) => item.teamId === selectedTeamId)),
+    [teamBoard, selectedTeamId],
+  )
+  const selectedTeamLabel = useMemo(
+    () => teamGroups.find((group: TeamGroup) => group.teamId === selectedTeamId)?.teamName ?? "",
+    [teamGroups, selectedTeamId],
+  )
 
   useEffect(() => {
     void loadAvailableContext()
@@ -94,27 +142,10 @@ export default function AgentPage() {
         const message = await response.text()
         throw new Error(message || "컨텍스트 조회 실패")
       }
-      const payload = (await response.json()) as {
-        note?: string
-        userContext?: UserContext | null
-        teamBoard?: TeamBoardItem[]
-        data?: Array<{
-          keyId: number
-          alias: string
-          provider: string
-          monthlyBudgetUsd: number
-          status: string
-          providerStats: {
-            currentSpendUsd: number
-            averageDailySpendUsd: number
-            averageDailyTokenUsage: number
-            recentDailySpendUsd: number[]
-          }
-        }>
-      }
+      const payload = (await response.json()) as AvailableContextPayload
 
       const normalized =
-        payload.data?.map((item) => ({
+        payload.data?.map((item: AvailableContextKeyPayload) => ({
           keyId: item.keyId,
           keyLabel: item.alias,
           provider: item.provider,
@@ -123,7 +154,16 @@ export default function AgentPage() {
           providerStats: item.providerStats,
         })) ?? []
       setKeys(normalized)
-      setTeamBoard(payload.teamBoard ?? [])
+      const nextTeamBoard = payload.teamBoard ?? []
+      const nextTeamGroups = payload.teamGroups ?? []
+      setTeamBoard(nextTeamBoard)
+      setTeamGroups(nextTeamGroups)
+      setSelectedTeamId((prev: number | null) => {
+        if (prev != null && nextTeamGroups.some((group: TeamGroup) => group.teamId === prev)) return prev
+        const activeTeamId = payload.userContext?.activeTeamId
+        if (activeTeamId != null && nextTeamGroups.some((group: TeamGroup) => group.teamId === activeTeamId)) return activeTeamId
+        return nextTeamGroups[0]?.teamId ?? null
+      })
       setUserContext(payload.userContext ?? null)
       setNote(payload.note ?? "")
     } catch (error) {
@@ -133,16 +173,37 @@ export default function AgentPage() {
   }
 
   const runTeamAnalysis = async () => {
-    if (keys.length === 0) return
+    const targetKeys: AvailableKeyContext[] =
+      selectedTeamId == null
+        ? keys
+        : selectedTeamKeys.map((item: TeamBoardItem) => ({
+            keyId: item.teamApiKeyId,
+            keyLabel: item.alias,
+            provider: item.provider,
+            monthlyBudgetUsd: item.monthlyBudgetUsd ?? 0,
+            status: item.status,
+            providerStats: item.providerStats ?? {
+              currentSpendUsd: 0,
+              averageDailySpendUsd: 0.01,
+              averageDailyTokenUsage: 1,
+              recentDailySpendUsd: [],
+            },
+            billingThresholdPct: item.billingThresholdPct,
+          }))
+    if (targetKeys.length === 0) return
 
     setLoading(true)
     setResults([])
     const billingCycleEndDate = buildBillingCycleEndDate()
     const nextResults: AnalysisResult[] = []
 
-    for (let i = 0; i < keys.length; i += 1) {
-      const keyItem = keys[i]
-      setLoadingMessage(`개인 API 키 사용량을 분석 중입니다... (${i + 1}/${keys.length})`)
+    for (let i = 0; i < targetKeys.length; i += 1) {
+      const keyItem = targetKeys[i]
+      setLoadingMessage(
+        selectedTeamId == null
+          ? `개인 API 키 사용량을 분석 중입니다... (${i + 1}/${targetKeys.length})`
+          : `${selectedTeamLabel || `Team ${selectedTeamId}`} 키 사용량을 분석 중입니다... (${i + 1}/${targetKeys.length})`,
+      )
 
       try {
         const response = await fetch("/agent/api/v1/agents/budget-forecast-assistant", {
@@ -150,9 +211,9 @@ export default function AgentPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             userId: "personal-user",
-            teamId: null,
+            teamId: selectedTeamId,
             provider: keyItem.provider,
-            model: "identity-linked-model",
+            model: selectedTeamId == null ? "identity-linked-model" : "team-linked-model",
             monthlyBudgetUsd: keyItem.monthlyBudgetUsd,
             currentSpendUsd: keyItem.providerStats.currentSpendUsd,
             remainingTokens: Math.max(Math.round(keyItem.providerStats.averageDailyTokenUsage * 14), 1),
@@ -216,23 +277,62 @@ export default function AgentPage() {
         </div>
 
         <div className="space-y-2">
-          <h3 className="text-sm font-semibold">팀 보드</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold">팀 보드</h3>
+            <button
+              type="button"
+              className="rounded-md border px-2 py-1 text-xs"
+              onClick={() => setShowTeamList((prev: boolean) => !prev)}
+            >
+              {showTeamList ? "팀 목록 숨기기" : "팀 목록 보기"}
+            </button>
+          </div>
+          <label className="text-xs text-muted-foreground" htmlFor="team-selector">
+            팀 선택
+          </label>
+          <select
+            id="team-selector"
+            className="w-full rounded-md border bg-background px-2 py-1 text-sm"
+            value={selectedTeamId ?? ""}
+            onChange={(event: ChangeEvent<HTMLSelectElement>) => {
+              const value = event.target.value
+              setSelectedTeamId(value ? Number(value) : null)
+            }}
+            disabled={teamGroups.length === 0}
+          >
+            <option value="">팀을 선택하세요</option>
+            {teamGroups.map((group: TeamGroup) => (
+              <option key={group.teamId} value={group.teamId}>
+                {group.teamName}
+              </option>
+            ))}
+          </select>
           <p className="text-xs text-muted-foreground">
             {userContext?.activeTeamId
               ? `활성 팀: ${userContext.activeTeamId} / 역할: ${userContext.role ?? "-"}`
               : "활성 팀 컨텍스트가 없습니다."}
           </p>
-          <ul className="space-y-1 text-sm text-muted-foreground">
-            {teamBoard.map((item: TeamBoardItem) => (
-              <li key={`${item.teamId}-${item.teamApiKeyId}`} className="rounded-md border px-2 py-1">
-                T{item.teamId} · {item.alias} ({item.provider}) · {item.status}
-                {item.visibility ? ` · ${item.visibility}` : ""}
-              </li>
-            ))}
-            {teamBoard.length === 0 ? (
-              <li className="rounded-md border border-dashed px-2 py-1 text-xs">표시할 팀 키가 없습니다.</li>
-            ) : null}
-          </ul>
+          {showTeamList ? (
+            <ul className="space-y-1 text-sm text-muted-foreground">
+              {selectedTeamKeys.map((item: TeamBoardItem) => (
+                <li key={`${item.teamId}-${item.teamApiKeyId}`} className="rounded-md border px-2 py-1">
+                  {item.teamName ?? `T${item.teamId}`} · {item.alias} ({item.provider}) · {item.status}
+                  {item.visibility ? ` · ${item.visibility}` : ""}
+                </li>
+              ))}
+              {selectedTeamId != null && selectedTeamKeys.length === 0 ? (
+                <li className="rounded-md border border-dashed px-2 py-1 text-xs">선택된 팀의 키가 없습니다.</li>
+              ) : null}
+              {selectedTeamId == null ? (
+                <li className="rounded-md border border-dashed px-2 py-1 text-xs">팀을 선택하면 팀 키를 보여줍니다.</li>
+              ) : null}
+              {teamGroups.length === 0 ? (
+                <li className="rounded-md border border-dashed px-2 py-1 text-xs">표시할 팀이 없습니다.</li>
+              ) : null}
+            </ul>
+          ) : (
+            <p className="rounded-md border border-dashed px-2 py-1 text-xs text-muted-foreground">팀 목록이 숨겨져 있습니다.</p>
+          )}
         </div>
 
         <button
@@ -248,9 +348,9 @@ export default function AgentPage() {
           type="button"
           className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60"
           onClick={runTeamAnalysis}
-          disabled={loading || keys.length === 0}
+          disabled={loading || (selectedTeamId == null ? keys.length === 0 : selectedTeamKeys.length === 0)}
         >
-          {loading ? "분석 중..." : "개인 키 분석 시작"}
+          {loading ? "분석 중..." : selectedTeamId == null ? "개인 키 분석 시작" : "선택 팀 키 분석 시작"}
         </button>
       </aside>
 

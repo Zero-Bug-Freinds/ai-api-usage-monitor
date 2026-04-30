@@ -68,6 +68,7 @@ public class TeamApiKeyStatusEventListener {
 			snapshotService.upsert(
 					new TeamApiKeySnapshotService.TeamApiKeySnapshot(
 							teamId,
+							asText(root, "teamName"),
 							teamApiKeyId,
 							asText(root, "ownerUserId"),
 							asText(root, "visibility"),

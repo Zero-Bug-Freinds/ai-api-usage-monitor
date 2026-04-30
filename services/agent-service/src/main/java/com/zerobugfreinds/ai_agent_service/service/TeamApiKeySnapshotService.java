@@ -40,6 +40,7 @@ public class TeamApiKeySnapshotService {
 
 	public record TeamApiKeySnapshot(
 			Long teamId,
+			String teamName,
 			Long teamApiKeyId,
 			String ownerUserId,
 			String visibility,
