@@ -22,11 +22,13 @@ function extractErrorMessage(value: unknown): string | null {
 type TeamSummary = {
   id: string
   name: string
+  createdAt?: string
 }
 
 type TeamSummaryLike = {
   id: string | number
   name: string
+  createdAt?: string
 }
 
 type ExternalKeyProvider = "GEMINI" | "OPENAI" | "ANTHROPIC"
@@ -62,7 +64,11 @@ function normalizeTeamSummary(item: unknown): TeamSummary | null {
   if (!item || typeof item !== "object") return null
   const v = item as TeamSummaryLike
   if ((typeof v.id !== "string" && typeof v.id !== "number") || typeof v.name !== "string") return null
-  return { id: String(v.id), name: v.name }
+  return {
+    id: String(v.id),
+    name: v.name,
+    createdAt: typeof v.createdAt === "string" ? v.createdAt : undefined,
+  }
 }
 
 function normalizeTeamApiKeySummary(item: unknown): TeamApiKeySummary | null {
@@ -783,6 +789,10 @@ export function TeamManagementView() {
     setMessage(null)
     try {
       await switchActiveTeam(teamId)
+      if (typeof window !== "undefined") {
+        const base = window.location.origin
+        window.location.assign(`${base}/teams/${encodeURIComponent(teamId)}`)
+      }
       setMessage({ kind: "success", text: "활성 팀이 전환되었습니다" })
     } catch (e) {
       const details = e instanceof Error ? e.message : "팀 전환 토큰 갱신에 실패했습니다"
