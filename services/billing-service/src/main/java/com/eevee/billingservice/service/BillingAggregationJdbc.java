@@ -10,6 +10,13 @@ import java.time.LocalDate;
 
 /**
  * PostgreSQL upserts for concurrent-safe aggregation without lost updates.
+ * <p>
+ * <strong>Finalized month policy ({@code is_finalized}):</strong> {@link #upsertMonthly} intentionally
+ * ignores further <em>usage-recorded</em> cost deltas once a month row is finalized (scheduler-driven).
+ * <strong>Cost corrections</strong> are handled by {@link com.eevee.billingservice.service.BillingCostCorrectionService},
+ * which <em>rejects</em> corrections that target a finalized month for the same
+ * {@code (month_start_date, user_id, api_key_id)} key (no aggregation change, no outbound corrected event).
+ * Changing this policy requires revisiting finalize semantics and downstream consumers together.
  */
 @Repository
 public class BillingAggregationJdbc {
@@ -52,6 +59,11 @@ public class BillingAggregationJdbc {
         );
     }
 
+    /**
+     * Adds {@code costDelta} to the monthly total unless the row is {@code is_finalized = true}, in which case
+     * the total is left unchanged (usage pipeline). Corrections use a separate entrypoint that enforces policy
+     * before calling JDBC updates.
+     */
     public void upsertMonthly(
             LocalDate monthStartDate,
             String userId,
@@ -74,6 +86,56 @@ public class BillingAggregationJdbc {
                 userId,
                 apiKeyId,
                 costDelta
+        );
+    }
+
+    /**
+     * Returns whether the monthly aggregate row exists and is finalized for the natural month key.
+     */
+    public boolean isMonthlyFinalized(LocalDate monthStartDate, String userId, String apiKeyId) {
+        Boolean v = jdbcTemplate.query(
+                """
+                        SELECT is_finalized
+                        FROM monthly_expenditure_agg
+                        WHERE month_start_date = ?
+                          AND user_id = ?
+                          AND api_key_id = ?
+                        """,
+                ps -> {
+                    ps.setObject(1, monthStartDate);
+                    ps.setString(2, userId);
+                    ps.setString(3, apiKeyId);
+                },
+                rs -> rs.next() ? rs.getBoolean(1) : null
+        );
+        return Boolean.TRUE.equals(v);
+    }
+
+    public BigDecimal findDailyTotalCostUsd(
+            LocalDate aggDate,
+            String userId,
+            String apiKeyId,
+            String provider,
+            String model
+    ) {
+        return jdbcTemplate.query(
+                """
+                        SELECT total_cost_usd
+                        FROM daily_expenditure_agg
+                        WHERE agg_date = ?
+                          AND user_id = ?
+                          AND api_key_id = ?
+                          AND provider = ?
+                          AND model = ?
+                        """,
+                ps -> {
+                    ps.setObject(1, aggDate);
+                    ps.setString(2, userId);
+                    ps.setString(3, apiKeyId);
+                    ps.setString(4, provider);
+                    ps.setString(5, model);
+                },
+                rs -> rs.next() ? rs.getBigDecimal(1) : null
         );
     }
 

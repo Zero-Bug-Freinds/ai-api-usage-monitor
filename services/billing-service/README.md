@@ -1,5 +1,7 @@
 # billing-service
 
+타 서비스가 RabbitMQ로 **billing이 발행하는(outbound) 이벤트**를 구독할 때는 저장소 루트의 [`docs/billing-outbound-events.md`](../../docs/billing-outbound-events.md) 를 본다.
+
 ## Identity 예산(월 예산 USD) 연동 설정
 
 Billing UI/집계 응답에 표시되는 **월 예산(USD)** 은 `billing-service`가 Identity로부터 HTTP로 선택적으로 조회합니다.
@@ -28,15 +30,84 @@ BILLING_IDENTITY_BUDGET_PATH=/api/identity/v1/users/{userId}/budget
 
 ### Identity 응답 형식(중요)
 
-`billing-service`는 Identity 응답 body를 JSON으로 파싱하고, 최상위 필드 `monthlyBudgetUsd` 만 읽습니다.
+`billing-service`는 Identity 응답 body를 JSON으로 파싱합니다.
+
+- **기본 예산 조회(기존)**: 최상위 `monthlyBudgetUsd` 를 사용합니다.
+- **키별 예산(선택)**: `monthlyBudgetsByKey` 배열이 있으면 `ExpenditureQueryService` / `IdentityBudgetClient.fetchMonthlyBudgetUsdForKey` 등에서 사용합니다.
 
 예시:
 
 ```json
 {
-  "monthlyBudgetUsd": 100.00
+  "monthlyBudgetUsd": 100.00,
+  "monthlyBudgetsByKey": [
+    { "externalApiKeyId": 123, "provider": "OPENAI", "monthlyBudgetUsd": 25.00 }
+  ]
 }
 ```
+
+## 월 예산 권위 API (Phase A)
+
+`GET /api/v1/expenditure/monthly-budget-authority` 는 게이트웨이가 주입한 `X-User-Id` 기준으로 **과금·알림에 쓸 단일 effective 월 예산(USD)** 과 Identity 스냅샷을 돌려줍니다.
+
+- **쿼리**
+  - `scope`: `USER` 또는 `API_KEY` (필수)
+  - `provider`, `apiKeyId`: `API_KEY` 스코프일 때 필요 (`apiKeyId`는 Identity의 `externalApiKeyId`와 매칭되는 **숫자 문자열**이어야 함)
+  - `month`: 선택, 있으면 **해당 달의 1일(YYYY-MM-01)** 이어야 함. 생략 시 Asia/Seoul 기준 “이번 달 1일”을 응답의 `month` 필드에 사용(Phase A에서 Identity 호출 자체는 월 파라미터를 넘기지 않음).
+- **Phase A 정책**: `effectiveMonthlyBudgetUsd` 는 Identity가 내려준 값을 그대로 권위로 노출합니다(플랜/팀 캡 병합은 billing에 아직 없음).
+
+## 비용 정정 (AMQP) — finalized 월 정책
+
+### finalized 월에 대한 정책
+
+`monthly_expenditure_agg.is_finalized = true` 인 월/사용자/API 키 조합에 대해서는 **정정을 적용하지 않습니다**(집계 변경 없음, `BillingCostCorrectedEvent` 미발행).  
+처리 시도는 `billing_cost_correction_processed` 로 **멱등 처리**되어 재전송 시에도 부작용이 없어야 합니다.
+
+### 인바운드: `BillingCostCorrectionAmqp` (JSON)
+
+Topic 라우팅 기본값은 `billing.rabbit.correction-in.*` (`application.yml`) 를 따릅니다.
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|------|------|
+| `schemaVersion` | number | 예 | 현재 `1` |
+| `correctionEventId` | string (UUID) | 예 | 멱등 키 |
+| `userId` | string | 예 | 집계 사용자 |
+| `apiKeyId` | string | 예 | 집계 API 키 id |
+| `monthStartDate` | string (ISO date) | 예 | 월 집계 키의 달 시작(반드시 해당 월 1일) |
+| `deltaCostUsd` | number | 예 | 월(및 선택적 일) 집계에 더할 USD 델타(음수 허용, 단 아래 “음수 가드” 참고) |
+| `aggDate` | string (ISO date) | 조건부 | 일 집계까지 적용할 때 `provider`·`model` 과 함께 필수 |
+| `provider` | string enum | 조건부 | `OPENAI` / `ANTHROPIC` / `GOOGLE` (`usage-events` 의 `AiProvider`) |
+| `model` | string | 조건부 | 일 집계 모델 키 |
+| `promptTokenDelta` | number | 아니오 | 기본 `0` |
+| `completionTokenDelta` | number | 아니오 | 기본 `0` |
+| `optionalCorrectedTotalUsdForScope` | number | 아니오 | 소비자/감사용 메타(집계 검증에 필수 아님) |
+| `relatedUsageEventId` | string (UUID) | 아니오 | 원 usage 이벤트 연결용 |
+
+`aggDate`가 있으면 `aggDate`가 속한 달의 시작일이 `monthStartDate` 와 같아야 합니다.
+
+**음수 가드:** 델타 적용 후 `monthly_expenditure_agg` 또는 해당 일 `daily_expenditure_agg` 의 비용 합이 0 미만이 되면 정정은 적용하지 않고(멱등 행은 이미 찍힌 상태로) 조용히 종료합니다.
+
+### 아웃바운드: `BillingCostCorrectedEvent` (JSON)
+
+성공적으로 집계에 반영된 경우에만(그리고 `billing.rabbit.correction-out.enabled=true` 인 경우) 커밋 이후 발행됩니다.
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `schemaVersion` | number | 현재 `1` |
+| `occurredAt` | string (ISO-8601 instant) | 발행 시각 |
+| `correctionEventId` | UUID | 인바운드와 동일 |
+| `userId` / `apiKeyId` | string | |
+| `monthStartDate` | ISO date | |
+| `appliedDeltaCostUsd` | number | 실제 적용된 델타 |
+| `aggDate` / `provider` / `model` | optional | 일 집계가 없었으면 null |
+| `optionalCorrectedTotalUsdForScope` | number? | |
+| `relatedUsageEventId` | UUID? | |
+
+### DDL 참고 (운영 수동 반영용)
+
+엔티티 기본 생성 외에, 명시적 DDL이 필요하면 아래 파일을 참고하세요.
+
+- `services/billing-service/src/main/resources/db/migration/V20260501120000__billing_cost_correction_processed.sql`
 
 ### 주의사항 / 트러블슈팅
 
