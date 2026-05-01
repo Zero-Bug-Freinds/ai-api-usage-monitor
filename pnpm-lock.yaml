@@ -36,6 +36,9 @@ importers:
       '@ai-usage/shell':
         specifier: workspace:*
         version: link:../../packages/shell
+      '@ai-usage/team-workspace-cache':
+        specifier: workspace:*
+        version: link:../../packages/team-workspace-cache
       '@ai-usage/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -97,6 +100,9 @@ importers:
 
   packages/shell:
     dependencies:
+      '@ai-usage/team-workspace-cache':
+        specifier: workspace:*
+        version: link:../team-workspace-cache
       '@ai-usage/ui':
         specifier: workspace:*
         version: link:../ui
@@ -119,6 +125,18 @@ importers:
       react-dom:
         specifier: 19.2.4
         version: 19.2.4(react@19.2.4)
+      typescript:
+        specifier: ^5
+        version: 5.9.3
+
+  packages/team-workspace-cache:
+    devDependencies:
+      '@types/react':
+        specifier: ^19
+        version: 19.2.14
+      react:
+        specifier: 19.2.4
+        version: 19.2.4
       typescript:
         specifier: ^5
         version: 5.9.3
@@ -588,6 +606,9 @@ importers:
       '@ai-usage/shell':
         specifier: workspace:*
         version: link:../../../packages/shell
+      '@ai-usage/team-workspace-cache':
+        specifier: workspace:*
+        version: link:../../../packages/team-workspace-cache
       '@ai-usage/ui':
         specifier: workspace:*
         version: link:../../../packages/ui
@@ -679,6 +700,9 @@ importers:
       '@ai-usage/shell':
         specifier: workspace:*
         version: link:../../../packages/shell
+      '@ai-usage/team-workspace-cache':
+        specifier: workspace:*
+        version: link:../../../packages/team-workspace-cache
       '@ai-usage/ui':
         specifier: workspace:*
         version: link:../../../packages/ui

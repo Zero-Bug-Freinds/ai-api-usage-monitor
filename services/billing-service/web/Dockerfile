@@ -10,6 +10,7 @@ RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY packages/ui/package.json ./packages/ui/
 COPY packages/shell/package.json ./packages/shell/
+COPY packages/team-workspace-cache/package.json ./packages/team-workspace-cache/
 COPY services/billing-service/web/package.json ./services/billing-service/web/
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm config set store-dir /pnpm/store && \
@@ -29,11 +30,14 @@ COPY --from=deps /repo/packages/ui/package.json ./packages/ui/package.json
 COPY --from=deps /repo/packages/ui/node_modules ./packages/ui/node_modules
 COPY --from=deps /repo/packages/shell/package.json ./packages/shell/package.json
 COPY --from=deps /repo/packages/shell/node_modules ./packages/shell/node_modules
+COPY --from=deps /repo/packages/team-workspace-cache/package.json ./packages/team-workspace-cache/package.json
+COPY --from=deps /repo/packages/team-workspace-cache/node_modules ./packages/team-workspace-cache/node_modules
 COPY --from=deps /repo/services/billing-service/web/package.json ./services/billing-service/web/package.json
 COPY --from=deps /repo/services/billing-service/web/node_modules ./services/billing-service/web/node_modules
 
 COPY packages/ui ./packages/ui
 COPY packages/shell ./packages/shell
+COPY packages/team-workspace-cache ./packages/team-workspace-cache
 # 앱 소스 전체( public/fonts 포함 )를 빌드 전에 복사 — next/font/local 및 next build 가 정적 폰트를 읽는다.
 COPY services/billing-service/web ./services/billing-service/web
 
