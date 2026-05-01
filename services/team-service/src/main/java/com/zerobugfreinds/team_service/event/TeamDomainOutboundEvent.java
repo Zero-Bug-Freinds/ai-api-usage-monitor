@@ -457,7 +457,10 @@ public sealed interface TeamDomainOutboundEvent permits
 			Instant occurredAt,
 			@JsonProperty("teamId")
 			Long teamIdValue,
+			String teamNameValue,
 			Long teamApiKeyId,
+			String ownerUserId,
+			String visibility,
 			String alias,
 			String provider,
 			TeamApiKeyStatus status,
@@ -472,7 +475,10 @@ public sealed interface TeamDomainOutboundEvent permits
 
 		public static TeamApiKeyStatusChangedEvent of(
 				Long teamId,
+				String teamName,
 				Long teamApiKeyId,
+				String ownerUserId,
+				String visibility,
 				String alias,
 				String provider,
 				TeamApiKeyStatus status,
@@ -484,7 +490,10 @@ public sealed interface TeamDomainOutboundEvent permits
 					TeamEventTypes.TEAM_API_KEY_STATUS_CHANGED,
 					Instant.now(),
 					teamId,
+					teamName,
 					teamApiKeyId,
+					ownerUserId,
+					visibility,
 					alias,
 					provider,
 					status,
@@ -499,7 +508,7 @@ public sealed interface TeamDomainOutboundEvent permits
 
 		@Override
 		public String teamName() {
-			return null;
+			return teamNameValue;
 		}
 
 		@Override

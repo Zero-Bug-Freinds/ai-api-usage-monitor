@@ -121,6 +121,7 @@ function parseTeamApiKeyDeletionGraceInput(raw: string):
 
 const TEAM_WEB_BASE_PATH = "/teams"
 const EXTERNAL_KEY_PROVIDER_OPTIONS: ExternalKeyProvider[] = ["GEMINI", "OPENAI", "ANTHROPIC"]
+const DISMISSED_EXPIRED_INVITATION_STORAGE_KEY = "team.dismissedExpiredInvitationNoticeIds"
 
 type InviteeFieldRow = { id: string; value: string }
 
@@ -353,6 +354,33 @@ export function TeamManagementView() {
   React.useEffect(() => {
     void loadExpiredInvitationNotices()
   }, [loadExpiredInvitationNotices])
+
+  React.useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(DISMISSED_EXPIRED_INVITATION_STORAGE_KEY)
+      if (!raw) return
+      const parsed = JSON.parse(raw) as unknown
+      if (!parsed || typeof parsed !== "object") return
+      const restored: Record<string, true> = {}
+      for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+        if (v === true) restored[k] = true
+      }
+      setDismissedInvitationNoticeIds(restored)
+    } catch {
+      // ignore malformed local storage
+    }
+  }, [])
+
+  React.useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        DISMISSED_EXPIRED_INVITATION_STORAGE_KEY,
+        JSON.stringify(dismissedInvitationNoticeIds),
+      )
+    } catch {
+      // ignore storage failures
+    }
+  }, [dismissedInvitationNoticeIds])
 
   React.useEffect(() => {
     if (teams.length === 0) {

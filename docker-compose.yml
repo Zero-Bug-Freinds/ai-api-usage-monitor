@@ -339,10 +339,31 @@ services:
       USAGE_WEB_INTERNAL_ORIGIN: ${USAGE_WEB_INTERNAL_ORIGIN:-http://host.docker.internal:3001}
       BILLING_WEB_INTERNAL_ORIGIN: ${BILLING_WEB_INTERNAL_ORIGIN:-http://host.docker.internal:3003}
       TEAM_WEB_INTERNAL_ORIGIN: ${TEAM_WEB_INTERNAL_ORIGIN:-http://host.docker.internal:3002}
+      AGENT_WEB_INTERNAL_ORIGIN: ${AGENT_WEB_INTERNAL_ORIGIN:-http://agent-web:3000}
+      AI_AGENT_WEB_INTERNAL_ORIGIN: ${AI_AGENT_WEB_INTERNAL_ORIGIN:-http://agent-web:3000}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
       - "${IDENTITY_WEB_PORT:-3000}:3000"
+
+  agent-web:
+    profiles:
+      - web
+    build:
+      context: .
+      dockerfile: services/agent-service/web/Dockerfile
+      args:
+        WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
+    depends_on:
+      - identity-web
+    environment:
+      NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${IDENTITY_WEB_PORT:-3000}}
+      AI_AGENT_SERVICE_INTERNAL_ORIGIN: ${AI_AGENT_SERVICE_INTERNAL_ORIGIN:-http://host.docker.internal:8096}
+      AI_AGENT_FALLBACK_USER_ID: ${AI_AGENT_FALLBACK_USER_ID:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${AGENT_WEB_PORT:-3005}:3000"
 
   usage-web:
     profiles:

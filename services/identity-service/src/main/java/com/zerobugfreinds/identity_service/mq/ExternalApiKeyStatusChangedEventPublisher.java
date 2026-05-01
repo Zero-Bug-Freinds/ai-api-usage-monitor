@@ -4,7 +4,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.zerobugfreinds.identity.events.ExternalApiKeyDeletedEvent;
+import com.zerobugfreinds.identity.events.ExternalApiKeyBudgetChangedEvent;
 import com.zerobugfreinds.identity.events.ExternalApiKeyStatusChangedEvent;
+import com.zerobugfreinds.identity.events.UserContextChangedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -29,15 +31,18 @@ public class ExternalApiKeyStatusChangedEventPublisher {
 	private final RabbitTemplate rabbitTemplate;
 	private final String exchange;
 	private final String routingKey;
+	private final String userContextRoutingKey;
 
 	public ExternalApiKeyStatusChangedEventPublisher(
 			RabbitTemplate rabbitTemplate,
 			@Value("${identity.external-api-key-event.exchange:identity.events}") String exchange,
-			@Value("${identity.external-api-key-event.routing-key:identity.external-api-key.status-changed}") String routingKey
+			@Value("${identity.external-api-key-event.routing-key:identity.external-api-key.status-changed}") String routingKey,
+			@Value("${identity.user-context-event.routing-key:identity.user.context-changed}") String userContextRoutingKey
 	) {
 		this.rabbitTemplate = rabbitTemplate;
 		this.exchange = exchange;
 		this.routingKey = routingKey;
+		this.userContextRoutingKey = userContextRoutingKey;
 	}
 
 	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -56,10 +61,44 @@ public class ExternalApiKeyStatusChangedEventPublisher {
 		);
 	}
 
+	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+	public void onExternalApiKeyBudgetChanged(ExternalApiKeyBudgetChangedEvent event) {
+		publishJson(
+				event,
+				"ExternalApiKeyBudgetChangedEvent",
+				event.keyId(),
+				event.userId(),
+				event.monthlyBudgetUsd()
+		);
+	}
+
+	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+	public void onUserContextChanged(UserContextChangedEvent event) {
+		publishJson(
+				event,
+				"UserContextChangedEvent",
+				event.userId(),
+				event.userId(),
+				event.activeTeamId(),
+				userContextRoutingKey
+		);
+	}
+
 	private void publishJson(Object payload, String label, Object apiKeyOrKeyId, Long userId, Object statusOrRetain) {
+		publishJson(payload, label, apiKeyOrKeyId, userId, statusOrRetain, routingKey);
+	}
+
+	private void publishJson(
+			Object payload,
+			String label,
+			Object apiKeyOrKeyId,
+			Long userId,
+			Object statusOrRetain,
+			String targetRoutingKey
+	) {
 		try {
 			String json = EVENT_JSON.writeValueAsString(payload);
-			rabbitTemplate.convertAndSend(exchange, routingKey, json);
+			rabbitTemplate.convertAndSend(exchange, targetRoutingKey, json);
 			log.info(
 					"Published {} apiKeyIdOrKeyId={} userId={} detail={} exchange={} routingKey={}",
 					label,
@@ -67,7 +106,7 @@ public class ExternalApiKeyStatusChangedEventPublisher {
 					userId,
 					statusOrRetain,
 					exchange,
-					routingKey
+					targetRoutingKey
 			);
 		} catch (JsonProcessingException e) {
 			throw new IllegalStateException(label + " serialization failed", e);
