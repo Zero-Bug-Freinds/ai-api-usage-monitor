@@ -53,6 +53,15 @@ billing:
       enabled: ${BILLING_RABBIT_BUDGET_OUT_ENABLED:true}
       exchange: ${BILLING_RABBIT_BUDGET_OUT_EXCHANGE:billing.events}
       routing-key: ${BILLING_RABBIT_BUDGET_OUT_ROUTING_KEY:billing.budget.threshold.reached}
+    correction-in:
+      enabled: ${BILLING_RABBIT_CORRECTION_IN_ENABLED:true}
+      exchange: ${BILLING_RABBIT_CORRECTION_IN_EXCHANGE:billing.events}
+      routing-key: ${BILLING_RABBIT_CORRECTION_IN_ROUTING_KEY:billing.cost.correct}
+      queue: ${BILLING_RABBIT_CORRECTION_IN_QUEUE:billing-service.cost-correction.queue}
+    correction-out:
+      enabled: ${BILLING_RABBIT_CORRECTION_OUT_ENABLED:true}
+      exchange: ${BILLING_RABBIT_CORRECTION_OUT_EXCHANGE:billing.events}
+      routing-key: ${BILLING_RABBIT_CORRECTION_OUT_ROUTING_KEY:billing.cost.corrected}
   gateway:
     shared-secret: ${GATEWAY_SHARED_SECRET:local-dev-gateway-shared-secret-do-not-use-in-prod}
   identity:

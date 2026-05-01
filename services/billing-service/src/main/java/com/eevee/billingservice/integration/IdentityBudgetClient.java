@@ -1,9 +1,8 @@
 package com.eevee.billingservice.integration;
 
 import com.eevee.billingservice.config.IdentityProperties;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.eevee.usage.events.AiProvider;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -14,7 +13,6 @@ import org.springframework.web.util.UriComponentsBuilder;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.Optional;
 
 /**
@@ -34,7 +32,7 @@ public class IdentityBudgetClient {
     }
 
     public Optional<BigDecimal> fetchMonthlyBudgetUsd(String userId) {
-        return fetchBudgetEnvelope(userId).map(BudgetEnvelope::monthlyBudgetUsd);
+        return fetchMonthlyBudgetEnvelope(userId).map(IdentityMonthlyBudgetEnvelope::monthlyBudgetUsd);
     }
 
     public Optional<BigDecimal> fetchMonthlyBudgetUsdForKey(String userId, AiProvider provider, String apiKeyId) {
@@ -47,17 +45,24 @@ public class IdentityBudgetClient {
         }
 
         String identityProvider = toIdentityProviderName(provider);
-        return fetchBudgetEnvelope(userId)
+        return fetchMonthlyBudgetEnvelope(userId)
                 .flatMap(env -> env.monthlyBudgetsByKey().stream()
                         .filter(v -> v != null && v.externalApiKeyId() != null)
                         .filter(v -> v.externalApiKeyId().equals(externalKeyId.get()))
                         .filter(v -> v.provider() != null && v.provider().equalsIgnoreCase(identityProvider))
                         .findFirst()
-                        .map(BudgetByKeyEnvelope::monthlyBudgetUsd)
+                        .map(IdentityBudgetKeyRow::monthlyBudgetUsd)
                 );
     }
 
-    private Optional<BudgetEnvelope> fetchBudgetEnvelope(String userId) {
+    /**
+     * Returns the Identity budget envelope as parsed JSON, when configured and available.
+     */
+    public Optional<IdentityMonthlyBudgetEnvelope> fetchMonthlyBudgetEnvelope(String userId) {
+        return fetchBudgetEnvelopeInternal(userId);
+    }
+
+    private Optional<IdentityMonthlyBudgetEnvelope> fetchBudgetEnvelopeInternal(String userId) {
         if (!identityProperties.isEnabled()) {
             return Optional.empty();
         }
@@ -88,7 +93,7 @@ public class IdentityBudgetClient {
             if (body == null || body.isBlank()) {
                 return Optional.empty();
             }
-            BudgetEnvelope env = objectMapper.readValue(body, BudgetEnvelope.class);
+            IdentityMonthlyBudgetEnvelope env = objectMapper.readValue(body, IdentityMonthlyBudgetEnvelope.class);
             return Optional.of(env);
         } catch (RestClientResponseException e) {
             if (e.getStatusCode().value() == 404) {
@@ -116,16 +121,5 @@ public class IdentityBudgetClient {
             case ANTHROPIC -> "ANTHROPIC";
             case GOOGLE -> "GEMINI";
         };
-    }
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    private record BudgetEnvelope(BigDecimal monthlyBudgetUsd, List<BudgetByKeyEnvelope> monthlyBudgetsByKey) {
-        public List<BudgetByKeyEnvelope> monthlyBudgetsByKey() {
-            return monthlyBudgetsByKey != null ? monthlyBudgetsByKey : List.of();
-        }
-    }
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    private record BudgetByKeyEnvelope(Long externalApiKeyId, String provider, BigDecimal monthlyBudgetUsd) {
     }
 }

@@ -20,6 +20,16 @@ public class BillingRabbitProperties {
      */
     private final BudgetOut budgetOut = new BudgetOut();
 
+    /**
+     * Inbound cost correction commands (delta adjustments).
+     */
+    private final CorrectionIn correctionIn = new CorrectionIn();
+
+    /**
+     * Outbound billing → usage/analytics (and similar) after a correction is applied.
+     */
+    private final CorrectionOut correctionOut = new CorrectionOut();
+
     public String getExchange() {
         return exchange;
     }
@@ -50,6 +60,14 @@ public class BillingRabbitProperties {
 
     public BudgetOut getBudgetOut() {
         return budgetOut;
+    }
+
+    public CorrectionIn getCorrectionIn() {
+        return correctionIn;
+    }
+
+    public CorrectionOut getCorrectionOut() {
+        return correctionOut;
     }
 
     public static class CostOut {
@@ -88,6 +106,77 @@ public class BillingRabbitProperties {
         private boolean enabled = true;
         private String exchange = "billing.events";
         private String routingKey = "billing.budget.threshold.reached";
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getExchange() {
+            return exchange;
+        }
+
+        public void setExchange(String exchange) {
+            this.exchange = exchange;
+        }
+
+        public String getRoutingKey() {
+            return routingKey;
+        }
+
+        public void setRoutingKey(String routingKey) {
+            this.routingKey = routingKey;
+        }
+    }
+
+    public static class CorrectionIn {
+
+        private boolean enabled = true;
+        private String exchange = "billing.events";
+        private String routingKey = "billing.cost.correct";
+        private String queue = "billing-service.cost-correction.queue";
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getExchange() {
+            return exchange;
+        }
+
+        public void setExchange(String exchange) {
+            this.exchange = exchange;
+        }
+
+        public String getRoutingKey() {
+            return routingKey;
+        }
+
+        public void setRoutingKey(String routingKey) {
+            this.routingKey = routingKey;
+        }
+
+        public String getQueue() {
+            return queue;
+        }
+
+        public void setQueue(String queue) {
+            this.queue = queue;
+        }
+    }
+
+    public static class CorrectionOut {
+
+        private boolean enabled = true;
+        private String exchange = "billing.events";
+        private String routingKey = "billing.cost.corrected";
 
         public boolean isEnabled() {
             return enabled;

@@ -1,13 +1,16 @@
 package com.eevee.billingservice.api;
 
 import com.eevee.billingservice.api.dto.ApiKeySeenResponse;
+import com.eevee.billingservice.api.dto.BudgetAuthorityScope;
 import com.eevee.billingservice.api.dto.DailyExpenditurePoint;
 import com.eevee.billingservice.api.dto.ExpenditureSummaryResponse;
+import com.eevee.billingservice.api.dto.MonthlyBudgetAuthorityResponse;
 import com.eevee.billingservice.api.dto.MonthlyBudgetStatusResponse;
 import com.eevee.billingservice.api.dto.MonthlyExpenditurePoint;
 import com.eevee.billingservice.api.dto.TeamMonthRollupRequest;
 import com.eevee.billingservice.api.dto.TeamMonthRollupResponse;
 import com.eevee.billingservice.security.BillingGatewayTrustFilter;
+import com.eevee.billingservice.service.BudgetAuthorityService;
 import com.eevee.billingservice.service.ExpenditureQueryService;
 import com.eevee.billingservice.service.ExpenditureTeamRollupService;
 import com.eevee.usage.events.AiProvider;
@@ -33,13 +36,16 @@ public class ExpenditureController {
 
     private final ExpenditureQueryService expenditureQueryService;
     private final ExpenditureTeamRollupService expenditureTeamRollupService;
+    private final BudgetAuthorityService budgetAuthorityService;
 
     public ExpenditureController(
             ExpenditureQueryService expenditureQueryService,
-            ExpenditureTeamRollupService expenditureTeamRollupService
+            ExpenditureTeamRollupService expenditureTeamRollupService,
+            BudgetAuthorityService budgetAuthorityService
     ) {
         this.expenditureQueryService = expenditureQueryService;
         this.expenditureTeamRollupService = expenditureTeamRollupService;
+        this.budgetAuthorityService = budgetAuthorityService;
     }
 
     @GetMapping("/summary")
@@ -62,6 +68,24 @@ public class ExpenditureController {
     ) {
         String userId = currentUser(request);
         return expenditureQueryService.monthlyBudgetStatus(userId, from, to);
+    }
+
+    /**
+     * Returns the effective monthly budget (USD) for the authenticated user (Phase A: Identity envelope only).
+     */
+    @GetMapping("/monthly-budget-authority")
+    public MonthlyBudgetAuthorityResponse monthlyBudgetAuthority(
+            HttpServletRequest request,
+            @RequestParam BudgetAuthorityScope scope,
+            @RequestParam(required = false) AiProvider provider,
+            @RequestParam(required = false) String apiKeyId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate month
+    ) {
+        String userId = currentUser(request);
+        if (month != null && month.getDayOfMonth() != 1) {
+            throw new IllegalArgumentException("month must be the first day of a calendar month (YYYY-MM-01).");
+        }
+        return budgetAuthorityService.resolve(userId, scope, provider, apiKeyId, month);
     }
 
     @GetMapping("/daily")

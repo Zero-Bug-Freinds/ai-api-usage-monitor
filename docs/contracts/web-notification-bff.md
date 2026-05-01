@@ -121,6 +121,7 @@ Notification `web`은 Next `basePath=/notifications`를 사용한다.
   - 동일하게 `access_token` 쿠키 → BFF가 `Authorization: Bearer`로 업스트림에 전달한다(§4.1).
   - `direct` 모드에서는 `X-User-Id`가 JWT `sub` 기반으로 업스트림에 전달된다(§4.2).
   - `gateway` 모드에서는 `X-User-Id` 등은 Gateway가 주입하는 모델을 따른다(가이드 §2).
+
 ### 4.6 캐시 정책
 
 - BFF 응답에는 `Cache-Control: no-store`를 강제한다.
