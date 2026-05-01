@@ -16,6 +16,7 @@
     "react-dom": "^19.0.0"
   },
   "dependencies": {
+    "@ai-usage/team-workspace-cache": "workspace:*",
     "@ai-usage/ui": "workspace:*",
     "lucide-react": "^1.6.0"
   },

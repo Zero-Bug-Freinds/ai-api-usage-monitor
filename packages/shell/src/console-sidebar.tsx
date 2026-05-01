@@ -16,6 +16,7 @@ import {
   Wallet,
 } from "lucide-react"
 
+import { dispatchLogoutEvent } from "@ai-usage/team-workspace-cache"
 import { Button, cn } from "@ai-usage/ui"
 import type { ConsoleNavId, ConsoleProfile } from "./console-nav"
 import { CONSOLE_MAIN_NAV_ORDER, CONSOLE_NAV } from "./console-nav"
@@ -111,6 +112,15 @@ export type ConsoleSidebarProps = {
   logoutApiPath?: string
   /** Redirect path after logout request. */
   logoutRedirectPath?: string
+  /**
+   * When set, team submenu links use this URL shape (e.g. `/teams?viewTeamId=…&tab=…`).
+   * If omitted, legacy `/teams/{id}/{suffix}` links are used.
+   */
+  buildTeamSubmenuHref?: (teamId: string, suffix: (typeof TEAM_SUB_MENU)[number]["suffix"]) => string
+  /** When set, expands the matching team row (e.g. `viewTeamId` query). */
+  teamExpandedTeamId?: string | null
+  /** Highlights the active team submenu entry. */
+  teamSubmenuActive?: { teamId: string; suffix: string } | null
 }
 
 export function ConsoleSidebar({
@@ -118,6 +128,9 @@ export function ConsoleSidebar({
   teams = [],
   logoutApiPath = "/api/auth/logout",
   logoutRedirectPath = "/",
+  buildTeamSubmenuHref,
+  teamExpandedTeamId,
+  teamSubmenuActive,
 }: ConsoleSidebarProps) {
   const pathname = usePathname() ?? ""
   const [logoutPending, setLogoutPending] = React.useState(false)
@@ -125,11 +138,15 @@ export function ConsoleSidebar({
   const [unreadCount, setUnreadCount] = React.useState<number | null>(null)
 
   React.useEffect(() => {
+    if (teamExpandedTeamId != null && teamExpandedTeamId !== "") {
+      setExpandedTeamId(teamExpandedTeamId)
+      return
+    }
     const match = pathname.match(/^\/teams\/([^/]+)/)
     if (match?.[1]) {
       setExpandedTeamId((prev) => prev ?? decodeURIComponent(match[1]))
     }
-  }, [pathname])
+  }, [pathname, teamExpandedTeamId])
 
   React.useEffect(() => {
     let cancelled = false
@@ -249,8 +266,12 @@ export function ConsoleSidebar({
                   >
                     <ul className="min-h-0 space-y-1 py-1 pl-3">
                       {TEAM_SUB_MENU.map((item) => {
-                        const href = `/teams/${encodeURIComponent(team.id)}/${item.suffix}`
-                        const active = pathname === href || pathname.startsWith(`${href}/`)
+                        const href = buildTeamSubmenuHref
+                          ? buildTeamSubmenuHref(team.id, item.suffix)
+                          : `/teams/${encodeURIComponent(team.id)}/${item.suffix}`
+                        const active = teamSubmenuActive
+                          ? teamSubmenuActive.teamId === team.id && teamSubmenuActive.suffix === item.suffix
+                          : pathname === href || pathname.startsWith(`${href}/`)
                         return (
                           <li key={item.key}>
                             <Link
