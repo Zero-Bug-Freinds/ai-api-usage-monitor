@@ -6,7 +6,7 @@ import NextFederationPlugin from "@module-federation/nextjs-mf";
 const nextConfig: NextConfig = {
   output: "standalone",
   outputFileTracingRoot: path.join(__dirname, "../../.."),
-  transpilePackages: ["@ai-usage/ui", "@ai-usage/shell"],
+  transpilePackages: ["@ai-usage/ui", "@ai-usage/shell", "@ai-usage/team-workspace-cache"],
   webpack(config: WebpackConfig) {
     config.plugins = config.plugins ?? [];
     config.plugins.push(

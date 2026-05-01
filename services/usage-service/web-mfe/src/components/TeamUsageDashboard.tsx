@@ -1,34 +1,31 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import * as React from "react";
+import { useLogoutCleanup, type CachedTeamItem } from "@ai-usage/team-workspace-cache";
 import TeamDashboard from "./TeamDashboard";
 import TeamMemberUsageLog from "./TeamMemberUsageLog";
 
 type TeamUsageDashboardProps = {
-  /** When embedded in apps/web `/teams/[id]`, pass router query id so team changes without full reload. */
-  teamId?: string;
+  /** URL `viewTeamId` — 새로고침 시 조회 팀 힌트(관리 UI와 자동 동기화 없음). */
+  viewTeamIdFromQuery?: string;
+  /** Main Shell 동기화 팀 목록(캐시와 병합). */
+  shellTeamList?: CachedTeamItem[];
 };
 
-export default function TeamUsageDashboard({ teamId: teamIdProp }: TeamUsageDashboardProps) {
-  const [selectedUserId, setSelectedUserId] = useState<string>("");
-  const [pathTeamId, setPathTeamId] = useState("");
-
-  useEffect(() => {
-    const readPath = () => {
-      const m = window.location.pathname.match(/\/teams\/([^/]+)/);
-      setPathTeamId(m?.[1] ?? "");
-    };
-    readPath();
-    window.addEventListener("popstate", readPath);
-    return () => window.removeEventListener("popstate", readPath);
-  }, []);
-
-  const teamId = teamIdProp ?? pathTeamId;
+export default function TeamUsageDashboard({ viewTeamIdFromQuery, shellTeamList }: TeamUsageDashboardProps) {
+  useLogoutCleanup();
+  const [selectedUserId, setSelectedUserId] = React.useState<string>("");
+  const [bffTeamId, setBffTeamId] = React.useState<string>("");
 
   return (
     <div className="space-y-4">
-      <TeamDashboard teamId={teamId} onSelectUser={setSelectedUserId} />
-      <TeamMemberUsageLog teamId={teamId} userId={selectedUserId} />
+      <TeamDashboard
+        viewTeamIdFromQuery={viewTeamIdFromQuery}
+        shellTeamList={shellTeamList}
+        onSelectUser={setSelectedUserId}
+        onEffectiveTeamChange={setBffTeamId}
+      />
+      <TeamMemberUsageLog teamId={bffTeamId} userId={selectedUserId} />
     </div>
   );
 }

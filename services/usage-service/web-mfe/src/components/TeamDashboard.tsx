@@ -26,16 +26,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@ai-usage/ui";
+import {
+  TEAM_USAGE_DASHBOARD_FILTERS_KEY,
+  readCachedTeamList,
+  readLastSelectedTeamId,
+  writeLastSelectedTeamId,
+  type CachedTeamItem,
+} from "@ai-usage/team-workspace-cache";
 import { formatKstIsoDate, addKstDays } from "@web/lib/usage/kst-dates";
 import { formatRequestCount, formatTokenCount, formatUsd, toNumber } from "@web/lib/usage/format";
 
-const STORAGE_KEY = "team-usage-dashboard:v2";
 const PROVIDER_ALL = "__ALL__";
 const TEAM_WEB_PREFIX = "/teams";
 
-type TeamDashboardProps = {
-  teamId: string;
+export type TeamDashboardProps = {
+  viewTeamIdFromQuery?: string;
+  shellTeamList?: CachedTeamItem[];
   onSelectUser: (userId: string) => void;
+  onEffectiveTeamChange?: (teamId: string) => void;
 };
 
 type UsageSeriesPoint = {
@@ -124,7 +132,7 @@ function presetRange(mode: PeriodMode, todayKst: string): { from: string; to: st
 function readStoredFilters(_todayKst: string): Partial<StoredFilters> {
   if (typeof localStorage === "undefined") return {};
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(TEAM_USAGE_DASHBOARD_FILTERS_KEY);
     if (!raw) return {};
     return JSON.parse(raw) as Partial<StoredFilters>;
   } catch {
@@ -135,10 +143,51 @@ function readStoredFilters(_todayKst: string): Partial<StoredFilters> {
 function writeStoredFilters(v: StoredFilters) {
   if (typeof localStorage === "undefined") return;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(v));
+    localStorage.setItem(TEAM_USAGE_DASHBOARD_FILTERS_KEY, JSON.stringify(v));
   } catch {
     /* ignore */
   }
+}
+
+function mergeTeamLists(
+  shell: CachedTeamItem[] | undefined,
+  cache: CachedTeamItem[],
+  api: TeamSummary[],
+): TeamSummary[] {
+  const map = new Map<string, TeamSummary>();
+  for (const t of shell ?? []) {
+    map.set(t.id, { id: t.id, name: t.name, createdAt: t.createdAt });
+  }
+  for (const t of cache) {
+    if (!map.has(t.id)) map.set(t.id, { id: t.id, name: t.name, createdAt: t.createdAt });
+  }
+  for (const t of api) {
+    map.set(t.id, t);
+  }
+  return Array.from(map.values());
+}
+
+function pickOldestTeamId(list: TeamSummary[]): string {
+  if (list.length === 0) return "";
+  const dated = list.filter((t) => t.createdAt);
+  if (dated.length === 0) return list[0]!.id;
+  return [...dated].sort((a, b) => (a.createdAt ?? "").localeCompare(b.createdAt ?? ""))[0]!.id;
+}
+
+/**
+ * 1) last_selected_team if still valid in list and (cache empty or id in cached_team_list)
+ * 2) viewTeamIdFromQuery if in list
+ * 3) oldest created team in list
+ */
+function resolveTeamSelection(list: TeamSummary[], viewQ: string | undefined): string {
+  const cache = readCachedTeamList();
+  const cacheIds = new Set(cache.map((c) => c.id));
+  const last = readLastSelectedTeamId();
+  if (last && list.some((t) => t.id === last)) {
+    if (cacheIds.size === 0 || cacheIds.has(last)) return last;
+  }
+  if (viewQ && list.some((t) => t.id === viewQ)) return viewQ;
+  return pickOldestTeamId(list);
 }
 
 function kstDaysInclusive(fromIso: string, toIso: string): number {
@@ -201,9 +250,24 @@ function truncateModelLabel(model: string, max = 36): string {
   return `${model.slice(0, max - 1)}…`;
 }
 
-export default function TeamDashboard({ teamId: routeTeamId, onSelectUser }: TeamDashboardProps) {
+export default function TeamDashboard({
+  viewTeamIdFromQuery,
+  shellTeamList,
+  onSelectUser,
+  onEffectiveTeamChange,
+}: TeamDashboardProps) {
   const todayKst = formatKstIsoDate();
   const stored = readStoredFilters(todayKst);
+
+  const mergedOnMount = React.useMemo(
+    () => mergeTeamLists(shellTeamList, readCachedTeamList(), []),
+    [shellTeamList],
+  );
+
+  const initialSelected = React.useMemo(() => {
+    if (stored.teamId && mergedOnMount.some((t) => t.id === stored.teamId)) return stored.teamId;
+    return resolveTeamSelection(mergedOnMount, viewTeamIdFromQuery);
+  }, [mergedOnMount, stored.teamId, viewTeamIdFromQuery]);
 
   const [dashProvider, setDashProvider] = React.useState(stored.provider ?? PROVIDER_ALL);
   const [periodMode, setPeriodMode] = React.useState<PeriodMode>((stored.periodMode as PeriodMode) ?? "today");
@@ -217,9 +281,18 @@ export default function TeamDashboard({ teamId: routeTeamId, onSelectUser }: Tea
     return presetRange(periodMode, todayKst);
   }, [periodMode, customFrom, customTo, todayKst]);
 
-  const [teams, setTeams] = React.useState<TeamSummary[]>([]);
+  const [teams, setTeams] = React.useState<TeamSummary[]>(mergedOnMount);
   const [teamsErr, setTeamsErr] = React.useState<string | null>(null);
-  const [selectedTeamId, setSelectedTeamId] = React.useState(stored.teamId || routeTeamId || "");
+  const [selectedTeamId, setSelectedTeamId] = React.useState(initialSelected);
+
+  const shellKey = React.useMemo(
+    () => (shellTeamList ?? []).map((t) => `${t.id}`).join(","),
+    [shellTeamList],
+  );
+
+  React.useEffect(() => {
+    setTeams((prev) => mergeTeamLists(shellTeamList, readCachedTeamList(), prev));
+  }, [shellKey, shellTeamList]);
 
   const [apiKeys, setApiKeys] = React.useState<TeamApiKey[]>([]);
   const [keysLoading, setKeysLoading] = React.useState(false);
@@ -238,9 +311,15 @@ export default function TeamDashboard({ teamId: routeTeamId, onSelectUser }: Tea
           credentials: "include",
           headers: { Accept: "application/json" },
         });
-        const json = (await res.json()) as { success?: boolean; data?: unknown };
+        const json = (await res.json()) as { success?: boolean; data?: unknown; message?: string };
         if (!res.ok || !json.success || !Array.isArray(json.data)) {
-          setTeamsErr(json && typeof json === "object" && "message" in json ? String((json as { message?: unknown }).message) : "팀 목록 실패");
+          if (!cancelled) {
+            setTeamsErr(
+              json && typeof json === "object" && typeof json.message === "string"
+                ? json.message
+                : "팀 목록을 네트워크에서 불러오지 못했습니다",
+            );
+          }
           return;
         }
         const list = (json.data as unknown[])
@@ -257,21 +336,23 @@ export default function TeamDashboard({ teamId: routeTeamId, onSelectUser }: Tea
           })
           .filter((x): x is TeamSummary => x !== null);
         if (cancelled) return;
-        setTeams(list);
+        setTeams(mergeTeamLists(shellTeamList, readCachedTeamList(), list));
         setTeamsErr(null);
-        setSelectedTeamId((prev) => {
-          if (prev && list.some((t) => t.id === prev)) return prev;
-          if (routeTeamId && list.some((t) => t.id === routeTeamId)) return routeTeamId;
-          return list[0]?.id ?? "";
-        });
       } catch {
-        if (!cancelled) setTeamsErr("팀 목록을 불러오지 못했습니다");
+        if (!cancelled) setTeamsErr("팀 목록을 네트워크에서 불러오지 못했습니다");
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [routeTeamId]);
+  }, [shellKey, shellTeamList]);
+
+  React.useEffect(() => {
+    setSelectedTeamId((prev) => {
+      if (prev && teams.some((t) => t.id === prev)) return prev;
+      return resolveTeamSelection(teams, viewTeamIdFromQuery);
+    });
+  }, [teams, viewTeamIdFromQuery]);
 
   React.useEffect(() => {
     if (!selectedTeamId) {
@@ -326,7 +407,11 @@ export default function TeamDashboard({ teamId: routeTeamId, onSelectUser }: Tea
     };
   }, [selectedTeamId]);
 
-  const effectiveTeamId = selectedTeamId || routeTeamId;
+  const effectiveTeamId = selectedTeamId;
+
+  React.useEffect(() => {
+    onEffectiveTeamChange?.(effectiveTeamId);
+  }, [effectiveTeamId, onEffectiveTeamChange]);
 
   React.useEffect(() => {
     writeStoredFilters({
@@ -441,8 +526,17 @@ export default function TeamDashboard({ teamId: routeTeamId, onSelectUser }: Tea
     (summary && summary.totalRequests && summary.totalRequests > 0) ||
     (data?.usageSeries && data.usageSeries.some((r) => r.requestCount > 0));
 
-  if (!routeTeamId && !effectiveTeamId && teams.length === 0 && teamsErr) {
-    return <p className="text-sm text-destructive">{teamsErr}</p>;
+  if (teams.length === 0) {
+    return (
+      <div className="mx-auto max-w-lg rounded-lg border border-border bg-card p-8 text-center shadow-sm">
+        <h1 className="text-xl font-semibold tracking-tight">팀 사용량</h1>
+        <p className="mt-3 text-sm text-muted-foreground">팀을 먼저 생성해 보세요!</p>
+        <Button type="button" className="mt-6" asChild>
+          <a href="/teams?tab=members">팀 만들기 · 멤버 관리로 이동</a>
+        </Button>
+        {teamsErr ? <p className="mt-4 text-sm text-amber-700">{teamsErr}</p> : null}
+      </div>
+    );
   }
 
   return (
@@ -506,7 +600,13 @@ export default function TeamDashboard({ teamId: routeTeamId, onSelectUser }: Tea
 
         <div className="space-y-2 sm:w-52">
           <Label>팀</Label>
-          <Select value={effectiveTeamId} onValueChange={setSelectedTeamId}>
+          <Select
+            value={selectedTeamId || undefined}
+            onValueChange={(id) => {
+              setSelectedTeamId(id);
+              writeLastSelectedTeamId(id);
+            }}
+          >
             <SelectTrigger>
               <SelectValue placeholder="팀 선택" />
             </SelectTrigger>
@@ -565,7 +665,7 @@ export default function TeamDashboard({ teamId: routeTeamId, onSelectUser }: Tea
 
       {loading ? <p className="mb-8 text-sm text-muted-foreground">불러오는 중…</p> : null}
 
-      {!loading && !error && effectiveTeamId ? (
+      {effectiveTeamId && !error ? (
         <>
           <section className="mb-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
@@ -590,14 +690,16 @@ export default function TeamDashboard({ teamId: routeTeamId, onSelectUser }: Tea
           </section>
 
           {!hasMainData ? (
-            <p className="mb-10 text-center text-sm text-muted-foreground">선택한 기간·필터에 대한 사용 데이터가 없습니다</p>
+            <p className="mb-10 text-center text-sm text-muted-foreground">
+              등록된 데이터가 없습니다. (선택한 기간·필터에 대한 사용 데이터가 없을 수 있습니다)
+            </p>
           ) : null}
 
           <section className="mb-8 w-full min-w-0 rounded-lg border border-border p-4 shadow-sm">
             <h2 className="mb-4 text-lg font-medium">{mainChartTitle(data?.usageSeriesUnit)}</h2>
             <div className="h-[380px] min-h-[380px] w-full min-w-0">
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={mainRows}>
+                <ComposedChart data={mainRows.length > 0 ? mainRows : [{ label: "—", requestCount: 0, successRate: 0, errorRate: 0 }]}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                   <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                   <YAxis
@@ -652,7 +754,11 @@ export default function TeamDashboard({ teamId: routeTeamId, onSelectUser }: Tea
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
-                        data={pieData.length > 0 ? pieData : [{ name: "—", value: 1, fullName: "__empty__", provider: "GOOGLE", percent: 1 }]}
+                        data={
+                          pieData.length > 0
+                            ? pieData
+                            : [{ name: "—", value: 1, fullName: "__empty__", provider: "GOOGLE", percent: 1 }]
+                        }
                         dataKey="value"
                         nameKey="name"
                         cx="50%"
@@ -663,27 +769,33 @@ export default function TeamDashboard({ teamId: routeTeamId, onSelectUser }: Tea
                         isAnimationActive={pieData.length > 0}
                         label={pieData.length === 0 ? false : ({ index }) => String((index ?? 0) + 1)}
                       >
-                        {(pieData.length > 0 ? pieData : [{ name: "—", fullName: "__empty__", provider: "GOOGLE", value: 1 }]).map((entry, i) => (
-                          <Cell
-                            key={`cell-${entry.fullName}-${i}`}
-                            fill={
-                              pieData.length === 0 ? "var(--border)" : colorForModel(entry.fullName ?? "", entry.provider ?? "")
-                            }
-                            fillOpacity={pieData.length === 0 ? 0.35 : 1}
-                          />
-                        ))}
+                        {(pieData.length > 0 ? pieData : [{ name: "—", fullName: "__empty__", provider: "GOOGLE", value: 1 }]).map(
+                          (entry, i) => (
+                            <Cell
+                              key={`cell-${entry.fullName}-${i}`}
+                              fill={
+                                pieData.length === 0 ? "var(--border)" : colorForModel(entry.fullName ?? "", entry.provider ?? "")
+                              }
+                              fillOpacity={pieData.length === 0 ? 0.35 : 1}
+                            />
+                          ),
+                        )}
                       </Pie>
                       <Tooltip formatter={(v: number) => formatRequestCount(v)} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
                 <ul className="max-h-[220px] w-full flex-1 space-y-1 overflow-auto text-xs">
-                  {pieData.map((p) => (
-                    <li key={p.fullName} className="flex justify-between gap-2">
-                      <span className="truncate text-muted-foreground">{p.name}</span>
-                      <span className="tabular-nums">{(p.percent * 100).toFixed(1)}%</span>
-                    </li>
-                  ))}
+                  {pieData.length === 0 ? (
+                    <li className="text-muted-foreground">등록된 데이터가 없습니다</li>
+                  ) : (
+                    pieData.map((p) => (
+                      <li key={p.fullName} className="flex justify-between gap-2">
+                        <span className="truncate text-muted-foreground">{p.name}</span>
+                        <span className="tabular-nums">{(p.percent * 100).toFixed(1)}%</span>
+                      </li>
+                    ))
+                  )}
                 </ul>
               </div>
             </section>
@@ -691,15 +803,19 @@ export default function TeamDashboard({ teamId: routeTeamId, onSelectUser }: Tea
             <section className="min-w-0 rounded-lg border border-border p-4 shadow-sm">
               <h2 className="mb-4 text-lg font-medium">모델별 요청 수 (상위)</h2>
               <div className="h-[300px] min-h-[300px] w-full min-w-0">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={barModelData} layout="vertical" margin={{ left: 8, right: 8 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis type="number" tick={{ fontSize: 11 }} />
-                    <YAxis type="category" dataKey="label" width={100} tick={{ fontSize: 10 }} />
-                    <Tooltip />
-                    <Bar dataKey="requests" name="요청 수" fill="#64748b" radius={[0, 4, 4, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+                {barModelData.length === 0 ? (
+                  <p className="flex h-full items-center justify-center text-sm text-muted-foreground">등록된 데이터가 없습니다</p>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={barModelData} layout="vertical" margin={{ left: 8, right: 8 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                      <XAxis type="number" tick={{ fontSize: 11 }} />
+                      <YAxis type="category" dataKey="label" width={100} tick={{ fontSize: 10 }} />
+                      <Tooltip />
+                      <Bar dataKey="requests" name="요청 수" fill="#64748b" radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
               </div>
             </section>
           </div>
