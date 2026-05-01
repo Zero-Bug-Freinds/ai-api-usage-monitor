@@ -100,9 +100,6 @@ importers:
 
   packages/shell:
     dependencies:
-      '@ai-usage/team-workspace-cache':
-        specifier: workspace:*
-        version: link:../team-workspace-cache
       '@ai-usage/ui':
         specifier: workspace:*
         version: link:../ui
