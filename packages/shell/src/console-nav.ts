@@ -1,4 +1,4 @@
-export type ConsoleProfile = "identity" | "usage" | "billing" | "notification" | "team"
+export type ConsoleProfile = "identity" | "usage" | "billing" | "notification" | "team" | "agent"
 
 export type ConsoleNavId =
   | "usageHome"
@@ -8,6 +8,7 @@ export type ConsoleNavId =
   | "settings"
   | "organizations"
   | "teams"
+  | "assistant"
   | "identityLanding"
 
 export type RouteOwner = "usage" | "billing" | "identity" | "notification" | "team"
@@ -27,6 +28,7 @@ export const CONSOLE_NAV: Record<ConsoleNavId, ConsoleNavMeta> = {
   settings: { label: "설정", owner: "identity", publicPath: "/settings" },
   organizations: { label: "조직", owner: "identity", publicPath: "/organizations" },
   teams: { label: "팀", owner: "team", publicPath: "/teams" },
+  assistant: { label: "비서", owner: "identity", publicPath: "/agent" },
   identityLanding: { label: "홈으로", owner: "identity", publicPath: "/" },
 }
 
@@ -39,6 +41,7 @@ export const CONSOLE_MAIN_NAV_ORDER: ConsoleNavId[] = [
   "settings",
   "organizations",
   "teams",
+  "assistant",
 ]
 
 function normalizePath(path: string): string {
@@ -101,6 +104,13 @@ export function resolveConsoleNavLink(profile: ConsoleProfile, id: ConsoleNavId)
 
   if (profile === "team") {
     if (owner === "team") {
+      return { kind: "next", href: "/" }
+    }
+    return { kind: "anchor", href: anchorHrefForPublicPath(publicPath) }
+  }
+
+  if (profile === "agent") {
+    if (id === "assistant") {
       return { kind: "next", href: "/" }
     }
     return { kind: "anchor", href: anchorHrefForPublicPath(publicPath) }
@@ -174,6 +184,13 @@ export function isConsoleNavActive(profile: ConsoleProfile, pathname: string, id
 
   if (profile === "team") {
     if (id === "teams") return true
+    if (id === "assistant") return p === "/agent" || p.startsWith("/agent/")
+    return false
+  }
+
+  if (profile === "agent") {
+    if (id === "teams") return p === "/teams" || p.startsWith("/teams/")
+    if (id === "assistant") return p === "/agent" || p.startsWith("/agent/")
     return false
   }
 

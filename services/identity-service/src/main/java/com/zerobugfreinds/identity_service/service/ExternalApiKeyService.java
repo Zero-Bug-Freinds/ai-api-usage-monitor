@@ -2,6 +2,7 @@ package com.zerobugfreinds.identity_service.service;
 
 import com.zerobugfreinds.identity_service.domain.ExternalApiKeyProvider;
 import com.zerobugfreinds.identity.events.ExternalApiKeyDeletedEvent;
+import com.zerobugfreinds.identity.events.ExternalApiKeyBudgetChangedEvent;
 import com.zerobugfreinds.identity.events.ExternalApiKeyStatus;
 import com.zerobugfreinds.identity.events.ExternalApiKeyStatusChangedEvent;
 import com.zerobugfreinds.identity_service.dto.InternalApiKeyResponse;
@@ -123,6 +124,7 @@ public class ExternalApiKeyService {
 				saved.getId()
 		);
 		publishExternalApiKeyStatusChanged(saved, ExternalApiKeyStatus.ACTIVE);
+		publishExternalApiKeyBudgetChanged(saved, ExternalApiKeyStatus.ACTIVE);
 
 		return saved;
 	}
@@ -206,6 +208,7 @@ public class ExternalApiKeyService {
 				entity.getId()
 		);
 		publishExternalApiKeyStatusChanged(entity, ExternalApiKeyStatus.ACTIVE);
+		publishExternalApiKeyBudgetChanged(entity, ExternalApiKeyStatus.ACTIVE);
 
 		return entity;
 	}
@@ -327,6 +330,7 @@ public class ExternalApiKeyService {
 				entity.getPermanentDeletionAt()
 		);
 		publishExternalApiKeyStatusChanged(entity, ExternalApiKeyStatus.DELETION_REQUESTED);
+		publishExternalApiKeyBudgetChanged(entity, ExternalApiKeyStatus.DELETION_REQUESTED);
 		return entity;
 	}
 
@@ -343,6 +347,7 @@ public class ExternalApiKeyService {
 		entity.clearPendingDeletion();
 		log.info("[AUDIT] external_api_key_deletion_cancelled userId={} keyId={}", userId, entity.getId());
 		publishExternalApiKeyStatusChanged(entity, ExternalApiKeyStatus.ACTIVE);
+		publishExternalApiKeyBudgetChanged(entity, ExternalApiKeyStatus.ACTIVE);
 		return entity;
 	}
 
@@ -385,6 +390,18 @@ public class ExternalApiKeyService {
 				retainLogs,
 				entity.getProvider().name(),
 				entity.getKeyAlias()
+		);
+		applicationEventPublisher.publishEvent(event);
+	}
+
+	private void publishExternalApiKeyBudgetChanged(ExternalApiKeyEntity entity, ExternalApiKeyStatus status) {
+		ExternalApiKeyBudgetChangedEvent event = ExternalApiKeyBudgetChangedEvent.of(
+				entity.getId(),
+				entity.getKeyAlias(),
+				entity.getUserId(),
+				entity.getProvider().name(),
+				status,
+				entity.getMonthlyBudgetUsd()
 		);
 		applicationEventPublisher.publishEvent(event);
 	}

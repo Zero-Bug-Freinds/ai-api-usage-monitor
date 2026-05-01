@@ -1,0 +1,5 @@
+rootProject.name = 'agent-service'
+include 'identity-events'
+project(':identity-events').projectDir = file("${rootDir}/../../libs/identity-events")
+include 'usage-events'
+project(':usage-events').projectDir = file("${rootDir}/../../libs/usage-events")

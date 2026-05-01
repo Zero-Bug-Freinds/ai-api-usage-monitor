@@ -7,6 +7,8 @@ package com.zerobugfreinds.identity.events;
 public final class IdentityExternalApiKeyEventTypes {
 
 	public static final String EXTERNAL_API_KEY_DELETED = "EXTERNAL_API_KEY_DELETED";
+	public static final String EXTERNAL_API_KEY_BUDGET_CHANGED = "EXTERNAL_API_KEY_BUDGET_CHANGED";
+	public static final String USER_CONTEXT_CHANGED = "USER_CONTEXT_CHANGED";
 
 	private IdentityExternalApiKeyEventTypes() {
 	}
