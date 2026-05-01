@@ -789,10 +789,6 @@ export function TeamManagementView() {
     setMessage(null)
     try {
       await switchActiveTeam(teamId)
-      if (typeof window !== "undefined") {
-        const base = window.location.origin
-        window.location.assign(`${base}/teams/${encodeURIComponent(teamId)}`)
-      }
       setMessage({ kind: "success", text: "활성 팀이 전환되었습니다" })
     } catch (e) {
       const details = e instanceof Error ? e.message : "팀 전환 토큰 갱신에 실패했습니다"
