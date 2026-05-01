@@ -22,7 +22,20 @@ type BffResponse = {
   };
 };
 
-const BASE_URL = process.env.NEXT_PUBLIC_USAGE_BFF_BASE_URL ?? "http://localhost:8888";
+function usageBffBase(): string {
+  const envBase = (process.env.NEXT_PUBLIC_USAGE_BFF_BASE_URL ?? "").replace(/\/+$/, "");
+  if (envBase) return envBase;
+  if (typeof window !== "undefined") return window.location.origin;
+  return "";
+}
+
+function memberLogFetchError(status: number): string {
+  if (status === 400) return "팀원 로그 조회 파라미터가 올바르지 않습니다.";
+  if (status === 401 || status === 403) return "로그인 세션이 만료되었거나 접근 권한이 없습니다.";
+  if (status === 404) return "팀원 로그 엔드포인트를 찾지 못했습니다.";
+  if (status >= 500) return "팀원 로그 서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.";
+  return `팀원 로그 조회 실패 (HTTP ${status})`;
+}
 
 export default function TeamMemberUsageLog({ teamId, userId }: TeamMemberUsageLogProps) {
   const [loading, setLoading] = useState(false);
@@ -39,18 +52,24 @@ export default function TeamMemberUsageLog({ teamId, userId }: TeamMemberUsageLo
   useEffect(() => {
     if (!teamId || !userId) {
       setRows([]);
+      setError(null);
+      return;
+    }
+    const base = usageBffBase();
+    if (!base) {
+      setError("사용량 API 베이스 URL을 확인할 수 없습니다.");
       return;
     }
     setLoading(true);
     setError(null);
     fetch(
-      `${BASE_URL}/api/v1/usage/bff/dashboard?teamId=${encodeURIComponent(teamId)}&userId=${encodeURIComponent(
+      `${base}/api/v1/usage/bff/dashboard?teamId=${encodeURIComponent(teamId)}&userId=${encodeURIComponent(
         userId
       )}&from=${from}&to=${to}`
     )
       .then(async (r) => {
         if (!r.ok) {
-          throw new Error(`HTTP ${r.status}`);
+          throw new Error(memberLogFetchError(r.status));
         }
         return (await r.json()) as BffResponse;
       })
