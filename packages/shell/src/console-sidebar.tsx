@@ -17,7 +17,6 @@ import {
   Wallet,
 } from "lucide-react"
 
-import { dispatchLogoutEvent } from "@ai-usage/team-workspace-cache"
 import { Button, cn } from "@ai-usage/ui"
 import type { ConsoleNavId, ConsoleProfile } from "./console-nav"
 import { CONSOLE_MAIN_NAV_ORDER, CONSOLE_NAV } from "./console-nav"
@@ -33,6 +32,7 @@ const TEAM_SUB_MENU = [
   { key: "members", label: "멤버 관리", suffix: "members" },
   { key: "apiKeys", label: "API 및 설정", suffix: "api-keys" },
 ] as const
+const AI_USAGE_LOGOUT_EVENT = "ai-usage:logout"
 const LOCAL_STORAGE_KEYS_TO_PRESERVE_ON_LOGOUT = ["team.dismissedExpiredInvitationNoticeIds"] as const
 
 const ICONS: Record<ConsoleNavId, ReactNode> = {
@@ -208,6 +208,13 @@ export function ConsoleSidebar({
 
   async function handleLogout() {
     setLogoutPending(true)
+    try {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent(AI_USAGE_LOGOUT_EVENT, { bubbles: true }))
+      }
+    } catch {
+      // 이벤트 발행 실패 시에도 로그아웃 흐름은 계속 진행한다.
+    }
     try {
       await fetch(logoutApiPath, {
         method: "POST",
