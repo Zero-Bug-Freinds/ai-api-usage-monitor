@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@ai-usage/shell": "workspace:*",
+    "@ai-usage/team-workspace-cache": "workspace:*",
     "@ai-usage/ui": "workspace:*",
     "@module-federation/nextjs-mf": "^8.8.64",
     "lucide-react": "^1.6.0",

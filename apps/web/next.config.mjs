@@ -11,7 +11,7 @@ const usageRemoteOrigin = process.env.NEXT_PUBLIC_MFE_USAGE_REMOTE_URL ?? "http:
 const nextConfig = {
   output: "standalone",
   outputFileTracingRoot: path.join(__dirname, "../.."),
-  transpilePackages: ["@ai-usage/ui", "@ai-usage/shell"],
+  transpilePackages: ["@ai-usage/ui", "@ai-usage/shell", "@ai-usage/team-workspace-cache"],
   // Avoid bundling MF (and its `node:` imports) on the server; pairs with webpack externals below.
   serverExternalPackages: ["@module-federation/nextjs-mf"],
   webpack(config, { isServer: _isServer }) {
