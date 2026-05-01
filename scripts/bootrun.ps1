@@ -13,7 +13,8 @@ param(
         'team-service',
         'billing-service',
         'api-gateway-service',
-        'proxy-service'
+        'proxy-service',
+        'agent-service'
     )]
     [string] $Service,
 
@@ -44,6 +45,7 @@ switch ($Service) {
     'usage-service' { if (-not $env:USAGE_SERVICE_PORT) { $env:USAGE_SERVICE_PORT = '8092' } }
     'team-service' { if (-not $env:TEAM_SERVICE_PORT) { $env:TEAM_SERVICE_PORT = '8094' } }
     'billing-service' { if (-not $env:BILLING_SERVICE_PORT) { $env:BILLING_SERVICE_PORT = '8095' } }
+    'agent-service' { if (-not $env:AI_AGENT_SERVICE_PORT) { $env:AI_AGENT_SERVICE_PORT = '8096' } }
     Default { }
 }
 
@@ -61,7 +63,14 @@ try {
     }
     $gwBat = Join-Path $ServiceDir 'gradlew.bat'
     $gwSh = Join-Path $ServiceDir 'gradlew'
-    if (Test-Path -LiteralPath $gwBat) {
+    if ($Service -eq 'agent-service' -and -not (Test-Path -LiteralPath $gwBat) -and -not (Test-Path -LiteralPath $gwSh)) {
+        $sharedWrapper = Join-Path -Path (Join-Path -Path $RepoRoot -ChildPath 'services') -ChildPath 'team-service/gradlew.bat'
+        if (-not (Test-Path -LiteralPath $sharedWrapper)) {
+            Write-Error "Shared Gradle wrapper not found: $sharedWrapper"
+            exit 1
+        }
+        & $sharedWrapper '-p' $ServiceDir @gradleArgsAll
+    } elseif (Test-Path -LiteralPath $gwBat) {
         & $gwBat @gradleArgsAll
     } elseif (Test-Path -LiteralPath $gwSh) {
         chmod +x $gwSh 2>$null

@@ -28,6 +28,14 @@ public class BillingRabbitConfiguration {
         return new TopicExchange(props.getBudgetOut().getExchange(), true, false);
     }
 
+    /**
+     * Topic exchange for inbound cost corrections (defaults to {@code billing.events}; may differ per env).
+     */
+    @Bean
+    public TopicExchange billingCorrectionIngressExchange(BillingRabbitProperties props) {
+        return new TopicExchange(props.getCorrectionIn().getExchange(), true, false);
+    }
+
     @Bean
     public Queue billingQueue(BillingRabbitProperties props) {
         return new Queue(props.getQueue(), true);
@@ -42,5 +50,21 @@ public class BillingRabbitConfiguration {
         return BindingBuilder.bind(billingQueue)
                 .to(billingUsageExchange)
                 .with(props.getRoutingKey());
+    }
+
+    @Bean
+    public Queue billingCostCorrectionQueue(BillingRabbitProperties props) {
+        return new Queue(props.getCorrectionIn().getQueue(), true);
+    }
+
+    @Bean
+    public Binding billingCostCorrectionBinding(
+            Queue billingCostCorrectionQueue,
+            TopicExchange billingCorrectionIngressExchange,
+            BillingRabbitProperties props
+    ) {
+        return BindingBuilder.bind(billingCostCorrectionQueue)
+                .to(billingCorrectionIngressExchange)
+                .with(props.getCorrectionIn().getRoutingKey());
     }
 }

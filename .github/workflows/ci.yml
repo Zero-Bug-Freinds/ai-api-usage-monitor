@@ -52,6 +52,7 @@ jobs:
       web_edge: ${{ steps.filter.outputs.web_edge }}
       api_gateway: ${{ steps.filter.outputs.api_gateway }}
       identity: ${{ steps.filter.outputs.identity }}
+      ai_agent: ${{ steps.filter.outputs.ai_agent }}
       proxy: ${{ steps.filter.outputs.proxy }}
       usage: ${{ steps.filter.outputs.usage }}
       billing: ${{ steps.filter.outputs.billing }}
@@ -77,6 +78,10 @@ jobs:
               - '.github/workflows/**'
             identity:
               - 'services/identity-service/**'
+            ai_agent:
+              - 'services/agent-service/**'
+              - 'libs/identity-events/**'
+              - 'libs/usage-events/**'
             proxy:
               - 'services/proxy-service/**'
               - 'libs/usage-events/**'
@@ -196,6 +201,74 @@ jobs:
           echo "- Tag: \`identity-web:ci\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Digest: \`${{ steps.docker_identity_web.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Cache scope: \`identity-web\` (type=gha)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+  agent-service:
+    name: Build agent-service
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    needs:
+      - changes
+    if: needs.changes.outputs.ai_agent == 'true' || needs.changes.outputs.web_shared == 'true'
+    defaults:
+      run:
+        working-directory: services/agent-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+          cache-dependency-path: |
+            services/agent-service/build.gradle
+            libs/identity-events/build.gradle
+            libs/usage-events/build.gradle
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: current
+      - name: Build and test
+        run: gradle build --no-daemon
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Reset pnpm store metadata
+        run: pnpm store prune
+        working-directory: .
+      - name: Install workspace
+        run: pnpm install --frozen-lockfile
+        working-directory: .
+      # ESLint: omit --max-warnings so only errors fail the step; warnings do not stop CI
+      - name: Lint / build (agent-web)
+        run: |
+          pnpm --filter agent-web run lint
+          pnpm --filter agent-web run build
+        working-directory: .
+      - uses: docker/setup-buildx-action@v3
+      - name: Docker image (agent-web, standalone) (cache gha)
+        id: docker_agent_web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/agent-service/web/Dockerfile
+          tags: agent-web:ci
+          load: true
+          push: false
+          cache-from: type=gha,scope=agent-web
+          cache-to: type=gha,mode=min,scope=agent-web
+      - name: Agent-web image summary
+        if: always()
+        run: |
+          echo "## Docker image build summary (agent-web)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Tag: \`agent-web:ci\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Digest: \`${{ steps.docker_agent_web.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Cache scope: \`agent-web\` (type=gha)" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
   web-edge:
@@ -694,6 +767,7 @@ jobs:
       - web-edge
       - api-gateway-service
       - identity-service
+      - agent-service
       - proxy-service
       - usage-service
       - billing-service
@@ -741,6 +815,7 @@ jobs:
       - web-edge
       - api-gateway-service
       - identity-service
+      - agent-service
       - proxy-service
       - usage-service
       - billing-service
@@ -765,11 +840,12 @@ jobs:
             echo "compose-validate did not succeed: ${{ needs.compose-validate.result }}"
             exit 1
           fi
-          for name in web-edge api-gateway-service identity-service proxy-service usage-service billing-service team-service notification-service web-host web-mfe ci-observability; do
+          for name in web-edge api-gateway-service identity-service agent-service proxy-service usage-service billing-service team-service notification-service web-host web-mfe ci-observability; do
             case "$name" in
               web-edge) v="${{ needs['web-edge'].result }}" ;;
               api-gateway-service) v="${{ needs['api-gateway-service'].result }}" ;;
               identity-service) v="${{ needs.identity-service.result }}" ;;
+              agent-service) v="${{ needs.agent-service.result }}" ;;
               proxy-service) v="${{ needs.proxy-service.result }}" ;;
               usage-service) v="${{ needs.usage-service.result }}" ;;
               billing-service) v="${{ needs.billing-service.result }}" ;;
