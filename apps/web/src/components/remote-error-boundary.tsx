@@ -5,6 +5,7 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 type RemoteErrorBoundaryProps = {
   fallback: ReactNode;
   children: ReactNode;
+  resetKey?: string;
 };
 
 type RemoteErrorBoundaryState = {
@@ -18,7 +19,15 @@ export class RemoteErrorBoundary extends Component<RemoteErrorBoundaryProps, Rem
     return { hasError: true };
   }
 
-  componentDidCatch(_error: Error, _errorInfo: ErrorInfo) {}
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error("[RemoteErrorBoundary]", error, errorInfo);
+  }
+
+  componentDidUpdate(prevProps: RemoteErrorBoundaryProps) {
+    if (this.state.hasError && this.props.resetKey !== prevProps.resetKey) {
+      this.setState({ hasError: false });
+    }
+  }
 
   render() {
     if (this.state.hasError) {
