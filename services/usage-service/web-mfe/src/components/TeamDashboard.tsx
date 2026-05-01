@@ -106,6 +106,14 @@ function usageBffBase(): string {
   return (process.env.NEXT_PUBLIC_USAGE_BFF_BASE_URL ?? "").replace(/\/+$/, "") || "";
 }
 
+function usageFetchErrorMessage(status: number): string {
+  if (status === 400) return "팀/기간 필터를 확인해 주세요.";
+  if (status === 401 || status === 403) return "인증이 만료되었거나 권한이 없습니다. 다시 로그인해 주세요.";
+  if (status === 404) return "대시보드 페이지를 찾지 못했습니다.";
+  if (status >= 500) return "서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.";
+  return `사용량 데이터를 불러오지 못했습니다. (HTTP ${status})`;
+}
+
 function buildUsageDashboardQuery(params: Record<string, string | undefined | null>): string {
   const sp = new URLSearchParams();
   sp.set("mode", "TEAM_TOTAL");
@@ -427,6 +435,7 @@ export default function TeamDashboard({
   React.useEffect(() => {
     if (!effectiveTeamId) {
       setData(null);
+      onSelectUser("");
       return;
     }
     const base = usageBffBase() || (typeof window !== "undefined" ? window.location.origin : "");
@@ -449,17 +458,20 @@ export default function TeamDashboard({
       headers: { Accept: "application/json" },
     })
       .then(async (r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        if (!r.ok) throw new Error(usageFetchErrorMessage(r.status));
         return (await r.json()) as BffResponse;
       })
       .then((body) => {
         if (cancelled) return;
         setData(body);
         const first = body.memberProfiles?.[0]?.userId;
-        if (first) onSelectUser(first);
+        onSelectUser(first ?? "");
       })
       .catch((e: Error) => {
-        if (!cancelled) setError(e.message);
+        if (!cancelled) {
+          setError(e.message);
+          onSelectUser("");
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -664,8 +676,13 @@ export default function TeamDashboard({
       ) : null}
 
       {loading ? <p className="mb-8 text-sm text-muted-foreground">불러오는 중…</p> : null}
+      {!effectiveTeamId ? (
+        <p className="mb-8 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          조회할 팀을 선택해 주세요.
+        </p>
+      ) : null}
 
-      {effectiveTeamId && !error ? (
+      {effectiveTeamId ? (
         <>
           <section className="mb-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
