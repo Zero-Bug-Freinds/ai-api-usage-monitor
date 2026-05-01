@@ -35,6 +35,7 @@ export function TeamPageContent() {
         : "";
 
   const tab = normalizeTab(router.query.tab);
+  const usageResetKey = `${router.asPath}|${teams.length}`;
 
   function goTab(next: TeamRouteSection) {
     const q: Record<string, string> = { tab: next };
@@ -82,6 +83,7 @@ export function TeamPageContent() {
 
       {tab === "dashboard" ? (
         <RemoteErrorBoundary
+          resetKey={usageResetKey}
           fallback={<p className="p-4 text-sm text-muted-foreground">Usage remote를 불러오지 못했습니다.</p>}
         >
           <TeamUsageDashboard viewTeamIdFromQuery={viewTeamId} shellTeamList={teams} />
