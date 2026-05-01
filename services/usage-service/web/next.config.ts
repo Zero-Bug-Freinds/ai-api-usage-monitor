@@ -12,7 +12,7 @@ const nextConfig: NextConfig = {
   output: "standalone",
   outputFileTracingRoot: path.join(__dirname, "../../.."),
   // 모노레포 내 공통 패키지 의존성 명시
-  transpilePackages: ["@ai-usage/ui", "@ai-usage/shell"],
+  transpilePackages: ["@ai-usage/ui", "@ai-usage/shell", "@ai-usage/team-workspace-cache"],
   env: {
     NEXT_PUBLIC_BASE_PATH: basePath,
   },
