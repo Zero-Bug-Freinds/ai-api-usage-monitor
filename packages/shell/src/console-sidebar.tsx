@@ -32,6 +32,7 @@ const TEAM_SUB_MENU = [
   { key: "members", label: "멤버 관리", suffix: "members" },
   { key: "apiKeys", label: "API 및 설정", suffix: "api-keys" },
 ] as const
+const AI_USAGE_LOGOUT_EVENT = "ai-usage:logout"
 const LOCAL_STORAGE_KEYS_TO_PRESERVE_ON_LOGOUT = ["team.dismissedExpiredInvitationNoticeIds"] as const
 
 const ICONS: Record<ConsoleNavId, ReactNode> = {
@@ -114,6 +115,15 @@ export type ConsoleSidebarProps = {
   logoutApiPath?: string
   /** Redirect path after logout request. */
   logoutRedirectPath?: string
+  /**
+   * When set, team submenu links use this URL shape (e.g. `/teams?viewTeamId=…&tab=…`).
+   * If omitted, legacy `/teams/{id}/{suffix}` links are used.
+   */
+  buildTeamSubmenuHref?: (teamId: string, suffix: (typeof TEAM_SUB_MENU)[number]["suffix"]) => string
+  /** When set, expands the matching team row (e.g. `viewTeamId` query). */
+  teamExpandedTeamId?: string | null
+  /** Highlights the active team submenu entry. */
+  teamSubmenuActive?: { teamId: string; suffix: string } | null
 }
 
 export function ConsoleSidebar({
@@ -121,6 +131,9 @@ export function ConsoleSidebar({
   teams = [],
   logoutApiPath = "/api/auth/logout",
   logoutRedirectPath = "/",
+  buildTeamSubmenuHref,
+  teamExpandedTeamId,
+  teamSubmenuActive,
 }: ConsoleSidebarProps) {
   const pathname = usePathname() ?? ""
   const [logoutPending, setLogoutPending] = React.useState(false)
@@ -128,11 +141,15 @@ export function ConsoleSidebar({
   const [unreadCount, setUnreadCount] = React.useState<number | null>(null)
 
   React.useEffect(() => {
+    if (teamExpandedTeamId != null && teamExpandedTeamId !== "") {
+      setExpandedTeamId(teamExpandedTeamId)
+      return
+    }
     const match = pathname.match(/^\/teams\/([^/]+)/)
     if (match?.[1]) {
       setExpandedTeamId((prev) => prev ?? decodeURIComponent(match[1]))
     }
-  }, [pathname])
+  }, [pathname, teamExpandedTeamId])
 
   React.useEffect(() => {
     let cancelled = false
@@ -191,6 +208,13 @@ export function ConsoleSidebar({
 
   async function handleLogout() {
     setLogoutPending(true)
+    try {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent(AI_USAGE_LOGOUT_EVENT, { bubbles: true }))
+      }
+    } catch {
+      // 이벤트 발행 실패 시에도 로그아웃 흐름은 계속 진행한다.
+    }
     try {
       await fetch(logoutApiPath, {
         method: "POST",
@@ -263,8 +287,12 @@ export function ConsoleSidebar({
                   >
                     <ul className="min-h-0 space-y-1 py-1 pl-3">
                       {TEAM_SUB_MENU.map((item) => {
-                        const href = `/teams/${encodeURIComponent(team.id)}/${item.suffix}`
-                        const active = pathname === href || pathname.startsWith(`${href}/`)
+                        const href = buildTeamSubmenuHref
+                          ? buildTeamSubmenuHref(team.id, item.suffix)
+                          : `/teams/${encodeURIComponent(team.id)}/${item.suffix}`
+                        const active = teamSubmenuActive
+                          ? teamSubmenuActive.teamId === team.id && teamSubmenuActive.suffix === item.suffix
+                          : pathname === href || pathname.startsWith(`${href}/`)
                         return (
                           <li key={item.key}>
                             <Link

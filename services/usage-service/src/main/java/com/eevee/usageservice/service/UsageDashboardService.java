@@ -79,12 +79,66 @@ public class UsageDashboardService {
     }
 
     @Transactional(readOnly = true)
+    public UsageSummaryResponse summaryByTeam(String teamId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
+        Range r = validateRange(from, toInclusive);
+        return analyticsJdbcRepository.aggregateSummaryByTeam(teamId, r.from(), r.toExclusive(), provider);
+    }
+
+    @Transactional(readOnly = true)
+    public UsageSummaryResponse summaryByTeam(
+            String teamId,
+            LocalDate from,
+            LocalDate toInclusive,
+            AiProvider provider,
+            String apiKeyId
+    ) {
+        if (!restrictTeamToApiKey(apiKeyId)) {
+            return summaryByTeam(teamId, from, toInclusive, provider);
+        }
+        Range r = validateRange(from, toInclusive);
+        return analyticsJdbcRepository.aggregateSummaryForTeamFromLogs(teamId, r.from(), r.toExclusive(), provider, apiKeyId.trim());
+    }
+
+    @Transactional(readOnly = true)
+    public UsageSummaryResponse summaryByTeamAndUser(String teamId, String userId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
+        Range r = validateRange(from, toInclusive);
+        return analyticsJdbcRepository.aggregateSummaryByTeamAndUser(teamId, userId, r.from(), r.toExclusive(), provider);
+    }
+
+    @Transactional(readOnly = true)
     public List<DailyUsagePoint> dailySeries(String userId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
         Range r = validateRange(from, toInclusive);
         long startedAt = System.nanoTime();
         List<DailyUsagePoint> rows = analyticsJdbcRepository.aggregateDaily(userId, r.from(), r.toExclusive(), provider);
         log.debug("dashboard.daily dbMs={} rows={} range={}~{} provider={}", (System.nanoTime() - startedAt) / 1_000_000, rows.size(), from, toInclusive, provider);
         return rows;
+    }
+
+    @Transactional(readOnly = true)
+    public List<DailyUsagePoint> dailySeriesByTeam(String teamId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
+        Range r = validateRange(from, toInclusive);
+        return analyticsJdbcRepository.aggregateDailyByTeam(teamId, r.from(), r.toExclusive(), provider);
+    }
+
+    @Transactional(readOnly = true)
+    public List<DailyUsagePoint> dailySeriesByTeam(
+            String teamId,
+            LocalDate from,
+            LocalDate toInclusive,
+            AiProvider provider,
+            String apiKeyId
+    ) {
+        if (!restrictTeamToApiKey(apiKeyId)) {
+            return dailySeriesByTeam(teamId, from, toInclusive, provider);
+        }
+        Range r = validateRange(from, toInclusive);
+        return analyticsJdbcRepository.aggregateDailyForTeamFromLogs(teamId, r.from(), r.toExclusive(), provider, apiKeyId.trim());
+    }
+
+    @Transactional(readOnly = true)
+    public List<DailyUsagePoint> dailySeriesByTeamAndUser(String teamId, String userId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
+        Range r = validateRange(from, toInclusive);
+        return analyticsJdbcRepository.aggregateDailyByTeamAndUser(teamId, userId, r.from(), r.toExclusive(), provider);
     }
 
     @Transactional(readOnly = true)
@@ -97,12 +151,122 @@ public class UsageDashboardService {
     }
 
     @Transactional(readOnly = true)
+    public List<MonthlyUsagePoint> monthlySeriesByTeam(String teamId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
+        Range r = validateRange(from, toInclusive);
+        return analyticsJdbcRepository.aggregateMonthlyByTeam(teamId, r.from(), r.toExclusive(), provider);
+    }
+
+    @Transactional(readOnly = true)
+    public List<MonthlyUsagePoint> monthlySeriesByTeam(
+            String teamId,
+            LocalDate from,
+            LocalDate toInclusive,
+            AiProvider provider,
+            String apiKeyId
+    ) {
+        if (!restrictTeamToApiKey(apiKeyId)) {
+            return monthlySeriesByTeam(teamId, from, toInclusive, provider);
+        }
+        Range r = validateRange(from, toInclusive);
+        return analyticsJdbcRepository.aggregateMonthlyForTeamFromLogs(teamId, r.from(), r.toExclusive(), provider, apiKeyId.trim());
+    }
+
+    @Transactional(readOnly = true)
+    public List<MonthlyUsagePoint> monthlySeriesByTeamAndUser(String teamId, String userId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
+        Range r = validateRange(from, toInclusive);
+        return analyticsJdbcRepository.aggregateMonthlyByTeamAndUser(teamId, userId, r.from(), r.toExclusive(), provider);
+    }
+
+    @Transactional(readOnly = true)
     public List<ModelUsageAggregate> byModel(String userId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
         Range r = validateRange(from, toInclusive);
         long startedAt = System.nanoTime();
         List<ModelUsageAggregate> rows = analyticsJdbcRepository.aggregateByModel(userId, r.from(), r.toExclusive(), provider);
         log.debug("dashboard.byModel dbMs={} rows={} range={}~{} provider={}", (System.nanoTime() - startedAt) / 1_000_000, rows.size(), from, toInclusive, provider);
         return rows;
+    }
+
+    @Transactional(readOnly = true)
+    public List<ModelUsageAggregate> byModelForTeam(String teamId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
+        Range r = validateRange(from, toInclusive);
+        return analyticsJdbcRepository.aggregateByModelForTeam(teamId, r.from(), r.toExclusive(), provider);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ModelUsageAggregate> byModelForTeam(
+            String teamId,
+            LocalDate from,
+            LocalDate toInclusive,
+            AiProvider provider,
+            String apiKeyId
+    ) {
+        if (!restrictTeamToApiKey(apiKeyId)) {
+            return byModelForTeam(teamId, from, toInclusive, provider);
+        }
+        Range r = validateRange(from, toInclusive);
+        return analyticsJdbcRepository.aggregateByModelForTeamFromLogs(teamId, r.from(), r.toExclusive(), provider, apiKeyId.trim());
+    }
+
+    @Transactional(readOnly = true)
+    public TeamUsageSeriesBundle teamUsageSeriesForBff(
+            String teamId,
+            LocalDate from,
+            LocalDate toInclusive,
+            AiProvider provider,
+            String apiKeyId
+    ) {
+        Range r = validateRange(from, toInclusive);
+        long span = ChronoUnit.DAYS.between(from, toInclusive);
+        if (span == 0) {
+            String keyFilter = restrictTeamToApiKey(apiKeyId) ? apiKeyId.trim() : "";
+            List<HourlyUsagePoint> hourly = analyticsJdbcRepository.aggregateHourlyForKstDayForTeam(
+                    teamId,
+                    r.from(),
+                    r.toExclusive(),
+                    provider,
+                    keyFilter
+            );
+            List<UsageSeriesPoint> rows = hourly.stream()
+                    .map(row -> new UsageSeriesPoint(
+                            String.format("%02d:00", row.hour()),
+                            row.requestCount(),
+                            row.errorCount(),
+                            0L,
+                            row.estimatedCostUsd()
+                    ))
+                    .toList();
+            return new TeamUsageSeriesBundle(UsageSeriesUnit.HOUR, rows);
+        }
+        if (span <= 30) {
+            List<DailyUsagePoint> daily = dailySeriesByTeam(teamId, from, toInclusive, provider, apiKeyId);
+            List<UsageSeriesPoint> rows = daily.stream()
+                    .map(row -> new UsageSeriesPoint(
+                            row.date().toString(),
+                            row.requestCount(),
+                            row.errorCount(),
+                            row.inputTokens(),
+                            row.estimatedCost()
+                    ))
+                    .toList();
+            return new TeamUsageSeriesBundle(UsageSeriesUnit.DAY, rows);
+        }
+        List<MonthlyUsagePoint> monthly = monthlySeriesByTeam(teamId, from, toInclusive, provider, apiKeyId);
+        List<UsageSeriesPoint> rows = monthly.stream()
+                .map(row -> new UsageSeriesPoint(
+                        row.yearMonth(),
+                        row.requestCount(),
+                        row.errorCount(),
+                        row.inputTokens(),
+                        row.estimatedCost()
+                ))
+                .toList();
+        return new TeamUsageSeriesBundle(UsageSeriesUnit.MONTH, rows);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ModelUsageAggregate> byModelForTeamAndUser(String teamId, String userId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
+        Range r = validateRange(from, toInclusive);
+        return analyticsJdbcRepository.aggregateByModelForTeamAndUser(teamId, userId, r.from(), r.toExclusive(), provider);
     }
 
     @Transactional(readOnly = true)
@@ -251,6 +415,74 @@ public class UsageDashboardService {
     }
 
     @Transactional(readOnly = true)
+    public PagedLogsResponse logsByTeam(
+            String teamId,
+            LocalDate from,
+            LocalDate toInclusive,
+            AiProvider provider,
+            String apiKeyId,
+            Boolean requestSuccessful,
+            String modelMask,
+            String reasoningPresence,
+            int page,
+            int size
+    ) {
+        Range r = validateRange(from, toInclusive);
+        int pageIndex = Math.max(0, page);
+        int pageSize = Math.min(200, Math.max(1, size));
+        String keyFilter = apiKeyId != null && apiKeyId.isBlank() ? null : apiKeyId;
+        String reasoningFilter = normalizeReasoningPresence(reasoningPresence);
+        Page<UsageRecordedLogEntity> p = logRepository.pageLogsByTeam(
+                teamId,
+                r.from(),
+                r.toExclusive(),
+                provider,
+                keyFilter,
+                requestSuccessful,
+                modelMask,
+                reasoningFilter,
+                PageRequest.of(pageIndex, pageSize, Sort.by(Sort.Direction.DESC, "occurredAt"))
+        );
+        List<UsageLogEntryResponse> content = p.getContent().stream().map(this::toLogDto).toList();
+        return new PagedLogsResponse(content, p.getNumber(), p.getSize(), p.getTotalElements(), p.getTotalPages());
+    }
+
+    @Transactional(readOnly = true)
+    public PagedLogsResponse logsByTeamAndUser(
+            String teamId,
+            String userId,
+            LocalDate from,
+            LocalDate toInclusive,
+            AiProvider provider,
+            String apiKeyId,
+            Boolean requestSuccessful,
+            String modelMask,
+            String reasoningPresence,
+            int page,
+            int size
+    ) {
+        Range r = validateRange(from, toInclusive);
+        int pageIndex = Math.max(0, page);
+        int pageSize = Math.min(200, Math.max(1, size));
+        String keyFilter = apiKeyId != null && apiKeyId.isBlank() ? null : apiKeyId;
+        String reasoningFilter = normalizeReasoningPresence(reasoningPresence);
+        Page<UsageRecordedLogEntity> p = logRepository.pageLogsByTeamAndUser(
+                teamId,
+                userId,
+                r.from(),
+                r.toExclusive(),
+                provider,
+                keyFilter,
+                requestSuccessful,
+                modelMask,
+                reasoningFilter,
+                PageRequest.of(pageIndex, pageSize, Sort.by(Sort.Direction.DESC, "occurredAt"))
+        );
+        List<UsageLogEntryResponse> content = p.getContent().stream().map(this::toLogDto).toList();
+        return new PagedLogsResponse(content, p.getNumber(), p.getSize(), p.getTotalElements(), p.getTotalPages());
+    }
+
+    @Transactional(readOnly = true)
     public List<UsageLogApiKeyItemResponse> logApiKeys(String userId, AiProvider provider) {
         Instant to = clock.instant();
         Instant from = to.minus(LOG_API_KEY_LOOKUP_DAYS, ChronoUnit.DAYS);
@@ -359,5 +591,12 @@ public class UsageDashboardService {
             return v;
         }
         return null;
+    }
+
+    private static boolean restrictTeamToApiKey(String apiKeyId) {
+        return apiKeyId != null && !apiKeyId.isBlank();
+    }
+
+    public record TeamUsageSeriesBundle(UsageSeriesUnit unit, List<UsageSeriesPoint> points) {
     }
 }

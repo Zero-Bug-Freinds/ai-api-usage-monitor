@@ -6,7 +6,7 @@ import NextFederationPlugin from "@module-federation/nextjs-mf";
 const nextConfig: NextConfig = {
   output: "standalone",
   outputFileTracingRoot: path.join(__dirname, "../../.."),
-  transpilePackages: ["@ai-usage/ui", "@ai-usage/shell"],
+  transpilePackages: ["@ai-usage/ui", "@ai-usage/shell", "@ai-usage/team-workspace-cache"],
   webpack(config: WebpackConfig) {
     config.plugins = config.plugins ?? [];
     config.plugins.push(
@@ -15,6 +15,8 @@ const nextConfig: NextConfig = {
         filename: "static/chunks/remoteEntry.js",
         exposes: {
           "./TeamUsageDashboard": "./src/components/TeamUsageDashboard.tsx",
+          "./TeamDashboard": "./src/components/TeamDashboard.tsx",
+          "./TeamMemberUsageLog": "./src/components/TeamMemberUsageLog.tsx",
         },
         shared: {
           react: { singleton: true, strictVersion: true, requiredVersion: "19.2.4", eager: true },
