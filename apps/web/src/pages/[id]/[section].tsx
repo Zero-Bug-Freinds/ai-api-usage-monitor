@@ -9,7 +9,7 @@ function toTab(section: string | undefined): TeamRouteSection {
 }
 
 /**
- * 레거시 `/teams/[id]/[section]` → `/teams?viewTeamId=…&tab=…`
+ * 레거시 `/teams/[id]/[section]` → 쿼리 기반 전환.
  */
 export default function LegacyTeamsSectionRedirect() {
   const router = useRouter();
@@ -22,7 +22,10 @@ export default function LegacyTeamsSectionRedirect() {
     const sec = typeof rawSec === "string" ? rawSec : Array.isArray(rawSec) ? rawSec[0] : "";
     if (!id) return;
     const tab = toTab(sec);
-    void router.replace(`/teams?viewTeamId=${encodeURIComponent(id)}&tab=${encodeURIComponent(tab)}`);
+    void router.replace({
+      pathname: "/",
+      query: { viewTeamId: id, tab },
+    });
   }, [router, router.isReady, router.query.id, router.query.section]);
 
   return <p className="text-sm text-muted-foreground">팀 페이지로 이동 중…</p>;

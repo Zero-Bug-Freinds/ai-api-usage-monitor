@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import * as React from "react";
 import { useRouter } from "next/router";
-import { ConsoleLayoutOverride, ConsoleSidebar } from "@ai-usage/shell";
+import { ConsoleLayoutOverride, ConsoleSidebarPages } from "@ai-usage/shell";
 import { useLogoutCleanup } from "@ai-usage/team-workspace-cache";
 import { TeamWorkspaceProvider, useTeamWorkspace } from "@/components/team-workspace-context";
 
@@ -28,7 +28,7 @@ function HostShellInner({ children }: { children: ReactNode }) {
   const effectiveTab = tabRaw === "" ? "dashboard" : tabRaw;
 
   const buildTeamSubmenuHref = React.useCallback((teamId: string, suffix: string) => {
-    return `/teams?viewTeamId=${encodeURIComponent(teamId)}&tab=${encodeURIComponent(suffix)}`;
+    return `/?viewTeamId=${encodeURIComponent(teamId)}&tab=${encodeURIComponent(suffix)}`;
   }, []);
 
   const teamSubmenuActive =
@@ -43,7 +43,7 @@ function HostShellInner({ children }: { children: ReactNode }) {
   return (
     <ConsoleLayoutOverride
       primarySidebar={
-        <ConsoleSidebar
+        <ConsoleSidebarPages
           profile="team"
           teams={teams.map((t) => ({ id: t.id, name: t.name }))}
           buildTeamSubmenuHref={buildTeamSubmenuHref}

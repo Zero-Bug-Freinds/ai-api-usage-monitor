@@ -1,10 +1,18 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import type { ComponentType } from "react";
 import { useRouter } from "next/router";
+import type { CachedTeamItem } from "@ai-usage/team-workspace-cache";
 import { Button, cn } from "@ai-usage/ui";
 import { RemoteErrorBoundary } from "@/components/remote-error-boundary";
 import { useTeamWorkspace } from "@/components/team-workspace-context";
+
+/** Matches `usage/TeamUsageDashboard` in services/usage-service/web-mfe (MF remote typing). */
+type TeamUsageDashboardProps = {
+  viewTeamIdFromQuery?: string;
+  shellTeamList?: CachedTeamItem[];
+};
 
 export type TeamRouteSection = "dashboard" | "members" | "api-keys";
 
@@ -19,10 +27,16 @@ const TeamManagement = dynamic(() => import("team/TeamManagement"), {
   ssr: false,
   loading: () => <p className="text-sm text-muted-foreground">Team remote loading...</p>,
 });
-const TeamUsageDashboard = dynamic(() => import("usage/TeamUsageDashboard"), {
-  ssr: false,
-  loading: () => <p className="text-sm text-muted-foreground">Usage remote loading...</p>,
-});
+const TeamUsageDashboard = dynamic(
+  () =>
+    import("usage/TeamUsageDashboard") as Promise<{
+      default: ComponentType<TeamUsageDashboardProps>;
+    }>,
+  {
+    ssr: false,
+    loading: () => <p className="text-sm text-muted-foreground">Usage remote loading...</p>,
+  }
+);
 
 function normalizeTab(q: string | string[] | undefined): TeamRouteSection {
   const raw = Array.isArray(q) ? q[0] : q;
@@ -47,7 +61,7 @@ export function TeamPageContent() {
   function goTab(next: TeamRouteSection) {
     const q: Record<string, string> = { tab: next };
     if (viewTeamId !== "") q.viewTeamId = viewTeamId;
-    void router.replace({ pathname: "/teams", query: q }, undefined, { shallow: true });
+    void router.replace({ pathname: "/", query: q }, undefined, { shallow: true });
   }
 
   return (
@@ -92,7 +106,7 @@ export function TeamPageContent() {
         <p className="text-xs text-muted-foreground" data-testid="mf-usage-remote-hint">
           [dev] usage MF 베이스:{" "}
           <code className="rounded bg-muted px-1 py-0.5">
-            {process.env.NEXT_PUBLIC_MFE_USAGE_REMOTE_URL ?? "http://localhost:8888/dashboard (기본값)"}
+            {process.env.NEXT_PUBLIC_MFE_USAGE_REMOTE_URL ?? "http://localhost:8888/mfe/usage (기본값)"}
           </code>
           …/remoteEntry.js 로 로드됩니다.
         </p>
