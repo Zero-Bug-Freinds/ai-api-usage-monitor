@@ -7,6 +7,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const teamRemoteOrigin = process.env.NEXT_PUBLIC_MFE_TEAM_REMOTE_URL ?? "http://localhost:8888/teams";
 const usageRemoteOrigin = process.env.NEXT_PUBLIC_MFE_USAGE_REMOTE_URL ?? "http://localhost:8888/dashboard";
 
+/**
+ * Module Federation — 호스트가 리모트를 불러오는 URL 템플릿:
+ *   `{origin}/_next/static/chunks/remoteEntry.js`
+ * 배포 시 반드시 리모트 앱의 공개 origin과 일치해야 합니다.
+ * 우측 대시보드가 비면 브라우저에서 위 경로로 remoteEntry.js 요청이 200인지 확인하세요.
+ *
+ * - NEXT_PUBLIC_MFE_TEAM_REMOTE_URL  → team 리모트 (기본 …/teams)
+ * - NEXT_PUBLIC_MFE_USAGE_REMOTE_URL → usage 리모트 (기본 …/dashboard)
+ */
+
 /** @type {import("next").NextConfig} */
 const nextConfig = {
   output: "standalone",
