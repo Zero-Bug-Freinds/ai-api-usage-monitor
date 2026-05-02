@@ -8,6 +8,13 @@ import { useTeamWorkspace } from "@/components/team-workspace-context";
 
 export type TeamRouteSection = "dashboard" | "members" | "api-keys";
 
+/**
+ * 팀 콘솔 우측 영역:
+ * - 탭(팀 대시보드 / 멤버 / API)은 항상 이 컴포넌트가 렌더합니다.
+ * - `tab=dashboard`일 때만 usage MF(`TeamUsageDashboard`)를 로드합니다. 다른 탭에서는 team MF만 로드됩니다.
+ * - 우측이 비어 보이면: MF remoteEntry 로드 실패, 또는 해당 탭에서 맞는 리모트가 아님을 의심합니다.
+ */
+
 const TeamManagement = dynamic(() => import("team/TeamManagement"), {
   ssr: false,
   loading: () => <p className="text-sm text-muted-foreground">Team remote loading...</p>,
@@ -81,10 +88,27 @@ export function TeamPageContent() {
         </p>
       ) : null}
 
+      {process.env.NODE_ENV === "development" ? (
+        <p className="text-xs text-muted-foreground" data-testid="mf-usage-remote-hint">
+          [dev] usage MF 베이스:{" "}
+          <code className="rounded bg-muted px-1 py-0.5">
+            {process.env.NEXT_PUBLIC_MFE_USAGE_REMOTE_URL ?? "http://localhost:8888/dashboard (기본값)"}
+          </code>
+          …/remoteEntry.js 로 로드됩니다.
+        </p>
+      ) : null}
+
       {tab === "dashboard" ? (
         <RemoteErrorBoundary
           resetKey={usageResetKey}
-          fallback={<p className="p-4 text-sm text-muted-foreground">Usage remote를 불러오지 못했습니다.</p>}
+          renderFallback={({ retry }) => (
+            <div className="space-y-3 rounded-md border border-border bg-muted/30 p-4">
+              <p className="text-sm text-muted-foreground">Usage remote를 불러오지 못했습니다.</p>
+              <Button type="button" variant="outline" size="sm" onClick={retry}>
+                다시 시도
+              </Button>
+            </div>
+          )}
         >
           <TeamUsageDashboard viewTeamIdFromQuery={viewTeamId} shellTeamList={teams} />
         </RemoteErrorBoundary>
