@@ -71,6 +71,19 @@ export function resolveConsoleNavLink(profile: ConsoleProfile, id: ConsoleNavId)
   const meta = CONSOLE_NAV[id]
   const { owner, publicPath } = meta
 
+  /**
+   * 팀 콘솔(web-host, basePath /teams)으로의 전환은 항상 풀 페이지 네비게이션(anchor).
+   * 다른 프로필 규칙보다 우선한다.
+   */
+  if (id === "teams") {
+    const shellHref =
+      typeof process !== "undefined"
+        ? process.env.NEXT_PUBLIC_TEAM_SHELL_HREF?.replace(/\/+$/, "")
+        : undefined
+    const href = shellHref && shellHref.length > 0 ? shellHref : anchorHrefForPublicPath(publicPath)
+    return { kind: "anchor", href }
+  }
+
   if (profile === "identity") {
     if (owner === "identity") {
       return { kind: "next", href: publicPath }
@@ -183,7 +196,7 @@ export function isConsoleNavActive(profile: ConsoleProfile, pathname: string, id
   }
 
   if (profile === "team") {
-    if (id === "teams") return true
+    if (id === "teams") return p === "/teams" || p.startsWith("/teams?") || p.startsWith("/teams/")
     if (id === "assistant") return p === "/agent" || p.startsWith("/agent/")
     return false
   }

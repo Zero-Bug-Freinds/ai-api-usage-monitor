@@ -3,7 +3,7 @@
 import * as React from "react"
 import type { ReactNode } from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { useRouter as usePagesRouter } from "next/router"
 import {
   Bell,
   Building2,
@@ -60,6 +60,8 @@ function NavRow({
 }) {
   const spec = resolveConsoleNavLink(profile, id)
   const active = isConsoleNavActive(profile, pathname, id)
+  /** 팀 메뉴는 항상 풀 페이지 이동(anchor); Next Link 클라이언트 전환 방지 */
+  const forceTeamsAnchor = id === "teams"
   const label = CONSOLE_NAV[id].label
   const icon = ICONS[id]
   const isBack = id === "identityLanding"
@@ -75,7 +77,7 @@ function NavRow({
           : "text-sidebar-foreground/85 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
       )
 
-  if (spec.kind === "next") {
+  if (!forceTeamsAnchor && spec.kind === "next") {
     return (
       <Link href={spec.href} className={className}>
         {icon}
@@ -126,7 +128,8 @@ export type ConsoleSidebarProps = {
   teamSubmenuActive?: { teamId: string; suffix: string } | null
 }
 
-export function ConsoleSidebar({
+export function ConsoleSidebarInner({
+  pathname,
   profile,
   teams = [],
   logoutApiPath = "/api/auth/logout",
@@ -134,8 +137,7 @@ export function ConsoleSidebar({
   buildTeamSubmenuHref,
   teamExpandedTeamId,
   teamSubmenuActive,
-}: ConsoleSidebarProps) {
-  const pathname = usePathname() ?? ""
+}: ConsoleSidebarProps & { pathname: string }) {
   const [logoutPending, setLogoutPending] = React.useState(false)
   const [expandedTeamId, setExpandedTeamId] = React.useState<string | null>(null)
   const [unreadCount, setUnreadCount] = React.useState<number | null>(null)
@@ -333,4 +335,16 @@ export function ConsoleSidebar({
       </div>
     </aside>
   )
+}
+
+/**
+ * Pages Router 호스트(예: web-host `basePath=/teams`)용 — `next/navigation` 훅 없이 경로를 맞춘다.
+ * `asPath`에는 basePath가 포함되지 않으므로, 엣지 단일 도메인 기준으로 `/teams`와 동일한 활성 판별을 위해 합친다.
+ */
+export function ConsoleSidebarPages(props: ConsoleSidebarProps) {
+  const router = usePagesRouter()
+  const pathname = router.isReady
+    ? `${(router.basePath ?? "").replace(/\/$/, "")}${router.asPath ?? ""}` || "/"
+    : ""
+  return <ConsoleSidebarInner pathname={pathname} {...props} />
 }

@@ -14,7 +14,8 @@ export {
   usageEntryPublicPath,
   type ConsoleNavLinkSpec,
 } from "./console-nav"
-export { ConsoleSidebar, type ConsoleSidebarProps } from "./console-sidebar"
+export { ConsoleSidebar } from "./console-sidebar-app"
+export { ConsoleSidebarPages, type ConsoleSidebarProps } from "./console-sidebar"
 export {
   ConsoleShell,
   type ConsoleShellProps,

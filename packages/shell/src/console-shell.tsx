@@ -1,7 +1,7 @@
 import type { ReactNode } from "react"
 
 import type { ConsoleProfile } from "./console-nav"
-import { ConsoleSidebar } from "./console-sidebar"
+import { ConsoleSidebar } from "./console-sidebar-app"
 
 export type ConsoleShellProps = {
   profile: ConsoleProfile
