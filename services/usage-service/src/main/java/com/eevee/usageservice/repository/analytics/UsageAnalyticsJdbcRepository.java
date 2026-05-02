@@ -6,6 +6,9 @@ import com.eevee.usageservice.api.dto.HourlyUsagePoint;
 import com.eevee.usageservice.api.dto.ModelUsageAggregate;
 import com.eevee.usageservice.api.dto.MonthlyUsagePoint;
 import com.eevee.usageservice.api.dto.UsageSummaryResponse;
+import com.eevee.usageservice.api.dto.UsageTeamUserSlice;
+import com.eevee.usageservice.api.dto.ProviderModelCostTokenRow;
+import com.eevee.usageservice.api.dto.UsageWindowTotals;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -781,6 +784,85 @@ public class UsageAnalyticsJdbcRepository {
                 af,
                 p1,
                 p1
+        );
+    }
+
+    public List<UsageTeamUserSlice> findDistinctTeamUserSlices(LocalDate minUsageDateInclusive) {
+        String sql = """
+                SELECT DISTINCT team_id, user_id
+                FROM daily_usage_summary
+                WHERE usage_date >= ?
+                ORDER BY team_id, user_id
+                """;
+        return jdbc.query(
+                sql,
+                (rs, rowNum) -> new UsageTeamUserSlice(
+                        rs.getString("team_id") != null ? rs.getString("team_id") : "",
+                        rs.getString("user_id")
+                ),
+                minUsageDateInclusive
+        );
+    }
+
+    public UsageWindowTotals sumCostAndTokensByTeamAndUser(
+            String teamId,
+            String userId,
+            Instant from,
+            Instant toExclusive
+    ) {
+        String sql = """
+                SELECT COALESCE(SUM(total_cost), 0),
+                       COALESCE(SUM(total_tokens), 0)::bigint
+                FROM daily_usage_summary
+                WHERE team_id = ?
+                  AND user_id = ?
+                  AND usage_date >= ((? AT TIME ZONE '%s')::date)
+                  AND usage_date < ((? AT TIME ZONE '%s')::date)
+                """.formatted(BUCKET_ZONE, BUCKET_ZONE);
+        return jdbc.queryForObject(
+                sql,
+                (rs, rowNum) -> new UsageWindowTotals(
+                        rs.getBigDecimal(1) != null ? rs.getBigDecimal(1) : BigDecimal.ZERO,
+                        rs.getLong(2)
+                ),
+                teamId,
+                userId,
+                Timestamp.from(from),
+                Timestamp.from(toExclusive)
+        );
+    }
+
+    public List<ProviderModelCostTokenRow> aggregateProviderModelCostAndTokensByTeamAndUser(
+            String teamId,
+            String userId,
+            Instant from,
+            Instant toExclusive
+    ) {
+        String sql = """
+                SELECT provider,
+                       model,
+                       COALESCE(SUM(total_cost), 0),
+                       COALESCE(SUM(total_tokens), 0)::bigint
+                FROM daily_usage_summary
+                WHERE team_id = ?
+                  AND user_id = ?
+                  AND usage_date >= ((? AT TIME ZONE '%s')::date)
+                  AND usage_date < ((? AT TIME ZONE '%s')::date)
+                GROUP BY provider, model
+                ORDER BY COALESCE(SUM(total_cost), 0) DESC
+                """.formatted(BUCKET_ZONE, BUCKET_ZONE);
+        return jdbc.query(
+                sql,
+                (rs, rowNum) -> new ProviderModelCostTokenRow(
+                        rs.getString("provider"),
+                        rs.getString("model"),
+                        rs.getBigDecimal(3) != null ? rs.getBigDecimal(3) : BigDecimal.ZERO,
+                        rs.getLong(4)
+                ),
+                teamId,
+                userId,
+                Timestamp.from(from),
+                Timestamp.from(toExclusive)
         );
     }
 }
