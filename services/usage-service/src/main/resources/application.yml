@@ -61,6 +61,14 @@ usage:
       queue: ${USAGE_RABBIT_SUMMARY_AGGREGATION_QUEUE:usage-service.summary-aggregation.queue}
       dlx: ${USAGE_RABBIT_SUMMARY_AGGREGATION_DLX:usage.summary-aggregation.dlx}
       dlq: ${USAGE_RABBIT_SUMMARY_AGGREGATION_DLQ:usage-service.summary-aggregation.dlq}
+    outbound-prediction:
+      enabled: ${USAGE_RABBIT_OUTBOUND_PREDICTION_ENABLED:true}
+      exchange: ${USAGE_RABBIT_OUTBOUND_PREDICTION_EXCHANGE:usage.events}
+      routing-key: ${USAGE_RABBIT_OUTBOUND_PREDICTION_ROUTING_KEY:usage.prediction.signals}
+  prediction-signals:
+    cron: ${USAGE_PREDICTION_SIGNALS_CRON:0 15 0 * * *}
+    schedule:
+      enabled: ${USAGE_PREDICTION_SIGNALS_SCHEDULE_ENABLED:true}
   analytics:
     max-range-days: ${USAGE_ANALYTICS_MAX_RANGE_DAYS:400}
   team:

@@ -1,6 +1,7 @@
 package com.eevee.usageservice.config;
 
 import com.eevee.usage.events.UsageCostEventAmqp;
+import com.eevee.usage.events.UsageOutboundEventAmqp;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "usage.rabbit")
@@ -30,6 +31,8 @@ public class UsageRabbitProperties {
     private CostFinalized costFinalized = new CostFinalized();
 
     private SummaryAggregation summaryAggregation = new SummaryAggregation();
+
+    private OutboundPrediction outboundPrediction = new OutboundPrediction();
 
     public String getExchange() {
         return exchange;
@@ -82,6 +85,16 @@ public class UsageRabbitProperties {
     public void setSummaryAggregation(SummaryAggregation summaryAggregation) {
         if (summaryAggregation != null) {
             this.summaryAggregation = summaryAggregation;
+        }
+    }
+
+    public OutboundPrediction getOutboundPrediction() {
+        return outboundPrediction;
+    }
+
+    public void setOutboundPrediction(OutboundPrediction outboundPrediction) {
+        if (outboundPrediction != null) {
+            this.outboundPrediction = outboundPrediction;
         }
     }
 
@@ -218,6 +231,40 @@ public class UsageRabbitProperties {
 
         public void setDlq(String dlq) {
             this.dlq = dlq;
+        }
+    }
+
+    /**
+     * Outbound {@link com.eevee.usage.events.UsagePredictionSignalsEvent} stream (usage → subscribers).
+     */
+    public static class OutboundPrediction {
+
+        private boolean enabled = true;
+        private String exchange = UsageOutboundEventAmqp.TOPIC_EXCHANGE_NAME;
+        private String routingKey = UsageOutboundEventAmqp.ROUTING_KEY_PREDICTION_SIGNALS;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getExchange() {
+            return exchange;
+        }
+
+        public void setExchange(String exchange) {
+            this.exchange = exchange;
+        }
+
+        public String getRoutingKey() {
+            return routingKey;
+        }
+
+        public void setRoutingKey(String routingKey) {
+            this.routingKey = routingKey;
         }
     }
 }
