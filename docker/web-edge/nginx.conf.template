@@ -37,6 +37,18 @@ http {
     server team-web:3000;
   }
 
+  upstream web_host {
+    server web-host:3000;
+  }
+
+  upstream team_mfe {
+    server team-web-mfe:3000;
+  }
+
+  upstream usage_mfe {
+    server usage-web-mfe:3000;
+  }
+
   upstream billing_web {
     server billing-web:3000;
   }
@@ -115,20 +127,40 @@ http {
       proxy_set_header Connection $connection_upgrade;
     }
 
+    location ^~ /teams/api/ {
+      proxy_pass http://team_web;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection $connection_upgrade;
+    }
+
+    location ^~ /mfe/team/ {
+      proxy_pass http://team_mfe/;
+      proxy_set_header Host $http_host;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection $connection_upgrade;
+    }
+
+    location ^~ /mfe/usage/ {
+      proxy_pass http://usage_mfe/;
+      proxy_set_header Host $http_host;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection $connection_upgrade;
+    }
+
     location = /teams {
-      proxy_pass http://team_web/teams;
+      proxy_pass http://web_host;
       proxy_set_header Upgrade $http_upgrade;
       proxy_set_header Connection $connection_upgrade;
     }
 
     location = /teams/ {
-      proxy_pass http://team_web/teams;
+      proxy_pass http://web_host;
       proxy_set_header Upgrade $http_upgrade;
       proxy_set_header Connection $connection_upgrade;
     }
 
     location ^~ /teams/ {
-      proxy_pass http://team_web;
+      proxy_pass http://web_host;
       proxy_set_header Upgrade $http_upgrade;
       proxy_set_header Connection $connection_upgrade;
     }
