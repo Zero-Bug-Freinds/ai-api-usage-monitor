@@ -41,6 +41,13 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
 :root {
@@ -81,6 +88,14 @@
 .dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
+}
+
+/**
+ * Host / Remote 격리 (Task37-1): stacking·paint 경계로 MF가 Host 글로벌 토큰을 덮어쓰는 범위를 제한.
+ */
+.host-shell,
+.host-remote-slot {
+  isolation: isolate;
 }
 
 @layer base {
