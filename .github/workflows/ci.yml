@@ -658,8 +658,8 @@ jobs:
       || needs.changes.outputs.workflows == 'true'
     env:
       NEXT_PRIVATE_LOCAL_WEBPACK: "true"
-      NEXT_PUBLIC_MFE_TEAM_REMOTE_URL: "http://localhost:8888/teams"
-      NEXT_PUBLIC_MFE_USAGE_REMOTE_URL: "http://localhost:8888/dashboard"
+      NEXT_PUBLIC_MFE_TEAM_REMOTE_URL: "http://localhost:8888/mfe/team"
+      NEXT_PUBLIC_MFE_USAGE_REMOTE_URL: "http://localhost:8888/mfe/usage"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -701,8 +701,8 @@ jobs:
           file: apps/web/Dockerfile
           build-args: |
             WEB_NODE_DEPS_IMAGE=web-node-deps:ci
-            NEXT_PUBLIC_MFE_TEAM_REMOTE_URL=http://localhost:8888/teams
-            NEXT_PUBLIC_MFE_USAGE_REMOTE_URL=http://localhost:8888/dashboard
+            NEXT_PUBLIC_MFE_TEAM_REMOTE_URL=http://localhost:8888/mfe/team
+            NEXT_PUBLIC_MFE_USAGE_REMOTE_URL=http://localhost:8888/mfe/usage
           tags: web-host:ci
           load: true
           push: false
