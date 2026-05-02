@@ -39,6 +39,8 @@ import { formatRequestCount, formatTokenCount, formatUsd, toNumber } from "@web/
 const PROVIDER_ALL = "__ALL__";
 const TEAM_WEB_PREFIX = "/teams";
 
+/** 진단: 우측이 비어 보일 때 — teams 없음 / teamId 미선택 / BFF 오류 / 호스트 MF 로드 실패를 순서대로 의심 */
+
 export type TeamDashboardProps = {
   viewTeamIdFromQuery?: string;
   shellTeamList?: CachedTeamItem[];
@@ -183,18 +185,22 @@ function pickOldestTeamId(list: TeamSummary[]): string {
 }
 
 /**
- * 1) last_selected_team if still valid in list and (cache empty or id in cached_team_list)
- * 2) viewTeamIdFromQuery if in list
- * 3) oldest created team in list
+ * 단일 규칙으로 조회 팀 ID 결정 (Shell props · URL · localStorage 충돌 최소화).
+ * 1) URL `viewTeamId`가 목록에 있으면 최우선 (명시적 네비게이션·북마크)
+ * 2) `last_selected_team` + cached_team_list 검증
+ * 3) 저장된 필터의 teamId (동일 세션 복귀)
+ * 4) 가장 오래 생성된 팀(없으면 첫 항목)
  */
-function resolveTeamSelection(list: TeamSummary[], viewQ: string | undefined): string {
+function pickTeamIdFromSources(list: TeamSummary[], viewQ: string | undefined, storedTeamId: string | undefined): string {
+  if (list.length === 0) return "";
+  if (viewQ && list.some((t) => t.id === viewQ)) return viewQ;
   const cache = readCachedTeamList();
   const cacheIds = new Set(cache.map((c) => c.id));
   const last = readLastSelectedTeamId();
   if (last && list.some((t) => t.id === last)) {
     if (cacheIds.size === 0 || cacheIds.has(last)) return last;
   }
-  if (viewQ && list.some((t) => t.id === viewQ)) return viewQ;
+  if (storedTeamId && list.some((t) => t.id === storedTeamId)) return storedTeamId;
   return pickOldestTeamId(list);
 }
 
@@ -272,10 +278,10 @@ export default function TeamDashboard({
     [shellTeamList],
   );
 
-  const initialSelected = React.useMemo(() => {
-    if (stored.teamId && mergedOnMount.some((t) => t.id === stored.teamId)) return stored.teamId;
-    return resolveTeamSelection(mergedOnMount, viewTeamIdFromQuery);
-  }, [mergedOnMount, stored.teamId, viewTeamIdFromQuery]);
+  const initialSelected = React.useMemo(
+    () => pickTeamIdFromSources(mergedOnMount, viewTeamIdFromQuery, stored.teamId),
+    [mergedOnMount, stored.teamId, viewTeamIdFromQuery],
+  );
 
   const [dashProvider, setDashProvider] = React.useState(stored.provider ?? PROVIDER_ALL);
   const [periodMode, setPeriodMode] = React.useState<PeriodMode>((stored.periodMode as PeriodMode) ?? "today");
@@ -357,10 +363,14 @@ export default function TeamDashboard({
 
   React.useEffect(() => {
     setSelectedTeamId((prev) => {
+      if (viewTeamIdFromQuery && teams.some((t) => t.id === viewTeamIdFromQuery)) {
+        return viewTeamIdFromQuery;
+      }
       if (prev && teams.some((t) => t.id === prev)) return prev;
-      return resolveTeamSelection(teams, viewTeamIdFromQuery);
+      const sf = readStoredFilters(todayKst);
+      return pickTeamIdFromSources(teams, undefined, sf.teamId);
     });
-  }, [teams, viewTeamIdFromQuery]);
+  }, [teams, viewTeamIdFromQuery, todayKst]);
 
   React.useEffect(() => {
     if (!selectedTeamId) {
@@ -538,15 +548,30 @@ export default function TeamDashboard({
     (summary && summary.totalRequests && summary.totalRequests > 0) ||
     (data?.usageSeries && data.usageSeries.some((r) => r.requestCount > 0));
 
+  /* teams 없음: 호스트 탭 아래에서도 동일 헤더 프레임으로 빈 상태만 구분 */
   if (teams.length === 0) {
     return (
-      <div className="mx-auto max-w-lg rounded-lg border border-border bg-card p-8 text-center shadow-sm">
-        <h1 className="text-xl font-semibold tracking-tight">팀 사용량</h1>
-        <p className="mt-3 text-sm text-muted-foreground">팀을 먼저 생성해 보세요!</p>
-        <Button type="button" className="mt-6" asChild>
-          <a href="/teams?tab=members">팀 만들기 · 멤버 관리로 이동</a>
-        </Button>
-        {teamsErr ? <p className="mt-4 text-sm text-amber-700">{teamsErr}</p> : null}
+      <div className="w-full min-h-full pb-6">
+        <header className="mb-6 flex flex-col gap-4 border-b border-border pb-6 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-2xl font-semibold tracking-tight">팀 사용량</h1>
+              <span className="rounded-full border border-border bg-muted/50 px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                팀
+              </span>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              자세한 비용 내역은 &apos;지출&apos; 메뉴를 통해 확인하세요. 집계 구간은 KST 기준입니다.
+            </p>
+          </div>
+        </header>
+        <div className="mx-auto max-w-lg rounded-lg border border-border bg-card p-8 text-center shadow-sm">
+          <p className="text-sm text-muted-foreground">팀을 먼저 생성해 보세요!</p>
+          <Button type="button" className="mt-6" asChild>
+            <a href="/teams?tab=members">팀 만들기 · 멤버 관리로 이동</a>
+          </Button>
+          {teamsErr ? <p className="mt-4 text-sm text-amber-700">{teamsErr}</p> : null}
+        </div>
       </div>
     );
   }
@@ -675,7 +700,13 @@ export default function TeamDashboard({
         </p>
       ) : null}
 
-      {loading ? <p className="mb-8 text-sm text-muted-foreground">불러오는 중…</p> : null}
+      {loading ? (
+        <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" aria-busy="true" aria-label="대시보드 로딩">
+          {[0, 1, 2, 3].map((k) => (
+            <div key={k} className="h-[5.5rem] animate-pulse rounded-lg border border-border bg-muted/50" />
+          ))}
+        </div>
+      ) : null}
       {!effectiveTeamId ? (
         <p className="mb-8 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
           조회할 팀을 선택해 주세요.
