@@ -45,6 +45,10 @@ COPY apps/web ./apps/web
 WORKDIR /repo/apps/web
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NEXT_PRIVATE_LOCAL_WEBPACK=true
+ARG NEXT_PUBLIC_MFE_TEAM_REMOTE_URL=http://localhost:8888/teams
+ARG NEXT_PUBLIC_MFE_USAGE_REMOTE_URL=http://localhost:8888/dashboard
+ENV NEXT_PUBLIC_MFE_TEAM_REMOTE_URL=${NEXT_PUBLIC_MFE_TEAM_REMOTE_URL}
+ENV NEXT_PUBLIC_MFE_USAGE_REMOTE_URL=${NEXT_PUBLIC_MFE_USAGE_REMOTE_URL}
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     --mount=type=cache,target=/repo/apps/web/.next/cache \
     pnpm config set store-dir /pnpm/store && \
