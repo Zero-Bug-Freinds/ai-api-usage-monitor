@@ -22,10 +22,8 @@ const TeamMfRemotesLazy = dynamic(
 );
 
 /**
- * 팀 콘솔 우측 영역:
- * - 탭(팀 대시보드 / 멤버 / API)은 항상 이 컴포넌트가 렌더합니다.
- * - `tab=dashboard`일 때만 usage MF(`TeamUsageDashboard`)를 로드합니다. 다른 탭에서는 team MF만 로드됩니다.
- * - 우측이 비어 보이면: MF remoteEntry 로드 실패, 또는 해당 탭에서 맞는 리모트가 아님을 의심합니다.
+ * 팀 콘솔: `TeamManagement` 리모트가 이미 좌측 팀 목록·우측 상세를 포함하므로(Task37-10),
+ * 호스트는 탭·리모트 슬롯만 두고 가로 전체(`max-w-none`은 셸 `ConsoleLayoutOverride`)로 둔다.
  */
 export function TeamPageContent() {
   const router = usePagesHostRouter();
@@ -57,7 +55,7 @@ export function TeamPageContent() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="host-remote-slot mx-auto flex w-full max-w-none flex-1 flex-col gap-4">
       <div className="flex flex-wrap gap-2 border-b border-border pb-3">
         <Button
           type="button"

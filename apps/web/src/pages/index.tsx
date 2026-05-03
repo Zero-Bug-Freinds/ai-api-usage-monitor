@@ -12,7 +12,7 @@ export const getServerSideProps: GetServerSideProps = async () => {
  */
 export default function TeamsConsoleHomePage() {
   return (
-    <div className="host-remote-slot space-y-4 p-4">
+    <div className="host-remote-slot flex min-h-0 w-full flex-1 flex-col">
       <TeamPageContent />
     </div>
   );
