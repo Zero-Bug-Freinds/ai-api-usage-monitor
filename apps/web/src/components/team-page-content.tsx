@@ -5,14 +5,14 @@ import * as React from "react";
 import { Button, cn } from "@ai-usage/ui";
 import { usePagesHostRouter } from "@/context/pages-host-router-context";
 import { useTeamWorkspace } from "@/components/team-workspace-context";
-import { TeamHostTeamList } from "@/components/team-host-team-list";
+import { RemoteErrorBoundary } from "@/components/remote-error-boundary";
 import { normalizeTab, type TeamRouteSection } from "@/components/team-route-types";
 
 export type { TeamRouteSection } from "@/components/team-route-types";
 
 /**
- * `team/`·`usage/` federation dynamic은 `./team-mf-remotes` 청크에만 두고,
- * 클라이언트 마운트 후에만 그 청크를 로드해 모듈 평가 시점 경합을 줄인다(Task37-8).
+ * `usage/` federation dynamic은 `./team-mf-remotes` 청크에만 둔다(Task37-8).
+ * `team/TeamManagement`는 좌측 전용으로 이 파일에서만 로드해 동일 리모트 이중 등록을 피한다(Task37-12).
  */
 const TeamMfRemotesLazy = dynamic(
   () => import("./team-mf-remotes").then((m) => ({ default: m.TeamMfRemotes })),
@@ -22,8 +22,13 @@ const TeamMfRemotesLazy = dynamic(
   }
 );
 
+const TeamManagementLazy = dynamic(() => import("team/TeamManagement"), {
+  ssr: false,
+  loading: () => <p className="text-sm text-muted-foreground">Team remote loading…</p>,
+});
+
 /**
- * 팀 콘솔(Task37-11): 호스트 좌측 고정 팀 목록 + 우측 탭(대시보드 / 멤버 상세) 및 MF 슬롯.
+ * 팀 콘솔(Task37-12): 좌측 MF `TeamManagement` 통째로, 우측 usage MF만 + 상단 탭.
  */
 export function TeamPageContent() {
   const router = usePagesHostRouter();
@@ -46,7 +51,7 @@ export function TeamPageContent() {
         : "";
 
   const tab = normalizeTab(router.query.tab);
-  const usageResetKey = `${router.asPath}|${teams.length}`;
+  const usageResetKey = `${router.asPath}|${teams.length}|${tab}`;
 
   function goTab(next: TeamRouteSection) {
     const q: Record<string, string> = { tab: next };
@@ -54,16 +59,21 @@ export function TeamPageContent() {
     void router.replace({ pathname: "/", query: q }, undefined, { shallow: true });
   }
 
-  function selectTeam(teamId: string) {
-    const q: Record<string, string> = { tab };
-    q.viewTeamId = teamId;
-    void router.replace({ pathname: "/", query: q }, undefined, { shallow: true });
-  }
+  const teamMfResetKey = `${viewTeamId}|${teams.length}`;
 
   return (
-    <div className="flex min-h-0 w-full flex-1 flex-col gap-0 md:flex-row">
-      <aside className="team-host-list flex min-h-[min(280px,45vh)] w-full shrink-0 flex-col border-b border-zinc-200 bg-gray-50 md:min-h-0 md:w-[min(22rem,100%)] md:min-w-[260px] md:max-w-[360px] md:border-b-0 md:border-r md:border-zinc-200">
-        <TeamHostTeamList teams={teams} selectedTeamId={viewTeamId} onSelectTeam={selectTeam} />
+    <div className="flex min-h-0 w-full flex-1 flex-col gap-0 md:flex-row md:gap-6">
+      <aside className="team-team-mf-slot shrink-0 border-b border-zinc-200 bg-gray-50 md:sticky md:top-16 md:max-h-[calc(100vh-5rem)] md:self-start md:overflow-y-auto md:border-b-0 md:border-r md:border-zinc-200">
+        {mfChunkAllowed ? (
+          <RemoteErrorBoundary
+            resetKey={teamMfResetKey}
+            fallback={<p className="p-3 text-sm text-muted-foreground">Team remote를 불러오지 못했습니다.</p>}
+          >
+            <TeamManagementLazy />
+          </RemoteErrorBoundary>
+        ) : (
+          <p className="p-3 text-sm text-muted-foreground">원격 모듈을 준비하는 중…</p>
+        )}
       </aside>
 
       <div className="host-remote-slot flex min-h-0 min-w-0 flex-1 flex-col gap-4">
@@ -104,9 +114,9 @@ export function TeamPageContent() {
           </p>
         ) : null}
 
-        <div className="min-h-0 flex-1 overflow-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto">
           {mfChunkAllowed ? (
-            <TeamMfRemotesLazy tab={tab} viewTeamId={viewTeamId} teams={teams} usageResetKey={usageResetKey} />
+            <TeamMfRemotesLazy viewTeamId={viewTeamId} teams={teams} usageResetKey={usageResetKey} />
           ) : (
             <p className="text-sm text-muted-foreground">원격 모듈을 준비하는 중…</p>
           )}
