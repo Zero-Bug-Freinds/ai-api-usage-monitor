@@ -63,13 +63,72 @@ export type ConsoleNavLinkSpec =
   | { kind: "anchor"; href: string }
 
 /**
+ * 현재 앱(프로필) 안에서만 `next/link`로 안전한 SPA 이동이 가능한 항목인지.
+ * false이면 타 서비스(App/Pages 혼합)로 나가는 것이므로 항상 `<a href>`(풀 페이지)로 처리한다.
+ *
+ * | profile      | SPA(next) 대상 |
+ * |--------------|----------------|
+ * | identity     | owner === identity |
+ * | usage        | usageHome, usageLog |
+ * | billing      | billingHome |
+ * | notification | notifications |
+ * | team         | 없음(web-host 메인 넷은 모두 타 앱) |
+ * | agent        | assistant |
+ */
+export function ownsNavItemForSpaLink(profile: ConsoleProfile, id: ConsoleNavId): boolean {
+  const { owner } = CONSOLE_NAV[id]
+  switch (profile) {
+    case "identity":
+      return owner === "identity"
+    case "usage":
+      return id === "usageHome" || id === "usageLog"
+    case "billing":
+      return id === "billingHome"
+    case "notification":
+      return id === "notifications"
+    case "team":
+      return false
+    case "agent":
+      return id === "assistant"
+    default: {
+      const _exhaustive: never = profile
+      throw new Error(`Unexpected profile: ${_exhaustive}`)
+    }
+  }
+}
+
+function spaInternalHref(profile: ConsoleProfile, id: ConsoleNavId): string {
+  const { publicPath } = CONSOLE_NAV[id]
+  switch (profile) {
+    case "identity":
+      return publicPath
+    case "usage":
+      if (id === "usageHome") return "/"
+      if (id === "usageLog") return "/usagelog"
+      throw new Error(`resolveConsoleNavLink: unexpected usage SPA id ${id}`)
+    case "billing":
+      return "/"
+    case "notification":
+      return "/"
+    case "agent":
+      return "/"
+    case "team":
+      throw new Error("resolveConsoleNavLink: team profile has no SPA main-nav targets")
+    default: {
+      const _exhaustive: never = profile
+      throw new Error(`Unexpected profile: ${_exhaustive}`)
+    }
+  }
+}
+
+/**
  * Builds the correct navigation target for the current app profile.
  * - `next`: safe for `next/link` inside the owning app (including basePath).
- * - `anchor`: cross-app or identity routes; avoids basePath double-prefix on usage/billing.
+ * - `anchor`: cross-app routes; 풀 페이지 이동으로 MF·Router 컨텍스트 불일치를 피한다.
  */
 export function resolveConsoleNavLink(profile: ConsoleProfile, id: ConsoleNavId): ConsoleNavLinkSpec {
   const meta = CONSOLE_NAV[id]
-  const { owner, publicPath } = meta
+  const { publicPath } = meta
 
   /**
    * 팀 콘솔(web-host, basePath /teams)으로의 전환은 항상 풀 페이지 네비게이션(anchor).
@@ -84,53 +143,10 @@ export function resolveConsoleNavLink(profile: ConsoleProfile, id: ConsoleNavId)
     return { kind: "anchor", href }
   }
 
-  if (profile === "identity") {
-    if (owner === "identity") {
-      return { kind: "next", href: publicPath }
-    }
+  if (!ownsNavItemForSpaLink(profile, id)) {
     return { kind: "anchor", href: anchorHrefForPublicPath(publicPath) }
   }
-
-  if (profile === "usage") {
-    if (id === "usageHome") {
-      return { kind: "next", href: "/" }
-    }
-    if (id === "usageLog") {
-      return { kind: "next", href: "/usagelog" }
-    }
-    return { kind: "anchor", href: anchorHrefForPublicPath(publicPath) }
-  }
-
-  if (profile === "billing") {
-    if (owner === "billing") {
-      return { kind: "next", href: "/" }
-    }
-    return { kind: "anchor", href: anchorHrefForPublicPath(publicPath) }
-  }
-
-  if (profile === "notification") {
-    if (owner === "notification") {
-      return { kind: "next", href: "/" }
-    }
-    return { kind: "anchor", href: anchorHrefForPublicPath(publicPath) }
-  }
-
-  if (profile === "team") {
-    if (owner === "team") {
-      return { kind: "next", href: "/" }
-    }
-    return { kind: "anchor", href: anchorHrefForPublicPath(publicPath) }
-  }
-
-  if (profile === "agent") {
-    if (id === "assistant") {
-      return { kind: "next", href: "/" }
-    }
-    return { kind: "anchor", href: anchorHrefForPublicPath(publicPath) }
-  }
-
-  const _never: never = profile
-  throw new Error(`Unexpected profile: ${_never}`)
+  return { kind: "next", href: spaInternalHref(profile, id) }
 }
 
 /** Public dashboard URL for links from billing or CTAs (same-origin relative path). */
