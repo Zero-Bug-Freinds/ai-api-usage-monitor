@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
-import { currentMonthStartKst, rangeLastDays } from "@/lib/expenditure/dates";
+import { currentMonthRangeKst, currentMonthStartKst, rangeLastDays } from "@/lib/expenditure/dates";
 import { formatUsd, formatUsdTooltip } from "@/lib/expenditure/money";
 import type {
   AiProviderCode,
@@ -156,7 +156,7 @@ export function ExpenditureDashboard() {
     if (rangePreset === "last30") return rangeLastDays(30);
     if (rangePreset === "last90") return rangeLastDays(90);
     if (rangePreset === "thisMonth") {
-      return { from: currentMonthStartKst(), to: rangeLastDays(1).to };
+      return currentMonthRangeKst();
     }
     return { from: customFrom, to: customTo };
   }, [customFrom, customTo, rangePreset]);

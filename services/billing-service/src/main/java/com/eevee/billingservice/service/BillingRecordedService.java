@@ -79,7 +79,8 @@ public class BillingRecordedService {
         boolean costOutEnabled = rabbitProperties.getCostOut().isEnabled();
         boolean applicable = costOutEnabled;
 
-        var monthlyTotalBefore = aggregationJdbc.findMonthlyTotalUsd(bc.monthStart(), bc.userId(), bc.apiKeyId());
+        var monthlyTotalBefore = aggregationJdbc.sumDailyCostUsdForKstCalendarMonthAndProvider(
+                bc.monthStart(), bc.userId(), bc.apiKeyId(), bc.provider());
         aggregationJdbc.upsertDaily(
                 bc.aggDate(),
                 bc.userId(),
@@ -92,8 +93,11 @@ public class BillingRecordedService {
         aggregationJdbc.upsertMonthly(bc.monthStart(), bc.userId(), bc.apiKeyId(), bc.cost());
         aggregationJdbc.upsertSeen(bc.userId(), bc.apiKeyId(), event.provider(), bc.occurredAt());
 
-        var monthlyTotalAfter = aggregationJdbc.findMonthlyTotalUsd(bc.monthStart(), bc.userId(), bc.apiKeyId());
-        var monthlyBudgetUsd = identityBudgetClient.fetchMonthlyBudgetUsd(bc.userId()).orElse(null);
+        var monthlyTotalAfter = aggregationJdbc.sumDailyCostUsdForKstCalendarMonthAndProvider(
+                bc.monthStart(), bc.userId(), bc.apiKeyId(), bc.provider());
+        var monthlyBudgetUsd = identityBudgetClient
+                .fetchMonthlyBudgetUsdForKey(bc.userId(), bc.provider(), bc.apiKeyId())
+                .orElse(null);
 
         processedEventRepository.save(new BillingProcessedEventEntity(event.eventId(), processedAt, applicable));
 
@@ -101,7 +105,8 @@ public class BillingRecordedService {
             scheduleAfterCommit(() -> publishCostAndMark(event, bc.model(), bc.cost()));
         }
 
-        if (rabbitProperties.getBudgetOut().isEnabled() && monthlyBudgetUsd != null) {
+        boolean keyBudgetPositive = monthlyBudgetUsd != null && monthlyBudgetUsd.compareTo(BigDecimal.ZERO) > 0;
+        if (rabbitProperties.getBudgetOut().isEnabled() && keyBudgetPositive) {
             scheduleAfterCommit(() -> budgetThresholdPublisher.publishIfCrossed(
                     bc.userId(),
                     bc.teamId(),
@@ -195,6 +200,7 @@ public class BillingRecordedService {
                 userId,
                 teamId,
                 apiKeyId,
+                event.provider(),
                 aggDate,
                 monthStart,
                 model,
@@ -263,6 +269,7 @@ public class BillingRecordedService {
             String userId,
             String teamId,
             String apiKeyId,
+            AiProvider provider,
             LocalDate aggDate,
             LocalDate monthStart,
             String model,

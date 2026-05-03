@@ -7,6 +7,7 @@ import org.springframework.stereotype.Repository;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.TemporalAdjusters;
 
 /**
  * PostgreSQL upserts for concurrent-safe aggregation without lost updates.
@@ -155,6 +156,47 @@ public class BillingAggregationJdbc {
                 },
                 rs -> rs.next() ? rs.getBigDecimal(1) : null
         );
+    }
+
+    /**
+     * Sum of {@code daily_expenditure_agg.total_cost_usd} for the KST calendar month {@code monthStartDate}
+     * (must be YYYY-MM-01) through that month's last day, for one provider.
+     * <p>
+     * Used for budget-threshold ratios so the numerator matches {@link com.eevee.billingservice.service.ExpenditureQueryService#summary}
+     * when the UI range is the full calendar month (per-provider); {@link #findMonthlyTotalUsd} remains all-provider
+     * for legacy monthly rows.
+     */
+    public BigDecimal sumDailyCostUsdForKstCalendarMonthAndProvider(
+            LocalDate monthStartDate,
+            String userId,
+            String apiKeyId,
+            AiProvider provider
+    ) {
+        if (monthStartDate == null) {
+            throw new IllegalArgumentException("monthStartDate is required");
+        }
+        if (monthStartDate.getDayOfMonth() != 1) {
+            throw new IllegalArgumentException("monthStartDate must be the first day of a month (YYYY-MM-01)");
+        }
+        LocalDate monthEndInclusive = monthStartDate.with(TemporalAdjusters.lastDayOfMonth());
+        BigDecimal v = jdbcTemplate.queryForObject(
+                """
+                        SELECT coalesce(sum(total_cost_usd), 0)
+                        FROM daily_expenditure_agg
+                        WHERE user_id = ?
+                          AND api_key_id = ?
+                          AND provider = ?
+                          AND agg_date >= ?
+                          AND agg_date <= ?
+                        """,
+                BigDecimal.class,
+                userId,
+                apiKeyId,
+                provider.name(),
+                monthStartDate,
+                monthEndInclusive
+        );
+        return v != null ? v : BigDecimal.ZERO;
     }
 
     public void upsertSeen(String userId, String apiKeyId, AiProvider provider, Instant occurredAt) {
