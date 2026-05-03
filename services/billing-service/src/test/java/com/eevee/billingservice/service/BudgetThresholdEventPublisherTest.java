@@ -85,7 +85,7 @@ class BudgetThresholdEventPublisherTest {
         );
 
         ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
-        verify(rabbitTemplate, times(2)).send(eq("billing.events"), eq("billing.budget.threshold.reached"), captor.capture());
+        verify(rabbitTemplate, times(3)).send(eq("billing.events"), eq("billing.budget.threshold.reached"), captor.capture());
 
         List<BigDecimal> thresholds = captor.getAllValues()
                 .stream()
@@ -103,6 +103,7 @@ class BudgetThresholdEventPublisherTest {
 
         assertThat(thresholds).containsExactlyInAnyOrder(
                 new BigDecimal("0.8"),
+                new BigDecimal("0.9"),
                 BigDecimal.ONE
         );
     }

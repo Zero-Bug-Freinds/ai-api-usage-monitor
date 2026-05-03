@@ -86,6 +86,13 @@ function getTeamInviteActions(meta: unknown): { acceptPath: string; rejectPath: 
   return { acceptPath, rejectPath }
 }
 
+/** Matches server rule: unread team invite with accept/reject UI cannot be bulk-read until decided. */
+function isPendingTeamInviteRow(n: InAppNotification): boolean {
+  if (n.readAt) return false
+  if (n.type !== "team:TEAM_INVITE_CREATED") return false
+  return getTeamInviteActions(n.meta) !== null
+}
+
 async function postAction(path: string): Promise<void> {
   const p = normalizeNotificationServicePath(path)
   const res = await fetch(apiPath(`/api/notification${p}`), { method: "POST", cache: "no-store" })
@@ -118,11 +125,17 @@ export function NotificationsPage() {
   const [busyActionId, setBusyActionId] = useState<string | null>(null)
   const [busyAll, setBusyAll] = useState(false)
 
-  const unreadCount = useMemo(() => items.filter((n) => !n.readAt).length, [items])
+  const hasMarkAllReadTargets = useMemo(
+    () => items.some((n) => !n.readAt && !isPendingTeamInviteRow(n)),
+    [items]
+  )
 
-  const loadFirst = useCallback(async () => {
-    setLoading(true)
-    setError(null)
+  const loadFirst = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true
+    if (!silent) {
+      setLoading(true)
+      setError(null)
+    }
     try {
       const res = await fetchNotifications(30)
       setItems(res.items)
@@ -130,7 +143,7 @@ export function NotificationsPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "알림을 불러올 수 없습니다")
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [])
 
@@ -174,18 +187,13 @@ export function NotificationsPage() {
   }, [])
 
   const onInviteAction = useCallback(
-    async (notificationId: string, path: string) => {
+    async (notificationId: string, path: string, opts?: { requireConfirm?: boolean }) => {
+      if (opts?.requireConfirm && !window.confirm("진짜 거절하시겠습니까?")) return
       setBusyActionId(notificationId)
       setError(null)
       try {
         await postAction(path)
-        await markRead(notificationId)
-        setItems((prev) =>
-          prev.map((n) =>
-            n.id === notificationId ? { ...n, readAt: new Date().toISOString() } : n,
-          ),
-        )
-        await loadFirst()
+        await loadFirst({ silent: true })
       } catch (e) {
         setError(e instanceof Error ? e.message : "요청에 실패했습니다")
       } finally {
@@ -200,7 +208,13 @@ export function NotificationsPage() {
     setError(null)
     try {
       await markAllRead()
-      setItems((prev) => prev.map((n) => (n.readAt ? n : { ...n, readAt: new Date().toISOString() })))
+      setItems((prev) =>
+        prev.map((n) => {
+          if (n.readAt) return n
+          if (isPendingTeamInviteRow(n)) return n
+          return { ...n, readAt: new Date().toISOString() }
+        }),
+      )
     } catch (e) {
       setError(e instanceof Error ? e.message : "전체 읽음 처리에 실패했습니다")
     } finally {
@@ -219,7 +233,7 @@ export function NotificationsPage() {
           <Button variant="secondary" onClick={() => void loadFirst()} disabled={loading || loadingMore}>
             새로고침
           </Button>
-          <Button onClick={() => void onMarkAllRead()} disabled={busyAll || unreadCount === 0}>
+          <Button onClick={() => void onMarkAllRead()} disabled={busyAll || !hasMarkAllReadTargets}>
             {busyAll ? <Loader2 className="mr-2 size-4 animate-spin" aria-hidden /> : <Check className="mr-2 size-4" aria-hidden />}
             전체 읽음
           </Button>
@@ -286,7 +300,7 @@ export function NotificationsPage() {
                         <Button
                           size="sm"
                           variant="secondary"
-                          onClick={() => void onInviteAction(n.id, inviteActions.rejectPath)}
+                          onClick={() => void onInviteAction(n.id, inviteActions.rejectPath, { requireConfirm: true })}
                           disabled={!unread || busyAction}
                         >
                           {busyAction ? <Loader2 className="mr-2 size-4 animate-spin" aria-hidden /> : null}
@@ -295,17 +309,19 @@ export function NotificationsPage() {
                       </div>
                     ) : null}
                   </div>
-                  <div className="shrink-0">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => void onMarkRead(n.id)}
-                      disabled={!unread || busy}
-                    >
-                      {busy ? <Loader2 className="mr-2 size-4 animate-spin" aria-hidden /> : <Check className="mr-2 size-4" aria-hidden />}
-                      읽음
-                    </Button>
-                  </div>
+                  {inviteActions ? null : (
+                    <div className="shrink-0">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => void onMarkRead(n.id)}
+                        disabled={!unread || busy}
+                      >
+                        {busy ? <Loader2 className="mr-2 size-4 animate-spin" aria-hidden /> : <Check className="mr-2 size-4" aria-hidden />}
+                        읽음
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </article>
             )

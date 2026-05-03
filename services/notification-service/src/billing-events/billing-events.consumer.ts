@@ -28,7 +28,7 @@ export class BillingEventsConsumer
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
-    const enabled = this.config.get<string>('BILLING_EVENTS_CONSUMER_ENABLED', 'false');
+    const enabled = this.config.get<string>('BILLING_EVENTS_CONSUMER_ENABLED', 'true');
     if (enabled !== 'true' && enabled !== '1') {
       this.logger.log('Billing events consumer disabled (BILLING_EVENTS_CONSUMER_ENABLED)');
       return;
@@ -47,10 +47,9 @@ export class BillingEventsConsumer
       'notification.billing.events',
     );
     const prefetch = Number(this.config.get<string>('BILLING_EVENTS_PREFETCH', '10')) || 10;
-    const assertTopology =
-      this.config.get<string>('BILLING_EVENTS_ASSERT_TOPOLOGY', 'false') === 'true' ||
-      this.config.get<string>('BILLING_EVENTS_ASSERT_TOPOLOGY', 'false') === '1';
-    const exchange = this.config.get<string>('BILLING_EVENTS_EXCHANGE_NAME');
+    const assertTopologyRaw = this.config.get<string>('BILLING_EVENTS_ASSERT_TOPOLOGY', 'true');
+    const assertTopology = assertTopologyRaw === 'true' || assertTopologyRaw === '1';
+    const exchange = this.config.get<string>('BILLING_EVENTS_EXCHANGE_NAME', 'billing.events');
     const bindingKeysRaw = this.config.get<string>(
       'BILLING_EVENTS_BINDING_KEYS',
       'billing.budget.threshold.reached',

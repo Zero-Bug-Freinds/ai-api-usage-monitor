@@ -2,7 +2,7 @@
 
 usage-service publishes analytics signals on RabbitMQ for downstream consumers (notably **agent-service** budget/token prediction). This document is the contract summary for teams wiring subscribers.
 
-Inbound streams (proxy `UsageRecordedEvent`, billing `UsageCostFinalizedEvent`, identity API-key events, etc.) are documented elsewhere; here we only describe **usage-service → outbound** traffic.
+Inbound streams (proxy `UsageRecordedEvent`, billing `UsageCostFinalizedEvent`, identity API-key events, etc.) are documented elsewhere — billing의 **그 외 발행**(예산 임계·정정 완료 등)은 [`docs/billing-outbound-events.md`](billing-outbound-events.md). Here we only describe **usage-service → outbound** traffic.
 
 ---
 
