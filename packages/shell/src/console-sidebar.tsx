@@ -18,6 +18,7 @@ import {
 } from "lucide-react"
 
 import { Button, cn } from "@ai-usage/ui"
+import { ConsoleInternalNavLink } from "./console-internal-nav-link"
 import type { ConsoleNavId, ConsoleProfile } from "./console-nav"
 import { CONSOLE_MAIN_NAV_ORDER, CONSOLE_NAV } from "./console-nav"
 import { isConsoleNavActive, resolveConsoleNavLink } from "./console-nav"
@@ -77,36 +78,22 @@ function NavRow({
           : "text-sidebar-foreground/85 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
       )
 
-  if (!forceTeamsAnchor && spec.kind === "next") {
-    return (
-      <Link href={spec.href} className={className}>
-        {icon}
-        {label}
-        {id === "notifications" && typeof unreadCount === "number" && unreadCount > 0 ? (
-          <span
-            className="ml-2 inline-flex min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[11px] font-semibold leading-5 text-destructive-foreground"
-            aria-label={`미확인 알림 ${unreadCount}개`}
-          >
-            {unreadCount}
-          </span>
-        ) : null}
-      </Link>
-    )
-  }
+  const notificationBadge =
+    id === "notifications" && typeof unreadCount === "number" && unreadCount > 0 ? (
+      <span
+        className="ml-2 inline-flex min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[11px] font-semibold leading-5 text-destructive-foreground"
+        aria-label={`미확인 알림 ${unreadCount}개`}
+      >
+        {unreadCount}
+      </span>
+    ) : null
 
   return (
-    <a href={spec.href} className={className}>
+    <ConsoleInternalNavLink spec={spec} forceAnchor={forceTeamsAnchor} className={className}>
       {icon}
       {label}
-      {id === "notifications" && typeof unreadCount === "number" && unreadCount > 0 ? (
-        <span
-          className="ml-2 inline-flex min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[11px] font-semibold leading-5 text-destructive-foreground"
-          aria-label={`미확인 알림 ${unreadCount}개`}
-        >
-          {unreadCount}
-        </span>
-      ) : null}
-    </a>
+      {notificationBadge}
+    </ConsoleInternalNavLink>
   )
 }
 
@@ -126,6 +113,11 @@ export type ConsoleSidebarProps = {
   teamExpandedTeamId?: string | null
   /** Highlights the active team submenu entry. */
   teamSubmenuActive?: { teamId: string; suffix: string } | null
+  /**
+   * Pages Router에서 `router.isReady` 전에는 false로 두어 팀 서브메뉴 클릭을 막는다.
+   * App Router는 생략(기본 true).
+   */
+  navigationReady?: boolean
 }
 
 export function ConsoleSidebarInner({
@@ -137,6 +129,7 @@ export function ConsoleSidebarInner({
   buildTeamSubmenuHref,
   teamExpandedTeamId,
   teamSubmenuActive,
+  navigationReady = true,
 }: ConsoleSidebarProps & { pathname: string }) {
   const [logoutPending, setLogoutPending] = React.useState(false)
   const [expandedTeamId, setExpandedTeamId] = React.useState<string | null>(null)
@@ -299,11 +292,18 @@ export function ConsoleSidebarInner({
                           <li key={item.key}>
                             <Link
                               href={href}
+                              prefetch={navigationReady}
+                              tabIndex={navigationReady ? 0 : -1}
+                              aria-disabled={!navigationReady}
+                              onClick={(e) => {
+                                if (!navigationReady) e.preventDefault()
+                              }}
                               className={cn(
                                 "block rounded-md px-3 py-2 text-xs transition-colors",
                                 active
                                   ? "bg-sidebar-accent font-semibold text-sidebar-accent-foreground"
-                                  : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+                                  : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+                                !navigationReady && "pointer-events-none opacity-50"
                               )}
                             >
                               {item.label}
@@ -346,5 +346,5 @@ export function ConsoleSidebarPages(props: ConsoleSidebarProps) {
   const pathname = router.isReady
     ? `${(router.basePath ?? "").replace(/\/$/, "")}${router.asPath ?? ""}` || "/"
     : ""
-  return <ConsoleSidebarInner pathname={pathname} {...props} />
+  return <ConsoleSidebarInner pathname={pathname} {...props} navigationReady={router.isReady} />
 }
