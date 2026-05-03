@@ -14,7 +14,7 @@ function resolvePackageRoot(dependencyName) {
   }
 }
 
-/** Webpack `alias.react` alone does not dedupe `react/jsx-runtime` subpath imports — multiple copies → useContext(null) on SSR. */
+/** 클라이언트 빌드: Task37-2 `require.resolve` 별칭(react·react-dom·jsx-runtime)으로 MF·청크 간 단일 React. 서버는 MF 미적용·리모트 스텁으로 동일 목표. */
 function safeResolve(specifier) {
   try {
     return require.resolve(specifier);
@@ -48,10 +48,20 @@ const nextConfig = {
   transpilePackages: ["@ai-usage/ui", "@ai-usage/shell", "@ai-usage/team-workspace-cache"],
   // Avoid bundling MF (and its `node:` imports) on the server; pairs with webpack externals below.
   serverExternalPackages: ["@module-federation/nextjs-mf"],
-  webpack(config, { isServer: _isServer }) {
+  webpack(config, { isServer }) {
     const reactRoot = resolvePackageRoot("react");
     const reactDomRoot = resolvePackageRoot("react-dom");
-    if (reactRoot && reactDomRoot) {
+    const mfRemoteStub = path.join(__dirname, "src/stubs/mf-remote-stub.tsx");
+
+    // 서버: MF 플러그인 없이 가상 모듈(team/*, usage/*)만 스텁으로 해석 → shared React 이중 로드·useContext(null) 방지.
+    // 클라이언트: NextFederationPlugin + require.resolve react 별칭(Task37-2·MF 단일 React).
+    if (isServer) {
+      config.resolve.alias = {
+        ...config.resolve.alias,
+        "team/TeamManagement": mfRemoteStub,
+        "usage/TeamUsageDashboard": mfRemoteStub,
+      };
+    } else if (reactRoot && reactDomRoot) {
       const jsxRuntime = safeResolve("react/jsx-runtime");
       const jsxDevRuntime = safeResolve("react/jsx-dev-runtime");
       config.resolve.alias = {
@@ -77,20 +87,22 @@ const nextConfig = {
       },
     ].filter(Boolean);
     config.plugins = config.plugins ?? [];
-    config.plugins.push(
-      new NextFederationPlugin({
-        name: "host",
-        remotes: {
-          team: `team@${teamRemoteOrigin.replace(/\/$/, "")}/_next/static/chunks/remoteEntry.js`,
-          usage: `usage@${usageRemoteOrigin.replace(/\/$/, "")}/_next/static/chunks/remoteEntry.js`,
-        },
-        filename: "static/chunks/remoteEntry.js",
-        shared: {
-          react: { singleton: true, strictVersion: true, requiredVersion: "19.2.4" },
-          "react-dom": { singleton: true, strictVersion: true, requiredVersion: "19.2.4" },
-        },
-      })
-    );
+    if (!isServer) {
+      config.plugins.push(
+        new NextFederationPlugin({
+          name: "host",
+          remotes: {
+            team: `team@${teamRemoteOrigin.replace(/\/$/, "")}/_next/static/chunks/remoteEntry.js`,
+            usage: `usage@${usageRemoteOrigin.replace(/\/$/, "")}/_next/static/chunks/remoteEntry.js`,
+          },
+          filename: "static/chunks/remoteEntry.js",
+          shared: {
+            react: { singleton: true, strictVersion: true, requiredVersion: "19.2.4" },
+            "react-dom": { singleton: true, strictVersion: true, requiredVersion: "19.2.4" },
+          },
+        })
+      );
+    }
     return config;
   },
 };
