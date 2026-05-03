@@ -343,8 +343,14 @@ export function ConsoleSidebarInner({
  */
 export function ConsoleSidebarPages(props: ConsoleSidebarProps) {
   const router = usePagesRouter()
-  const pathname = router.isReady
-    ? `${(router.basePath ?? "").replace(/\/$/, "")}${router.asPath ?? ""}` || "/"
-    : ""
-  return <ConsoleSidebarInner pathname={pathname} {...props} navigationReady={router.isReady} />
+  if (!router.isReady) {
+    return (
+      <aside
+        className="flex h-full min-h-0 w-64 min-w-[240px] max-w-[280px] shrink-0 flex-col border-r border-sidebar-border bg-sidebar animate-pulse"
+        aria-hidden
+      />
+    )
+  }
+  const pathname = `${(router.basePath ?? "").replace(/\/$/, "")}${router.asPath ?? ""}` || "/"
+  return <ConsoleSidebarInner pathname={pathname} {...props} navigationReady />
 }
