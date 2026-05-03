@@ -1,4 +1,10 @@
+import type { GetServerSideProps } from "next";
+
 import { TeamPageContent } from "@/components/team-page-content";
+
+export const getServerSideProps: GetServerSideProps = async () => {
+  return { props: {} };
+};
 
 /**
  * 팀 콘솔 메인 (basePath `/teams` → 브라우저 경로 `/teams`).
