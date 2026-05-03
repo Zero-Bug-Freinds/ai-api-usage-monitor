@@ -31,8 +31,7 @@ type TeamSidebarItem = {
 
 const TEAM_SUB_MENU = [
   { key: "dashboard", label: "대시보드", suffix: "dashboard" },
-  { key: "members", label: "멤버 관리", suffix: "members" },
-  { key: "apiKeys", label: "API 및 설정", suffix: "api-keys" },
+  { key: "memberDetail", label: "멤버 상세", suffix: "memberDetail" },
 ] as const
 const AI_USAGE_LOGOUT_EVENT = "ai-usage:logout"
 const LOCAL_STORAGE_KEYS_TO_PRESERVE_ON_LOGOUT = ["team.dismissedExpiredInvitationNoticeIds"] as const

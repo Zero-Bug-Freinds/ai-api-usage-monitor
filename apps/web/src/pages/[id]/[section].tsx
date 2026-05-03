@@ -11,7 +11,9 @@ function queryParamFromDynamic(
 }
 
 function toTab(section: string | undefined): TeamRouteSection {
-  if (section === "members" || section === "api-keys") return section;
+  if (section === "members" || section === "api-keys" || section === "memberDetail") {
+    return "memberDetail";
+  }
   return "dashboard";
 }
 
