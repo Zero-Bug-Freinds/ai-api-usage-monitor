@@ -16,12 +16,6 @@ function teamOrigin(): string {
   ).replace(/\/+$/, "");
 }
 
-function webHostOrigin(): string {
-  return (
-    process.env.WEB_HOST_INTERNAL_ORIGIN ?? "http://web-host:3000"
-  ).replace(/\/+$/, "");
-}
-
 function billingOrigin(): string {
   return (
     process.env.BILLING_WEB_INTERNAL_ORIGIN ??
@@ -57,7 +51,6 @@ const nextConfig: NextConfig = {
   async rewrites() {
     const origin = usageOrigin();
     const team = teamOrigin();
-    const webHost = webHostOrigin();
     const billing = billingOrigin();
     const notification = notificationOrigin();
     const agent = agentOrigin();
@@ -90,14 +83,7 @@ const nextConfig: NextConfig = {
         source: "/teams/api/:path*",
         destination: `${team}/teams/api/:path*`,
       },
-      {
-        source: "/teams",
-        destination: `${webHost}/teams`,
-      },
-      {
-        source: "/teams/:path*",
-        destination: `${webHost}/teams/:path*`,
-      },
+      /* Team console HTML/static: use web-edge (8888) → web-host directly; avoid duplicate proxy via identity. */
       {
         source: "/agent",
         destination: `${agent}/agent`,
