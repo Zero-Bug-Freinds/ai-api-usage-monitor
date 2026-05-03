@@ -34,6 +34,8 @@ public class UsageRabbitProperties {
 
     private OutboundPrediction outboundPrediction = new OutboundPrediction();
 
+    private OutboundDailyCumulativeTokens outboundDailyCumulativeTokens = new OutboundDailyCumulativeTokens();
+
     public String getExchange() {
         return exchange;
     }
@@ -95,6 +97,16 @@ public class UsageRabbitProperties {
     public void setOutboundPrediction(OutboundPrediction outboundPrediction) {
         if (outboundPrediction != null) {
             this.outboundPrediction = outboundPrediction;
+        }
+    }
+
+    public OutboundDailyCumulativeTokens getOutboundDailyCumulativeTokens() {
+        return outboundDailyCumulativeTokens;
+    }
+
+    public void setOutboundDailyCumulativeTokens(OutboundDailyCumulativeTokens outboundDailyCumulativeTokens) {
+        if (outboundDailyCumulativeTokens != null) {
+            this.outboundDailyCumulativeTokens = outboundDailyCumulativeTokens;
         }
     }
 
@@ -242,6 +254,40 @@ public class UsageRabbitProperties {
         private boolean enabled = true;
         private String exchange = UsageOutboundEventAmqp.TOPIC_EXCHANGE_NAME;
         private String routingKey = UsageOutboundEventAmqp.ROUTING_KEY_PREDICTION_SIGNALS;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getExchange() {
+            return exchange;
+        }
+
+        public void setExchange(String exchange) {
+            this.exchange = exchange;
+        }
+
+        public String getRoutingKey() {
+            return routingKey;
+        }
+
+        public void setRoutingKey(String routingKey) {
+            this.routingKey = routingKey;
+        }
+    }
+
+    /**
+     * Outbound {@link com.eevee.usage.events.DailyCumulativeTokensUpdatedEvent} stream (usage → agent-service).
+     */
+    public static class OutboundDailyCumulativeTokens {
+
+        private boolean enabled = true;
+        private String exchange = UsageOutboundEventAmqp.TOPIC_EXCHANGE_NAME;
+        private String routingKey = UsageOutboundEventAmqp.ROUTING_KEY_DAILY_CUMULATIVE_TOKENS;
 
         public boolean isEnabled() {
             return enabled;
