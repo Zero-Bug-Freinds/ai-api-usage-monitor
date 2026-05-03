@@ -2,19 +2,20 @@
 
 import type { ReactNode } from "react";
 import * as React from "react";
-import { useRouter } from "next/router";
+import type { NextRouter } from "next/router";
 
 type HostRuntimeSafeguardProps = {
   children: ReactNode;
+  /** `_app`의 `router` prop — MF 비동기 청크에서 `useRouter` 컨텍스트가 비어 있을 때 동일 인스턴스를 쓴다. */
+  router: NextRouter;
 };
 
 /**
  * Task37-7: 클라이언트 마운트 이후에만 셸을 마운트하고, `router.isReady`와 결합해
- * MF loadShare·Pages Router 활성화 순서 경합을 줄인다. `_app`는 동기로 Router 하위에 두고,
- * `useRouter`를 쓰는 `HostShellLayout`만 이 가드 안으로 격리한다.
+ * MF loadShare·Pages Router 활성화 순서 경합을 줄인다.
+ * `useRouter()` 대신 prop을 쓰면 `loadShare` 직후 스케줄된 렌더에서도 NextRouter 미마운트를 피한다.
  */
-export function HostRuntimeSafeguard({ children }: HostRuntimeSafeguardProps) {
-  const router = useRouter();
+export function HostRuntimeSafeguard({ children, router }: HostRuntimeSafeguardProps) {
   const [clientMounted, setClientMounted] = React.useState(false);
 
   React.useEffect(() => {

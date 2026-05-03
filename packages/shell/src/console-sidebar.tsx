@@ -3,6 +3,7 @@
 import * as React from "react"
 import type { ReactNode } from "react"
 import Link from "next/link"
+import type { NextRouter } from "next/router"
 import { useRouter as usePagesRouter } from "next/router"
 import {
   Bell,
@@ -98,6 +99,11 @@ function NavRow({
 }
 
 export type ConsoleSidebarProps = {
+  /**
+   * Pages 호스트가 `_app`의 `router`를 넘기면 MF `loadShare` 직후에도 `useRouter` 컨텍스트 없이 동작한다.
+   * 생략 시 내부에서 `usePagesRouter()`를 쓴다(별도 컴포넌트로 훅 규칙 유지).
+   */
+  pagesRouter?: NextRouter
   profile: ConsoleProfile
   teams?: TeamSidebarItem[]
   /** Per-service BFF logout endpoint path. */
@@ -337,12 +343,10 @@ export function ConsoleSidebarInner({
   )
 }
 
-/**
- * Pages Router 호스트(예: web-host `basePath=/teams`)용 — `next/navigation` 훅 없이 경로를 맞춘다.
- * `asPath`에는 basePath가 포함되지 않으므로, 엣지 단일 도메인 기준으로 `/teams`와 동일한 활성 판별을 위해 합친다.
- */
-export function ConsoleSidebarPages(props: ConsoleSidebarProps) {
-  const router = usePagesRouter()
+function ConsoleSidebarPagesCore(
+  props: Omit<ConsoleSidebarProps, "pagesRouter"> & { pagesRouter: NextRouter },
+) {
+  const { pagesRouter: router, ...innerProps } = props
   if (!router.isReady) {
     return (
       <aside
@@ -352,5 +356,21 @@ export function ConsoleSidebarPages(props: ConsoleSidebarProps) {
     )
   }
   const pathname = `${(router.basePath ?? "").replace(/\/$/, "")}${router.asPath ?? ""}` || "/"
-  return <ConsoleSidebarInner pathname={pathname} {...props} navigationReady />
+  return <ConsoleSidebarInner pathname={pathname} {...innerProps} navigationReady />
+}
+
+function ConsoleSidebarPagesWithHook(props: ConsoleSidebarProps) {
+  const router = usePagesRouter()
+  return <ConsoleSidebarPagesCore {...props} pagesRouter={router} />
+}
+
+/**
+ * Pages Router 호스트(예: web-host `basePath=/teams`)용 — `next/navigation` 훅 없이 경로를 맞춘다.
+ * `asPath`에는 basePath가 포함되지 않으므로, 엣지 단일 도메인 기준으로 `/teams`와 동일한 활성 판별을 위해 합친다.
+ */
+export function ConsoleSidebarPages(props: ConsoleSidebarProps) {
+  if (props.pagesRouter) {
+    return <ConsoleSidebarPagesCore {...props} pagesRouter={props.pagesRouter} />
+  }
+  return <ConsoleSidebarPagesWithHook {...props} />
 }

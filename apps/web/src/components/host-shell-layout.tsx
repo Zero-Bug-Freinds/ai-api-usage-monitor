@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import * as React from "react";
 import dynamic from "next/dynamic";
-import { useRouter } from "next/router";
+import type { NextRouter } from "next/router";
 import { ConsoleLayoutOverride } from "@ai-usage/shell/pages";
 import { useLogoutCleanup } from "@ai-usage/team-workspace-cache";
 import { TeamWorkspaceProvider, useTeamWorkspace } from "@/components/team-workspace-context";
@@ -20,9 +20,8 @@ const TeamSidebarDynamic = dynamic(() => import("@/components/team-sidebar-lazy"
   loading: () => sidebarSkeleton,
 });
 
-function HostShellInner({ children }: { children: ReactNode }) {
+function HostShellInner({ children, router }: { children: ReactNode; router: NextRouter }) {
   useLogoutCleanup();
-  const router = useRouter();
   const { teams } = useTeamWorkspace();
 
   const viewTeamId =
@@ -56,6 +55,7 @@ function HostShellInner({ children }: { children: ReactNode }) {
   const primarySidebar = (
     <TeamSidebarDynamic
       profile="team"
+      pagesRouter={router}
       teams={teams.map((t) => ({ id: t.id, name: t.name }))}
       buildTeamSubmenuHref={buildTeamSubmenuHref}
       teamExpandedTeamId={viewTeamId || null}
@@ -77,10 +77,10 @@ function HostShellInner({ children }: { children: ReactNode }) {
   return <ConsoleLayoutOverride primarySidebar={primarySidebar}>{mainSlot}</ConsoleLayoutOverride>;
 }
 
-export function HostShellLayout({ children }: { children: ReactNode }) {
+export function HostShellLayout({ children, router }: { children: ReactNode; router: NextRouter }) {
   return (
-    <TeamWorkspaceProvider>
-      <HostShellInner>{children}</HostShellInner>
+    <TeamWorkspaceProvider router={router}>
+      <HostShellInner router={router}>{children}</HostShellInner>
     </TeamWorkspaceProvider>
   );
 }
