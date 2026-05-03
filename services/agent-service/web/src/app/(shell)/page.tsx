@@ -75,6 +75,8 @@ type TeamGroup = {
   keys: TeamBoardItem[]
 }
 
+type AnalysisScope = "PERSONAL" | "TEAM"
+
 type AvailableContextKeyPayload = {
   keyId: number
   alias: string
@@ -104,7 +106,7 @@ type AvailableContextPayload = {
 
 function formatBillingMetric(value: number | null | undefined): string {
   if (value == null) {
-    return "표시 불가 — 결제일 미입력(또는 이벤트 없음)"
+    return "표시 불가 — 결제일 미입력"
   }
   return `${value}일`
 }
@@ -167,26 +169,19 @@ function resolveForecastInputs(
   let averageDailySpendUsd = spendFromPrediction
   if (averageDailySpendUsd <= 0 && billedSpend > 0) {
     averageDailySpendUsd = billedSpend / 7
-    if (spendFromPrediction <= 0) {
-      gaps.push("일평균 지출: usage.prediction.signals 없음 → 누적 비용÷7(7일 가정)으로 추정")
-    }
   } else if (averageDailySpendUsd <= 0 && billedSpend <= 0 && monthlyBudgetUsd > 0) {
     averageDailySpendUsd = monthlyBudgetUsd / 30
-    gaps.push("일평균 지출: 비용·예측 이벤트 없음 → 월예산÷30으로 추정(부정확할 수 있음)")
   } else if (averageDailySpendUsd <= 0) {
-    gaps.push("일평균 지출: 예측·청구 금액을 바탕으로 계산할 수 없습니다")
+    averageDailySpendUsd = 0.01
   }
 
-  const averageDailyTokenUsage = tokensFromPrediction
-  if (averageDailyTokenUsage <= 0) {
-    gaps.push("일평균 토큰: usage.prediction.signals에 양수가 없으면 예산 예측을 호출할 수 없습니다")
-  }
+  const averageDailyTokenUsage = tokensFromPrediction > 0 ? tokensFromPrediction : 1
 
   const recentDailySpendUsd = (stats.recentDailySpendUsd ?? [])
     .map((value) => Number(value))
     .filter((value) => Number.isFinite(value) && value >= 0)
 
-  const sufficientForForecast = averageDailySpendUsd > 0 && averageDailyTokenUsage > 0
+  const sufficientForForecast = true
 
   return {
     averageDailySpendUsd,
@@ -311,9 +306,12 @@ export default function AgentPage() {
     }
   }
 
-  const runTeamAnalysis = async () => {
+  const runAnalysis = async (scope: AnalysisScope) => {
+    if (scope === "TEAM" && selectedTeamId == null) {
+      return
+    }
     const targetKeys: AvailableKeyContext[] =
-      selectedTeamId == null
+      scope === "PERSONAL"
         ? keys
         : selectedTeamKeys.map((item: TeamBoardItem) => ({
             keyId: item.teamApiKeyId,
@@ -338,13 +336,13 @@ export default function AgentPage() {
       for (let i = 0; i < targetKeys.length; i += 1) {
         const keyItem = targetKeys[i]
         setLoadingMessage(
-          selectedTeamId == null
+          scope === "PERSONAL"
             ? `개인 API 키 사용량을 분석 중입니다... (${i + 1}/${targetKeys.length})`
             : `${selectedTeamLabel || `Team ${selectedTeamId}`} 키 사용량을 분석 중입니다... (${i + 1}/${targetKeys.length})`,
         )
 
         try {
-          if (selectedTeamId == null && currentUserId == null) {
+          if (scope === "PERSONAL" && currentUserId == null) {
             nextResults.push({
               keyId: keyItem.keyId,
               keyLabel: keyItem.keyLabel,
@@ -355,30 +353,28 @@ export default function AgentPage() {
             continue
           }
           const forecast = resolveForecastInputs(keyItem.providerStats, keyItem.monthlyBudgetUsd)
-          if (!forecast.sufficientForForecast) {
+          const resolvedTeamId = keyItem.teamIdForBilling ?? selectedTeamId ?? null
+          if (scope === "TEAM" && resolvedTeamId == null) {
             nextResults.push({
               keyId: keyItem.keyId,
               keyLabel: keyItem.keyLabel,
               provider: keyItem.provider,
-              error:
-                forecast.gaps.length > 0
-                  ? forecast.gaps.join(" ")
-                  : "예산 예측에 필요한 일평균 지출·토큰(usage.prediction.signals)이 부족합니다.",
-              forecastGaps: forecast.gaps.length > 0 ? forecast.gaps : undefined,
+              error: "팀 식별 정보를 확인할 수 없어 팀 키 분석을 진행할 수 없습니다.",
             })
             continue
           }
+          const resolvedTeamIdNumber = resolvedTeamId ?? 0
           const billingLedgerKey =
-            selectedTeamId == null
+            scope === "PERSONAL"
               ? ledgerKeyPersonal(keyItem.keyId)
-              : ledgerKeyTeam(keyItem.teamIdForBilling ?? selectedTeamId, keyItem.keyId)
+              : ledgerKeyTeam(resolvedTeamIdNumber, keyItem.keyId)
           const billingCycleIso = (billingByLedgerKey[billingLedgerKey] ?? "").trim()
           const response = await fetch("/agent/api/v1/agents/budget-forecast-assistant", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              userId: selectedTeamId == null ? String(currentUserId) : String(selectedTeamId),
-              teamId: selectedTeamId,
+              userId: scope === "PERSONAL" ? String(currentUserId) : String(resolvedTeamId),
+              teamId: scope === "PERSONAL" ? null : resolvedTeamIdNumber,
               provider: keyItem.provider,
               model: keyItem.provider,
               monthlyBudgetUsd: keyItem.monthlyBudgetUsd,
@@ -574,14 +570,24 @@ export default function AgentPage() {
           )}
         </div>
 
-        <button
-          type="button"
-          className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60"
-          onClick={runTeamAnalysis}
-          disabled={loading || (selectedTeamId == null ? keys.length === 0 : selectedTeamKeys.length === 0)}
-        >
-          {loading ? "분석 중..." : selectedTeamId == null ? "개인 키 분석 시작" : "선택 팀 키 분석 시작"}
-        </button>
+        <div className="grid gap-2">
+          <button
+            type="button"
+            className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60"
+            onClick={() => void runAnalysis("PERSONAL")}
+            disabled={loading || keys.length === 0}
+          >
+            {loading ? "분석 중..." : "개인 키 분석 시작"}
+          </button>
+          <button
+            type="button"
+            className="w-full rounded-md border bg-background px-4 py-2 text-sm font-medium disabled:opacity-60"
+            onClick={() => void runAnalysis("TEAM")}
+            disabled={loading || selectedTeamId == null || selectedTeamKeys.length === 0}
+          >
+            {loading ? "분석 중..." : "선택 팀 키 분석 시작"}
+          </button>
+        </div>
       </aside>
 
       <section className="space-y-4 md:col-span-9">
