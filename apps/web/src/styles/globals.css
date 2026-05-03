@@ -100,6 +100,18 @@
   isolation: isolate;
 }
 
+/** 팀 호스트 좌측 목록(Task37-11): MF와 paint·stacking 경계 분리 */
+.team-host-list {
+  isolation: isolate;
+}
+
+/**
+ * Task37-11 (보류): `TeamManagementView`는 팀 목록·멤버·API 키 UI가 모두 하나의 `<aside>` 안에 있어
+ * 첫 aside를 숨기면 상세까지 사라진다. 리모트가 목록/상세 DOM을 분리하면 아래처럼 스코프 적용을 검토한다.
+ *
+ * [data-team-mf-split="1"] main > aside:first-of-type { display: none; }
+ */
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

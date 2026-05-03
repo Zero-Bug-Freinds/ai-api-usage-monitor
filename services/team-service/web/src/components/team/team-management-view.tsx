@@ -1422,8 +1422,6 @@ export function TeamManagementView() {
           </div>
         </div>
       </aside>
-
-      <section className="flex-1 overflow-hidden bg-white" aria-label="usage 슬롯 영역" />
     </main>
   )
 }
