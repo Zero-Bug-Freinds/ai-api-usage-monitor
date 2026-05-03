@@ -289,6 +289,9 @@ jobs:
             --add-host identity-web:127.0.0.1 \
             --add-host usage-web:127.0.0.1 \
             --add-host team-web:127.0.0.1 \
+            --add-host web-host:127.0.0.1 \
+            --add-host team-web-mfe:127.0.0.1 \
+            --add-host usage-web-mfe:127.0.0.1 \
             --add-host billing-web:127.0.0.1 \
             --add-host notification-web:127.0.0.1 \
             --add-host api-gateway-service:127.0.0.1 \
