@@ -1,7 +1,10 @@
 # syntax=docker/dockerfile:1.7
 # Next.js standalone host shell image
 # Build from repo root:
-#   docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:local -f apps/web/Dockerfile -t web-host:local .
+#   - 기본: 워크스페이스 내에서 deps-local 스테이지로 pnpm install (WEB_NODE_DEPS_IMAGE=deps-local).
+#   - 사전 빌드 deps 이미지 사용: 로컬에 태그가 있으면
+#     docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:local -f apps/web/Dockerfile -t web-host:local .
+#   - CI(Buildx): --build-context ci-deps=docker-image://web-node-deps:ci 및 --build-arg WEB_NODE_DEPS_IMAGE=ci-deps
 
 ARG WEB_NODE_DEPS_IMAGE=deps-local
 
