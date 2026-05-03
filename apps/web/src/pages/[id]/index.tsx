@@ -1,5 +1,10 @@
+import type { GetServerSideProps } from "next";
 import * as React from "react";
 import { useRouter } from "next/router";
+
+export const getServerSideProps: GetServerSideProps = async () => {
+  return { props: {} };
+};
 
 /**
  * 레거시 경로 `/teams/[id]` → 쿼리 기반 `/?viewTeamId=…&tab=dashboard` (basePath 적용 시 브라우저는 `/teams/[id]`).

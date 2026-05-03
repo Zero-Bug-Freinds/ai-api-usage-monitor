@@ -4,9 +4,8 @@ import { HostShellLayout } from "@/components/host-shell-layout";
 import "@/styles/globals.css";
 
 /**
- * _app에 getInitialProps를 두면 getStaticProps가 없는 페이지의 automatic static
- * optimization이 꺼지고, 빌드 시 prerender 단계에서 Router/Client 컨텍스트로
- * 터지던 useContext(null) 오류를 피할 수 있다.
+ * getInitialProps로 전역 앱을 동적 렌더링에 두어 /404·/500 사전렌더 시
+ * React 컨텍스트 불일치(useContext null)를 줄인다. 페이지 getServerSideProps와 병행 가능.
  */
 export default function WebApp({ Component, pageProps }: AppProps) {
   return (

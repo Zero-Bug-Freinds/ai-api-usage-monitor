@@ -63,7 +63,7 @@ export function TeamWorkspaceProvider({ children }: { children: React.ReactNode 
 
     React.useEffect(() => {
         if (!router.isReady) return;
-        if (router.pathname !== "/teams") return;
+        /** basePath `/teams` 사용 시 index 페이지의 pathname은 `/`이지 `/teams`가 아님 */
 
         const cached = readCachedTeamList();
         setTeams(cached);
