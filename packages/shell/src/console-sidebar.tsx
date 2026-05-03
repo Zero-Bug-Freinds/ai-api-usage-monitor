@@ -3,7 +3,8 @@
 import * as React from "react"
 import type { ReactNode } from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import type { NextRouter } from "next/router"
+import { useRouter as usePagesRouter } from "next/router"
 import {
   Bell,
   Building2,
@@ -18,6 +19,7 @@ import {
 } from "lucide-react"
 
 import { Button, cn } from "@ai-usage/ui"
+import { ConsoleInternalNavLink } from "./console-internal-nav-link"
 import type { ConsoleNavId, ConsoleProfile } from "./console-nav"
 import { CONSOLE_MAIN_NAV_ORDER, CONSOLE_NAV } from "./console-nav"
 import { isConsoleNavActive, resolveConsoleNavLink } from "./console-nav"
@@ -29,8 +31,7 @@ type TeamSidebarItem = {
 
 const TEAM_SUB_MENU = [
   { key: "dashboard", label: "대시보드", suffix: "dashboard" },
-  { key: "members", label: "멤버 관리", suffix: "members" },
-  { key: "apiKeys", label: "API 및 설정", suffix: "api-keys" },
+  { key: "memberDetail", label: "멤버 상세", suffix: "memberDetail" },
 ] as const
 const AI_USAGE_LOGOUT_EVENT = "ai-usage:logout"
 const LOCAL_STORAGE_KEYS_TO_PRESERVE_ON_LOGOUT = ["team.dismissedExpiredInvitationNoticeIds"] as const
@@ -60,6 +61,8 @@ function NavRow({
 }) {
   const spec = resolveConsoleNavLink(profile, id)
   const active = isConsoleNavActive(profile, pathname, id)
+  /** 팀 메뉴는 항상 풀 페이지 이동(anchor); Next Link 클라이언트 전환 방지 */
+  const forceTeamsAnchor = id === "teams"
   const label = CONSOLE_NAV[id].label
   const icon = ICONS[id]
   const isBack = id === "identityLanding"
@@ -75,40 +78,31 @@ function NavRow({
           : "text-sidebar-foreground/85 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
       )
 
-  if (spec.kind === "next") {
-    return (
-      <Link href={spec.href} className={className}>
-        {icon}
-        {label}
-        {id === "notifications" && typeof unreadCount === "number" && unreadCount > 0 ? (
-          <span
-            className="ml-2 inline-flex min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[11px] font-semibold leading-5 text-destructive-foreground"
-            aria-label={`미확인 알림 ${unreadCount}개`}
-          >
-            {unreadCount}
-          </span>
-        ) : null}
-      </Link>
-    )
-  }
+  const notificationBadge =
+    id === "notifications" && typeof unreadCount === "number" && unreadCount > 0 ? (
+      <span
+        className="ml-2 inline-flex min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[11px] font-semibold leading-5 text-destructive-foreground"
+        aria-label={`미확인 알림 ${unreadCount}개`}
+      >
+        {unreadCount}
+      </span>
+    ) : null
 
   return (
-    <a href={spec.href} className={className}>
+    <ConsoleInternalNavLink spec={spec} forceAnchor={forceTeamsAnchor} className={className}>
       {icon}
       {label}
-      {id === "notifications" && typeof unreadCount === "number" && unreadCount > 0 ? (
-        <span
-          className="ml-2 inline-flex min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[11px] font-semibold leading-5 text-destructive-foreground"
-          aria-label={`미확인 알림 ${unreadCount}개`}
-        >
-          {unreadCount}
-        </span>
-      ) : null}
-    </a>
+      {notificationBadge}
+    </ConsoleInternalNavLink>
   )
 }
 
 export type ConsoleSidebarProps = {
+  /**
+   * Pages 호스트가 `_app`의 `router`를 넘기면 MF `loadShare` 직후에도 `useRouter` 컨텍스트 없이 동작한다.
+   * 생략 시 내부에서 `usePagesRouter()`를 쓴다(별도 컴포넌트로 훅 규칙 유지).
+   */
+  pagesRouter?: NextRouter
   profile: ConsoleProfile
   teams?: TeamSidebarItem[]
   /** Per-service BFF logout endpoint path. */
@@ -124,9 +118,19 @@ export type ConsoleSidebarProps = {
   teamExpandedTeamId?: string | null
   /** Highlights the active team submenu entry. */
   teamSubmenuActive?: { teamId: string; suffix: string } | null
+  /**
+   * Pages Router에서 `router.isReady` 전에는 false로 두어 팀 서브메뉴 클릭을 막는다.
+   * App Router는 생략(기본 true).
+   */
+  navigationReady?: boolean
+  /**
+   * false면 사이드바 내 per-team 확장·서브메뉴 블록을 렌더하지 않는다(호스트 팀 페이지에서 목록을 본문에 둘 때).
+   */
+  showTeamSidebarSection?: boolean
 }
 
-export function ConsoleSidebar({
+export function ConsoleSidebarInner({
+  pathname,
   profile,
   teams = [],
   logoutApiPath = "/api/auth/logout",
@@ -134,8 +138,9 @@ export function ConsoleSidebar({
   buildTeamSubmenuHref,
   teamExpandedTeamId,
   teamSubmenuActive,
-}: ConsoleSidebarProps) {
-  const pathname = usePathname() ?? ""
+  navigationReady = true,
+  showTeamSidebarSection = true,
+}: ConsoleSidebarProps & { pathname: string }) {
   const [logoutPending, setLogoutPending] = React.useState(false)
   const [expandedTeamId, setExpandedTeamId] = React.useState<string | null>(null)
   const [unreadCount, setUnreadCount] = React.useState<number | null>(null)
@@ -253,7 +258,7 @@ export function ConsoleSidebar({
         {CONSOLE_MAIN_NAV_ORDER.map((id) => (
           <NavRow key={id} profile={profile} id={id} pathname={pathname} unreadCount={unreadCount} />
         ))}
-        {teams.length > 0 ? (
+        {showTeamSidebarSection && teams.length > 0 ? (
           <div className="mt-2 space-y-1 border-t border-sidebar-border pt-2">
             {teams.map((team) => {
               const isExpanded = expandedTeamId === team.id
@@ -297,11 +302,18 @@ export function ConsoleSidebar({
                           <li key={item.key}>
                             <Link
                               href={href}
+                              prefetch={navigationReady}
+                              tabIndex={navigationReady ? 0 : -1}
+                              aria-disabled={!navigationReady}
+                              onClick={(e) => {
+                                if (!navigationReady) e.preventDefault()
+                              }}
                               className={cn(
                                 "block rounded-md px-3 py-2 text-xs transition-colors",
                                 active
                                   ? "bg-sidebar-accent font-semibold text-sidebar-accent-foreground"
-                                  : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+                                  : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+                                !navigationReady && "pointer-events-none opacity-50"
                               )}
                             >
                               {item.label}
@@ -333,4 +345,36 @@ export function ConsoleSidebar({
       </div>
     </aside>
   )
+}
+
+function ConsoleSidebarPagesCore(
+  props: Omit<ConsoleSidebarProps, "pagesRouter"> & { pagesRouter: NextRouter },
+) {
+  const { pagesRouter: router, ...innerProps } = props
+  if (!router.isReady) {
+    return (
+      <aside
+        className="flex h-full min-h-0 w-64 min-w-[240px] max-w-[280px] shrink-0 flex-col border-r border-sidebar-border bg-sidebar animate-pulse"
+        aria-hidden
+      />
+    )
+  }
+  const pathname = `${(router.basePath ?? "").replace(/\/$/, "")}${router.asPath ?? ""}` || "/"
+  return <ConsoleSidebarInner pathname={pathname} {...innerProps} navigationReady />
+}
+
+function ConsoleSidebarPagesWithHook(props: ConsoleSidebarProps) {
+  const router = usePagesRouter()
+  return <ConsoleSidebarPagesCore {...props} pagesRouter={router} />
+}
+
+/**
+ * Pages Router 호스트(예: web-host `basePath=/teams`)용 — `next/navigation` 훅 없이 경로를 맞춘다.
+ * `asPath`에는 basePath가 포함되지 않으므로, 엣지 단일 도메인 기준으로 `/teams`와 동일한 활성 판별을 위해 합친다.
+ */
+export function ConsoleSidebarPages(props: ConsoleSidebarProps) {
+  if (props.pagesRouter) {
+    return <ConsoleSidebarPagesCore {...props} pagesRouter={props.pagesRouter} />
+  }
+  return <ConsoleSidebarPagesWithHook {...props} />
 }

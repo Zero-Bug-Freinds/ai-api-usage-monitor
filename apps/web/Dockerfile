@@ -1,7 +1,10 @@
 # syntax=docker/dockerfile:1.7
 # Next.js standalone host shell image
 # Build from repo root:
-#   docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:local -f apps/web/Dockerfile -t web-host:local .
+#   - 기본: 워크스페이스 내에서 deps-local 스테이지로 pnpm install (WEB_NODE_DEPS_IMAGE=deps-local).
+#   - 사전 빌드 deps 이미지 사용: 로컬에 태그가 있으면
+#     docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:local -f apps/web/Dockerfile -t web-host:local .
+#   - CI(Buildx): --build-context ci-deps=docker-image://web-node-deps:ci 및 --build-arg WEB_NODE_DEPS_IMAGE=ci-deps
 
 ARG WEB_NODE_DEPS_IMAGE=deps-local
 
@@ -45,6 +48,10 @@ COPY apps/web ./apps/web
 WORKDIR /repo/apps/web
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NEXT_PRIVATE_LOCAL_WEBPACK=true
+ARG NEXT_PUBLIC_MFE_TEAM_REMOTE_URL=http://localhost:8888/mfe/team
+ARG NEXT_PUBLIC_MFE_USAGE_REMOTE_URL=http://localhost:8888/mfe/usage
+ENV NEXT_PUBLIC_MFE_TEAM_REMOTE_URL=${NEXT_PUBLIC_MFE_TEAM_REMOTE_URL}
+ENV NEXT_PUBLIC_MFE_USAGE_REMOTE_URL=${NEXT_PUBLIC_MFE_USAGE_REMOTE_URL}
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     --mount=type=cache,target=/repo/apps/web/.next/cache \
     pnpm config set store-dir /pnpm/store && \

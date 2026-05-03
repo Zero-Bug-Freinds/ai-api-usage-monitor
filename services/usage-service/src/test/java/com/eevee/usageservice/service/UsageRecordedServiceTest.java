@@ -33,12 +33,20 @@ class UsageRecordedServiceTest {
     private ApplicationEventPublisher eventPublisher;
     @Mock
     private UsageAggregationService aggregationService;
+    @Mock
+    private DailyCumulativeTokensAfterRecordedService dailyCumulativeTokensAfterRecordedService;
 
     private UsageRecordedService usageRecordedService;
 
     @BeforeEach
     void setUp() {
-        usageRecordedService = new UsageRecordedService(repository, new ObjectMapper(), eventPublisher, aggregationService);
+        usageRecordedService = new UsageRecordedService(
+                repository,
+                new ObjectMapper(),
+                eventPublisher,
+                aggregationService,
+                dailyCumulativeTokensAfterRecordedService
+        );
     }
 
     @Test
@@ -104,6 +112,7 @@ class UsageRecordedServiceTest {
         verify(repository).save(captor.capture());
         assertThat(captor.getValue().getEventId()).isEqualTo(eventId);
         assertThat(captor.getValue().getApiKeyId()).isEqualTo("key-1");
+        verify(dailyCumulativeTokensAfterRecordedService).onRecorded(captor.getValue());
     }
 
     @Test
@@ -135,6 +144,7 @@ class UsageRecordedServiceTest {
 
         ArgumentCaptor<UsageRecordedLogEntity> captor = ArgumentCaptor.forClass(UsageRecordedLogEntity.class);
         verify(repository).save(captor.capture());
+        verify(dailyCumulativeTokensAfterRecordedService).onRecorded(captor.getValue());
         // OPENAI: reasoning 토큰은 completion_reasoning_tokens 실측값만 사용한다.
         assertThat(captor.getValue().getEstimatedReasoningTokens()).isEqualTo(11L);
     }
@@ -168,6 +178,7 @@ class UsageRecordedServiceTest {
 
         ArgumentCaptor<UsageRecordedLogEntity> captor = ArgumentCaptor.forClass(UsageRecordedLogEntity.class);
         verify(repository).save(captor.capture());
+        verify(dailyCumulativeTokensAfterRecordedService).onRecorded(captor.getValue());
         assertThat(captor.getValue().getEstimatedReasoningTokens()).isNull();
     }
 
@@ -200,6 +211,7 @@ class UsageRecordedServiceTest {
 
         ArgumentCaptor<UsageRecordedLogEntity> captor = ArgumentCaptor.forClass(UsageRecordedLogEntity.class);
         verify(repository).save(captor.capture());
+        verify(dailyCumulativeTokensAfterRecordedService).onRecorded(captor.getValue());
         assertThat(captor.getValue().getEstimatedReasoningTokens()).isNull();
     }
 
@@ -232,6 +244,7 @@ class UsageRecordedServiceTest {
 
         ArgumentCaptor<UsageRecordedLogEntity> captor = ArgumentCaptor.forClass(UsageRecordedLogEntity.class);
         verify(repository).save(captor.capture());
+        verify(dailyCumulativeTokensAfterRecordedService).onRecorded(captor.getValue());
         // GOOGLE도 실측 reasoning 필드가 없으면 추정하지 않고 null로 저장한다.
         assertThat(captor.getValue().getEstimatedReasoningTokens()).isNull();
     }
@@ -263,6 +276,7 @@ class UsageRecordedServiceTest {
         usageRecordedService.persist(event);
         ArgumentCaptor<UsageRecordedLogEntity> captor = ArgumentCaptor.forClass(UsageRecordedLogEntity.class);
         verify(repository).save(captor.capture());
+        verify(dailyCumulativeTokensAfterRecordedService).onRecorded(captor.getValue());
         assertThat(captor.getValue().getModel()).isEqualTo("openai_unknown");
     }
 
@@ -293,6 +307,7 @@ class UsageRecordedServiceTest {
         usageRecordedService.persist(event);
         ArgumentCaptor<UsageRecordedLogEntity> captor = ArgumentCaptor.forClass(UsageRecordedLogEntity.class);
         verify(repository).save(captor.capture());
+        verify(dailyCumulativeTokensAfterRecordedService).onRecorded(captor.getValue());
         assertThat(captor.getValue().getModel()).isEqualTo("google_unknown");
     }
 }

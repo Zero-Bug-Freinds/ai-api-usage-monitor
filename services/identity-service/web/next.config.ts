@@ -80,13 +80,10 @@ const nextConfig: NextConfig = {
         destination: `${notification}/notifications/:path*`,
       },
       {
-        source: "/teams",
-        destination: `${team}/teams`,
+        source: "/teams/api/:path*",
+        destination: `${team}/teams/api/:path*`,
       },
-      {
-        source: "/teams/:path*",
-        destination: `${team}/teams/:path*`,
-      },
+      /* Team console HTML/static: use web-edge (8888) → web-host directly; avoid duplicate proxy via identity. */
       {
         source: "/agent",
         destination: `${agent}/agent`,

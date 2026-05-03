@@ -8,6 +8,10 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./pages": {
+      "types": "./src/shell-pages.ts",
+      "default": "./src/shell-pages.ts"
     }
   },
   "peerDependencies": {

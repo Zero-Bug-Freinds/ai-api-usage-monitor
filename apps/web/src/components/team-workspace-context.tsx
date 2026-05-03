@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/router";
+import type { NextRouter } from "next/router";
 import {
     kstCalendarDateString,
     readCachedTeamList,
@@ -51,8 +51,13 @@ function parseMyTeamsPayload(data: unknown): CachedTeamItem[] {
         .filter((x): x is CachedTeamItem => x !== null);
 }
 
-export function TeamWorkspaceProvider({ children }: { children: React.ReactNode }) {
-    const router = useRouter();
+export function TeamWorkspaceProvider({
+    children,
+    router,
+}: {
+    children: React.ReactNode;
+    router: NextRouter;
+}) {
     const [teams, setTeams] = React.useState<CachedTeamItem[]>(() => readCachedTeamList());
     const [syncError, setSyncError] = React.useState<string | null>(null);
     const [syncNonce, setSyncNonce] = React.useState(0);
@@ -63,7 +68,7 @@ export function TeamWorkspaceProvider({ children }: { children: React.ReactNode 
 
     React.useEffect(() => {
         if (!router.isReady) return;
-        if (router.pathname !== "/teams") return;
+        /** basePath `/teams` 사용 시 index 페이지의 pathname은 `/`이지 `/teams`가 아님 */
 
         const cached = readCachedTeamList();
         setTeams(cached);

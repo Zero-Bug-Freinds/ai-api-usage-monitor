@@ -568,7 +568,7 @@ export default function TeamDashboard({
         <div className="mx-auto max-w-lg rounded-lg border border-border bg-card p-8 text-center shadow-sm">
           <p className="text-sm text-muted-foreground">팀을 먼저 생성해 보세요!</p>
           <Button type="button" className="mt-6" asChild>
-            <a href="/teams?tab=members">팀 만들기 · 멤버 관리로 이동</a>
+            <a href="/teams?tab=memberDetail">팀 만들기 · 멤버 상세로 이동</a>
           </Button>
           {teamsErr ? <p className="mt-4 text-sm text-amber-700">{teamsErr}</p> : null}
         </div>

@@ -338,7 +338,8 @@ services:
       IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
       USAGE_WEB_INTERNAL_ORIGIN: ${USAGE_WEB_INTERNAL_ORIGIN:-http://host.docker.internal:3001}
       BILLING_WEB_INTERNAL_ORIGIN: ${BILLING_WEB_INTERNAL_ORIGIN:-http://host.docker.internal:3003}
-      TEAM_WEB_INTERNAL_ORIGIN: ${TEAM_WEB_INTERNAL_ORIGIN:-http://host.docker.internal:3002}
+      TEAM_WEB_INTERNAL_ORIGIN: ${TEAM_WEB_INTERNAL_ORIGIN:-http://team-web:3000}
+      WEB_HOST_INTERNAL_ORIGIN: ${WEB_HOST_INTERNAL_ORIGIN:-http://web-host:3000}
       AGENT_WEB_INTERNAL_ORIGIN: ${AGENT_WEB_INTERNAL_ORIGIN:-http://agent-web:3000}
       AI_AGENT_WEB_INTERNAL_ORIGIN: ${AI_AGENT_WEB_INTERNAL_ORIGIN:-http://agent-web:3000}
     extra_hosts:
@@ -484,6 +485,30 @@ services:
     ports:
       - "${TEAM_SERVICE_HOST_PORT:-8093}:8093"
 
+  web-host:
+    profiles:
+      - web
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
+        NEXT_PUBLIC_MFE_TEAM_REMOTE_URL: ${NEXT_PUBLIC_MFE_TEAM_REMOTE_URL:-http://localhost:8888/mfe/team}
+        NEXT_PUBLIC_MFE_USAGE_REMOTE_URL: ${NEXT_PUBLIC_MFE_USAGE_REMOTE_URL:-http://localhost:8888/mfe/usage}
+    depends_on:
+      - team-service
+    environment:
+      NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PRIVATE_LOCAL_WEBPACK: "true"
+      NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${IDENTITY_WEB_PORT:-3000}}
+      NEXT_PUBLIC_MFE_TEAM_REMOTE_URL: ${NEXT_PUBLIC_MFE_TEAM_REMOTE_URL:-http://localhost:8888/mfe/team}
+      NEXT_PUBLIC_MFE_USAGE_REMOTE_URL: ${NEXT_PUBLIC_MFE_USAGE_REMOTE_URL:-http://localhost:8888/mfe/usage}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${WEB_HOST_PORT:-3002}:3000"
+
   team-web:
     profiles:
       - web
@@ -499,10 +524,11 @@ services:
       GATEWAY_URL: ${WEB_GATEWAY_URL:-http://api-gateway-service:8080}
       TEAM_SERVICE_URL: ${WEB_TEAM_SERVICE_URL:-http://team-service:8093}
       IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
+      NEXT_PUBLIC_TEAM_CONSOLE_URL: ${NEXT_PUBLIC_TEAM_CONSOLE_URL:-http://localhost:${WEB_HOST_PORT:-3002}/teams}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "${TEAM_WEB_PORT:-3002}:3000"
+      - "${TEAM_WEB_PORT:-3022}:3000"
 
   team-web-mfe:
     profiles:
@@ -528,6 +554,9 @@ services:
       - usage-web
       - billing-web
       - team-web
+      - web-host
+      - team-web-mfe
+      - usage-web-mfe
       - notification-web
       - api-gateway-service
     environment:
