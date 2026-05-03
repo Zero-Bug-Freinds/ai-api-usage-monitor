@@ -5,6 +5,7 @@ import * as React from "react";
 import { Button, cn } from "@ai-usage/ui";
 import { usePagesHostRouter } from "@/context/pages-host-router-context";
 import { useTeamWorkspace } from "@/components/team-workspace-context";
+import { TeamHostTeamList } from "@/components/team-host-team-list";
 import { normalizeTab, type TeamRouteSection } from "@/components/team-route-types";
 
 export type { TeamRouteSection } from "@/components/team-route-types";
@@ -22,8 +23,7 @@ const TeamMfRemotesLazy = dynamic(
 );
 
 /**
- * 팀 콘솔: `TeamManagement` 리모트가 이미 좌측 팀 목록·우측 상세를 포함하므로(Task37-10),
- * 호스트는 탭·리모트 슬롯만 두고 가로 전체(`max-w-none`은 셸 `ConsoleLayoutOverride`)로 둔다.
+ * 팀 콘솔(Task37-11): 호스트 좌측 고정 팀 목록 + 우측 탭(대시보드 / 멤버 상세) 및 MF 슬롯.
  */
 export function TeamPageContent() {
   const router = usePagesHostRouter();
@@ -54,59 +54,64 @@ export function TeamPageContent() {
     void router.replace({ pathname: "/", query: q }, undefined, { shallow: true });
   }
 
+  function selectTeam(teamId: string) {
+    const q: Record<string, string> = { tab };
+    q.viewTeamId = teamId;
+    void router.replace({ pathname: "/", query: q }, undefined, { shallow: true });
+  }
+
   return (
-    <div className="host-remote-slot mx-auto flex w-full max-w-none flex-1 flex-col gap-4">
-      <div className="flex flex-wrap gap-2 border-b border-border pb-3">
-        <Button
-          type="button"
-          size="sm"
-          variant={tab === "dashboard" ? "default" : "outline"}
-          className={cn(tab === "dashboard" && "font-semibold")}
-          onClick={() => goTab("dashboard")}
-        >
-          팀 대시보드
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant={tab === "members" ? "default" : "outline"}
-          className={cn(tab === "members" && "font-semibold")}
-          onClick={() => goTab("members")}
-        >
-          멤버 관리
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant={tab === "api-keys" ? "default" : "outline"}
-          className={cn(tab === "api-keys" && "font-semibold")}
-          onClick={() => goTab("api-keys")}
-        >
-          API 및 설정
-        </Button>
+    <div className="flex min-h-0 w-full flex-1 flex-col gap-0 md:flex-row">
+      <aside className="team-host-list flex min-h-[min(280px,45vh)] w-full shrink-0 flex-col border-b border-zinc-200 bg-gray-50 md:min-h-0 md:w-[min(22rem,100%)] md:min-w-[260px] md:max-w-[360px] md:border-b-0 md:border-r md:border-zinc-200">
+        <TeamHostTeamList teams={teams} selectedTeamId={viewTeamId} onSelectTeam={selectTeam} />
+      </aside>
+
+      <div className="host-remote-slot flex min-h-0 min-w-0 flex-1 flex-col gap-4">
+        <div className="flex flex-wrap gap-2 border-b border-border pb-3">
+          <Button
+            type="button"
+            size="sm"
+            variant={tab === "dashboard" ? "default" : "outline"}
+            className={cn(tab === "dashboard" && "font-semibold")}
+            onClick={() => goTab("dashboard")}
+          >
+            팀 대시보드
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={tab === "memberDetail" ? "default" : "outline"}
+            className={cn(tab === "memberDetail" && "font-semibold")}
+            onClick={() => goTab("memberDetail")}
+          >
+            멤버 상세
+          </Button>
+        </div>
+
+        {syncError ? (
+          <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            팀 목록 동기화: {syncError} (저장된 목록으로 계속합니다)
+          </p>
+        ) : null}
+
+        {process.env.NODE_ENV === "development" ? (
+          <p className="text-xs text-muted-foreground" data-testid="mf-usage-remote-hint">
+            [dev] usage MF 베이스:{" "}
+            <code className="rounded bg-muted px-1 py-0.5">
+              {process.env.NEXT_PUBLIC_MFE_USAGE_REMOTE_URL ?? "http://localhost:8888/mfe/usage (기본값)"}
+            </code>
+            …/remoteEntry.js 로 로드됩니다.
+          </p>
+        ) : null}
+
+        <div className="min-h-0 flex-1 overflow-auto">
+          {mfChunkAllowed ? (
+            <TeamMfRemotesLazy tab={tab} viewTeamId={viewTeamId} teams={teams} usageResetKey={usageResetKey} />
+          ) : (
+            <p className="text-sm text-muted-foreground">원격 모듈을 준비하는 중…</p>
+          )}
+        </div>
       </div>
-
-      {syncError ? (
-        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          팀 목록 동기화: {syncError} (저장된 목록으로 계속합니다)
-        </p>
-      ) : null}
-
-      {process.env.NODE_ENV === "development" ? (
-        <p className="text-xs text-muted-foreground" data-testid="mf-usage-remote-hint">
-          [dev] usage MF 베이스:{" "}
-          <code className="rounded bg-muted px-1 py-0.5">
-            {process.env.NEXT_PUBLIC_MFE_USAGE_REMOTE_URL ?? "http://localhost:8888/mfe/usage (기본값)"}
-          </code>
-          …/remoteEntry.js 로 로드됩니다.
-        </p>
-      ) : null}
-
-      {mfChunkAllowed ? (
-        <TeamMfRemotesLazy tab={tab} viewTeamId={viewTeamId} teams={teams} usageResetKey={usageResetKey} />
-      ) : (
-        <p className="text-sm text-muted-foreground">원격 모듈을 준비하는 중…</p>
-      )}
     </div>
   );
 }

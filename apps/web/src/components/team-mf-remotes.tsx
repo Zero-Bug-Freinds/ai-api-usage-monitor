@@ -81,7 +81,10 @@ export function TeamMfRemotes({ tab, viewTeamId, teams, usageResetKey }: TeamMfR
         <RemoteErrorBoundary
           fallback={<p className="p-4 text-sm text-muted-foreground">Team remote를 불러오지 못했습니다.</p>}
         >
-          <TeamManagement />
+          {/* Task37-11: data-team-mf-split — 리모트 DOM이 목록/상세로 나뉘면 globals.css에서 aside 스코프 숨김 검토 */}
+          <div data-team-mf-split="1" className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <TeamManagement />
+          </div>
         </RemoteErrorBoundary>
       )}
     </MfConsumeTickGate>
