@@ -213,7 +213,8 @@ Usage는 MQ로 적재 후 HTTP 조회를 제공한다(컨트롤러: `UsageAnalyt
 | Proxy | 8081 |
 | Identity `web`(호스트 매핑, Compose) | 3000 (`IDENTITY_WEB_PORT`) |
 | Usage `web`(호스트 매핑, Compose) | 3001 (`USAGE_WEB_PORT`) |
-| Team `web`(호스트 매핑, Compose) | 3002 (`TEAM_WEB_PORT`) |
+| Team BFF `team-web`(호스트 매핑, Compose) | 3022 (`TEAM_WEB_PORT`) |
+| Main Shell `web-host`(호스트 매핑, Compose) | 3002 (`WEB_HOST_PORT`) |
 | Billing `web`(호스트 매핑, Compose) | 3003 (`BILLING_WEB_PORT`) |
 | **team-service**(Spring, 호스트 `bootRun` 예시) | `TEAM_SERVICE_PORT` 기본 8093; `scripts/bootrun.ps1`은 **8094** 권장(Compose 호스트 매핑과 충돌 방지 — [`architecture.md`](../architecture.md) §3.3) |
 | **billing-service**(Spring) | `BILLING_SERVICE_PORT` 기본 **8095**; API Gateway **`GATEWAY_BILLING_URI`** 와 맞출 것 |
