@@ -5,6 +5,7 @@ import { InAppNotificationsService } from './in-app-notifications.service';
 @Module({
   controllers: [InAppNotificationsController],
   providers: [InAppNotificationsService],
+  exports: [InAppNotificationsService],
 })
 export class InAppNotificationsModule {}
 

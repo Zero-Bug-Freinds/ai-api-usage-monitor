@@ -23,8 +23,17 @@ public class BudgetThresholdEventPublisher {
 
     private static final Logger log = LoggerFactory.getLogger(BudgetThresholdEventPublisher.class);
 
+    /** Monthly spend / budget ratios at which one notification is emitted when first crossed (10% steps). */
     private static final List<BigDecimal> DEFAULT_THRESHOLDS = List.of(
+            new BigDecimal("0.1"),
+            new BigDecimal("0.2"),
+            new BigDecimal("0.3"),
+            new BigDecimal("0.4"),
+            new BigDecimal("0.5"),
+            new BigDecimal("0.6"),
+            new BigDecimal("0.7"),
             new BigDecimal("0.8"),
+            new BigDecimal("0.9"),
             BigDecimal.ONE
     );
 

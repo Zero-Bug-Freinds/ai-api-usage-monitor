@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { InAppAuthGuard } from '../in-app-notifications/auth/in-app-auth.guard';
+import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
 import type { AuthedRequest } from '../in-app-notifications/in-app-notifications.types';
 import { TeamInvitationCommandPublisher } from './team-invitation-command.publisher';
 import { TeamServiceInternalClient } from './team-service-internal.client';
@@ -38,6 +39,7 @@ export class TeamInvitationActionsController {
   constructor(
     private readonly teamInternal: TeamServiceInternalClient,
     private readonly publisher: TeamInvitationCommandPublisher,
+    private readonly inAppNotifications: InAppNotificationsService,
   ) {}
 
   @Post(':invitationId/accept')
@@ -47,6 +49,13 @@ export class TeamInvitationActionsController {
     const correlationId = getTrimmedHeader(req, 'x-correlation-id');
 
     const result = await this.teamInternal.acceptInvitation({ invitationId, inviteeUserId });
+
+    await this.inAppNotifications.markTeamInviteNotificationsResolved({
+      userId: inviteeUserId,
+      platformUserId: req.auth?.platformUserId,
+      invitationId,
+      decision: 'ACCEPT',
+    });
 
     // Best-effort command publish for async processing / audit; membership is already applied via internal API.
     await this.publisher.publishDecision({
@@ -66,6 +75,13 @@ export class TeamInvitationActionsController {
     const correlationId = getTrimmedHeader(req, 'x-correlation-id');
 
     const result = await this.teamInternal.rejectInvitation({ invitationId, inviteeUserId });
+
+    await this.inAppNotifications.markTeamInviteNotificationsResolved({
+      userId: inviteeUserId,
+      platformUserId: req.auth?.platformUserId,
+      invitationId,
+      decision: 'REJECT',
+    });
 
     // Best-effort command publish for async processing / audit; rejection is already applied via internal API.
     await this.publisher.publishDecision({
