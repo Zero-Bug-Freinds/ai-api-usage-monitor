@@ -124,6 +124,10 @@ export type ConsoleSidebarProps = {
    * App Router는 생략(기본 true).
    */
   navigationReady?: boolean
+  /**
+   * false면 사이드바 내 per-team 확장·서브메뉴 블록을 렌더하지 않는다(호스트 팀 페이지에서 목록을 본문에 둘 때).
+   */
+  showTeamSidebarSection?: boolean
 }
 
 export function ConsoleSidebarInner({
@@ -136,6 +140,7 @@ export function ConsoleSidebarInner({
   teamExpandedTeamId,
   teamSubmenuActive,
   navigationReady = true,
+  showTeamSidebarSection = true,
 }: ConsoleSidebarProps & { pathname: string }) {
   const [logoutPending, setLogoutPending] = React.useState(false)
   const [expandedTeamId, setExpandedTeamId] = React.useState<string | null>(null)
@@ -254,7 +259,7 @@ export function ConsoleSidebarInner({
         {CONSOLE_MAIN_NAV_ORDER.map((id) => (
           <NavRow key={id} profile={profile} id={id} pathname={pathname} unreadCount={unreadCount} />
         ))}
-        {teams.length > 0 ? (
+        {showTeamSidebarSection && teams.length > 0 ? (
           <div className="mt-2 space-y-1 border-t border-sidebar-border pt-2">
             {teams.map((team) => {
               const isExpanded = expandedTeamId === team.id

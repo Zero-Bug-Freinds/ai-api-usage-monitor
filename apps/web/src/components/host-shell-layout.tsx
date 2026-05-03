@@ -6,7 +6,7 @@ import dynamic from "next/dynamic";
 import type { NextRouter } from "next/router";
 import { ConsoleLayoutOverride } from "@ai-usage/shell/pages";
 import { useLogoutCleanup } from "@ai-usage/team-workspace-cache";
-import { TeamWorkspaceProvider, useTeamWorkspace } from "@/components/team-workspace-context";
+import { TeamWorkspaceProvider } from "@/components/team-workspace-context";
 
 const sidebarSkeleton = (
   <aside
@@ -22,31 +22,6 @@ const TeamSidebarDynamic = dynamic(() => import("@/components/team-sidebar-lazy"
 
 function HostShellInner({ children, router }: { children: ReactNode; router: NextRouter }) {
   useLogoutCleanup();
-  const { teams } = useTeamWorkspace();
-
-  const viewTeamId =
-    typeof router.query.viewTeamId === "string"
-      ? router.query.viewTeamId
-      : Array.isArray(router.query.viewTeamId)
-        ? router.query.viewTeamId[0] ?? ""
-        : "";
-
-  const tabRaw =
-    typeof router.query.tab === "string"
-      ? router.query.tab
-      : Array.isArray(router.query.tab)
-        ? router.query.tab[0] ?? ""
-        : "";
-  const effectiveTab = tabRaw === "" ? "dashboard" : tabRaw;
-
-  const buildTeamSubmenuHref = React.useCallback((teamId: string, suffix: string) => {
-    return `/?viewTeamId=${encodeURIComponent(teamId)}&tab=${encodeURIComponent(suffix)}`;
-  }, []);
-
-  const teamSubmenuActive =
-    viewTeamId !== "" && (effectiveTab === "dashboard" || effectiveTab === "members" || effectiveTab === "api-keys")
-      ? { teamId: viewTeamId, suffix: effectiveTab }
-      : null;
 
   const idOrigin = (process.env.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN ?? "").replace(/\/$/, "");
   const logoutApiPath = idOrigin ? `${idOrigin}/api/auth/logout` : "/api/auth/logout";
@@ -56,10 +31,7 @@ function HostShellInner({ children, router }: { children: ReactNode; router: Nex
     <TeamSidebarDynamic
       profile="team"
       pagesRouter={router}
-      teams={teams.map((t) => ({ id: t.id, name: t.name }))}
-      buildTeamSubmenuHref={buildTeamSubmenuHref}
-      teamExpandedTeamId={viewTeamId || null}
-      teamSubmenuActive={teamSubmenuActive}
+      showTeamSidebarSection={false}
       logoutApiPath={logoutApiPath}
       logoutRedirectPath={logoutRedirectPath}
     />
@@ -74,7 +46,14 @@ function HostShellInner({ children, router }: { children: ReactNode; router: Nex
       </p>
     );
 
-  return <ConsoleLayoutOverride primarySidebar={primarySidebar}>{mainSlot}</ConsoleLayoutOverride>;
+  return (
+    <ConsoleLayoutOverride
+      primarySidebar={primarySidebar}
+      contentClassName="mx-auto min-h-full w-full max-w-none flex-1 px-3 py-4 sm:px-5 lg:px-6"
+    >
+      {mainSlot}
+    </ConsoleLayoutOverride>
+  );
 }
 
 export function HostShellLayout({ children, router }: { children: ReactNode; router: NextRouter }) {
