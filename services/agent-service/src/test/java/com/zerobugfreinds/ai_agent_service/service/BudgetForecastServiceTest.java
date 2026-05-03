@@ -6,7 +6,6 @@ import com.zerobugfreinds.ai_agent_service.dto.BudgetForecastResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -14,7 +13,6 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
@@ -31,7 +29,7 @@ class BudgetForecastServiceTest {
 	}
 
 	@Test
-	void forecast_throwsServiceUnavailable_whenAiResultMissing() {
+	void forecast_fallsBackToDeterministic_whenAiResultMissing() {
 		BudgetForecastRequest request = baseRequest(
 				BigDecimal.valueOf(100),
 				BigDecimal.valueOf(80),
@@ -41,9 +39,9 @@ class BudgetForecastServiceTest {
 				List.of(BigDecimal.valueOf(4), BigDecimal.valueOf(5), BigDecimal.valueOf(6), BigDecimal.valueOf(5))
 		);
 
-		assertThatThrownBy(() -> budgetForecastService.forecast(request))
-				.isInstanceOf(ResponseStatusException.class)
-				.hasMessageContaining("AI 예측 결과를 생성하지 못했습니다");
+		BudgetForecastResponse response = budgetForecastService.forecast(request);
+		assertThat(response.healthStatus()).isEqualTo("WARNING");
+		assertThat(response.daysUntilRunOut()).isGreaterThanOrEqualTo(0);
 	}
 
 	@Test

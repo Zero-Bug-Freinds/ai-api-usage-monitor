@@ -80,7 +80,7 @@
 - 포트/LLM
   - `AI_AGENT_SERVICE_PORT` (default: `8096`)
   - `AI_AGENT_GEMINI_API_KEY`
-  - `AI_AGENT_GEMINI_MODEL` (default: `gemini-1.5-flash`)
+  - `AI_AGENT_GEMINI_MODEL` (default: `gemini-2.5-flash`)
   - `AI_AGENT_GEMINI_BASE_URL`
 - RabbitMQ
   - `SPRING_RABBITMQ_HOST`, `SPRING_RABBITMQ_PORT`
