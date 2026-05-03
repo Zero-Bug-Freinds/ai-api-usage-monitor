@@ -65,7 +65,16 @@ function HostShellInner({ children }: { children: ReactNode }) {
     />
   );
 
-  return <ConsoleLayoutOverride primarySidebar={primarySidebar}>{children}</ConsoleLayoutOverride>;
+  const mainSlot =
+    router.isReady ? (
+      children
+    ) : (
+      <p className="text-sm text-muted-foreground" aria-live="polite">
+        페이지 정보를 불러오는 중…
+      </p>
+    );
+
+  return <ConsoleLayoutOverride primarySidebar={primarySidebar}>{mainSlot}</ConsoleLayoutOverride>;
 }
 
 export function HostShellLayout({ children }: { children: ReactNode }) {

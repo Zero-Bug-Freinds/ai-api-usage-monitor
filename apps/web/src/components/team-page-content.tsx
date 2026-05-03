@@ -48,6 +48,10 @@ export function TeamPageContent() {
   const router = useRouter();
   const { teams, syncError } = useTeamWorkspace();
 
+  if (!router.isReady) {
+    return <p className="text-sm text-muted-foreground">라우터 준비 중…</p>;
+  }
+
   const viewTeamId =
     typeof router.query.viewTeamId === "string"
       ? router.query.viewTeamId
