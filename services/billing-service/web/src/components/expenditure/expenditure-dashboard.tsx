@@ -7,13 +7,20 @@ import { currentMonthStartKst, rangeLastDays } from "@/lib/expenditure/dates";
 import { formatUsd, formatUsdTooltip } from "@/lib/expenditure/money";
 import type {
   AiProviderCode,
-  ApiKeySeen,
   DailyPoint,
   ExpenditureSummary,
   MonthlyBudgetStatus,
   MonthlyPoint,
   TeamMonthRollup,
 } from "@/lib/expenditure/types";
+
+type IdentityExternalKeyProvider = "GEMINI" | "OPENAI" | "ANTHROPIC";
+
+type RegisteredExternalKey = {
+  id: number | string;
+  provider: IdentityExternalKeyProvider;
+  alias: string;
+};
 
 const PROVIDERS: { value: AiProviderCode; label: string }[] = [
   { value: "GOOGLE", label: "Gemini (GOOGLE)" },
@@ -36,6 +43,32 @@ async function fetchJson<T>(path: string): Promise<T> {
     throw new Error(text || `HTTP ${res.status}`);
   }
   return (await res.json()) as T;
+}
+
+function mapBillingProviderToIdentity(p: AiProviderCode): IdentityExternalKeyProvider {
+  if (p === "GOOGLE") return "GEMINI";
+  return p;
+}
+
+function parseRegisteredExternalKeys(json: unknown): RegisteredExternalKey[] {
+  if (typeof json === "object" && json !== null && Array.isArray((json as { data?: unknown }).data)) {
+    return parseRegisteredExternalKeys((json as { data: unknown }).data);
+  }
+  if (!Array.isArray(json)) return [];
+  const out: RegisteredExternalKey[] = [];
+  for (const x of json) {
+    if (typeof x !== "object" || x === null) continue;
+    const o = x as Record<string, unknown>;
+    const id = o.id;
+    const prov = o.provider;
+    const alias = o.alias;
+    const idOk = typeof id === "number" || (typeof id === "string" && id.length > 0);
+    if (!idOk) continue;
+    if (prov !== "GEMINI" && prov !== "OPENAI" && prov !== "ANTHROPIC") continue;
+    if (typeof alias !== "string") continue;
+    out.push({ id, provider: prov, alias });
+  }
+  return out;
 }
 
 async function fetchJsonPost<T>(path: string, body: unknown): Promise<T> {
@@ -97,7 +130,8 @@ async function fetchMyTeams(): Promise<MyTeam[]> {
 export function ExpenditureDashboard() {
   const [viewMode, setViewMode] = useState<"personal" | "team">("personal");
   const [provider, setProvider] = useState<AiProviderCode>("GOOGLE");
-  const [apiKeys, setApiKeys] = useState<ApiKeySeen[]>([]);
+  const [registeredKeys, setRegisteredKeys] = useState<RegisteredExternalKey[]>([]);
+  const [keysLoadError, setKeysLoadError] = useState<string | null>(null);
   const [apiKeyId, setApiKeyId] = useState<string>("");
   const [rangePreset, setRangePreset] = useState<"last7" | "last30" | "last90" | "thisMonth" | "custom">("last30");
   const [customFrom, setCustomFrom] = useState<string>(() => rangeLastDays(30).from);
@@ -147,27 +181,40 @@ export function ExpenditureDashboard() {
     return { ok: true as const, days: diffDays };
   }, [range.from, range.to]);
 
-  const loadApiKeys = useCallback(async () => {
-    const q = new URLSearchParams();
-    q.set("provider", provider);
-    const list = await fetchJson<ApiKeySeen[]>(expenditureApiPath(`/api/expenditure/api-keys?${q.toString()}`));
-    const sortedOldestFirst = [...list].sort((a, b) => a.firstSeenAt.localeCompare(b.firstSeenAt));
-    setApiKeys(sortedOldestFirst);
-    if (sortedOldestFirst.length > 0) {
-      setApiKeyId((prev) => {
-        if (prev && sortedOldestFirst.some((k) => k.apiKeyId === prev)) return prev;
-        return sortedOldestFirst[0]?.apiKeyId ?? "";
-      });
-    } else {
-      setApiKeyId("");
+  const loadRegisteredKeys = useCallback(async () => {
+    try {
+      const raw = await fetchJson<unknown>(expenditureApiPath("/api/expenditure/registered-keys"));
+      setRegisteredKeys(parseRegisteredExternalKeys(raw));
+      setKeysLoadError(null);
+    } catch (e: unknown) {
+      setRegisteredKeys([]);
+      setKeysLoadError(e instanceof Error ? e.message : "등록된 API 키 목록을 불러오지 못했습니다");
     }
-  }, [provider]);
+  }, []);
 
   useEffect(() => {
-    void loadApiKeys().catch((e: unknown) => {
-      setError(e instanceof Error ? e.message : "API 키 목록을 불러오지 못했습니다");
+    void loadRegisteredKeys();
+  }, [loadRegisteredKeys]);
+
+  const keysForProvider = useMemo(() => {
+    const want = mapBillingProviderToIdentity(provider);
+    return registeredKeys
+      .filter((k) => k.provider === want)
+      .slice()
+      .sort((a, b) => a.alias.localeCompare(b.alias, "ko"));
+  }, [registeredKeys, provider]);
+
+  useEffect(() => {
+    if (keysForProvider.length === 0) {
+      setApiKeyId("");
+      return;
+    }
+    setApiKeyId((prev) => {
+      const ids = new Set(keysForProvider.map((k) => String(k.id)));
+      if (prev && ids.has(prev)) return prev;
+      return String(keysForProvider[0]?.id ?? "");
     });
-  }, [loadApiKeys]);
+  }, [keysForProvider]);
 
   useEffect(() => {
     void fetchJson<{ userId: string }>(expenditureApiPath("/api/expenditure/me"))
@@ -246,12 +293,12 @@ export function ExpenditureDashboard() {
     setError(null);
     try {
       await loadMonthlyBudget();
-      await loadApiKeys();
+      await loadRegisteredKeys();
       await loadSeries();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "새로고침에 실패했습니다");
     }
-  }, [loadApiKeys, loadMonthlyBudget, loadSeries]);
+  }, [loadMonthlyBudget, loadRegisteredKeys, loadSeries]);
 
   const loadTeams = useCallback(async () => {
     setTeamsLoading(true);
@@ -467,6 +514,12 @@ export function ExpenditureDashboard() {
         ) : null}
       </div>
 
+      {keysLoadError ? (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          등록 키: {keysLoadError}
+        </div>
+      ) : null}
+
       {error ? (
         <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
@@ -577,20 +630,20 @@ export function ExpenditureDashboard() {
               </select>
             </label>
             <label className="flex flex-col gap-1.5 text-sm">
-              <span className="text-muted-foreground">API 키 (이벤트 관측)</span>
+              <span className="text-muted-foreground">등록된 API 키 (Identity)</span>
               <select
                 className="h-9 min-w-[240px] max-w-full rounded-md border border-input bg-background px-2 text-sm"
                 value={apiKeyId}
                 onChange={(e) => setApiKeyId(e.target.value)}
-                disabled={apiKeys.length === 0}
+                disabled={keysForProvider.length === 0}
               >
-                {apiKeys.length === 0 ? (
+                {keysForProvider.length === 0 ? (
                   <option value="">사용 데이터가 없습니다</option>
                 ) : (
-                  <optgroup label="사용 중 (이벤트로 관측된 키)">
-                    {apiKeys.map((k) => (
-                      <option key={`${k.provider}-${k.apiKeyId}`} value={k.apiKeyId}>
-                        {k.apiKeyId.slice(0, 12)}… ({k.provider})
+                  <optgroup label="등록된 키">
+                    {keysForProvider.map((k) => (
+                      <option key={`${k.provider}-${k.id}`} value={String(k.id)}>
+                        {k.alias}
                       </option>
                     ))}
                   </optgroup>
