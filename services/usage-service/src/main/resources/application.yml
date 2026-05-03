@@ -65,6 +65,10 @@ usage:
       enabled: ${USAGE_RABBIT_OUTBOUND_PREDICTION_ENABLED:true}
       exchange: ${USAGE_RABBIT_OUTBOUND_PREDICTION_EXCHANGE:usage.events}
       routing-key: ${USAGE_RABBIT_OUTBOUND_PREDICTION_ROUTING_KEY:usage.prediction.signals}
+    outbound-daily-cumulative-tokens:
+      enabled: ${USAGE_RABBIT_OUTBOUND_DAILY_CUMULATIVE_TOKENS_ENABLED:true}
+      exchange: ${USAGE_RABBIT_OUTBOUND_DAILY_CUMULATIVE_TOKENS_EXCHANGE:usage.events}
+      routing-key: ${USAGE_RABBIT_OUTBOUND_DAILY_CUMULATIVE_TOKENS_ROUTING_KEY:usage.daily.cumulative.tokens}
   prediction-signals:
     cron: ${USAGE_PREDICTION_SIGNALS_CRON:0 15 0 * * *}
     schedule:

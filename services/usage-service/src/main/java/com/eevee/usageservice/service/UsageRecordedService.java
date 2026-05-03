@@ -25,17 +25,20 @@ public class UsageRecordedService {
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
     private final UsageAggregationService aggregationService;
+    private final DailyCumulativeTokensAfterRecordedService dailyCumulativeTokensAfterRecordedService;
 
     public UsageRecordedService(
             UsageRecordedLogRepository repository,
             ObjectMapper objectMapper,
             ApplicationEventPublisher eventPublisher,
-            UsageAggregationService aggregationService
+            UsageAggregationService aggregationService,
+            DailyCumulativeTokensAfterRecordedService dailyCumulativeTokensAfterRecordedService
     ) {
         this.repository = repository;
         this.objectMapper = objectMapper;
         this.eventPublisher = eventPublisher;
         this.aggregationService = aggregationService;
+        this.dailyCumulativeTokensAfterRecordedService = dailyCumulativeTokensAfterRecordedService;
     }
 
     @Transactional
@@ -47,6 +50,7 @@ public class UsageRecordedService {
         UsageRecordedLogEntity entity = map(event);
         repository.save(entity);
         aggregationService.applyFromEvent(toAggregationMessage(entity));
+        dailyCumulativeTokensAfterRecordedService.onRecorded(entity);
         eventPublisher.publishEvent(new UsageSummaryAggregationRequestedEvent(
                 entity.getEventId(),
                 entity.getOccurredAt(),

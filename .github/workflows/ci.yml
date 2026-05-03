@@ -99,6 +99,7 @@ jobs:
               - '.github/workflows/**'
             team:
               - 'services/team-service/**'
+              - 'libs/identity-events/**'
             notification:
               - 'services/notification-service/**'
               - 'docker/backend-node-deps.Dockerfile'
@@ -106,6 +107,7 @@ jobs:
               - '.github/workflows/**'
             web_host:
               - 'apps/web/**'
+              - 'packages/team-workspace-cache/**'
             web_mfe:
               - 'services/usage-service/web-mfe/**'
               - 'services/team-service/web-mfe/**'
@@ -287,6 +289,9 @@ jobs:
             --add-host identity-web:127.0.0.1 \
             --add-host usage-web:127.0.0.1 \
             --add-host team-web:127.0.0.1 \
+            --add-host web-host:127.0.0.1 \
+            --add-host team-web-mfe:127.0.0.1 \
+            --add-host usage-web-mfe:127.0.0.1 \
             --add-host billing-web:127.0.0.1 \
             --add-host notification-web:127.0.0.1 \
             --add-host agent-web:127.0.0.1 \
@@ -388,7 +393,9 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: gradle
-          cache-dependency-path: services/usage-service/build.gradle
+          cache-dependency-path: |
+            services/usage-service/build.gradle
+            libs/usage-events/build.gradle
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
       - name: Build and test
@@ -538,7 +545,9 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: gradle
-          cache-dependency-path: services/team-service/build.gradle
+          cache-dependency-path: |
+            services/team-service/build.gradle
+            libs/identity-events/build.gradle
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
       - name: Build and test
@@ -648,11 +657,22 @@ jobs:
   web-host:
     name: Build web-host (apps/web)
     runs-on: ubuntu-latest
-    needs: changes
-    # Temporary emergency bypass: skip web-host CI until prerender/useContext issue is fixed.
+    permissions:
+      contents: read
+      actions: write
+    needs:
+      - changes
+    # web-host job 임시 비활성화(CI 오류 회피). 다시 켤 때 아래 if를 사용한다.
+    # if: >-
+    #   needs.changes.outputs.web_host == 'true'
+    #   || needs.changes.outputs.web_shared == 'true'
+    #   || needs.changes.outputs.workflows == 'true'
+    #   || needs.changes.outputs.web_mfe == 'true'
     if: false
     env:
       NEXT_PRIVATE_LOCAL_WEBPACK: "true"
+      NEXT_PUBLIC_MFE_TEAM_REMOTE_URL: "http://localhost:8888/mfe/team"
+      NEXT_PUBLIC_MFE_USAGE_REMOTE_URL: "http://localhost:8888/mfe/usage"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -670,14 +690,49 @@ jobs:
         run: |
           pnpm --filter web-host run lint
           pnpm --filter web-host run test
-          pnpm --filter web-host run build
+          pnpm run build:web-host
       - name: Verify host remotes configuration
         run: |
-          node -e "const fs=require('node:fs');const p='apps/web/next.config.mjs';const c=fs.readFileSync(p,'utf8');for(const x of ['NextFederationPlugin','team@','usage@','remoteEntry.js']){if(!c.includes(x)){throw new Error('missing '+x+' in '+p)}}"
+          node -e "const fs=require('node:fs');const p='apps/web/next.config.mjs';const c=fs.readFileSync(p,'utf8');for(const x of ['NextFederationPlugin','team@','usage@','remoteEntry.js','team/TeamManagement','usage/TeamUsageDashboard']){if(!c.includes(x)){throw new Error('missing '+x+' in '+p)}}"
+      - uses: docker/setup-buildx-action@v3
+      - name: Docker image (web-node-deps base)
+        id: docker_web_node_deps
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/web-node-deps.Dockerfile
+          tags: web-node-deps:ci
+          load: true
+          push: false
+          cache-from: type=gha,scope=web-node-deps-ci
+          cache-to: type=gha,mode=min,scope=web-node-deps-ci
       - name: Docker image (web-host, standalone)
-        # TODO(cache-migration): docker/build-push-action + type=gha 전환 후보
-        #   scope 예시: web-node-deps-cache, web-host-cache
-        run: docker build -f docker/web-node-deps.Dockerfile -t web-node-deps:ci . && docker build --build-arg WEB_NODE_DEPS_IMAGE=web-node-deps:ci -f apps/web/Dockerfile -t web-host:ci .
+        id: docker_web_host
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          # 로컬 태그 web-node-deps:ci는 Buildx 기본 빌더에서 FROM으로 쓰면 허브 pull로 해석된다.
+          # BuildKit 추가 컨텍스트로 엔진 이미지 스토어의 동일 태그를 주입한다(apps/web Dockerfile의 WEB_NODE_DEPS_IMAGE=ci-deps와 대응).
+          build-contexts: |
+            ci-deps=docker-image://web-node-deps:ci
+          build-args: |
+            WEB_NODE_DEPS_IMAGE=ci-deps
+            NEXT_PUBLIC_MFE_TEAM_REMOTE_URL=http://localhost:8888/mfe/team
+            NEXT_PUBLIC_MFE_USAGE_REMOTE_URL=http://localhost:8888/mfe/usage
+          tags: web-host:ci
+          load: true
+          push: false
+          cache-from: type=gha,scope=web-host-ci
+          cache-to: type=gha,mode=min,scope=web-host-ci
+      - name: Web-host image summary
+        if: always()
+        run: |
+          echo "## Docker image build summary (web-host)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- web-node-deps tag: \`web-node-deps:ci\` digest: \`${{ steps.docker_web_node_deps.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- web-host tag: \`web-host:ci\` digest: \`${{ steps.docker_web_host.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Cache scopes: \`web-node-deps-ci\`, \`web-host-ci\` (type=gha)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
 
   web-mfe:
     name: Build web-mfe remotes (usage/team)
