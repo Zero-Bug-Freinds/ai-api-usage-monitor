@@ -551,7 +551,7 @@ services:
       GATEWAY_URL: ${WEB_GATEWAY_URL:-http://api-gateway-service:8080}
       TEAM_SERVICE_URL: ${WEB_TEAM_SERVICE_URL:-http://team-service:8093}
       IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
-      NEXT_PUBLIC_TEAM_CONSOLE_URL: ${NEXT_PUBLIC_TEAM_CONSOLE_URL:-http://localhost:${WEB_HOST_PORT:-3002}/teams}
+      NEXT_PUBLIC_TEAM_CONSOLE_URL: ${NEXT_PUBLIC_TEAM_CONSOLE_URL:-http://localhost:${WEB_EDGE_PORT:-8888}/teams}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
