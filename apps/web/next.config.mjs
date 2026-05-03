@@ -98,9 +98,10 @@ const nextConfig = {
           filename: "static/chunks/remoteEntry.js",
           // strictVersion: false — 리모트 매니페스트와 호스트의 React 메타가 미세하게 달라도
           // loadShare(consumes)가 거부되지 않고 singleton으로 호스트 공유 인스턴스를 쓴다(Task37-5).
+          // eager: 호스트 초기 번들에 고정해 loadShare 비동기 소비와 라우터 마운트 타이밍 경합 완화(Task37-7).
           shared: {
-            react: { singleton: true, strictVersion: false, requiredVersion: "19.2.4" },
-            "react-dom": { singleton: true, strictVersion: false, requiredVersion: "19.2.4" },
+            react: { singleton: true, strictVersion: false, requiredVersion: "19.2.4", eager: true },
+            "react-dom": { singleton: true, strictVersion: false, requiredVersion: "19.2.4", eager: true },
           },
         })
       );
