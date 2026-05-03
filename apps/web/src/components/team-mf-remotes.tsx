@@ -8,18 +8,12 @@ import * as React from "react";
 import type { CachedTeamItem } from "@ai-usage/team-workspace-cache";
 import { Button } from "@ai-usage/ui";
 import { RemoteErrorBoundary } from "@/components/remote-error-boundary";
-import type { TeamRouteSection } from "@/components/team-route-types";
 
 /** Matches `usage/TeamUsageDashboard` in services/usage-service/web-mfe (MF remote typing). */
 type TeamUsageDashboardProps = {
   viewTeamIdFromQuery?: string;
   shellTeamList?: CachedTeamItem[];
 };
-
-const TeamManagement = dynamic(() => import("team/TeamManagement"), {
-  ssr: false,
-  loading: () => <p className="text-sm text-muted-foreground">Team remote loading...</p>,
-});
 
 const TeamUsageDashboard = dynamic(
   () =>
@@ -54,39 +48,30 @@ function MfConsumeTickGate({ children }: { children: React.ReactNode }) {
 }
 
 export type TeamMfRemotesProps = {
-  tab: TeamRouteSection;
   viewTeamId: string;
   teams: CachedTeamItem[];
   usageResetKey: string;
 };
 
-export function TeamMfRemotes({ tab, viewTeamId, teams, usageResetKey }: TeamMfRemotesProps) {
+/**
+ * 우측 슬롯(Task37-12): usage-web-mfe만 사용한다. 상단 탭과 무관하게 동일 `TeamUsageDashboard`(탭은 URL·UI 상태용).
+ */
+export function TeamMfRemotes({ viewTeamId, teams, usageResetKey }: TeamMfRemotesProps) {
   return (
     <MfConsumeTickGate>
-      {tab === "dashboard" ? (
-        <RemoteErrorBoundary
-          resetKey={usageResetKey}
-          renderFallback={({ retry }) => (
-            <div className="space-y-3 rounded-md border border-border bg-muted/30 p-4">
-              <p className="text-sm text-muted-foreground">Usage remote를 불러오지 못했습니다.</p>
-              <Button type="button" variant="outline" size="sm" onClick={retry}>
-                다시 시도
-              </Button>
-            </div>
-          )}
-        >
-          <TeamUsageDashboard viewTeamIdFromQuery={viewTeamId} shellTeamList={teams} />
-        </RemoteErrorBoundary>
-      ) : (
-        <RemoteErrorBoundary
-          fallback={<p className="p-4 text-sm text-muted-foreground">Team remote를 불러오지 못했습니다.</p>}
-        >
-          {/* Task37-11: data-team-mf-split — 리모트 DOM이 목록/상세로 나뉘면 globals.css에서 aside 스코프 숨김 검토 */}
-          <div data-team-mf-split="1" className="flex min-h-0 min-w-0 flex-1 flex-col">
-            <TeamManagement />
+      <RemoteErrorBoundary
+        resetKey={usageResetKey}
+        renderFallback={({ retry }) => (
+          <div className="space-y-3 rounded-md border border-border bg-muted/30 p-4">
+            <p className="text-sm text-muted-foreground">Usage remote를 불러오지 못했습니다.</p>
+            <Button type="button" variant="outline" size="sm" onClick={retry}>
+              다시 시도
+            </Button>
           </div>
-        </RemoteErrorBoundary>
-      )}
+        )}
+      >
+        <TeamUsageDashboard viewTeamIdFromQuery={viewTeamId} shellTeamList={teams} />
+      </RemoteErrorBoundary>
     </MfConsumeTickGate>
   );
 }
