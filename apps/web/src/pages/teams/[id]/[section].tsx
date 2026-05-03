@@ -1,18 +1,29 @@
+import * as React from "react";
 import { useRouter } from "next/router";
-import { TeamPageContent, type TeamRouteSection } from "@/components/team-page-content";
 
-const TEAM_ROUTE_SECTIONS: TeamRouteSection[] = ["dashboard", "members", "api-keys"];
+import type { TeamRouteSection } from "@/components/team-page-content";
 
-function resolveSection(value: string | string[] | undefined): TeamRouteSection {
-  const raw = Array.isArray(value) ? value[0] : value;
-  if (raw && TEAM_ROUTE_SECTIONS.includes(raw as TeamRouteSection)) {
-    return raw as TeamRouteSection;
-  }
+function toTab(section: string | undefined): TeamRouteSection {
+  if (section === "members" || section === "api-keys") return section;
   return "dashboard";
 }
 
-export default function TeamSectionPage() {
+/**
+ * 레거시 `/teams/[id]/[section]` → `/teams?viewTeamId=…&tab=…`
+ */
+export default function LegacyTeamsSectionRedirect() {
   const router = useRouter();
-  const section = resolveSection(router.query.section);
-  return <TeamPageContent section={section} />;
+
+  React.useEffect(() => {
+    if (!router.isReady) return;
+    const rawId = router.query.id;
+    const id = typeof rawId === "string" ? rawId : Array.isArray(rawId) ? rawId[0] : "";
+    const rawSec = router.query.section;
+    const sec = typeof rawSec === "string" ? rawSec : Array.isArray(rawSec) ? rawSec[0] : "";
+    if (!id) return;
+    const tab = toTab(sec);
+    void router.replace(`/teams?viewTeamId=${encodeURIComponent(id)}&tab=${encodeURIComponent(tab)}`);
+  }, [router, router.isReady, router.query.id, router.query.section]);
+
+  return <p className="text-sm text-muted-foreground">팀 페이지로 이동 중…</p>;
 }

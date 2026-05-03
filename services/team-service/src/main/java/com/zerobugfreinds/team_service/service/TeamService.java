@@ -46,6 +46,8 @@ import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Objects;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.time.Instant;
@@ -105,7 +107,7 @@ public class TeamService {
 		TeamEntity saved = teamRepository.save(TeamEntity.create(trimmed, actorUserId));
 		teamMemberRepository.save(TeamMemberEntity.of(saved.getId(), actorUserId, TeamMemberRole.OWNER));
 		publish(TeamCreatedEvent.of(String.valueOf(saved.getId()), saved.getName(), actorUserId, saved.getCreatedAt()));
-		return new TeamSummaryResponse(String.valueOf(saved.getId()), saved.getName());
+		return new TeamSummaryResponse(String.valueOf(saved.getId()), saved.getName(), saved.getCreatedAt());
 	}
 
 	@Transactional(readOnly = true)
@@ -125,14 +127,12 @@ public class TeamService {
 		Map<Long, TeamEntity> teamById = teamRepository.findAllById(teamIds).stream()
 				.collect(Collectors.toMap(TeamEntity::getId, t -> t));
 
-		List<TeamSummaryResponse> result = new ArrayList<>();
-		for (Long teamId : teamIds) {
-			TeamEntity team = teamById.get(teamId);
-			if (team != null) {
-				result.add(new TeamSummaryResponse(String.valueOf(team.getId()), team.getName()));
-			}
-		}
-		return result;
+		return teamIds.stream()
+				.map(teamById::get)
+				.filter(Objects::nonNull)
+				.sorted(Comparator.comparing(TeamEntity::getCreatedAt))
+				.map(team -> new TeamSummaryResponse(String.valueOf(team.getId()), team.getName(), team.getCreatedAt()))
+				.toList();
 	}
 
 	@Transactional(readOnly = true)
@@ -183,7 +183,7 @@ public class TeamService {
 				team.getName(),
 				invitation.getCreatedAt()
 		));
-		return new TeamSummaryResponse(String.valueOf(team.getId()), team.getName());
+		return new TeamSummaryResponse(String.valueOf(team.getId()), team.getName(), team.getCreatedAt());
 	}
 
 	@Transactional(readOnly = true)
@@ -457,7 +457,7 @@ public class TeamService {
 		}
 		teamMemberRepository.delete(targetMembership);
 		publish(TeamMemberRemovedEvent.of(actorUserId, targetUserId, teamId, team.getName(), Instant.now()));
-		return new TeamSummaryResponse(String.valueOf(team.getId()), team.getName());
+		return new TeamSummaryResponse(String.valueOf(team.getId()), team.getName(), team.getCreatedAt());
 	}
 
 	@Transactional

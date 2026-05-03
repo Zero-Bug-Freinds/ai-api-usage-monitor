@@ -1,9 +1,31 @@
 "use client";
 
-export default function TeamUsageDashboard() {
+import * as React from "react";
+import { useLogoutCleanup, type CachedTeamItem } from "@ai-usage/team-workspace-cache";
+import TeamDashboard from "./TeamDashboard";
+import TeamMemberUsageLog from "./TeamMemberUsageLog";
+
+type TeamUsageDashboardProps = {
+  /** URL `viewTeamId` — 새로고침 시 조회 팀 힌트(관리 UI와 자동 동기화 없음). */
+  viewTeamIdFromQuery?: string;
+  /** Main Shell 동기화 팀 목록(캐시와 병합). */
+  shellTeamList?: CachedTeamItem[];
+};
+
+export default function TeamUsageDashboard({ viewTeamIdFromQuery, shellTeamList }: TeamUsageDashboardProps) {
+  useLogoutCleanup();
+  const [selectedUserId, setSelectedUserId] = React.useState<string>("");
+  const [bffTeamId, setBffTeamId] = React.useState<string>("");
+
   return (
-    <div className="flex min-h-[16rem] w-full items-center justify-center rounded-lg border border-dashed border-border bg-muted/30 p-8 text-center">
-      <p className="text-sm font-medium text-foreground">Usage-Service의 대시보드 영역</p>
+    <div className="space-y-4">
+      <TeamDashboard
+        viewTeamIdFromQuery={viewTeamIdFromQuery}
+        shellTeamList={shellTeamList}
+        onSelectUser={setSelectedUserId}
+        onEffectiveTeamChange={setBffTeamId}
+      />
+      <TeamMemberUsageLog teamId={bffTeamId} userId={selectedUserId} />
     </div>
   );
 }

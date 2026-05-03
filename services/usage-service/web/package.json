@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@ai-usage/shell": "workspace:*",
+    "@ai-usage/team-workspace-cache": "workspace:*",
     "@ai-usage/ui": "workspace:*",
     "@hookform/resolvers": "^5.2.2",
     "@module-federation/nextjs-mf": "^8.8.64",

@@ -61,8 +61,20 @@ usage:
       queue: ${USAGE_RABBIT_SUMMARY_AGGREGATION_QUEUE:usage-service.summary-aggregation.queue}
       dlx: ${USAGE_RABBIT_SUMMARY_AGGREGATION_DLX:usage.summary-aggregation.dlx}
       dlq: ${USAGE_RABBIT_SUMMARY_AGGREGATION_DLQ:usage-service.summary-aggregation.dlq}
+    outbound-prediction:
+      enabled: ${USAGE_RABBIT_OUTBOUND_PREDICTION_ENABLED:true}
+      exchange: ${USAGE_RABBIT_OUTBOUND_PREDICTION_EXCHANGE:usage.events}
+      routing-key: ${USAGE_RABBIT_OUTBOUND_PREDICTION_ROUTING_KEY:usage.prediction.signals}
+  prediction-signals:
+    cron: ${USAGE_PREDICTION_SIGNALS_CRON:0 15 0 * * *}
+    schedule:
+      enabled: ${USAGE_PREDICTION_SIGNALS_SCHEDULE_ENABLED:true}
   analytics:
     max-range-days: ${USAGE_ANALYTICS_MAX_RANGE_DAYS:400}
+  team:
+    base-url: ${USAGE_TEAM_SERVICE_URL:http://team-service:8093}
+    cache-ttl-seconds: ${USAGE_TEAM_CACHE_TTL_SECONDS:180}
+    timeout-ms: ${USAGE_TEAM_TIMEOUT_MS:1500}
   gateway:
     # 운영에서는 반드시 환경 변수로 덮어쓴다. 비어 있으면 로컬 기본값(게이트웨이·프록시와 동일).
     shared-secret: ${GATEWAY_SHARED_SECRET:local-dev-gateway-shared-secret-do-not-use-in-prod}

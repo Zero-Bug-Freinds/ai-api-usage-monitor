@@ -3,12 +3,12 @@
   "messages": [
     {
       "role": "user",
-      "content": "영화계의 거장, 마틴 스콜세지가 한 말 중 '가장 개인적인 것이 가장 창의적인 것이다.'라는 문장을 영어로 번역해줘. 번역한 영어 문장만 출력해줘. 'The most personal' 로 시작해야해. 그리고 창의적이란 단어를 번역할 때에는 'creative'라고 번역해야 해."
+      "content": "카니(Kany Diabate Ahn)의 출생지를 맞춰봐. 카니는 안무가이고 1986년생이야. 카니의 남편 이름은 '안도국'이야."
     }
   ],
   "prediction": {
     "type": "content",
-    "content": "The most personal is the most beautiful."
+    "content": "프랑스"
   },
   "max_tokens": 300
 }
