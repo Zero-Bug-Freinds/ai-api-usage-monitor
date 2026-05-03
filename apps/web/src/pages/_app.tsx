@@ -1,11 +1,25 @@
 import type { AppContext, AppInitialProps, AppProps } from "next/app";
 import NextApp from "next/app";
-import { HostShellLayout } from "@/components/host-shell-layout";
+import dynamic from "next/dynamic";
 import "@/styles/globals.css";
+
+const HostShellLayout = dynamic(
+  () => import("@/components/host-shell-layout").then((m) => m.HostShellLayout),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex min-h-screen w-full items-center justify-center bg-background text-muted-foreground">
+        로딩 중…
+      </div>
+    ),
+  },
+);
 
 /**
  * getInitialProps로 전역 앱을 동적 렌더링에 두어 /404·/500 사전렌더 시
  * React 컨텍스트 불일치(useContext null)를 줄인다. 페이지 getServerSideProps와 병행 가능.
+ *
+ * HostShellLayout은 MF·workspace 패키지와의 서버 이중 React 이슈를 피하기 위해 클라이언트 전용.
  */
 export default function WebApp({ Component, pageProps }: AppProps) {
   return (

@@ -14,6 +14,15 @@ function resolvePackageRoot(dependencyName) {
   }
 }
 
+/** Webpack `alias.react` alone does not dedupe `react/jsx-runtime` subpath imports — multiple copies → useContext(null) on SSR. */
+function safeResolve(specifier) {
+  try {
+    return require.resolve(specifier);
+  } catch {
+    return null;
+  }
+}
+
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const teamRemoteOrigin =
@@ -43,10 +52,14 @@ const nextConfig = {
     const reactRoot = resolvePackageRoot("react");
     const reactDomRoot = resolvePackageRoot("react-dom");
     if (reactRoot && reactDomRoot) {
+      const jsxRuntime = safeResolve("react/jsx-runtime");
+      const jsxDevRuntime = safeResolve("react/jsx-dev-runtime");
       config.resolve.alias = {
         ...config.resolve.alias,
         react: reactRoot,
         "react-dom": reactDomRoot,
+        ...(jsxRuntime ? { "react/jsx-runtime": jsxRuntime } : {}),
+        ...(jsxDevRuntime ? { "react/jsx-dev-runtime": jsxDevRuntime } : {}),
       };
     }
 
