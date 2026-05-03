@@ -47,8 +47,8 @@ class BudgetAgentControllerTest {
 				"WARNING",
 				LocalDate.now().plusDays(3),
 				3,
-				7,
-				4,
+				7L,
+				4L,
 				BigDecimal.valueOf(87.5),
 				"테스트 메시지",
 				List.of("조치1")

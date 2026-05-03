@@ -1,5 +1,6 @@
 # Single-domain edge for local compose.
-# Usage Next basePath=/dashboard, Billing basePath=/billing, Team basePath=/teams.
+# Usage Next basePath=/dashboard, Billing basePath=/billing, Team basePath=/teams,
+# Notification basePath=/notifications, Agent basePath=/agent.
 # /api/v1/* is routed to api-gateway; others to identity-web.
 #
 # Deployment note:
@@ -43,6 +44,10 @@ http {
 
   upstream notification_web {
     server notification-web:3000;
+  }
+
+  upstream agent_web {
+    server agent-web:3000;
   }
 
   upstream api_gateway {
@@ -147,6 +152,24 @@ http {
 
     location ^~ /notifications/ {
       proxy_pass http://notification_web;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection $connection_upgrade;
+    }
+
+    location = /agent {
+      proxy_pass http://agent_web/agent;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection $connection_upgrade;
+    }
+
+    location = /agent/ {
+      proxy_pass http://agent_web/agent;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection $connection_upgrade;
+    }
+
+    location ^~ /agent/ {
+      proxy_pass http://agent_web;
       proxy_set_header Upgrade $http_upgrade;
       proxy_set_header Connection $connection_upgrade;
     }

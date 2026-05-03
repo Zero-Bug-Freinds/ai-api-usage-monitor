@@ -1,8 +1,8 @@
 package com.zerobugfreinds.ai_agent_service.mq;
 
 import com.eevee.usage.events.UsageCostFinalizedEvent;
+import com.zerobugfreinds.ai_agent_service.dto.BillingCostCorrectedEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.zerobugfreinds.ai_agent_service.dto.BillingBudgetThresholdReachedEvent;
 import com.zerobugfreinds.ai_agent_service.service.BillingSignalSnapshotService;
 import com.zerobugfreinds.ai_agent_service.service.EventDebugService;
 import org.slf4j.Logger;
@@ -55,23 +55,22 @@ public class BillingOutboundEventListener {
 		}
 	}
 
-	@RabbitListener(queues = "${ai-agent.rabbit.billing-budget.queue}")
-	@ConditionalOnProperty(prefix = "ai-agent.rabbit.billing-budget", name = "enabled", havingValue = "true", matchIfMissing = true)
-	public void onBudgetThresholdReached(Message message) {
+	@RabbitListener(queues = "${ai-agent.rabbit.billing-correction.queue}")
+	@ConditionalOnProperty(prefix = "ai-agent.rabbit.billing-correction", name = "enabled", havingValue = "true", matchIfMissing = true)
+	public void onBillingCostCorrected(Message message) {
 		try {
 			String body = new String(message.getBody(), StandardCharsets.UTF_8);
-			BillingBudgetThresholdReachedEvent event =
-					objectMapper.readValue(body, BillingBudgetThresholdReachedEvent.class);
+			BillingCostCorrectedEvent event = objectMapper.readValue(body, BillingCostCorrectedEvent.class);
 			Map<String, String> headers = toStringHeaders(message);
-			eventDebugService.record("BillingBudgetThresholdReachedEvent", headers, body);
-			String apiKeyId = headerAsString(message, "apiKeyId");
-			String userId = headerAsString(message, "userId");
+			eventDebugService.record("BillingCostCorrectedEvent", headers, body);
+			String apiKeyId = event.apiKeyId() != null ? event.apiKeyId() : headerAsString(message, "apiKeyId");
+			String userId = event.userId() != null ? event.userId() : headerAsString(message, "userId");
 			String teamId = headerAsString(message, "teamId");
 			String subjectType = headerAsString(message, "subjectType");
-			billingSignalSnapshotService.upsertBudgetThreshold(apiKeyId, userId, teamId, subjectType, event);
+			billingSignalSnapshotService.applyCostCorrection(apiKeyId, userId, teamId, subjectType, event);
 		} catch (Exception ex) {
-			log.error("Failed to handle BillingBudgetThresholdReachedEvent", ex);
-			throw new IllegalStateException("billing budget threshold handling failed", ex);
+			log.error("Failed to handle BillingCostCorrectedEvent", ex);
+			throw new IllegalStateException("billing cost corrected handling failed", ex);
 		}
 	}
 

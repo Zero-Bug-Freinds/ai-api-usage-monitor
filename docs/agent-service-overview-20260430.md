@@ -48,6 +48,7 @@
 - Billing 이벤트(`billing.events`)
   - `usage.cost.finalized`
   - `billing.budget.threshold.reached`
+  - `billing.cost.corrected`
 
 구체 큐/라우팅키는 `services/agent-service/src/main/resources/application.properties`를 따른다.
 
@@ -87,6 +88,7 @@
 - `debug/events`는 운영 환경에서 접근 통제와 민감정보 마스킹 정책을 반드시 적용해야 한다.
 - 컨텍스트 집계는 이벤트 도착 순서와 시점에 따라 일시적으로 비어 있을 수 있다.
 - 개인 키 이벤트가 아직 유입되지 않은 초기 상태에서는 개인 키 목록이 비어 보일 수 있으며, 이때는 Identity fallback 조회 성공 여부(오리진/포트/권한 헤더)를 함께 점검해야 한다.
+- `docker compose --profile web up`에는 `agent-web`만 포함되고 `agent-service`(Spring)는 포함되지 않을 수 있다. 이 경우 `AI_AGENT_SERVICE_INTERNAL_ORIGIN` 대상(기본 `host.docker.internal:8096`)에 백엔드가 실제로 떠 있어야 이벤트 수신/스냅샷 API가 동작한다.
 
 ## 7. 최근 반영 사항 (2026-04-30)
 
