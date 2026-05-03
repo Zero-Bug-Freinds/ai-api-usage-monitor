@@ -1,6 +1,18 @@
+import { createRequire } from "module";
 import path from "path";
 import { fileURLToPath } from "url";
 import NextFederationPlugin from "@module-federation/nextjs-mf";
+
+const require = createRequire(import.meta.url);
+
+/** pnpm·Docker에서도 동작하도록 하드코딩 ../../node_modules 대신 실제 resolve 경로 사용 */
+function resolvePackageRoot(dependencyName) {
+  try {
+    return path.dirname(require.resolve(path.join(dependencyName, "package.json")));
+  } catch {
+    return null;
+  }
+}
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -28,6 +40,16 @@ const nextConfig = {
   // Avoid bundling MF (and its `node:` imports) on the server; pairs with webpack externals below.
   serverExternalPackages: ["@module-federation/nextjs-mf"],
   webpack(config, { isServer: _isServer }) {
+    const reactRoot = resolvePackageRoot("react");
+    const reactDomRoot = resolvePackageRoot("react-dom");
+    if (reactRoot && reactDomRoot) {
+      config.resolve.alias = {
+        ...config.resolve.alias,
+        react: reactRoot,
+        "react-dom": reactDomRoot,
+      };
+    }
+
     // `node:` is not a webpack-supported URI scheme. @module-federation/nextjs-mf pulls
     // `import "node:module"` into the graph; if externals only run for `isServer`, the client
     // build still tries to load that URI and fails with UnhandledSchemeError.
