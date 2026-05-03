@@ -1,6 +1,5 @@
 import type { GetServerSideProps } from "next";
 
-import { MfRuntimeReadyGate } from "@/components/mf-runtime-ready-gate";
 import { TeamPageContent } from "@/components/team-page-content";
 
 export const getServerSideProps: GetServerSideProps = async () => {
@@ -9,14 +8,12 @@ export const getServerSideProps: GetServerSideProps = async () => {
 
 /**
  * 팀 콘솔 메인 (basePath `/teams` → 브라우저 경로 `/teams`).
- * MF 리모트 청크는 MfRuntimeReadyGate 이후에만 마운트(Task37-5).
+ * MF 진입 지연·rAF 틱은 `team-page-content` 및 `team-mf-remotes`로 일원화(Task37-8).
  */
 export default function TeamsConsoleHomePage() {
   return (
     <div className="host-remote-slot space-y-4 p-4">
-      <MfRuntimeReadyGate>
-        <TeamPageContent />
-      </MfRuntimeReadyGate>
+      <TeamPageContent />
     </div>
   );
 }

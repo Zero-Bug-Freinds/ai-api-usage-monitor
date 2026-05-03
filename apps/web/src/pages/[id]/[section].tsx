@@ -1,6 +1,6 @@
 import type { GetServerSideProps } from "next";
 
-import type { TeamRouteSection } from "@/components/team-page-content";
+import type { TeamRouteSection } from "@/components/team-route-types";
 
 function queryParamFromDynamic(
   value: string | string[] | undefined,

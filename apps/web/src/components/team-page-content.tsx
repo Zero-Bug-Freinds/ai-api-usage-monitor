@@ -1,20 +1,25 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import type { ComponentType } from "react";
-import { useRouter } from "next/router";
-import type { CachedTeamItem } from "@ai-usage/team-workspace-cache";
+import * as React from "react";
 import { Button, cn } from "@ai-usage/ui";
-import { RemoteErrorBoundary } from "@/components/remote-error-boundary";
+import { usePagesHostRouter } from "@/context/pages-host-router-context";
 import { useTeamWorkspace } from "@/components/team-workspace-context";
+import { normalizeTab, type TeamRouteSection } from "@/components/team-route-types";
 
-/** Matches `usage/TeamUsageDashboard` in services/usage-service/web-mfe (MF remote typing). */
-type TeamUsageDashboardProps = {
-  viewTeamIdFromQuery?: string;
-  shellTeamList?: CachedTeamItem[];
-};
+export type { TeamRouteSection } from "@/components/team-route-types";
 
-export type TeamRouteSection = "dashboard" | "members" | "api-keys";
+/**
+ * `team/`·`usage/` federation dynamic은 `./team-mf-remotes` 청크에만 두고,
+ * 클라이언트 마운트 후에만 그 청크를 로드해 모듈 평가 시점 경합을 줄인다(Task37-8).
+ */
+const TeamMfRemotesLazy = dynamic(
+  () => import("./team-mf-remotes").then((m) => ({ default: m.TeamMfRemotes })),
+  {
+    ssr: false,
+    loading: () => <p className="text-sm text-muted-foreground">원격 모듈을 불러오는 중…</p>,
+  }
+);
 
 /**
  * 팀 콘솔 우측 영역:
@@ -22,31 +27,14 @@ export type TeamRouteSection = "dashboard" | "members" | "api-keys";
  * - `tab=dashboard`일 때만 usage MF(`TeamUsageDashboard`)를 로드합니다. 다른 탭에서는 team MF만 로드됩니다.
  * - 우측이 비어 보이면: MF remoteEntry 로드 실패, 또는 해당 탭에서 맞는 리모트가 아님을 의심합니다.
  */
-
-const TeamManagement = dynamic(() => import("team/TeamManagement"), {
-  ssr: false,
-  loading: () => <p className="text-sm text-muted-foreground">Team remote loading...</p>,
-});
-const TeamUsageDashboard = dynamic(
-  () =>
-    import("usage/TeamUsageDashboard") as Promise<{
-      default: ComponentType<TeamUsageDashboardProps>;
-    }>,
-  {
-    ssr: false,
-    loading: () => <p className="text-sm text-muted-foreground">Usage remote loading...</p>,
-  }
-);
-
-function normalizeTab(q: string | string[] | undefined): TeamRouteSection {
-  const raw = Array.isArray(q) ? q[0] : q;
-  if (raw === "members" || raw === "api-keys") return raw;
-  return "dashboard";
-}
-
 export function TeamPageContent() {
-  const router = useRouter();
+  const router = usePagesHostRouter();
   const { teams, syncError } = useTeamWorkspace();
+  const [mfChunkAllowed, setMfChunkAllowed] = React.useState(false);
+
+  React.useEffect(() => {
+    setMfChunkAllowed(true);
+  }, []);
 
   if (!router.isReady) {
     return <p className="text-sm text-muted-foreground">라우터 준비 중…</p>;
@@ -116,26 +104,10 @@ export function TeamPageContent() {
         </p>
       ) : null}
 
-      {tab === "dashboard" ? (
-        <RemoteErrorBoundary
-          resetKey={usageResetKey}
-          renderFallback={({ retry }) => (
-            <div className="space-y-3 rounded-md border border-border bg-muted/30 p-4">
-              <p className="text-sm text-muted-foreground">Usage remote를 불러오지 못했습니다.</p>
-              <Button type="button" variant="outline" size="sm" onClick={retry}>
-                다시 시도
-              </Button>
-            </div>
-          )}
-        >
-          <TeamUsageDashboard viewTeamIdFromQuery={viewTeamId} shellTeamList={teams} />
-        </RemoteErrorBoundary>
+      {mfChunkAllowed ? (
+        <TeamMfRemotesLazy tab={tab} viewTeamId={viewTeamId} teams={teams} usageResetKey={usageResetKey} />
       ) : (
-        <RemoteErrorBoundary
-          fallback={<p className="p-4 text-sm text-muted-foreground">Team remote를 불러오지 못했습니다.</p>}
-        >
-          <TeamManagement />
-        </RemoteErrorBoundary>
+        <p className="text-sm text-muted-foreground">원격 모듈을 준비하는 중…</p>
       )}
     </div>
   );
