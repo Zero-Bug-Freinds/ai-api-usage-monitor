@@ -707,6 +707,9 @@ jobs:
         id: docker_web_host
         uses: docker/build-push-action@v6
         with:
+          # docker-container 빌더는 이전 단계에서 load한 로컬 태그(web-node-deps:ci)를
+          # 레지스트리에서 pull하려다 실패한다. docker 드라이버로 엔진 로컬 이미지를 참조한다.
+          driver: docker
           context: .
           file: apps/web/Dockerfile
           build-args: |
