@@ -96,9 +96,11 @@ const nextConfig = {
             usage: `usage@${usageRemoteOrigin.replace(/\/$/, "")}/_next/static/chunks/remoteEntry.js`,
           },
           filename: "static/chunks/remoteEntry.js",
+          // strictVersion: false — 리모트 매니페스트와 호스트의 React 메타가 미세하게 달라도
+          // loadShare(consumes)가 거부되지 않고 singleton으로 호스트 공유 인스턴스를 쓴다(Task37-5).
           shared: {
-            react: { singleton: true, strictVersion: true, requiredVersion: "19.2.4" },
-            "react-dom": { singleton: true, strictVersion: true, requiredVersion: "19.2.4" },
+            react: { singleton: true, strictVersion: false, requiredVersion: "19.2.4" },
+            "react-dom": { singleton: true, strictVersion: false, requiredVersion: "19.2.4" },
           },
         })
       );
