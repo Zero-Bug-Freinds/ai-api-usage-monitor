@@ -707,13 +707,14 @@ jobs:
         id: docker_web_host
         uses: docker/build-push-action@v6
         with:
-          # docker-container 빌더는 이전 단계에서 load한 로컬 태그(web-node-deps:ci)를
-          # 레지스트리에서 pull하려다 실패한다. docker 드라이버로 엔진 로컬 이미지를 참조한다.
-          driver: docker
           context: .
           file: apps/web/Dockerfile
+          # 로컬 태그 web-node-deps:ci는 Buildx 기본 빌더에서 FROM으로 쓰면 허브 pull로 해석된다.
+          # BuildKit 추가 컨텍스트로 엔진 이미지 스토어의 동일 태그를 주입한다(apps/web Dockerfile의 WEB_NODE_DEPS_IMAGE=ci-deps와 대응).
+          build-contexts: |
+            ci-deps=docker-image://web-node-deps:ci
           build-args: |
-            WEB_NODE_DEPS_IMAGE=web-node-deps:ci
+            WEB_NODE_DEPS_IMAGE=ci-deps
             NEXT_PUBLIC_MFE_TEAM_REMOTE_URL=http://localhost:8888/mfe/team
             NEXT_PUBLIC_MFE_USAGE_REMOTE_URL=http://localhost:8888/mfe/usage
           tags: web-host:ci
