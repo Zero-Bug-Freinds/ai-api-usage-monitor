@@ -99,6 +99,7 @@ jobs:
               - '.github/workflows/**'
             team:
               - 'services/team-service/**'
+              - 'libs/identity-events/**'
             notification:
               - 'services/notification-service/**'
               - 'docker/backend-node-deps.Dockerfile'
@@ -106,6 +107,7 @@ jobs:
               - '.github/workflows/**'
             web_host:
               - 'apps/web/**'
+              - 'packages/team-workspace-cache/**'
             web_mfe:
               - 'services/usage-service/web-mfe/**'
               - 'services/team-service/web-mfe/**'
@@ -387,7 +389,9 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: gradle
-          cache-dependency-path: services/usage-service/build.gradle
+          cache-dependency-path: |
+            services/usage-service/build.gradle
+            libs/usage-events/build.gradle
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
       - name: Build and test
@@ -537,7 +541,9 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: gradle
-          cache-dependency-path: services/team-service/build.gradle
+          cache-dependency-path: |
+            services/team-service/build.gradle
+            libs/identity-events/build.gradle
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
       - name: Build and test
@@ -656,6 +662,7 @@ jobs:
       needs.changes.outputs.web_host == 'true'
       || needs.changes.outputs.web_shared == 'true'
       || needs.changes.outputs.workflows == 'true'
+      || needs.changes.outputs.web_mfe == 'true'
     env:
       NEXT_PRIVATE_LOCAL_WEBPACK: "true"
       NEXT_PUBLIC_MFE_TEAM_REMOTE_URL: "http://localhost:8888/mfe/team"
@@ -680,7 +687,7 @@ jobs:
           pnpm run build:web-host
       - name: Verify host remotes configuration
         run: |
-          node -e "const fs=require('node:fs');const p='apps/web/next.config.mjs';const c=fs.readFileSync(p,'utf8');for(const x of ['NextFederationPlugin','team@','usage@','remoteEntry.js']){if(!c.includes(x)){throw new Error('missing '+x+' in '+p)}}"
+          node -e "const fs=require('node:fs');const p='apps/web/next.config.mjs';const c=fs.readFileSync(p,'utf8');for(const x of ['NextFederationPlugin','team@','usage@','remoteEntry.js','team/TeamManagement','usage/TeamUsageDashboard']){if(!c.includes(x)){throw new Error('missing '+x+' in '+p)}}"
       - uses: docker/setup-buildx-action@v3
       - name: Docker image (web-node-deps base)
         id: docker_web_node_deps
