@@ -1,7 +1,8 @@
 # Single-domain edge for local compose.
-# Usage Next basePath=/dashboard, Billing basePath=/billing, Team basePath=/teams.
-# Team UI: /teams (and /teams/* except /teams/api/* BFF) proxies directly to web_host — not via identity_web.
-# /teams/api/* → team_web (BFF). /api/v1/* → api-gateway; default location / → identity_web.
+# Usage Next basePath=/dashboard, Billing basePath=/billing, Team basePath=/teams,
+# Notification basePath=/notifications, Agent basePath=/agent.
+# Team UI: /teams (and /teams/* except /teams/api/* BFF) proxies to web_host.
+# /teams/api/* -> team_web (BFF). /api/v1/* -> api-gateway; default location / -> identity_web.
 #
 # Deployment note:
 # - In production, inject GATEWAY_SHARED_SECRET from an external Secret Manager
@@ -56,6 +57,10 @@ http {
 
   upstream notification_web {
     server notification-web:3000;
+  }
+
+  upstream agent_web {
+    server agent-web:3000;
   }
 
   upstream api_gateway {
@@ -186,6 +191,24 @@ http {
 
     location ^~ /notifications/ {
       proxy_pass http://notification_web;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection $connection_upgrade;
+    }
+
+    location = /agent {
+      proxy_pass http://agent_web/agent;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection $connection_upgrade;
+    }
+
+    location = /agent/ {
+      proxy_pass http://agent_web/agent;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection $connection_upgrade;
+    }
+
+    location ^~ /agent/ {
+      proxy_pass http://agent_web;
       proxy_set_header Upgrade $http_upgrade;
       proxy_set_header Connection $connection_upgrade;
     }

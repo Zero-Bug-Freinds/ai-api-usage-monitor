@@ -58,6 +58,23 @@ export function anchorHrefForPublicPath(publicPath: string): string {
   return path
 }
 
+/**
+ * Cross-app sidebar links: on the identity host, paths like `/dashboard` are rewritten to other apps.
+ * When this app is served on its own port (e.g. agent-web :3005), relative paths would 404 — prefix
+ * {@link identityWebOrigin} when it is set and the shell is not already the identity app.
+ */
+function consoleCrossAppHref(profile: ConsoleProfile, publicPath: string): string {
+  const path = anchorHrefForPublicPath(publicPath)
+  if (profile === "identity") {
+    return path
+  }
+  const origin = identityWebOrigin()
+  if (!origin) {
+    return path
+  }
+  return `${origin}${path}`
+}
+
 export type ConsoleNavLinkSpec =
   | { kind: "next"; href: string }
   | { kind: "anchor"; href: string }
@@ -144,7 +161,7 @@ export function resolveConsoleNavLink(profile: ConsoleProfile, id: ConsoleNavId)
   }
 
   if (!ownsNavItemForSpaLink(profile, id)) {
-    return { kind: "anchor", href: anchorHrefForPublicPath(publicPath) }
+    return { kind: "anchor", href: consoleCrossAppHref(profile, publicPath) }
   }
   return { kind: "next", href: spaInternalHref(profile, id) }
 }
@@ -162,6 +179,23 @@ export function usageDashboardHref(): string {
  */
 export function identityWebOrigin(): string {
   return (process.env.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN ?? "").replace(/\/$/, "")
+}
+
+const NOTIFICATION_UNREAD_COUNT_PATH = "/notifications/api/notification/in-app-notifications/unread-count"
+
+/**
+ * Unread-count BFF lives under the notification app (or identity rewrites). On standalone
+ * micro-apps (e.g. agent-web), same-origin `/notifications/...` would 404 — use identity origin when set.
+ */
+export function notificationUnreadCountFetchUrl(profile: ConsoleProfile): string {
+  if (profile === "notification") {
+    return NOTIFICATION_UNREAD_COUNT_PATH
+  }
+  const origin = identityWebOrigin()
+  if (!origin) {
+    return NOTIFICATION_UNREAD_COUNT_PATH
+  }
+  return `${origin}${NOTIFICATION_UNREAD_COUNT_PATH}`
 }
 
 /**

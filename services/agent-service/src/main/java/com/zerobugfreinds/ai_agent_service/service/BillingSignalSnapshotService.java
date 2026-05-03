@@ -1,7 +1,7 @@
 package com.zerobugfreinds.ai_agent_service.service;
 
 import com.eevee.usage.events.UsageCostFinalizedEvent;
-import com.zerobugfreinds.ai_agent_service.dto.BillingBudgetThresholdReachedEvent;
+import com.zerobugfreinds.ai_agent_service.dto.BillingCostCorrectedEvent;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -27,8 +27,6 @@ public class BillingSignalSnapshotService {
 		if (apiKeyId == null || apiKeyId.isBlank()) {
 			return;
 		}
-		BillingKeySignal current = byApiKeyId.get(apiKeyId);
-		BudgetThresholdSnapshot threshold = current != null ? current.budgetThreshold() : null;
 
 		byApiKeyId.put(
 				apiKeyId,
@@ -41,44 +39,59 @@ public class BillingSignalSnapshotService {
 						event.finalizedAt(),
 						event.provider() != null ? event.provider().name() : null,
 						event.model(),
-						event.pricingRuleVersion(),
-						threshold
+						event.pricingRuleVersion()
 				)
 		);
 	}
 
-	public void upsertBudgetThreshold(
+	public void applyCostCorrection(
 			String apiKeyId,
 			String userId,
 			String teamId,
 			String subjectType,
-			BillingBudgetThresholdReachedEvent event
+			BillingCostCorrectedEvent event
 	) {
 		if (apiKeyId == null || apiKeyId.isBlank()) {
 			return;
 		}
 		BillingKeySignal current = byApiKeyId.get(apiKeyId);
-		BudgetThresholdSnapshot threshold = new BudgetThresholdSnapshot(
-				event.thresholdPct(),
-				event.monthlyTotalUsd(),
-				event.monthlyBudgetUsd(),
-				event.monthStart(),
-				event.occurredAt()
-		);
+
+		BigDecimal currentCost = current != null && current.latestEstimatedCostUsd() != null
+				? current.latestEstimatedCostUsd()
+				: BigDecimal.ZERO;
+		BigDecimal delta = event.appliedDeltaCostUsd() != null ? event.appliedDeltaCostUsd() : BigDecimal.ZERO;
+		BigDecimal correctedCost = currentCost.add(delta);
+		if (correctedCost.signum() < 0) {
+			correctedCost = BigDecimal.ZERO;
+		}
+
+		String nextUserId = userId != null && !userId.isBlank() ? userId : (current != null ? current.userId() : null);
+		String nextTeamId = teamId != null && !teamId.isBlank() ? teamId : (current != null ? current.teamId() : null);
+		String nextSubjectType = subjectType != null && !subjectType.isBlank()
+				? subjectType
+				: (current != null ? current.subjectType() : null);
+		String nextProvider = event.provider() != null && !event.provider().isBlank()
+				? event.provider()
+				: (current != null ? current.provider() : null);
+		String nextModel = event.model() != null && !event.model().isBlank()
+				? event.model()
+				: (current != null ? current.model() : null);
+		Instant nextFinalizedAt = event.occurredAt() != null
+				? event.occurredAt()
+				: (current != null ? current.latestFinalizedAt() : null);
 
 		byApiKeyId.put(
 				apiKeyId,
 				new BillingKeySignal(
 						apiKeyId,
-						userId,
-						teamId,
-						subjectType,
-						current != null ? current.latestEstimatedCostUsd() : null,
-						current != null ? current.latestFinalizedAt() : null,
-						current != null ? current.provider() : null,
-						current != null ? current.model() : null,
-						current != null ? current.pricingRuleVersion() : null,
-						threshold
+						nextUserId,
+						nextTeamId,
+						nextSubjectType,
+						correctedCost,
+						nextFinalizedAt,
+						nextProvider,
+						nextModel,
+						current != null ? current.pricingRuleVersion() : null
 				)
 		);
 	}
@@ -109,17 +122,7 @@ public class BillingSignalSnapshotService {
 			Instant latestFinalizedAt,
 			String provider,
 			String model,
-			String pricingRuleVersion,
-			BudgetThresholdSnapshot budgetThreshold
-	) {
-	}
-
-	public record BudgetThresholdSnapshot(
-			BigDecimal thresholdPct,
-			BigDecimal monthlyTotalUsd,
-			BigDecimal monthlyBudgetUsd,
-			java.time.LocalDate monthStart,
-			Instant occurredAt
+			String pricingRuleVersion
 	) {
 	}
 }

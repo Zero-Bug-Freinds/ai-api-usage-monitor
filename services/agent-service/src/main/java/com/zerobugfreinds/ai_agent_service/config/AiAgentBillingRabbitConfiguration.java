@@ -36,26 +36,26 @@ public class AiAgentBillingRabbitConfiguration {
 	}
 
 	@Bean
-	@ConditionalOnProperty(prefix = "ai-agent.rabbit.billing-budget", name = "enabled", havingValue = "true", matchIfMissing = true)
-	public TopicExchange aiAgentBillingBudgetExchange(AiAgentBillingRabbitProperties props) {
-		return new TopicExchange(props.billingBudget().exchange(), true, false);
+	@ConditionalOnProperty(prefix = "ai-agent.rabbit.billing-correction", name = "enabled", havingValue = "true", matchIfMissing = true)
+	public TopicExchange aiAgentBillingCorrectionExchange(AiAgentBillingRabbitProperties props) {
+		return new TopicExchange(props.billingCorrection().exchange(), true, false);
 	}
 
 	@Bean
-	@ConditionalOnProperty(prefix = "ai-agent.rabbit.billing-budget", name = "enabled", havingValue = "true", matchIfMissing = true)
-	public Queue aiAgentBillingBudgetQueue(AiAgentBillingRabbitProperties props) {
-		return new Queue(props.billingBudget().queue(), true);
+	@ConditionalOnProperty(prefix = "ai-agent.rabbit.billing-correction", name = "enabled", havingValue = "true", matchIfMissing = true)
+	public Queue aiAgentBillingCorrectionQueue(AiAgentBillingRabbitProperties props) {
+		return new Queue(props.billingCorrection().queue(), true);
 	}
 
 	@Bean
-	@ConditionalOnProperty(prefix = "ai-agent.rabbit.billing-budget", name = "enabled", havingValue = "true", matchIfMissing = true)
-	public Binding aiAgentBillingBudgetBinding(
-			Queue aiAgentBillingBudgetQueue,
-			TopicExchange aiAgentBillingBudgetExchange,
+	@ConditionalOnProperty(prefix = "ai-agent.rabbit.billing-correction", name = "enabled", havingValue = "true", matchIfMissing = true)
+	public Binding aiAgentBillingCorrectionBinding(
+			Queue aiAgentBillingCorrectionQueue,
+			TopicExchange aiAgentBillingCorrectionExchange,
 			AiAgentBillingRabbitProperties props
 	) {
-		return BindingBuilder.bind(aiAgentBillingBudgetQueue)
-				.to(aiAgentBillingBudgetExchange)
-				.with(props.billingBudget().routingKey());
+		return BindingBuilder.bind(aiAgentBillingCorrectionQueue)
+				.to(aiAgentBillingCorrectionExchange)
+				.with(props.billingCorrection().routingKey());
 	}
 }

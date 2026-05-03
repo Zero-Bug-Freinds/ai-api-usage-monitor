@@ -26,7 +26,7 @@ public record BudgetForecastRequest(
 		@NotNull(message = "averageDailySpendUsd는 필수입니다")
 		@DecimalMin(value = "0.0", inclusive = false, message = "averageDailySpendUsd는 0보다 커야 합니다")
 		BigDecimal averageDailySpendUsd,
-		@NotNull(message = "billingCycleEndDate는 필수입니다")
+		/** When null, billing-cycle metrics in the response are null (no billing-cycle event / not configured). */
 		LocalDate billingCycleEndDate,
 		List<BigDecimal> recentDailySpendUsd
 ) {

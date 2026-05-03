@@ -22,7 +22,7 @@ import { Button, cn } from "@ai-usage/ui"
 import { ConsoleInternalNavLink } from "./console-internal-nav-link"
 import type { ConsoleNavId, ConsoleProfile } from "./console-nav"
 import { CONSOLE_MAIN_NAV_ORDER, CONSOLE_NAV } from "./console-nav"
-import { isConsoleNavActive, resolveConsoleNavLink } from "./console-nav"
+import { isConsoleNavActive, notificationUnreadCountFetchUrl, resolveConsoleNavLink } from "./console-nav"
 
 type TeamSidebarItem = {
   id: string
@@ -165,7 +165,7 @@ export function ConsoleSidebarInner({
 
     async function fetchUnreadCount() {
       try {
-        const res = await fetch("/notifications/api/notification/in-app-notifications/unread-count", {
+        const res = await fetch(notificationUnreadCountFetchUrl(profile), {
           method: "GET",
           credentials: "include",
           cache: "no-store",
@@ -196,7 +196,7 @@ export function ConsoleSidebarInner({
       cancelled = true
       if (timer) clearInterval(timer)
     }
-  }, [])
+  }, [profile])
 
   function clearLocalStoragePreservingKeys() {
     if (typeof localStorage === "undefined") return

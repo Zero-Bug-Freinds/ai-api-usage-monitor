@@ -10,12 +10,6 @@ type IdentitySnapshot = {
   monthlyBudgetUsd?: number | null
 }
 
-type UserContextSnapshot = {
-  userId: number
-  activeTeamId?: number | null
-  role?: string | null
-}
-
 type TeamApiKeySnapshot = {
   teamId: number
   teamName?: string | null
@@ -28,19 +22,24 @@ type TeamApiKeySnapshot = {
   monthlyBudgetUsd?: number | null
 }
 
-type TeamSnapshot = {
-  teamId: number
-  teamName?: string | null
-}
-
 type BillingSignal = {
   apiKeyId: string
   latestEstimatedCostUsd?: number | null
-  budgetThreshold?: {
-    thresholdPct?: number | null
-    monthlyTotalUsd?: number | null
-    monthlyBudgetUsd?: number | null
-  } | null
+}
+
+type UsagePredictionSignal = {
+  teamId?: string | null
+  userId?: string | null
+  averageDailySpendUsd7d?: number | null
+  averageDailyTokenUsage7d?: number | null
+  recentDailySpendUsd?: number[] | null
+}
+
+type BudgetStats = {
+  currentSpendUsd: number
+  remainingBudgetUsd: number
+  budgetUsagePercent: number
+  isBudgetExceeded: boolean
 }
 
 type TeamApiResponse<T> = {
@@ -63,12 +62,13 @@ type TeamBillingSummary = {
 }
 
 type TeamCatalog = {
-  teams: TeamSnapshot[]
+  teams: Array<{ teamId: number; teamName?: string | null }>
   keys: TeamApiKeySnapshot[]
 }
 
 type IdentityBudgetByKey = {
   externalApiKeyId?: number | string
+  apiKeyId?: number | string
   provider?: string | null
   alias?: string | null
   monthlyBudgetUsd?: number | null
@@ -76,7 +76,12 @@ type IdentityBudgetByKey = {
 
 type IdentityBudgetResponse = {
   monthlyBudgetsByKey?: IdentityBudgetByKey[] | null
+  data?: {
+    monthlyBudgetsByKey?: IdentityBudgetByKey[] | null
+  } | null
 }
+
+const INTERNAL_FETCH_TIMEOUT_MS = 3000
 
 function backendOriginCandidates(): string[] {
   const configured = (process.env.AI_AGENT_SERVICE_INTERNAL_ORIGIN ?? "").trim().replace(/\/$/, "")
@@ -87,10 +92,11 @@ function backendOriginCandidates(): string[] {
 function identityServiceOriginCandidates(): string[] {
   const configured = (process.env.IDENTITY_SERVICE_INTERNAL_ORIGIN ?? "").trim().replace(/\/$/, "")
   const defaults = [
-    "http://localhost:8090",
+    "http://identity-service:8080",
     "http://host.docker.internal:8090",
-    "http://localhost:8080",
+    "http://localhost:8090",
     "http://host.docker.internal:8080",
+    "http://localhost:8080",
     "http://identity-service:8080",
   ]
   return Array.from(new Set([configured, ...defaults].filter((value) => value.length > 0)))
@@ -102,31 +108,64 @@ function teamServiceOriginCandidates(): string[] {
   return Array.from(new Set([configured, ...defaults].filter((value) => value.length > 0)))
 }
 
-async function fetchJsonWithFallback<T>(path: string): Promise<T[]> {
+async function fetchJsonArray<T>(origin: string, path: string): Promise<T[]> {
+  try {
+    const response = await fetchWithTimeout(`${origin}${path}`)
+    if (!response.ok) return []
+    return ((await response.json()) as T[]) ?? []
+  } catch {
+    return []
+  }
+}
+
+async function resolveBackendOrigin(): Promise<string | null> {
   const origins = backendOriginCandidates()
   for (const origin of origins) {
     try {
-      const response = await fetch(`${origin}${path}`, { cache: "no-store" })
-      if (!response.ok) continue
-      return ((await response.json()) as T[]) ?? []
+      const response = await fetchWithTimeout(`${origin}/api/v1/agents/identity-api-keys`)
+      if (response.ok) {
+        return origin
+      }
     } catch {
       // Try next origin candidate.
     }
   }
-  return []
+  return null
+}
+
+async function fetchWithTimeout(url: string): Promise<Response> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), INTERNAL_FETCH_TIMEOUT_MS)
+  try {
+    return await fetch(url, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+  } finally {
+    clearTimeout(timeout)
+  }
 }
 
 function userIdFromHeaders(request: Request): string {
-  const candidates = ["x-user-id", "X-User-Id", "x-userid", "X-Userid"]
+  const candidates = [
+    "x-user-id",
+    "X-User-Id",
+    "x-userid",
+    "X-Userid",
+    "x-platform-user-id",
+    "X-Platform-User-Id",
+    "x-platform-userid",
+    "X-Platform-Userid",
+  ]
   for (const header of candidates) {
     const value = request.headers.get(header)
     if (value && value.trim().length > 0) {
       return value.trim()
     }
   }
-  const fallbackUserId = (process.env.AI_AGENT_FALLBACK_USER_ID ?? "").trim()
+  const fallbackUserId = (process.env.AI_AGENT_FALLBACK_USER_ID ?? "1").trim()
   if (fallbackUserId.length > 0) return fallbackUserId
-  return ""
+  return "1"
 }
 
 function userIdAsNumber(request: Request): number | null {
@@ -141,6 +180,20 @@ function userIdAsNumber(request: Request): number | null {
 function userIdentifierFromHeaders(request: Request): { userId: number | null; email: string | null } {
   const raw = userIdFromHeaders(request).trim()
   if (!raw) {
+    const emailHeaders = [
+      "x-user-email",
+      "X-User-Email",
+      "x-email",
+      "X-Email",
+      "x-user-name",
+      "X-User-Name",
+    ]
+    for (const header of emailHeaders) {
+      const value = request.headers.get(header)?.trim()
+      if (value && value.includes("@")) {
+        return { userId: null, email: value }
+      }
+    }
     return { userId: null, email: null }
   }
   const numeric = Number(raw)
@@ -156,16 +209,10 @@ function userIdentifierFromHeaders(request: Request): { userId: number | null; e
 function resolveCurrentUserId(
   request: Request,
   keys: IdentitySnapshot[],
-  userContexts: UserContextSnapshot[],
 ): number | null {
   const fromHeader = userIdAsNumber(request)
   if (fromHeader != null) {
     return fromHeader
-  }
-
-  const fromContext = userContexts.find((item) => Number.isFinite(item.userId) && item.userId > 0)?.userId ?? null
-  if (fromContext != null) {
-    return fromContext
   }
 
   const fromKeys = keys.find((item) => Number.isFinite(item.userId) && item.userId > 0)?.userId ?? null
@@ -192,10 +239,10 @@ async function fetchIdentityBudgetKeys(
   for (const query of queries) {
     for (const origin of identityServiceOriginCandidates()) {
       try {
-        const response = await fetch(`${origin}${query}`, { cache: "no-store" })
+        const response = await fetchWithTimeout(`${origin}${query}`)
         if (!response.ok) continue
         const payload = (await response.json()) as IdentityBudgetResponse
-        const keys = payload.monthlyBudgetsByKey ?? []
+        const keys = payload.monthlyBudgetsByKey ?? payload.data?.monthlyBudgetsByKey ?? []
         if (keys.length > 0) {
           return keys
         }
@@ -207,22 +254,22 @@ async function fetchIdentityBudgetKeys(
   return []
 }
 
-async function fetchTeamCatalogFromTeamService(request: Request): Promise<TeamCatalog> {
-  const userId = userIdFromHeaders(request)
+async function fetchTeamCatalogFromTeamService(request: Request, catalogUserId?: string): Promise<TeamCatalog> {
+  const userId = (catalogUserId ?? "").trim() || userIdFromHeaders(request)
   if (!userId) {
     return { teams: [], keys: [] }
   }
 
   for (const origin of teamServiceOriginCandidates()) {
     try {
-      const teamListResponse = await fetch(`${origin}/internal/teams/users/${encodeURIComponent(userId)}/billing-summaries`, {
-        cache: "no-store",
-      })
+      const teamListResponse = await fetchWithTimeout(
+        `${origin}/internal/teams/users/${encodeURIComponent(userId)}/billing-summaries`,
+      )
       if (!teamListResponse.ok) continue
 
       const teamListPayload = (await teamListResponse.json()) as TeamApiResponse<TeamBillingSummary[]>
       const summaries = teamListPayload.data ?? []
-      const teams: TeamSnapshot[] = []
+      const teams: Array<{ teamId: number; teamName?: string | null }> = []
       const keys: TeamApiKeySnapshot[] = []
 
       for (const summary of summaries) {
@@ -275,21 +322,36 @@ function normalizeTeamName(value: string | null | undefined, teamId: number): st
   return `Team ${teamId}`
 }
 
+function buildBudgetStats(monthlyBudgetUsd: number, currentSpendUsd: number): BudgetStats {
+  const normalizedBudget = monthlyBudgetUsd > 0 ? monthlyBudgetUsd : 0
+  const normalizedSpend = currentSpendUsd > 0 ? currentSpendUsd : 0
+  const remainingBudgetUsd = Math.max(normalizedBudget - normalizedSpend, 0)
+  const budgetUsagePercent = normalizedBudget > 0 ? (normalizedSpend / normalizedBudget) * 100 : 0
+  return {
+    currentSpendUsd: normalizedSpend,
+    remainingBudgetUsd,
+    budgetUsagePercent: Math.max(budgetUsagePercent, 0),
+    isBudgetExceeded: normalizedBudget > 0 && normalizedSpend >= normalizedBudget,
+  }
+}
+
 export async function GET(request: Request) {
   try {
-    const [keys, billingSignals, userContexts, snapshotTeamApiKeys, teamSnapshots] = await Promise.all([
-      fetchJsonWithFallback<IdentitySnapshot>("/api/v1/agents/identity-api-keys"),
-      fetchJsonWithFallback<BillingSignal>("/api/v1/agents/billing-signals"),
-      fetchJsonWithFallback<UserContextSnapshot>("/api/v1/agents/user-contexts"),
-      fetchJsonWithFallback<TeamApiKeySnapshot>("/api/v1/agents/team-api-keys"),
-      fetchJsonWithFallback<TeamSnapshot>("/api/v1/agents/teams"),
-    ])
-    const teamCatalog = await fetchTeamCatalogFromTeamService(request)
+    const backendOrigin = await resolveBackendOrigin()
+    const [keys, billingSignals, usagePredictionSignals, snapshotTeamApiKeys] = backendOrigin
+      ? await Promise.all([
+          fetchJsonArray<IdentitySnapshot>(backendOrigin, "/api/v1/agents/identity-api-keys"),
+          fetchJsonArray<BillingSignal>(backendOrigin, "/api/v1/agents/billing-signals"),
+          fetchJsonArray<UsagePredictionSignal>(backendOrigin, "/api/v1/agents/usage-prediction-signals"),
+          fetchJsonArray<TeamApiKeySnapshot>(backendOrigin, "/api/v1/agents/team-api-keys"),
+        ])
+      : [[], [], [], []]
     const headerIdentifier = userIdentifierFromHeaders(request)
-    const currentUserId = resolveCurrentUserId(request, keys, userContexts)
+    const currentUserId = resolveCurrentUserId(request, keys)
+    const teamCatalogUserId =
+      currentUserId != null ? String(currentUserId) : userIdFromHeaders(request)
+    const teamCatalog = await fetchTeamCatalogFromTeamService(request, teamCatalogUserId)
     const keysForCurrentUser = currentUserId == null ? [] : keys.filter((key) => key.userId === currentUserId)
-    const userContextsForCurrentUser =
-      currentUserId == null ? [] : userContexts.filter((context) => context.userId === currentUserId)
 
     const teamApiKeys = teamCatalog.keys.length > 0 ? teamCatalog.keys : snapshotTeamApiKeys
     const fallbackEmails = Array.from(
@@ -300,56 +362,99 @@ export async function GET(request: Request) {
       ),
     )
     const billingByKeyId = new Map<string, BillingSignal>(billingSignals.map((item) => [item.apiKeyId, item]))
-    const identityBudgetKeys = await fetchIdentityBudgetKeys(currentUserId, headerIdentifier.email, fallbackEmails)
+    const usageSignalByTeamAndUser = new Map<string, UsagePredictionSignal>()
+    const usageSignalByTeam = new Map<string, UsagePredictionSignal>()
+    for (const signal of usagePredictionSignals) {
+      const userId = (signal.userId ?? "").trim()
+      if (!userId) continue
+      const teamId = (signal.teamId ?? "").trim()
+      usageSignalByTeamAndUser.set(`${teamId}|${userId}`, signal)
+      if (teamId.length > 0 && !usageSignalByTeam.has(teamId)) {
+        usageSignalByTeam.set(teamId, signal)
+      }
+    }
+    const personalUsageSignal =
+      currentUserId == null ? null : usageSignalByTeamAndUser.get(`|${String(currentUserId)}`) ?? null
 
     const personalKeysFromSnapshot = keysForCurrentUser.map((key) => {
       const signal = billingByKeyId.get(String(key.keyId))
       const currentSpendUsd = toNumber(signal?.latestEstimatedCostUsd, 0)
-      const recentDailySpendUsd = currentSpendUsd > 0 ? [currentSpendUsd] : []
+      const monthlyBudgetUsd = toNumber(key.monthlyBudgetUsd, 0)
+      const budgetStats = buildBudgetStats(monthlyBudgetUsd, currentSpendUsd)
+      const averageDailySpendUsd = toNumber(personalUsageSignal?.averageDailySpendUsd7d, 0)
+      const averageDailyTokenUsage = toNumber(personalUsageSignal?.averageDailyTokenUsage7d, 0)
+      const recentDailySpendUsd = (personalUsageSignal?.recentDailySpendUsd ?? [])
+        .map((value) => toNumber(value, 0))
+        .filter((value) => value >= 0)
 
       return {
         keyId: key.keyId,
         alias: key.alias,
         provider: key.provider,
-        monthlyBudgetUsd: toNumber(key.monthlyBudgetUsd, 0),
+        monthlyBudgetUsd,
         status: key.status,
+        budgetStats,
         providerStats: {
-          currentSpendUsd,
-          averageDailySpendUsd: Math.max(currentSpendUsd / 7, 0.01),
-          averageDailyTokenUsage: 1,
+          currentSpendUsd: budgetStats.currentSpendUsd,
+          averageDailySpendUsd,
+          averageDailyTokenUsage,
           recentDailySpendUsd,
         },
       }
     })
+    const identityBudgetKeys =
+      personalKeysFromSnapshot.length > 0
+        ? []
+        : await fetchIdentityBudgetKeys(currentUserId, headerIdentifier.email, fallbackEmails)
     const personalKeysFromIdentity = identityBudgetKeys
       .map((key) => {
-        const keyId = toNumber(key.externalApiKeyId, 0)
+        const keyId = toNumber(key.externalApiKeyId ?? key.apiKeyId, 0)
         if (keyId <= 0) {
           return null
         }
         const signal = billingByKeyId.get(String(keyId))
         const currentSpendUsd = toNumber(signal?.latestEstimatedCostUsd, 0)
+        const monthlyBudgetUsd = toNumber(key.monthlyBudgetUsd, 0)
+        const budgetStats = buildBudgetStats(monthlyBudgetUsd, currentSpendUsd)
+        const averageDailySpendUsd = toNumber(personalUsageSignal?.averageDailySpendUsd7d, 0)
+        const averageDailyTokenUsage = toNumber(personalUsageSignal?.averageDailyTokenUsage7d, 0)
+        const recentDailySpendUsd = (personalUsageSignal?.recentDailySpendUsd ?? [])
+          .map((value) => toNumber(value, 0))
+          .filter((value) => value >= 0)
         return {
           keyId,
           alias: (key.alias ?? "").trim() || `key-${keyId}`,
           provider: (key.provider ?? "").trim() || "UNKNOWN",
-          monthlyBudgetUsd: toNumber(key.monthlyBudgetUsd, 0),
+          monthlyBudgetUsd,
           status: "ACTIVE",
+          budgetStats,
           providerStats: {
-            currentSpendUsd,
-            averageDailySpendUsd: Math.max(currentSpendUsd / 7, 0.01),
-            averageDailyTokenUsage: 1,
-            recentDailySpendUsd: currentSpendUsd > 0 ? [currentSpendUsd] : [],
+            currentSpendUsd: budgetStats.currentSpendUsd,
+            averageDailySpendUsd,
+            averageDailyTokenUsage,
+            recentDailySpendUsd,
           },
         }
       })
       .filter((item): item is NonNullable<typeof item> => item != null)
     const personalKeys = personalKeysFromIdentity.length > 0 ? personalKeysFromIdentity : personalKeysFromSnapshot
 
-    const activeTeamContext = userContextsForCurrentUser.find((ctx) => ctx.activeTeamId != null) ?? null
     const teamBoard = teamApiKeys.map((item) => {
       const signal = billingByKeyId.get(String(item.teamApiKeyId))
       const currentSpendUsd = toNumber(signal?.latestEstimatedCostUsd, 0)
+      const monthlyBudgetUsd = toNumber(item.monthlyBudgetUsd, 0)
+      const budgetStats = buildBudgetStats(monthlyBudgetUsd, currentSpendUsd)
+      const usageSignal =
+        currentUserId == null
+          ? usageSignalByTeam.get(String(item.teamId)) ?? null
+          : usageSignalByTeamAndUser.get(`${String(item.teamId)}|${String(currentUserId)}`) ??
+            usageSignalByTeam.get(String(item.teamId)) ??
+            null
+      const averageDailySpendUsd = toNumber(usageSignal?.averageDailySpendUsd7d, 0)
+      const averageDailyTokenUsage = toNumber(usageSignal?.averageDailyTokenUsage7d, 0)
+      const recentDailySpendUsd = (usageSignal?.recentDailySpendUsd ?? [])
+        .map((value) => toNumber(value, 0))
+        .filter((value) => value >= 0)
       return {
         teamId: item.teamId,
         teamName: normalizeTeamName(item.teamName, item.teamId),
@@ -359,12 +464,13 @@ export async function GET(request: Request) {
         alias: item.alias,
         provider: item.provider,
         status: item.status,
-        monthlyBudgetUsd: toNumber(signal?.budgetThreshold?.monthlyBudgetUsd, toNumber(item.monthlyBudgetUsd, 0)),
+        monthlyBudgetUsd,
+        budgetStats,
         providerStats: {
-          currentSpendUsd,
-          averageDailySpendUsd: Math.max(currentSpendUsd / 7, 0.01),
-          averageDailyTokenUsage: 1,
-          recentDailySpendUsd: currentSpendUsd > 0 ? [currentSpendUsd] : [],
+          currentSpendUsd: budgetStats.currentSpendUsd,
+          averageDailySpendUsd,
+          averageDailyTokenUsage,
+          recentDailySpendUsd,
         },
       }
     })
@@ -374,12 +480,6 @@ export async function GET(request: Request) {
       const teamId = toNumber(item.teamId, 0)
       if (teamId <= 0) continue
       const teamName = normalizeTeamName(item.teamName, teamId)
-      teamNameById.set(teamId, teamName)
-    }
-    for (const snapshot of teamSnapshots) {
-      const teamId = toNumber(snapshot.teamId, 0)
-      if (teamId <= 0) continue
-      const teamName = normalizeTeamName(snapshot.teamName, teamId)
       teamNameById.set(teamId, teamName)
     }
     for (const item of teamBoard) {
@@ -396,7 +496,8 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       data: personalKeys,
-      userContext: activeTeamContext,
+      currentUserId,
+      userContext: null,
       teamBoard,
       teamGroups,
     })

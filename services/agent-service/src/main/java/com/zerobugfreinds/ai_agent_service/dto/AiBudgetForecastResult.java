@@ -4,12 +4,13 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
-public record BudgetForecastResponse(
-		String healthStatus,
+/**
+ * Parsed Gemini JSON for budget forecast (primary path when API key is configured).
+ */
+public record AiBudgetForecastResult(
 		LocalDate predictedRunOutDate,
 		long daysUntilRunOut,
-		Long daysUntilBillingCycleEnd,
-		Long billingDateGapDays,
+		String healthStatus,
 		BigDecimal budgetUtilizationPercent,
 		String assistantMessage,
 		List<String> recommendedActions

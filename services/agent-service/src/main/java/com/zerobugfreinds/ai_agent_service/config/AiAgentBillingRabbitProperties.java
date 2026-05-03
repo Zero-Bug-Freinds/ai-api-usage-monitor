@@ -5,7 +5,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "ai-agent.rabbit")
 public record AiAgentBillingRabbitProperties(
 		Channel billingCost,
-		Channel billingBudget
+		Channel billingCorrection
 ) {
 	public record Channel(
 			boolean enabled,

@@ -219,6 +219,29 @@ services:
     ports:
       - "${IDENTITY_SERVICE_PORT:-8090}:8080"
 
+  agent-service:
+    profiles:
+      - web
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: services/agent-service/Dockerfile
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      AI_AGENT_SERVICE_PORT: 8096
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      AI_AGENT_GEMINI_API_KEY: ${AI_AGENT_GEMINI_API_KEY:-}
+      AI_AGENT_GEMINI_MODEL: ${AI_AGENT_GEMINI_MODEL:-gemini-1.5-flash}
+      AI_AGENT_GEMINI_BASE_URL: ${AI_AGENT_GEMINI_BASE_URL:-https://generativelanguage.googleapis.com}
+    # Host 8096 is already used by notification-service; expose agent-service on 8097 externally.
+    ports:
+      - "${AGENT_SERVICE_PORT:-8097}:8096"
+
   usage-service:
     restart: unless-stopped
     build:
@@ -355,8 +378,10 @@ services:
       dockerfile: services/agent-service/web/Dockerfile
       args:
         WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
+        NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${IDENTITY_WEB_PORT:-3000}}
     depends_on:
       - identity-web
+      - agent-service
     environment:
       NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${IDENTITY_WEB_PORT:-3000}}
       AI_AGENT_SERVICE_INTERNAL_ORIGIN: ${AI_AGENT_SERVICE_INTERNAL_ORIGIN:-http://host.docker.internal:8096}
@@ -558,6 +583,7 @@ services:
       - team-web-mfe
       - usage-web-mfe
       - notification-web
+      - agent-web
       - api-gateway-service
     environment:
       GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET:-}
