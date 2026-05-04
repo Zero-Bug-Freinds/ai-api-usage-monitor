@@ -2,6 +2,7 @@
 @source "../../../../packages/ui/src/**/*.{ts,tsx}";
 @source "../../../../packages/shell/src/**/*.{ts,tsx}";
 @source "../../../../services/team-service/web/src/**/*.{ts,tsx}";
+@source "../../../../services/team-service/web-mfe/src/**/*.{ts,tsx}";
 @source "../../../../services/usage-service/web-mfe/src/**/*.{ts,tsx}";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
