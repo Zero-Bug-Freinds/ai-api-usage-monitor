@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @source "../../../../../packages/ui/src/**/*.{ts,tsx}";
 @source "../../../../../packages/shell/src/**/*.{ts,tsx}";
+/* Task37-18: 앱·MF 공유 컴포넌트(`src/components/**`) 유틸 클래스가 빌드에 포함되도록 스캔 */
+@source "../**/*.{ts,tsx}";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
