@@ -5,8 +5,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zerobugfreinds.ai_agent_service.config.AiAgentGeminiProperties;
 import com.zerobugfreinds.ai_agent_service.dto.AiBudgetForecastResult;
 import com.zerobugfreinds.ai_agent_service.dto.BudgetForecastRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -21,6 +24,8 @@ import java.util.Optional;
 @Service
 public class GeminiAssistantService {
 
+	private static final Logger log = LoggerFactory.getLogger(GeminiAssistantService.class);
+	private static final String DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
 	private static final List<String> DEFAULT_ACTIONS = List.of("사용 패턴을 점검하고, 필요 시 예산 또는 모델 사용 한도를 조정하세요.");
 
 	private final AiAgentGeminiProperties properties;
@@ -37,6 +42,7 @@ public class GeminiAssistantService {
 	 */
 	public Optional<AiBudgetForecastResult> inferForecast(BudgetForecastRequest request) {
 		if (properties.apiKey() == null || properties.apiKey().isBlank()) {
+			log.warn("Gemini inference skipped: API key missing");
 			return Optional.empty();
 		}
 		try {
@@ -61,17 +67,25 @@ public class GeminiAssistantService {
 
 			String responseBody = callGenerateContent(prompt);
 			if (responseBody == null || responseBody.isBlank()) {
+				log.warn("Gemini inference returned empty response body");
 				return Optional.empty();
 			}
 			JsonNode root = objectMapper.readTree(responseBody);
 			JsonNode textNode = root.path("candidates").path(0).path("content").path("parts").path(0).path("text");
 			if (textNode.isMissingNode() || textNode.asText().isBlank()) {
+				String blockReason = root.path("promptFeedback").path("blockReason").asText("");
+				if (!blockReason.isBlank()) {
+					log.warn("Gemini response blocked: blockReason={}", blockReason);
+				} else {
+					log.warn("Gemini response missing text candidate: summary={}", summarizeResponseBody(responseBody));
+				}
 				return Optional.empty();
 			}
 			String rawJson = extractJsonPayload(textNode.asText().trim());
 			JsonNode forecast = objectMapper.readTree(rawJson);
 			return parseAiForecast(forecast);
-		} catch (Exception ignored) {
+		} catch (Exception ex) {
+			log.warn("Gemini inference failed: {}", ex.getMessage());
 			return Optional.empty();
 		}
 	}
@@ -93,17 +107,32 @@ public class GeminiAssistantService {
 		Map<String, Object> body = Map.of(
 				"contents", new Object[] {
 						Map.of("parts", new Object[] {Map.of("text", prompt)})
-				}
+				},
+				"generationConfig", Map.of(
+						"responseMimeType", "application/json",
+						"temperature", 0.2
+				)
 		);
 
 		String model = (properties.model() == null || properties.model().isBlank())
-				? "gemini-1.5-flash"
+				? DEFAULT_GEMINI_MODEL
 				: properties.model();
 		String baseUrl = (properties.baseUrl() == null || properties.baseUrl().isBlank())
 				? "https://generativelanguage.googleapis.com"
 				: properties.baseUrl();
-		String uri = baseUrl + "/v1beta/models/" + model + ":generateContent?key=" + properties.apiKey();
+		try {
+			return callGenerateContentWithModel(baseUrl, model, body);
+		} catch (RestClientResponseException ex) {
+			if (ex.getStatusCode().value() == 404 && !DEFAULT_GEMINI_MODEL.equals(model)) {
+				log.warn("Gemini model {} not found. Retrying with fallback model {}", model, DEFAULT_GEMINI_MODEL);
+				return callGenerateContentWithModel(baseUrl, DEFAULT_GEMINI_MODEL, body);
+			}
+			throw ex;
+		}
+	}
 
+	private String callGenerateContentWithModel(String baseUrl, String model, Map<String, Object> body) {
+		String uri = baseUrl + "/v1beta/models/" + model + ":generateContent?key=" + properties.apiKey();
 		return RestClient.create()
 				.post()
 				.uri(uri)
@@ -220,5 +249,13 @@ public class GeminiAssistantService {
 			}
 		}
 		return t;
+	}
+
+	private static String summarizeResponseBody(String body) {
+		String compact = body.replaceAll("\\s+", " ").trim();
+		if (compact.length() <= 280) {
+			return compact;
+		}
+		return compact.substring(0, 280) + "...";
 	}
 }
