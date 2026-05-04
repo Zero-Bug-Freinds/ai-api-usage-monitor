@@ -62,8 +62,8 @@ export function TeamPageContent() {
   const teamMfResetKey = `${viewTeamId}|${teams.length}`;
 
   return (
-    <div className="flex min-h-0 w-full flex-1 flex-col gap-0 md:flex-row md:gap-6">
-      <aside className="team-team-mf-slot shrink-0 border-b border-zinc-200 bg-gray-50 md:sticky md:top-16 md:max-h-[calc(100vh-5rem)] md:self-start md:overflow-y-auto md:border-b-0 md:border-r md:border-zinc-200">
+    <div className="flex min-h-0 min-w-0 w-full flex-1 flex-col gap-0 md:flex-row md:gap-6">
+      <aside className="team-team-mf-slot flex min-h-0 w-full max-w-full shrink-0 flex-col overflow-x-hidden border-b border-zinc-200 bg-gray-50 md:sticky md:top-16 md:w-96 md:max-w-[24rem] md:max-h-[calc(100vh-5rem)] md:shrink-0 md:self-start md:overflow-y-auto md:overflow-x-hidden md:border-b-0 md:border-r md:border-zinc-200">
         {mfChunkAllowed ? (
           <RemoteErrorBoundary
             resetKey={teamMfResetKey}
