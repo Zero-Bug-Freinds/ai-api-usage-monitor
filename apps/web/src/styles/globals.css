@@ -4,14 +4,22 @@
 @source "../../../../services/team-service/web/src/**/*.{ts,tsx}";
 @source "../../../../services/team-service/web-mfe/src/**/*.{ts,tsx}";
 @source "../../../../services/usage-service/web-mfe/src/**/*.{ts,tsx}";
+/* web-host 로컬 페이지·컴포넌트 유틸 누락 방지(Task37-20) */
+@source "../**/*.{ts,tsx}";
 @import "@ai-usage/ui/styles/design-system.css";
 
 /**
- * Host / Remote 격리 (Task37-1): stacking·paint 경계로 MF가 Host 글로벌 토큰을 덮어쓰는 범위를 제한.
+ * Host / Remote 격리(Task37-1): 전체 셸만 isolate. `host-remote-slot`에까지 두면 리모트 페인팅·텍스트 상속이 어색해질 수 있어 제외(Task37-20).
  */
-.host-shell,
-.host-remote-slot {
+.host-shell {
   isolation: isolate;
+}
+
+@layer base {
+  /* next/font Geist 변수가 `html`에 붙은 뒤 Tailwind `font-sans`가 실제 패밀리를 쓰도록 연결 */
+  html {
+    --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  }
 }
 
 /**
