@@ -21,6 +21,7 @@
 - `POST /budget-forecast-assistant`
   - 입력: `BudgetForecastRequest`
   - 출력: `BudgetForecastResponse`
+  - 동작: Gemini 예측 결과를 우선 사용하며, AI 결과 생성 실패 시 서비스 내부의 수식 기반 fallback 결과를 반환한다.
 - `GET /identity-api-keys`
   - 설명: 전체 개인 API Key 스냅샷 조회
 - `GET /identity-api-keys/{userId}`
@@ -29,8 +30,8 @@
   - 설명: 팀 API Key 스냅샷 조회
 - `GET /billing-signals?teamId={id}`
   - 설명: 비용 최종화/예산 임계 이벤트 기반 신호 조회
-- `GET /user-contexts`
-  - 설명: 사용자 컨텍스트(active team, role) 스냅샷 조회
+- `GET /usage-prediction-signals?teamId={id}`
+  - 설명: `usage.prediction.signals` 기반 일평균 지출/토큰 신호 조회
 - `GET /debug/events?limit={n}`
   - 설명: 최근 수신 이벤트 디버그 조회
 
@@ -48,6 +49,7 @@
 - Billing 이벤트(`billing.events`)
   - `usage.cost.finalized`
   - `billing.budget.threshold.reached`
+  - `billing.cost.corrected`
 
 구체 큐/라우팅키는 `services/agent-service/src/main/resources/application.properties`를 따른다.
 
@@ -58,10 +60,20 @@
 - `GET /agent/api/v1/agents/available-context`
   - 개인 API Key(alias 중심) + 팀 API Key + Billing Signal + User Context를 합쳐 UI에 전달
   - 개인 API Key는 우선 agent 이벤트 스냅샷을 사용하고, 비어 있을 때 Identity 예산 API(`/api/identity/v1/users/{userId}/budget` 또는 이메일 기반 `/api/identity/v1/users/budget`)를 fallback으로 조회한다.
-  - 로그인 사용자 식별 헤더(`x-user-id`)가 숫자가 아니거나 누락된 경우에도 컨텍스트/팀 owner 정보를 기반으로 사용자 식별을 보완한다.
+  - 로그인 세션(`/api/auth/session`)에서 이메일을 파싱해 내부 호출 시 `x-user-email` 헤더로 전달하고, 식별 헤더(`x-user-id`)가 없으면 `AI_AGENT_FALLBACK_USER_ID`를 사용한다.
+  - Team 서비스 조회 결과가 비어 있으면 다음 사용자 식별자 후보(헤더/세션/환경값)를 순차 시도한다.
   - 팀명은 괄호 메타정보를 제거한 표시명으로 정규화한다. 예: `Platform Team (T-12)` -> `Platform Team`
 - `POST /agent/api/v1/agents/budget-forecast-assistant`
   - 백엔드 `budget-forecast-assistant` API 프록시
+  - 세션 이메일을 파싱해 내부 호출 시 `x-user-email` 헤더로 전달한다.
+  - 내부 호출 타임아웃은 20초로 설정되어 Gemini 응답 지연 시 조기 실패를 줄인다.
+
+웹 UI에서 API Key별 "다음 결제일"은 브라우저 `localStorage`에 저장한다.
+
+- 저장 키(prefix): `agent.manualBillingCycleEnd.`
+- 개인 키: `agent.manualBillingCycleEnd.personal.{keyId}`
+- 팀 키: `agent.manualBillingCycleEnd.team.{teamId}.{teamApiKeyId}`
+- DB 저장/동기화 없이 현재 브라우저에서만 유지된다.
 
 내부 백엔드 오리진은 `AI_AGENT_SERVICE_INTERNAL_ORIGIN` 환경변수로 지정한다.
 
@@ -70,7 +82,7 @@
 - 포트/LLM
   - `AI_AGENT_SERVICE_PORT` (default: `8096`)
   - `AI_AGENT_GEMINI_API_KEY`
-  - `AI_AGENT_GEMINI_MODEL` (default: `gemini-1.5-flash`)
+  - `AI_AGENT_GEMINI_MODEL` (default: `gemini-2.5-flash`)
   - `AI_AGENT_GEMINI_BASE_URL`
 - RabbitMQ
   - `SPRING_RABBITMQ_HOST`, `SPRING_RABBITMQ_PORT`
@@ -80,6 +92,8 @@
   - `AI_AGENT_SERVICE_INTERNAL_ORIGIN`
   - `IDENTITY_SERVICE_INTERNAL_ORIGIN` (optional, 미지정 시 `localhost:8090` 등 기본 후보 사용)
   - `TEAM_SERVICE_INTERNAL_ORIGIN` (optional)
+  - `AI_AGENT_FALLBACK_USER_ID` (optional, 미설정 시 `"1"`)
+  - `AI_AGENT_TEAM_CATALOG_USER_ID` (optional override, 기본 미사용)
 
 ## 6. 운영상 주의점
 
@@ -87,6 +101,8 @@
 - `debug/events`는 운영 환경에서 접근 통제와 민감정보 마스킹 정책을 반드시 적용해야 한다.
 - 컨텍스트 집계는 이벤트 도착 순서와 시점에 따라 일시적으로 비어 있을 수 있다.
 - 개인 키 이벤트가 아직 유입되지 않은 초기 상태에서는 개인 키 목록이 비어 보일 수 있으며, 이때는 Identity fallback 조회 성공 여부(오리진/포트/권한 헤더)를 함께 점검해야 한다.
+- `docker compose --profile web up` 실행 시 `agent-web`은 `agent-service`, `team-service` 의존으로 함께 올라오도록 구성되어야 한다. 내부 오리진 기본값은 컨테이너 DNS(`http://agent-service:8096`)를 사용한다.
+- `web-edge`에서 `/agent`, `/agent/`, `/agent/*`는 `agent-web`으로 프록시되어야 한다. 템플릿 변경 후에는 `web-edge` 재기동/재생성이 필요하다.
 
 ## 7. 최근 반영 사항 (2026-04-30)
 
@@ -97,3 +113,8 @@
 - `available-context` 응답의 팀명은 괄호 포함 부가 텍스트를 제거한 값으로 통일했다.
 - 개인 API 키 목록 UI는 alias 중심으로 단순화했고, `available-context`의 불필요한 보조 필드(note/디버그 파생 값)를 제거했다.
 - `available-context`는 개인 키 스냅샷이 비어 있을 때 Identity 내부 API 조회로 보완하도록 확장했다.
+- Gemini 기본 모델/환경 기본값을 `gemini-2.5-flash`로 상향했다.
+- `budget-forecast-assistant` BFF에 내부 호출 타임아웃 분리(오리진 probe 3초, 예측 호출 20초)를 반영했다.
+- BFF(`available-context`, `budget-forecast-assistant`)에서 로그인 세션 이메일을 파싱해 `x-user-email` 헤더를 내부 백엔드 호출에 전달하도록 변경했다.
+- Agent UI 분석 액션을 개인 키/팀 키 버튼으로 분리했다.
+- API Key별 "다음 결제일" 입력값을 브라우저 `localStorage`에 저장/복원하도록 정리했다.

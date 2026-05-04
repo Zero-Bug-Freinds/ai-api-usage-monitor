@@ -1,5 +1,6 @@
 package com.zerobugfreinds.ai_agent_service.service;
 
+import com.zerobugfreinds.ai_agent_service.dto.AiBudgetForecastResult;
 import com.zerobugfreinds.ai_agent_service.dto.BudgetForecastRequest;
 import com.zerobugfreinds.ai_agent_service.dto.BudgetForecastResponse;
 import org.springframework.stereotype.Service;
@@ -10,6 +11,7 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 public class BudgetForecastService {
@@ -25,6 +27,34 @@ public class BudgetForecastService {
 	}
 
 	public BudgetForecastResponse forecast(BudgetForecastRequest request) {
+		Optional<AiBudgetForecastResult> ai = geminiAssistantService.inferForecast(request);
+		if (ai.isPresent()) {
+			AiBudgetForecastResult result = ai.get();
+			Long daysUntilBillingCycleEnd = null;
+			Long billingDateGapDays = null;
+			if (request.billingCycleEndDate() != null) {
+				daysUntilBillingCycleEnd = Math.max(
+						0,
+						ChronoUnit.DAYS.between(LocalDate.now(), request.billingCycleEndDate())
+				);
+				billingDateGapDays = ChronoUnit.DAYS.between(result.predictedRunOutDate(), request.billingCycleEndDate());
+			}
+
+			return new BudgetForecastResponse(
+					result.healthStatus(),
+					result.predictedRunOutDate(),
+					result.daysUntilRunOut(),
+					daysUntilBillingCycleEnd,
+					billingDateGapDays,
+					result.budgetUtilizationPercent(),
+					result.assistantMessage(),
+					result.recommendedActions()
+			);
+		}
+		return deterministicForecast(request);
+	}
+
+	private BudgetForecastResponse deterministicForecast(BudgetForecastRequest request) {
 		BigDecimal utilizationPercent = calculateUtilizationPercent(request.currentSpendUsd(), request.monthlyBudgetUsd());
 		boolean spendSpike = isSpendSpike(request.recentDailySpendUsd());
 
@@ -32,17 +62,19 @@ public class BudgetForecastService {
 		double daysByTokens = request.remainingTokens() / request.averageDailyTokenUsage().doubleValue();
 		long daysUntilRunOut = Math.max(0, (long) Math.ceil(Math.min(daysByBudget, daysByTokens)));
 		LocalDate predictedRunOutDate = LocalDate.now().plusDays(daysUntilRunOut);
-		long daysUntilBillingCycleEnd = Math.max(0, ChronoUnit.DAYS.between(LocalDate.now(), request.billingCycleEndDate()));
-		long billingDateGapDays = ChronoUnit.DAYS.between(predictedRunOutDate, request.billingCycleEndDate());
+		Long daysUntilBillingCycleEnd = null;
+		Long billingDateGapDays = null;
+		if (request.billingCycleEndDate() != null) {
+			daysUntilBillingCycleEnd = Math.max(
+					0,
+					ChronoUnit.DAYS.between(LocalDate.now(), request.billingCycleEndDate())
+			);
+			billingDateGapDays = ChronoUnit.DAYS.between(predictedRunOutDate, request.billingCycleEndDate());
+		}
 
 		String healthStatus = resolveHealthStatus(utilizationPercent, billingDateGapDays, spendSpike);
 		List<String> actions = recommendActions(healthStatus, billingDateGapDays, spendSpike);
-		String assistantMessage = geminiAssistantService.createMessage(
-				request,
-				healthStatus,
-				daysUntilRunOut,
-				billingDateGapDays
-		);
+		String assistantMessage = deterministicAssistantMessage(healthStatus, daysUntilRunOut, billingDateGapDays);
 
 		return new BudgetForecastResponse(
 				healthStatus,
@@ -54,6 +86,14 @@ public class BudgetForecastService {
 				assistantMessage,
 				actions
 		);
+	}
+
+	private static String deterministicAssistantMessage(String healthStatus, long daysUntilRunOut, Long billingDateGapDays) {
+		String gapPart = billingDateGapDays != null
+				? "결제일과의 차이는 " + billingDateGapDays + "일입니다."
+				: "결제일과의 차이는 null (결제일 필요)입니다.";
+		return "현재 상태는 " + healthStatus + "이며, 현재 추세라면 약 " + daysUntilRunOut
+				+ "일 뒤 예산 또는 토큰이 소진될 수 있습니다. " + gapPart;
 	}
 
 	private static BigDecimal calculateUtilizationPercent(BigDecimal currentSpendUsd, BigDecimal monthlyBudgetUsd) {
@@ -92,8 +132,9 @@ public class BudgetForecastService {
 		return ratio.compareTo(BigDecimal.valueOf(1.5)) >= 0;
 	}
 
-	private static String resolveHealthStatus(BigDecimal utilizationPercent, long billingDateGapDays, boolean spendSpike) {
-		if (utilizationPercent.compareTo(CRITICAL_THRESHOLD) >= 0 || billingDateGapDays >= 0) {
+	private static String resolveHealthStatus(BigDecimal utilizationPercent, Long billingDateGapDays, boolean spendSpike) {
+		if (utilizationPercent.compareTo(CRITICAL_THRESHOLD) >= 0
+				|| (billingDateGapDays != null && billingDateGapDays >= 0)) {
 			return "CRITICAL";
 		}
 		if (utilizationPercent.compareTo(WARNING_THRESHOLD) >= 0 || spendSpike) {
@@ -102,12 +143,12 @@ public class BudgetForecastService {
 		return "HEALTHY";
 	}
 
-	private static List<String> recommendActions(String healthStatus, long billingDateGapDays, boolean spendSpike) {
+	private static List<String> recommendActions(String healthStatus, Long billingDateGapDays, boolean spendSpike) {
 		List<String> actions = new ArrayList<>();
 		if ("CRITICAL".equals(healthStatus)) {
 			actions.add("고비용 모델 사용을 즉시 제한하세요.");
 			actions.add("결제일 전 예산 증액 또는 선충전 검토가 필요합니다.");
-			if (billingDateGapDays >= 0) {
+			if (billingDateGapDays != null && billingDateGapDays >= 0) {
 				actions.add("현재 추세에서는 결제일 전에 소진될 가능성이 높습니다.");
 			}
 		} else if ("WARNING".equals(healthStatus)) {

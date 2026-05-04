@@ -11,35 +11,35 @@ import org.springframework.context.annotation.Configuration;
 
 @Configuration
 @ConditionalOnProperty(
-		prefix = "ai-agent.rabbit.team-domain",
+		prefix = "ai-agent.rabbit.daily-cumulative-tokens",
 		name = "enabled",
 		havingValue = "true",
 		matchIfMissing = true
 )
-public class AiAgentTeamDomainRabbitConfiguration {
+public class AiAgentDailyCumulativeTokensRabbitConfiguration {
 
 	@Bean
-	public TopicExchange aiAgentTeamDomainExchange(
-			@Value("${ai-agent.rabbit.team-domain.exchange}") String exchange
+	public TopicExchange aiAgentDailyCumulativeTokensExchange(
+			@Value("${ai-agent.rabbit.daily-cumulative-tokens.exchange}") String exchange
 	) {
 		return new TopicExchange(exchange, true, false);
 	}
 
 	@Bean
-	public Queue aiAgentTeamDomainQueue(
-			@Value("${ai-agent.rabbit.team-domain.queue}") String queue
+	public Queue aiAgentDailyCumulativeTokensQueue(
+			@Value("${ai-agent.rabbit.daily-cumulative-tokens.queue}") String queue
 	) {
 		return new Queue(queue, true);
 	}
 
 	@Bean
-	public Binding aiAgentTeamDomainBinding(
-			Queue aiAgentTeamDomainQueue,
-			TopicExchange aiAgentTeamDomainExchange,
-			@Value("${ai-agent.rabbit.team-domain.routing-key}") String routingKey
+	public Binding aiAgentDailyCumulativeTokensBinding(
+			Queue aiAgentDailyCumulativeTokensQueue,
+			TopicExchange aiAgentDailyCumulativeTokensExchange,
+			@Value("${ai-agent.rabbit.daily-cumulative-tokens.routing-key}") String routingKey
 	) {
-		return BindingBuilder.bind(aiAgentTeamDomainQueue)
-				.to(aiAgentTeamDomainExchange)
+		return BindingBuilder.bind(aiAgentDailyCumulativeTokensQueue)
+				.to(aiAgentDailyCumulativeTokensExchange)
 				.with(routingKey);
 	}
 }

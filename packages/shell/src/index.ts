@@ -9,6 +9,7 @@ export {
   anchorHrefForPublicPath,
   identityWebOrigin,
   isConsoleNavActive,
+  notificationUnreadCountFetchUrl,
   ownsNavItemForSpaLink,
   resolveConsoleNavLink,
   usageDashboardHref,

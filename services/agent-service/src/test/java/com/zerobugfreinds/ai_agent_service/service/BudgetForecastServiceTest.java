@@ -1,5 +1,6 @@
 package com.zerobugfreinds.ai_agent_service.service;
 
+import com.zerobugfreinds.ai_agent_service.dto.AiBudgetForecastResult;
 import com.zerobugfreinds.ai_agent_service.dto.BudgetForecastRequest;
 import com.zerobugfreinds.ai_agent_service.dto.BudgetForecastResponse;
 import org.junit.jupiter.api.BeforeEach;
@@ -9,6 +10,7 @@ import org.mockito.Mockito;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -22,13 +24,12 @@ class BudgetForecastServiceTest {
 	@BeforeEach
 	void setUp() {
 		geminiAssistantService = Mockito.mock(GeminiAssistantService.class);
-		when(geminiAssistantService.createMessage(any(), any(), any(Long.class), any(Long.class)))
-				.thenReturn("테스트 메시지");
+		when(geminiAssistantService.inferForecast(any())).thenReturn(Optional.empty());
 		budgetForecastService = new BudgetForecastService(geminiAssistantService);
 	}
 
 	@Test
-	void forecast_marksWarning_on80PercentBoundary() {
+	void forecast_fallsBackToDeterministic_whenAiResultMissing() {
 		BudgetForecastRequest request = baseRequest(
 				BigDecimal.valueOf(100),
 				BigDecimal.valueOf(80),
@@ -39,61 +40,72 @@ class BudgetForecastServiceTest {
 		);
 
 		BudgetForecastResponse response = budgetForecastService.forecast(request);
-
 		assertThat(response.healthStatus()).isEqualTo("WARNING");
-		assertThat(response.budgetUtilizationPercent()).isEqualByComparingTo("80.00");
+		assertThat(response.daysUntilRunOut()).isGreaterThanOrEqualTo(0);
 	}
 
 	@Test
-	void forecast_marksCritical_on100PercentBoundary() {
+	void forecast_usesAiForecast_whenGeminiReturnsPayload() {
+		LocalDate predicted = LocalDate.now().plusDays(9);
+		when(geminiAssistantService.inferForecast(any())).thenReturn(Optional.of(
+				new AiBudgetForecastResult(
+						predicted,
+						9,
+						"HEALTHY",
+						BigDecimal.valueOf(40.00),
+						"AI가 생성한 한 줄 요약",
+						List.of("AI 조치 1", "AI 조치 2")
+				)
+		));
+
 		BudgetForecastRequest request = baseRequest(
 				BigDecimal.valueOf(100),
-				BigDecimal.valueOf(100),
-				300_000L,
-				BigDecimal.valueOf(20_000),
-				BigDecimal.valueOf(8),
-				List.of(BigDecimal.valueOf(7), BigDecimal.valueOf(8), BigDecimal.valueOf(8), BigDecimal.valueOf(8))
+				BigDecimal.valueOf(40),
+				500_000L,
+				BigDecimal.valueOf(10_000),
+				BigDecimal.valueOf(3),
+				List.of(BigDecimal.ONE)
 		);
 
 		BudgetForecastResponse response = budgetForecastService.forecast(request);
 
-		assertThat(response.healthStatus()).isEqualTo("CRITICAL");
-		assertThat(response.daysUntilRunOut()).isEqualTo(0);
+		assertThat(response.predictedRunOutDate()).isEqualTo(predicted);
+		assertThat(response.daysUntilRunOut()).isEqualTo(9);
+		assertThat(response.healthStatus()).isEqualTo("HEALTHY");
+		assertThat(response.assistantMessage()).isEqualTo("AI가 생성한 한 줄 요약");
+		assertThat(response.recommendedActions()).containsExactly("AI 조치 1", "AI 조치 2");
+		assertThat(response.budgetUtilizationPercent()).isEqualByComparingTo("40.00");
 	}
 
 	@Test
-	void forecast_handlesZeroBudget_asCritical() {
-		BudgetForecastRequest request = baseRequest(
+	void forecast_withoutBillingCycleEndDate_returnsNullBillingMetrics_whenAiReturnsPayload() {
+		LocalDate predicted = LocalDate.now().plusDays(5);
+		when(geminiAssistantService.inferForecast(any())).thenReturn(Optional.of(
+				new AiBudgetForecastResult(
+						predicted,
+						5,
+						"WARNING",
+						BigDecimal.valueOf(72.12),
+						"AI 요약",
+						List.of("조치 1", "조치 2")
+				)
+		));
+
+		BudgetForecastRequest request = new BudgetForecastRequest(
+				"user@test.com",
 				BigDecimal.ZERO,
-				BigDecimal.ONE,
+				BigDecimal.ZERO,
 				200_000L,
 				BigDecimal.valueOf(10_000),
 				BigDecimal.valueOf(2),
-				List.of(BigDecimal.valueOf(1), BigDecimal.valueOf(2), BigDecimal.valueOf(2), BigDecimal.valueOf(2))
+				null,
+				List.of(BigDecimal.ONE)
 		);
 
 		BudgetForecastResponse response = budgetForecastService.forecast(request);
 
-		assertThat(response.healthStatus()).isEqualTo("CRITICAL");
-		assertThat(response.budgetUtilizationPercent()).isEqualByComparingTo("999");
-	}
-
-	@Test
-	void forecast_detectsSpendSpike_andMarksWarning() {
-		BudgetForecastRequest request = baseRequest(
-				BigDecimal.valueOf(200),
-				BigDecimal.valueOf(60),
-				500_000L,
-				BigDecimal.valueOf(25_000),
-				BigDecimal.valueOf(4),
-				List.of(BigDecimal.valueOf(3), BigDecimal.valueOf(3), BigDecimal.valueOf(4), BigDecimal.valueOf(9))
-		);
-
-		BudgetForecastResponse response = budgetForecastService.forecast(request);
-
-		assertThat(response.healthStatus()).isEqualTo("WARNING");
-		assertThat(response.recommendedActions())
-				.anyMatch(v -> v.contains("급증"));
+		assertThat(response.daysUntilBillingCycleEnd()).isNull();
+		assertThat(response.billingDateGapDays()).isNull();
 	}
 
 	private static BudgetForecastRequest baseRequest(
