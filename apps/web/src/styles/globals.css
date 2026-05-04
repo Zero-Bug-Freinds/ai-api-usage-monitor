@@ -14,7 +14,12 @@
   isolation: isolate;
 }
 
-/** 팀 호스트 좌측 MF(Task37-12): `TeamManagement` 슬롯 — paint·stacking 경계 분리 */
+/**
+ * 팀 호스트 좌측 MF(Task37-12, Task37-19): paint·stacking 분리 + 가로 팽창이 우측 대시보드를 침범하지 않도록
+ * intrinsic 폭 전파를 끊는다.
+ */
 .team-team-mf-slot {
   isolation: isolate;
+  min-width: 0;
+  max-width: 100%;
 }
