@@ -46,7 +46,9 @@ function toYyyyMm(monthStart: string): string | null {
 
 function thresholdKeyPart(thresholdPct: number): string {
   if (!Number.isFinite(thresholdPct)) return 'NaN';
-  return String(thresholdPct);
+  const pct = Math.round(thresholdPct * 100);
+  if (!Number.isFinite(pct) || pct < 0) return 'NaN';
+  return `pct${pct}`;
 }
 
 function hasText(value: string | undefined): value is string {

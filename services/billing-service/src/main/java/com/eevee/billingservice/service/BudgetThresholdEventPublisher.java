@@ -16,6 +16,7 @@ import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 
 @Component
@@ -23,19 +24,25 @@ public class BudgetThresholdEventPublisher {
 
     private static final Logger log = LoggerFactory.getLogger(BudgetThresholdEventPublisher.class);
 
-    /** Monthly spend / budget ratios at which one notification is emitted when first crossed (10% steps). */
-    private static final List<BigDecimal> DEFAULT_THRESHOLDS = List.of(
-            new BigDecimal("0.1"),
-            new BigDecimal("0.2"),
-            new BigDecimal("0.3"),
-            new BigDecimal("0.4"),
-            new BigDecimal("0.5"),
-            new BigDecimal("0.6"),
-            new BigDecimal("0.7"),
-            new BigDecimal("0.8"),
-            new BigDecimal("0.9"),
-            BigDecimal.ONE
-    );
+    /**
+     * Monthly spend / budget ratios at which one notification is emitted when first crossed (1% steps).
+     * <p>
+     * NOTE: This is intentionally generated from integer percents to avoid floating-point drift.
+     * When switching back to 10% steps, change {@code PERCENT_STEP} to 10.
+     */
+    private static final int PERCENT_STEP = 1;
+    private static final List<BigDecimal> DEFAULT_THRESHOLDS = buildPercentThresholdsInclusive(PERCENT_STEP, 100, PERCENT_STEP);
+
+    private static List<BigDecimal> buildPercentThresholdsInclusive(int fromPercent, int toPercent, int stepPercent) {
+        if (fromPercent <= 0 || toPercent <= 0 || toPercent < fromPercent || stepPercent <= 0) {
+            throw new IllegalArgumentException("Invalid percent threshold range");
+        }
+        List<BigDecimal> thresholds = new ArrayList<>((toPercent - fromPercent) / stepPercent + 1);
+        for (int pct = fromPercent; pct <= toPercent; pct += stepPercent) {
+            thresholds.add(BigDecimal.valueOf(pct).movePointLeft(2));
+        }
+        return List.copyOf(thresholds);
+    }
 
     private final RabbitTemplate rabbitTemplate;
     private final BillingRabbitProperties rabbitProperties;

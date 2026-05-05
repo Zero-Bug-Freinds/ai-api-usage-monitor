@@ -144,7 +144,9 @@
 
 ### 4.11 기타 런타임 구성
 
-- **Jackson**: `BillingJacksonConfiguration`에서 `ObjectMapper`에 `JavaTimeModule` 등 자동 등록(`findAndRegisterModules`).
+- **Jackson**: `BillingJacksonConfiguration`에서 `ObjectMapper`에 `JavaTimeModule` 등 자동 등록(`findAndRegisterModules`) 후,
+  - `WRITE_DATES_AS_TIMESTAMPS`를 비활성화해 `LocalDate` 등이 ISO 문자열로 직렬화되도록 한다.
+  - `FAIL_ON_UNKNOWN_PROPERTIES`를 비활성화해 다운스트림/스키마 진화 시 역직렬화 실패를 줄인다.
 - **Rabbit 리스너**: JSON 문자열을 `UsageRecordedEvent`로 역직렬화 실패 시 로그 후 예외 전파(재시도·DLQ 정책은 브로커·리스너 팩토리 설정에 따름 — 기본 앱 코드에는 DLQ 빈이 없음).
 - **헬스/정보**: Actuator `health`, `info` 노출.
 

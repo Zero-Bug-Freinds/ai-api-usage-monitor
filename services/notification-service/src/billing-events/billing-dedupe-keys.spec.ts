@@ -21,7 +21,7 @@ describe('buildBillingBudgetInAppDedupeKey', () => {
 
     expect(key).toContain('billing:budget:USER:u');
     expect(key).toContain(':202604:');
-    expect(key).toContain(':0.8');
+    expect(key).toContain(':pct80');
   });
 });
 
