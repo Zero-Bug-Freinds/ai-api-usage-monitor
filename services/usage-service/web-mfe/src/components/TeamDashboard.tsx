@@ -35,6 +35,7 @@ import {
 } from "@ai-usage/team-workspace-cache";
 import { formatKstIsoDate, addKstDays } from "@web/lib/usage/kst-dates";
 import { formatRequestCount, formatTokenCount, formatUsd, toNumber } from "@web/lib/usage/format";
+import { teamUsageBffBase } from "../lib/team-usage-bff-base";
 
 const PROVIDER_ALL = "__ALL__";
 const TEAM_WEB_PREFIX = "/teams";
@@ -102,10 +103,6 @@ function teamApiUrl(path: string): string {
     return `${TEAM_WEB_PREFIX}${normalized}`;
   }
   return `${window.location.origin}${TEAM_WEB_PREFIX}${normalized}`;
-}
-
-function usageBffBase(): string {
-  return (process.env.NEXT_PUBLIC_USAGE_BFF_BASE_URL ?? "").replace(/\/+$/, "") || "";
 }
 
 function usageFetchErrorMessage(status: number): string {
@@ -448,7 +445,7 @@ export default function TeamDashboard({
       onSelectUser("");
       return;
     }
-    const base = usageBffBase() || (typeof window !== "undefined" ? window.location.origin : "");
+    const base = teamUsageBffBase();
     if (!base) {
       setError("사용량 API 베이스 URL을 확인할 수 없습니다");
       return;
@@ -463,7 +460,7 @@ export default function TeamDashboard({
       provider: dashProvider === PROVIDER_ALL ? undefined : dashProvider,
       apiKeyId: selectedApiKeyId || undefined,
     });
-    fetch(`${base}/api/v1/usage/bff/dashboard?${q}`, {
+    fetch(`${base}/dashboard?${q}`, {
       credentials: "include",
       headers: { Accept: "application/json" },
     })
@@ -700,20 +697,24 @@ export default function TeamDashboard({
         </p>
       ) : null}
 
-      {loading ? (
-        <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" aria-busy="true" aria-label="대시보드 로딩">
-          {[0, 1, 2, 3].map((k) => (
-            <div key={k} className="h-[5.5rem] animate-pulse rounded-lg border border-border bg-muted/50" />
-          ))}
-        </div>
-      ) : null}
       {!effectiveTeamId ? (
         <p className="mb-8 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
           조회할 팀을 선택해 주세요.
         </p>
       ) : null}
 
-      {effectiveTeamId ? (
+      {effectiveTeamId && (loading || error) ? (
+        <div aria-busy={loading ? "true" : undefined} aria-label="대시보드 로딩 또는 오류 시 플레이스홀더">
+          <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {[0, 1, 2, 3].map((k) => (
+              <div key={k} className="h-[5.5rem] animate-pulse rounded-lg border border-border bg-muted/50" />
+            ))}
+          </div>
+          <div className="mb-8 h-[380px] min-h-[380px] w-full animate-pulse rounded-lg border border-border bg-muted/40" />
+        </div>
+      ) : null}
+
+      {effectiveTeamId && !loading && !error ? (
         <>
           <section className="mb-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-lg border border-border bg-card p-4 shadow-sm">

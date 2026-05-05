@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { teamUsageBffBase } from "../lib/team-usage-bff-base";
 
 type TeamMemberUsageLogProps = {
   teamId: string;
@@ -21,13 +22,6 @@ type BffResponse = {
     content?: LogEntry[];
   };
 };
-
-function usageBffBase(): string {
-  const envBase = (process.env.NEXT_PUBLIC_USAGE_BFF_BASE_URL ?? "").replace(/\/+$/, "");
-  if (envBase) return envBase;
-  if (typeof window !== "undefined") return window.location.origin;
-  return "";
-}
 
 function memberLogFetchError(status: number): string {
   if (status === 400) return "팀원 로그 조회 파라미터가 올바르지 않습니다.";
@@ -55,7 +49,7 @@ export default function TeamMemberUsageLog({ teamId, userId }: TeamMemberUsageLo
       setError(null);
       return;
     }
-    const base = usageBffBase();
+    const base = teamUsageBffBase();
     if (!base) {
       setError("사용량 API 베이스 URL을 확인할 수 없습니다.");
       return;
@@ -63,9 +57,11 @@ export default function TeamMemberUsageLog({ teamId, userId }: TeamMemberUsageLo
     setLoading(true);
     setError(null);
     fetch(
-      `${base}/api/v1/usage/bff/dashboard?teamId=${encodeURIComponent(teamId)}&userId=${encodeURIComponent(
-        userId
-      )}&from=${from}&to=${to}`
+      `${base}/dashboard?teamId=${encodeURIComponent(teamId)}&userId=${encodeURIComponent(userId)}&from=${from}&to=${to}`,
+      {
+        credentials: "include",
+        headers: { Accept: "application/json" },
+      }
     )
       .then(async (r) => {
         if (!r.ok) {
