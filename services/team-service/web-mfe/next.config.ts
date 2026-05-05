@@ -19,7 +19,7 @@ const nextConfig: NextConfig = {
           usage: `usage@${usageRemoteOrigin.replace(/\/$/, "")}/_next/static/chunks/remoteEntry.js`,
         },
         exposes: {
-          "./TeamManagement": "./src/components/mf/team-management-entry.tsx",
+          "./TeamManagement": "./src/components/mf/team-management-remote-entry.tsx",
         },
         shared: {
           react: { singleton: true, strictVersion: true, requiredVersion: "19.2.4", eager: true },
