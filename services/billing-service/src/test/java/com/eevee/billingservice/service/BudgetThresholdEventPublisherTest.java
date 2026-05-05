@@ -151,7 +151,7 @@ class BudgetThresholdEventPublisherTest {
                 new BigDecimal("0.97"),
                 new BigDecimal("0.98"),
                 new BigDecimal("0.99"),
-                BigDecimal.ONE
+                new BigDecimal("1.00")
         );
     }
 }
