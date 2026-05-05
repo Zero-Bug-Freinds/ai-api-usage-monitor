@@ -837,7 +837,7 @@ export function TeamManagementView() {
   )
 
   return (
-    <main className="flex min-h-0 w-full min-w-0 max-w-full flex-col overflow-x-hidden bg-white">
+    <main className="flex min-h-0 w-full min-w-0 max-w-full flex-col overflow-x-hidden bg-background text-foreground">
       {teamApiKeyDeletionModal ? (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4 py-6"
@@ -944,26 +944,26 @@ export function TeamManagementView() {
           </div>
         </div>
       ) : null}
-      <aside className="w-full min-w-0 max-w-full shrink-0 border-r border-zinc-200 bg-gray-50">
+      <aside className="w-full min-w-0 max-w-full shrink-0 border-r border-border bg-muted/20">
         <div className="flex h-full min-h-0 min-w-0 flex-col">
-          <div className="border-b border-zinc-200 px-4 py-4">
+          <div className="border-b border-border px-4 py-4">
             <div className="flex items-center justify-between gap-2">
-              <h2 className="text-base font-semibold text-zinc-900">팀 목록</h2>
+              <h2 className="text-base font-semibold text-foreground">팀 목록</h2>
               <button
                 type="button"
-                className="h-8 rounded-md border border-zinc-300 bg-white px-2.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-60"
+                className="h-8 rounded-md border border-border bg-background px-2.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-60"
                 onClick={openCreateForm}
                 disabled={createLoading}
               >
                 + 새 팀
               </button>
             </div>
-            <p className="mt-1 text-xs text-zinc-500">팀을 선택하면 항목 아래에서 상세 정보를 확인할 수 있습니다.</p>
+            <p className="mt-1 text-xs text-muted-foreground">팀을 선택하면 항목 아래에서 상세 정보를 확인할 수 있습니다.</p>
             <div className="relative mt-3">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" aria-hidden />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
               <input
                 id="team-search"
-                className="h-10 w-full rounded-md border border-zinc-300 bg-white pl-9 pr-3 text-sm outline-none transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200"
+                className="h-10 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm text-foreground outline-none transition placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
                 placeholder="팀 이름 검색"
@@ -971,11 +971,11 @@ export function TeamManagementView() {
               />
             </div>
             {showCreateForm ? (
-              <form className="mt-3 space-y-3 rounded-md border border-zinc-200 bg-white p-3" onSubmit={createTeam}>
+              <form className="mt-3 space-y-3 rounded-md border border-border bg-background p-3" onSubmit={createTeam}>
                 <div className="space-y-1">
-                  <label className="text-xs font-medium">팀 이름 (필수)</label>
+                  <label className="text-xs font-medium text-foreground">팀 이름 (필수)</label>
                   <input
-                    className="h-9 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm"
+                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground"
                     value={teamName}
                     onChange={(e) => setTeamName(e.target.value)}
                     placeholder="예: 플랫폼팀"
@@ -985,12 +985,12 @@ export function TeamManagementView() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-medium">팀원 초대 (선택)</label>
+                  <label className="text-xs font-medium text-foreground">팀원 초대 (선택)</label>
                   <div className="space-y-2">
                     {inviteesOnCreate.map((row) => (
                       <div key={row.id} className="flex gap-2">
                         <input
-                          className="h-9 min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-3 text-sm"
+                          className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground"
                           value={row.value}
                           onChange={(e) => {
                             const v = e.target.value
@@ -1005,7 +1005,7 @@ export function TeamManagementView() {
                         {inviteesOnCreate.length > 1 ? (
                           <button
                             type="button"
-                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-background text-foreground hover:bg-muted disabled:opacity-50"
                             aria-label="이 초대 행 삭제"
                             disabled={createLoading}
                             onClick={() =>
@@ -1019,7 +1019,7 @@ export function TeamManagementView() {
                     ))}
                     <button
                       type="button"
-                      className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-zinc-300 bg-zinc-50 px-3 text-xs text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
+                      className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-border bg-muted/30 px-3 text-xs text-foreground hover:bg-muted disabled:opacity-50"
                       disabled={createLoading}
                       onClick={() => setInviteesOnCreate((prev) => [...prev, newInviteeRow()])}
                     >
@@ -1031,14 +1031,14 @@ export function TeamManagementView() {
                 <div className="flex min-w-0 flex-wrap gap-2">
                   <button
                     type="submit"
-                    className="h-9 rounded-md bg-black px-3 text-xs font-medium text-white disabled:opacity-60"
+                    className="h-9 rounded-md bg-foreground px-3 text-xs font-medium text-background disabled:opacity-60"
                     disabled={createLoading}
                   >
                     {createLoading ? "생성 중…" : "생성"}
                   </button>
                   <button
                     type="button"
-                    className="h-9 rounded-md border border-zinc-300 bg-white px-3 text-xs font-medium"
+                    className="h-9 rounded-md border border-border bg-background px-3 text-xs font-medium text-foreground hover:bg-muted"
                     onClick={closeCreateForm}
                     disabled={createLoading}
                   >
@@ -1115,10 +1115,10 @@ export function TeamManagementView() {
                 </ul>
               )}
             </div>
-            {loading ? <p className="px-2 py-3 text-sm text-zinc-500">{isSearching ? "검색 중..." : "불러오는 중…"}</p> : null}
+            {loading ? <p className="px-2 py-3 text-sm text-muted-foreground">{isSearching ? "검색 중..." : "불러오는 중…"}</p> : null}
             {error && !loading ? <p className="px-2 py-3 text-sm text-red-600">{error}</p> : null}
             {!loading && !error && teams.length === 0 ? (
-              <p className="px-2 py-3 text-sm text-zinc-500">{debouncedKeyword.trim() ? "검색된 팀이 없습니다" : "참여 중인 팀이 없습니다."}</p>
+              <p className="px-2 py-3 text-sm text-muted-foreground">{debouncedKeyword.trim() ? "검색된 팀이 없습니다" : "참여 중인 팀이 없습니다."}</p>
             ) : null}
             {!loading && teams.length > 0 ? (
               <ul className="space-y-2">
@@ -1130,26 +1130,26 @@ export function TeamManagementView() {
                         type="button"
                         className={`w-full rounded-lg border px-3 py-2 text-left transition ${
                           isSelected
-                            ? "border-zinc-900 bg-white shadow-sm"
-                            : "border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50"
+                            ? "border-foreground bg-card shadow-sm"
+                            : "border-border bg-card hover:border-foreground/30 hover:bg-muted/40"
                         }`}
                         onClick={() => void _selectTeam(team.id, isSelected)}
                         disabled={switchingTeamId !== null && switchingTeamId !== team.id}
                       >
                         <div className="flex items-center gap-2">
                           {isSelected ? (
-                            <ChevronRight className="h-4 w-4 shrink-0 text-zinc-700" aria-hidden />
+                            <ChevronRight className="h-4 w-4 shrink-0 text-foreground" aria-hidden />
                           ) : (
-                            <ChevronRight className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden />
+                            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                           )}
-                          <span className="truncate text-sm font-medium text-zinc-900">{team.name}</span>
+                          <span className="truncate text-sm font-medium text-foreground">{team.name}</span>
                           {switchingTeamId === team.id ? (
-                            <span className="rounded bg-zinc-200 px-1.5 py-0.5 text-[10px] text-zinc-700">전환 중…</span>
+                            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">전환 중…</span>
                           ) : null}
                         </div>
                       </button>
                       {isSelected ? (
-                        <div className="min-w-0 space-y-3 overflow-x-hidden break-words rounded-lg border border-zinc-200 bg-white p-3">
+                        <div className="min-w-0 space-y-3 overflow-x-hidden break-words rounded-lg border border-border bg-card p-3">
                           <div className="flex items-center justify-between gap-2">
                             <p className="text-xs font-semibold text-zinc-800">멤버 목록</p>
                             <p className="text-[11px] text-zinc-500">
