@@ -49,7 +49,14 @@ export class BillingInAppNotificationHandlerService {
       return { created: false, dedupeKey };
     }
 
-    const copy = buildBillingBudgetThresholdCopy(params.payload, this.getLocale());
+    const copy = buildBillingBudgetThresholdCopy(
+      {
+        payload: params.payload,
+        apiKeyId: params.apiKeyId,
+        apiKeyAlias: params.payload.apiKeyAlias,
+      },
+      this.getLocale(),
+    );
 
     try {
       await this.prisma.$transaction(async (tx) => {

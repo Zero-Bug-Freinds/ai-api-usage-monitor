@@ -267,7 +267,7 @@
   - 소비 주체: Team Service (해당 사용자 팀 멤버십/초대 정리) 등
   - 후속 ACK: Team Service는 정리 완료 후 `identity.user.account-deletion-ack` 를 발행해 Identity의 삭제 코디네이션을 완료한다.
 - `billing.budget.threshold.reached` (구현, 선택 플래그)
-  - 발행 주체: Billing Service — `billing.events` / `billing.budget.threshold.reached`(기본; 환경으로 덮어쓰기 가능). 키·프로바이더별 월 예산(Identity) 대비 **10% 단위 임계**를 **처음 넘을 때** 알림용으로 발행.
+  - 발행 주체: Billing Service — `billing.events` / `billing.budget.threshold.reached`(기본; 환경으로 덮어쓰기 가능). 키·프로바이더별 월 예산(Identity) 대비 **임계 단위(기본 10%; 테스트 시 1%)**를 **처음 넘을 때** 알림용으로 발행.
   - 소비 주체: Notification 등(팀 합의). 페이로드·토폴로지 정본: [`docs/billing-outbound-events.md`](billing-outbound-events.md).
 - `billing.cost.corrected` (구현, 선택 플래그)
   - 발행 주체: Billing Service — 비용 정정이 집계에 반영된 뒤 트랜잭션 커밋 후 발행.

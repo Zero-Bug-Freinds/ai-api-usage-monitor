@@ -30,3 +30,13 @@ notification-service는 선택적으로 **팀 도메인 이벤트**(`TEAM_CREATE
 환경 변수 전체는 `services/notification-service/.env.example`을 본다.
 
 **제품 규칙:** `TEAM_INVITATION_ACCEPTED`는 초대한 사람에게, `TEAM_MEMBER_JOINED`는 **참여한 사용자(`receiverId`)에게만** 인앱을 생성한다. 초대자는 수락 알림만 받고, 동일 흐름에서 `TEAM_MEMBER_JOINED`로 중복 행이 생기지 않는다.
+
+## Billing 예산 임계 이벤트 (RabbitMQ, 인앱 알림)
+
+notification-service는 billing-service가 발행하는 `billing.budget.threshold.reached` 이벤트를 선택적으로 소비해 **인앱 알림**을 생성한다.
+
+- **토폴로지(기본)**: exchange `billing.events`, routing key `billing.budget.threshold.reached`
+- **활성화 플래그**: `BILLING_EVENTS_CONSUMER_ENABLED=true` (기본값; 비활성화 시 소비자 미기동)
+- **브로커 URL**: `RABBITMQ_URL` (필수)
+- **멱등(dedupe)**: `NotificationDelivery.dedupeKey` 유니크 제약으로 동일 임계 이벤트의 중복 인앱 생성 방지
+  - dedupe 키의 임계값 파트는 `thresholdPct`를 퍼센트 정수로 정규화해 `pct{n}` 형식을 사용한다(예: 0.8 → `pct80`).

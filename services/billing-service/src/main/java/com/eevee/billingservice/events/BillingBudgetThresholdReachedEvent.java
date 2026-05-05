@@ -10,8 +10,9 @@ public record BillingBudgetThresholdReachedEvent(
         LocalDate monthStart,
         BigDecimal thresholdPct,
         BigDecimal monthlyTotalUsd,
-        BigDecimal monthlyBudgetUsd
+        BigDecimal monthlyBudgetUsd,
+        String apiKeyAlias
 ) {
-    public static final int CURRENT_SCHEMA_VERSION = 1;
+    public static final int CURRENT_SCHEMA_VERSION = 2;
 }
 

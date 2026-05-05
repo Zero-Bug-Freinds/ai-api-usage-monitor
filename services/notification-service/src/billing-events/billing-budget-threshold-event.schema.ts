@@ -19,6 +19,7 @@ const billingBudgetThresholdReachedEventSchema = z
     thresholdPct: nonNegativeFiniteNumber,
     monthlyTotalUsd: nonNegativeFiniteNumber,
     monthlyBudgetUsd: nonNegativeFiniteNumber,
+    apiKeyAlias: z.string().optional(),
   })
   .passthrough();
 

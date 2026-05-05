@@ -3,6 +3,7 @@ package com.eevee.billingservice.service;
 import com.eevee.billingservice.config.BillingRabbitProperties;
 import com.eevee.billingservice.events.BillingBudgetThresholdReachedEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -31,7 +32,9 @@ class BudgetThresholdEventPublisherTest {
 
     private BudgetThresholdEventPublisher publisher;
 
-    private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+    private final ObjectMapper objectMapper = new ObjectMapper()
+            .registerModule(new JavaTimeModule())
+            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
     @BeforeEach
     void setUp() {
@@ -48,6 +51,7 @@ class BudgetThresholdEventPublisherTest {
                 "u",
                 "t",
                 "k",
+                "alias",
                 LocalDate.parse("2026-04-01"),
                 new BigDecimal("70.00"),
                 new BigDecimal("80.00"),
@@ -55,21 +59,45 @@ class BudgetThresholdEventPublisherTest {
         );
 
         ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
-        verify(rabbitTemplate).send(eq("billing.events"), eq("billing.budget.threshold.reached"), captor.capture());
-        Message msg = captor.getValue();
-        BillingBudgetThresholdReachedEvent sent = objectMapper.readValue(
-                new String(msg.getBody(), StandardCharsets.UTF_8),
-                BillingBudgetThresholdReachedEvent.class);
+        verify(rabbitTemplate, times(10)).send(eq("billing.events"), eq("billing.budget.threshold.reached"), captor.capture());
 
-        assertThat(sent.thresholdPct()).isEqualByComparingTo("0.8");
-        assertThat(sent.monthStart()).isEqualTo(LocalDate.parse("2026-04-01"));
-        assertThat(sent.monthlyTotalUsd()).isEqualByComparingTo("80.00");
-        assertThat(sent.monthlyBudgetUsd()).isEqualByComparingTo("100.00");
+        List<BigDecimal> thresholds = captor.getAllValues()
+                .stream()
+                .map(m -> {
+                    try {
+                        BillingBudgetThresholdReachedEvent e = objectMapper.readValue(
+                                new String(m.getBody(), StandardCharsets.UTF_8),
+                                BillingBudgetThresholdReachedEvent.class);
+                        assertThat(e.monthStart()).isEqualTo(LocalDate.parse("2026-04-01"));
+                        assertThat(e.monthlyTotalUsd()).isEqualByComparingTo("80.00");
+                        assertThat(e.monthlyBudgetUsd()).isEqualByComparingTo("100.00");
+                        assertThat(e.apiKeyAlias()).isEqualTo("alias");
+                        return e.thresholdPct();
+                    } catch (Exception ex) {
+                        throw new RuntimeException(ex);
+                    }
+                })
+                .toList();
 
-        assertThat(msg.getMessageProperties().getHeaders().get("subjectType")).isEqualTo("API_KEY");
-        assertThat(msg.getMessageProperties().getHeaders().get("userId")).isEqualTo("u");
-        assertThat(msg.getMessageProperties().getHeaders().get("teamId")).isEqualTo("t");
-        assertThat(msg.getMessageProperties().getHeaders().get("apiKeyId")).isEqualTo("k");
+        assertThat(thresholds).containsExactlyInAnyOrder(
+                new BigDecimal("0.71"),
+                new BigDecimal("0.72"),
+                new BigDecimal("0.73"),
+                new BigDecimal("0.74"),
+                new BigDecimal("0.75"),
+                new BigDecimal("0.76"),
+                new BigDecimal("0.77"),
+                new BigDecimal("0.78"),
+                new BigDecimal("0.79"),
+                new BigDecimal("0.80")
+        );
+
+        for (Message msg : captor.getAllValues()) {
+            assertThat(msg.getMessageProperties().getHeaders().get("subjectType")).isEqualTo("API_KEY");
+            assertThat(msg.getMessageProperties().getHeaders().get("userId")).isEqualTo("u");
+            assertThat(msg.getMessageProperties().getHeaders().get("teamId")).isEqualTo("t");
+            assertThat(msg.getMessageProperties().getHeaders().get("apiKeyId")).isEqualTo("k");
+        }
     }
 
     @Test
@@ -78,6 +106,7 @@ class BudgetThresholdEventPublisherTest {
                 "u",
                 null,
                 "k",
+                null,
                 LocalDate.parse("2026-04-01"),
                 new BigDecimal("79.00"),
                 new BigDecimal("101.00"),
@@ -85,7 +114,7 @@ class BudgetThresholdEventPublisherTest {
         );
 
         ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
-        verify(rabbitTemplate, times(3)).send(eq("billing.events"), eq("billing.budget.threshold.reached"), captor.capture());
+        verify(rabbitTemplate, times(21)).send(eq("billing.events"), eq("billing.budget.threshold.reached"), captor.capture());
 
         List<BigDecimal> thresholds = captor.getAllValues()
                 .stream()
@@ -102,9 +131,27 @@ class BudgetThresholdEventPublisherTest {
                 .toList();
 
         assertThat(thresholds).containsExactlyInAnyOrder(
-                new BigDecimal("0.8"),
-                new BigDecimal("0.9"),
-                BigDecimal.ONE
+                new BigDecimal("0.80"),
+                new BigDecimal("0.81"),
+                new BigDecimal("0.82"),
+                new BigDecimal("0.83"),
+                new BigDecimal("0.84"),
+                new BigDecimal("0.85"),
+                new BigDecimal("0.86"),
+                new BigDecimal("0.87"),
+                new BigDecimal("0.88"),
+                new BigDecimal("0.89"),
+                new BigDecimal("0.90"),
+                new BigDecimal("0.91"),
+                new BigDecimal("0.92"),
+                new BigDecimal("0.93"),
+                new BigDecimal("0.94"),
+                new BigDecimal("0.95"),
+                new BigDecimal("0.96"),
+                new BigDecimal("0.97"),
+                new BigDecimal("0.98"),
+                new BigDecimal("0.99"),
+                new BigDecimal("1.00")
         );
     }
 }
