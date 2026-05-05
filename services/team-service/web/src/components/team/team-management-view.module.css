@@ -1,0 +1,31 @@
+.teamManagementRoot {
+  font-feature-settings: "tnum" 1;
+}
+
+.leftPanel {
+  background-image: linear-gradient(to bottom, hsl(var(--background)), hsl(var(--muted) / 0.25));
+}
+
+.leftPanelHeader {
+  backdrop-filter: saturate(1.05);
+}
+
+.primaryOutlineButton {
+  box-shadow: 0 1px 2px hsl(var(--foreground) / 0.05);
+}
+
+.createFormCard {
+  box-shadow: inset 0 1px 0 hsl(var(--background));
+}
+
+.statusBanner {
+  box-shadow: 0 1px 2px hsl(var(--foreground) / 0.06);
+}
+
+.noticeCard {
+  box-shadow: inset 0 1px 0 hsl(var(--background) / 0.6);
+}
+
+.teamListItem {
+  box-shadow: 0 1px 1px hsl(var(--foreground) / 0.02);
+}
