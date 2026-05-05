@@ -62,6 +62,7 @@ public class BudgetThresholdEventPublisher {
             String userId,
             String teamId,
             String apiKeyId,
+            String apiKeyAlias,
             LocalDate monthStart,
             BigDecimal monthlyTotalUsdBefore,
             BigDecimal monthlyTotalUsdAfter,
@@ -85,7 +86,7 @@ public class BudgetThresholdEventPublisher {
             if (!isCrossed(monthlyTotalUsdBefore, monthlyTotalUsdAfter, monthlyBudgetUsd, threshold)) {
                 continue;
             }
-            publishOne(out, userId, teamId, apiKeyId, monthStart, threshold, monthlyTotalUsdAfter, monthlyBudgetUsd);
+            publishOne(out, userId, teamId, apiKeyId, apiKeyAlias, monthStart, threshold, monthlyTotalUsdAfter, monthlyBudgetUsd);
         }
     }
 
@@ -94,6 +95,7 @@ public class BudgetThresholdEventPublisher {
             String userId,
             String teamId,
             String apiKeyId,
+            String apiKeyAlias,
             LocalDate monthStart,
             BigDecimal thresholdPct,
             BigDecimal monthlyTotalUsd,
@@ -105,7 +107,8 @@ public class BudgetThresholdEventPublisher {
                 monthStart,
                 thresholdPct,
                 monthlyTotalUsd,
-                monthlyBudgetUsd
+                monthlyBudgetUsd,
+                apiKeyAlias
         );
 
         log.debug(

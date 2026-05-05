@@ -48,7 +48,7 @@
 - **OpenAI 모델 스냅샷 접미사**: 모델 문자열이 `…-YYYY-MM-DD` 형태(공급사 dated snapshot)이면, 카탈로그 단가는 **접미사를 뗀 베이스 모델**로 조회하고, 필요 시 동일 유효기간의 **별칭 `provider_model_price` 행**을 자동 삽입해 이후 이벤트도 동일 단가로 계산한다(`BillingRecordedService.resolveAliasedPrice`).
 - **멱등**: `billing_processed_event`로 `eventId` 단위 중복 처리 방지.
 - **비용 확정 발행(선택)**: `billing.rabbit.cost-out.enabled=true`(기본)일 때, 과금 가능 경로에서 집계·멱등 저장 **커밋 후** `UsageCostFinalizedEvent`를 `billing.events` / `usage.cost.finalized`로 발행하고, `cost_event_published_at`을 기록한다. 비과금·스킵 경로는 `cost_event_applicable=false`로 끝난다.
-- **월 예산 임계 발행(선택)**: `billing.rabbit.budget-out.enabled=true`이고 Identity에서 **해당 사용 이벤트의 키·프로바이더**에 대한 월 예산이 **0보다 클 때만**, KST 달력 월에 대해 `daily_expenditure_agg`를 **프로바이더 한정으로 합산**한 누적 지출이 10% 단위 임계를 **처음** 넘는 경우마다 트랜잭션 **커밋 후** `BillingBudgetThresholdReachedEvent`를 발행한다. 분자·분모 정의·JSON 계약은 [`docs/billing-outbound-events.md`](billing-outbound-events.md) §2.
+- **월 예산 임계 발행(선택)**: `billing.rabbit.budget-out.enabled=true`이고 Identity에서 **해당 사용 이벤트의 키·프로바이더**에 대한 월 예산이 **0보다 클 때만**, KST 달력 월에 대해 `daily_expenditure_agg`를 **프로바이더 한정으로 합산**한 누적 지출이 **임계 단위(기본 10%; 테스트 시 1%)**를 **처음** 넘는 경우마다 트랜잭션 **커밋 후** `BillingBudgetThresholdReachedEvent`를 발행한다. 분자·분모 정의·JSON 계약은 [`docs/billing-outbound-events.md`](billing-outbound-events.md) §2.
 
 ### 4.2 지출 조회 HTTP API
 
