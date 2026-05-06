@@ -141,6 +141,7 @@ public class UsageRecordedService {
                 event.organizationId(),
                 event.teamId(),
                 event.apiKeyId(),
+                event.teamApiKeyId(),
                 event.apiKeyFingerprint(),
                 event.apiKeySource(),
                 event.provider(),

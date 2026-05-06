@@ -177,6 +177,7 @@ class ExternalApiKeyStatusChangedPipelineIntegrationTest {
                 null,
                 null,
                 "303",
+                null,
                 "fp",
                 "managed",
                 AiProvider.GOOGLE,
