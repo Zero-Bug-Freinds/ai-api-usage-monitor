@@ -16,10 +16,12 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 public class GeminiAssistantService {
@@ -187,14 +189,7 @@ public class GeminiAssistantService {
 				? "https://generativelanguage.googleapis.com"
 				: properties.baseUrl();
 
-		List<String> modelCandidates = new ArrayList<>();
-		modelCandidates.add(configuredModel);
-		if (!DEFAULT_GEMINI_MODEL.equals(configuredModel)) {
-			modelCandidates.add(DEFAULT_GEMINI_MODEL);
-		}
-		if (!FALLBACK_GEMINI_MODEL.equals(configuredModel) && !FALLBACK_GEMINI_MODEL.equals(DEFAULT_GEMINI_MODEL)) {
-			modelCandidates.add(FALLBACK_GEMINI_MODEL);
-		}
+		List<String> modelCandidates = buildModelCandidates(configuredModel);
 
 		RestClientResponseException lastException = null;
 		for (String model : modelCandidates) {
@@ -202,6 +197,12 @@ public class GeminiAssistantService {
 				return callGenerateContentWithModel(baseUrl, model, body);
 			} catch (RestClientResponseException ex) {
 				lastException = ex;
+				log.warn(
+						"Gemini call failed. model={}, status={}, responseBody={}",
+						model,
+						ex.getStatusCode(),
+						summarizeErrorBody(ex.getResponseBodyAsString())
+				);
 				if (ex.getStatusCode().value() == 404) {
 					log.warn("Gemini model {} not found. Trying next model candidate.", model);
 					continue;
@@ -213,6 +214,20 @@ public class GeminiAssistantService {
 			throw lastException;
 		}
 		throw new IllegalStateException("No Gemini model candidate available");
+	}
+
+	private static List<String> buildModelCandidates(String configuredModel) {
+		Set<String> ordered = new LinkedHashSet<>();
+		ordered.add(configuredModel);
+		// 1.5 family explicit aliases to handle model-name sensitivity by account/region.
+		if (configuredModel.startsWith("gemini-1.5-flash")) {
+			ordered.add("gemini-1.5-flash-latest");
+			ordered.add("gemini-1.5-flash-002");
+			ordered.add("gemini-1.5-flash-001");
+		}
+		ordered.add(DEFAULT_GEMINI_MODEL);
+		ordered.add(FALLBACK_GEMINI_MODEL);
+		return List.copyOf(ordered);
 	}
 
 	private String callGenerateContentWithModel(String baseUrl, String model, Map<String, Object> body) {
@@ -360,5 +375,16 @@ public class GeminiAssistantService {
 			return compact;
 		}
 		return compact.substring(0, 280) + "...";
+	}
+
+	private static String summarizeErrorBody(String body) {
+		if (body == null) {
+			return "";
+		}
+		String compact = body.replaceAll("\\s+", " ").trim();
+		if (compact.length() <= 600) {
+			return compact;
+		}
+		return compact.substring(0, 600) + "...";
 	}
 }
