@@ -53,6 +53,7 @@ class UsageCostFinalizedEventPublisherTest {
                 null,
                 "t",
                 "k",
+                null,
                 "hash",
                 "managed",
                 AiProvider.OPENAI,
