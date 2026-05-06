@@ -775,14 +775,6 @@ export default function AgentPage() {
             </p>
             <p>모델 수: {modelCatalog.models?.length ?? 0}개</p>
             <p>ACTIVE 모델 수: {modelCatalogStats?.activeCount ?? 0}개</p>
-            {modelCatalogStats ? (
-              <p>
-                Provider별:{" "}
-                {Object.entries(modelCatalogStats.providerCounts)
-                  .map(([provider, count]) => `${provider} ${count}`)
-                  .join(", ") || "-"}
-              </p>
-            ) : null}
             <p>갱신 시각: {modelCatalog.updatedAt ? new Date(modelCatalog.updatedAt).toLocaleString() : "-"}</p>
             {modelCatalog.lastRefreshSucceeded === false ? (
               <p className="mt-1 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
