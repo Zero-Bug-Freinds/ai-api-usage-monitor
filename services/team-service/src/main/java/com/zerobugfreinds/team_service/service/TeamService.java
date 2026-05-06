@@ -230,7 +230,8 @@ public class TeamService {
 					.getOrDefault(teamId, List.of())
 					.stream()
 					.map(apiKey -> new InternalBillingTeamApiKeyResponse(
-							apiKey.getId(),
+							String.valueOf(apiKey.getId()),
+							"team",
 							apiKey.getProvider().name(),
 							apiKey.getKeyAlias(),
 							apiKey.getMonthlyBudgetUsd()

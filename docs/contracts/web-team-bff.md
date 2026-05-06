@@ -191,7 +191,9 @@
 - Billing 연동용으로 `GET /internal/teams/users/{userId}/billing-summaries`를 제공한다.
   - 응답 목록의 각 팀 항목은 `teamId`, `teamAlias`, `monthlyBudgetUsd`, `monthlyBudgetsByKey`, `apiKeys`를 포함한다.
   - `monthlyBudgetUsd`: 팀 API 키 월 예산 합계(USD)
-  - `monthlyBudgetsByKey`: 키별 월 예산 목록(`apiKeyId`, `provider`, `alias`, `monthlyBudgetUsd`)
+  - `monthlyBudgetsByKey`: 키별 월 예산 목록(`apiKeyId`, `apiKeySource`, `provider`, `alias`, `monthlyBudgetUsd`)
+    - `apiKeyId`: Team API Key PK를 문자열로 직렬화한 값 (`String(teamApiKeyId)`)
+    - `apiKeySource`: 항상 `"team"` (UsageRecordedEvent `apiKeySource + apiKeyId` 매칭 기준)
   - `apiKeys`: 기존 하위 호환용 키 목록(현재 `monthlyBudgetsByKey`와 동일 스냅샷)
 - Notification 액션 처리용으로 `POST /internal/v1/team-invitations/{invitationId}/decision`를 제공한다.
   - 요청 본문: `inviteeUserId`(string), `decision`(`ACCEPT` | `REJECT`)
