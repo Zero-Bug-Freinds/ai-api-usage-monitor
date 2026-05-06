@@ -18,6 +18,13 @@
 - `POST /policy-recommendations`
   - 입력: `PolicyRecommendationRequest`
   - 출력: `PolicyRecommendationResponse`
+- `POST /policy-recommendations/analyze`
+  - 입력: `RecommendationAnalyzeRequest`
+  - 출력: `OptimizationRecommendationIssuedEvent`
+  - 동작: 키/스코프 기준으로 최근 패턴을 분석하고 모델 최적화 추천 결과를 생성·캐시한다.
+- `GET /policy-recommendations/{keyId}?scopeType={PERSONAL|TEAM}&scopeId={id}`
+  - 출력: `RecommendationQueryResponse`
+  - 동작: 캐시된 추천 결과(근거 지표/후보 모델/절감률)를 조회한다.
 - `POST /budget-forecast-assistant`
   - 입력: `BudgetForecastRequest`
   - 출력: `BudgetForecastResponse`
@@ -50,6 +57,9 @@
   - `usage.cost.finalized`
   - `billing.budget.threshold.reached`
   - `billing.cost.corrected`
+- Usage 이벤트(`usage.events`)
+  - `usage.prediction.signals`
+  - `usage.daily.cumulative.tokens`
 
 구체 큐/라우팅키는 `services/agent-service/src/main/resources/application.properties`를 따른다.
 
@@ -71,6 +81,12 @@
   - 백엔드 `budget-forecast-assistant` API 프록시
   - 세션 이메일을 파싱해 내부 호출 시 `x-user-email` 헤더로 전달한다.
   - 내부 호출 타임아웃은 20초로 설정되어 Gemini 응답 지연 시 조기 실패를 줄인다.
+- `POST /agent/api/v1/agents/policy-recommendations/analyze`
+  - 백엔드 `policy-recommendations/analyze` API 프록시
+  - 개인/팀 키 분석 실행 시 추천 캐시를 생성한다.
+- `GET /agent/api/v1/agents/policy-recommendations/{keyId}?scopeType=...&scopeId=...`
+  - 백엔드 추천 조회 API 프록시
+  - UI 카드에 추천 신뢰도/절감률/근거 지표를 렌더링할 때 사용한다.
 
 웹 UI에서 API Key별 "다음 결제일"은 브라우저 `localStorage`에 저장한다.
 
@@ -101,6 +117,10 @@
   - `AI_AGENT_BILLING_BASE_URL` (default: `http://billing-service:8095`)
   - `GATEWAY_SHARED_SECRET` (billing expenditure API 신뢰 헤더, BFF·reconcile 공통)
   - `AI_AGENT_BILLING_RECONCILE_INITIAL_DELAY_MS`, `AI_AGENT_BILLING_RECONCILE_FIXED_DELAY_MS` (주기 보정 간격)
+- Recommendation 모델 단가 카탈로그
+  - `AI_AGENT_RECOMMENDATION_CATALOG_URL` (optional, 외부 모델 단가 JSON URL)
+  - `AI_AGENT_RECOMMENDATION_CATALOG_REFRESH_MS` (default: `300000`)
+  - `AI_AGENT_RECOMMENDATION_CATALOG_REQUEST_TIMEOUT_MS` (default: `5000`)
 - Web BFF
   - `AI_AGENT_SERVICE_INTERNAL_ORIGIN`
   - `BILLING_SERVICE_INTERNAL_ORIGIN` (optional, `available-context`에서 summary 호출 시)
@@ -121,6 +141,8 @@
 - 개인 키 이벤트가 아직 유입되지 않은 초기 상태에서는 개인 키 목록이 비어 보일 수 있으며, 이때는 Identity fallback 조회 성공 여부(오리진/포트/권한 헤더)를 함께 점검해야 한다.
 - `docker compose --profile web up` 실행 시 `agent-web`은 `agent-service`, `team-service` 의존으로 함께 올라오도록 구성되어야 한다. 내부 오리진 기본값은 컨테이너 DNS(`http://agent-service:8096`)를 사용한다.
 - `web-edge`에서 `/agent`, `/agent/`, `/agent/*`는 `agent-web`으로 프록시되어야 한다. 템플릿 변경 후에는 `web-edge` 재기동/재생성이 필요하다.
+- 모델 추천 단가 카탈로그 URL을 설정하지 않으면 추천 엔진은 내장 기본 카탈로그(`default`)를 사용한다.
+- 현재 추천의 `input/output` 비율은 usage 스냅샷(일일 누적/예측 신호) + fallback 규칙을 함께 사용한다. 키별 완전 실측 비율을 위해서는 `usage.recorded`의 호출당 `prompt_tokens`/`completion_tokens` 롤링 집계를 추가로 소비해야 한다.
 
 ## 7. Billing UI vs Agent UI 예산 사용률
 
@@ -150,3 +172,6 @@
 - `available-context` BFF: 키별 billing summary(`totalCostUsd`, `monthlyBudgetUsd`)·KST 월초~오늘·`X-Gateway-Auth`·세션/Authorization 전달, 개인 키 조회 경로 정리.
 - `scripts/verify-agent-event-pipeline.ps1`: `GATEWAY_DEV_MODE=false`일 때 Gateway JWT 경로 지원.
 - 문서: Billing 상단 % vs 키별 % vs Agent 키 카드 구분, 로컬 agent 호스트 포트 `8097` 안내.
+- Recommendation 엔진: `policy-recommendations/analyze|{keyId}` API 추가, UI 추천 카드(절감률/절감액/근거 지표) 노출.
+- 외부 모델 단가 카탈로그 동기화(`ExternalModelCatalogService`) 추가: URL 설정 시 주기 갱신, 실패 시 이전 스냅샷 유지.
+- 업그레이드 추천 규칙 추가: 고지연(`HIGH_LATENCY`) 패턴에서는 비용 절감 우선이 아니라 고성능 후보를 우선 추천.
