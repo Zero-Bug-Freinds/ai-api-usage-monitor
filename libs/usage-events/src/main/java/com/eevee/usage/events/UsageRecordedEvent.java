@@ -20,6 +20,7 @@ public record UsageRecordedEvent(
         String organizationId,
         String teamId,
         String apiKeyId,
+        String teamApiKeyId,
         String apiKeyFingerprint,
         String apiKeySource,
         AiProvider provider,

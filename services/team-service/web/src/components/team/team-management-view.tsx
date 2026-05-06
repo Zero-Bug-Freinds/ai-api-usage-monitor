@@ -3,7 +3,6 @@
 import * as React from "react"
 import { ChevronRight, Minus, Plus, Search } from "lucide-react"
 import { Checkbox, Label } from "@ai-usage/ui"
-import styles from "./team-management-view.module.css"
 
 type ApiResponse<T> = {
   success: boolean
@@ -838,7 +837,7 @@ export function TeamManagementView() {
   )
 
   return (
-    <main className={`flex min-h-0 w-full min-w-0 max-w-full flex-col overflow-x-hidden bg-background text-foreground ${styles.teamManagementRoot}`}>
+    <main className="flex min-h-0 w-full min-w-0 max-w-full flex-col overflow-x-hidden bg-background text-foreground">
       {teamApiKeyDeletionModal ? (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4 py-6"
@@ -945,14 +944,14 @@ export function TeamManagementView() {
           </div>
         </div>
       ) : null}
-      <aside className={`w-full min-w-0 max-w-full shrink-0 border-r border-border bg-muted/20 ${styles.leftPanel}`}>
+      <aside className="w-full min-w-0 max-w-full shrink-0 border-r border-border bg-muted/20">
         <div className="flex h-full min-h-0 min-w-0 flex-col">
-          <div className={`border-b border-border px-4 py-4 ${styles.leftPanelHeader}`}>
+          <div className="border-b border-border px-4 py-4">
             <div className="flex items-center justify-between gap-2">
               <h2 className="text-base font-semibold text-foreground">팀 목록</h2>
               <button
                 type="button"
-                className={`h-8 rounded-md border border-border bg-background px-2.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-60 ${styles.primaryOutlineButton}`}
+                className="h-8 rounded-md border border-border bg-background px-2.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-60"
                 onClick={openCreateForm}
                 disabled={createLoading}
               >
@@ -972,7 +971,7 @@ export function TeamManagementView() {
               />
             </div>
             {showCreateForm ? (
-              <form className={`mt-3 space-y-3 rounded-md border border-border bg-background p-3 ${styles.createFormCard}`} onSubmit={createTeam}>
+              <form className="mt-3 space-y-3 rounded-md border border-border bg-background p-3" onSubmit={createTeam}>
                 <div className="space-y-1">
                   <label className="text-xs font-medium text-foreground">팀 이름 (필수)</label>
                   <input
@@ -1053,7 +1052,7 @@ export function TeamManagementView() {
           <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-3">
             {message ? (
               <div
-                className={`mb-3 rounded-md border px-3 py-2 text-xs ${styles.statusBanner} ${
+                className={`mb-3 rounded-md border px-3 py-2 text-xs ${
                   message.kind === "success"
                     ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                     : "border-red-200 bg-red-50 text-red-700"
@@ -1063,7 +1062,7 @@ export function TeamManagementView() {
                 {message.text}
               </div>
             ) : null}
-            <div className={`mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 ${styles.noticeCard}`}>
+            <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-xs font-semibold text-amber-800">만료된 초대 알림</p>
                 <button
@@ -1129,7 +1128,7 @@ export function TeamManagementView() {
                     <li key={team.id} className="space-y-2">
                       <button
                         type="button"
-                        className={`w-full rounded-lg border px-3 py-2 text-left transition ${styles.teamListItem} ${
+                        className={`w-full rounded-lg border px-3 py-2 text-left transition ${
                           isSelected
                             ? "border-foreground bg-card shadow-sm"
                             : "border-border bg-card hover:border-foreground/30 hover:bg-muted/40"
