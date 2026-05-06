@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import * as React from "react"
 import { ChevronRight, Minus, Plus, Search } from "lucide-react"
@@ -837,7 +837,7 @@ export function TeamManagementView() {
   )
 
   return (
-    <main className="flex min-h-0 w-full min-w-0 max-w-full flex-col overflow-x-hidden bg-background text-foreground">
+    <main className="flex h-full min-h-0 w-full min-w-0 max-w-full flex-col overflow-x-hidden bg-background text-foreground">
       {teamApiKeyDeletionModal ? (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4 py-6"
@@ -850,13 +850,13 @@ export function TeamManagementView() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="team-api-key-delete-title"
-            className="w-full max-w-md rounded-lg border border-zinc-200 bg-white p-5 shadow-lg"
+            className="w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-lg"
             onMouseDown={(e) => e.stopPropagation()}
           >
-            <h3 id="team-api-key-delete-title" className="text-sm font-semibold text-zinc-900">
+            <h3 id="team-api-key-delete-title" className="text-sm font-semibold text-foreground">
               팀 API Key 삭제
             </h3>
-            <p className="mt-2 text-sm text-zinc-600">
+            <p className="mt-2 text-sm text-muted-foreground">
               {teamDeletionModalParsed?.valid && teamDeletionModalParsed.immediate
                 ? null
                 : "유예 기간이 지나면 키가 영구 삭제됩니다. 유예 중에는 삭제 취소를 할 수 있습니다."}
@@ -865,14 +865,14 @@ export function TeamManagementView() {
               <p className="mt-2 text-sm font-medium text-red-600">이 API Key는 즉시 영구 삭제됩니다.</p>
             ) : null}
             <div className="mt-4 space-y-1.5">
-              <label className="text-xs font-medium text-zinc-800" htmlFor="team-api-key-delete-grace">
+              <label className="text-xs font-medium text-foreground" htmlFor="team-api-key-delete-grace">
                 유예 기간(일)
               </label>
               <input
                 id="team-api-key-delete-grace"
                 type="text"
                 inputMode="numeric"
-                className="h-10 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm tabular-nums"
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm tabular-nums text-foreground"
                 value={teamApiKeyDeletionModal.graceDaysInput}
                 onChange={(e) => {
                   setTeamApiKeyDeletionGraceError(null)
@@ -883,12 +883,12 @@ export function TeamManagementView() {
                 autoComplete="off"
                 disabled={deleteLoadingKey === `${teamApiKeyDeletionModal.teamId}:${teamApiKeyDeletionModal.keyId}`}
               />
-              <p className="text-xs text-zinc-500">{GRACE_PERIOD_DELETION_HINT}</p>
+              <p className="text-xs text-muted-foreground">{GRACE_PERIOD_DELETION_HINT}</p>
               {teamApiKeyDeletionGraceError ? (
                 <p className="text-xs text-red-600">{teamApiKeyDeletionGraceError}</p>
               ) : null}
             </div>
-            <div className="mt-4 flex gap-3 rounded-md border border-zinc-200 bg-zinc-50 p-3">
+            <div className="mt-4 flex gap-3 rounded-md border border-border bg-muted/40 p-3">
               <Checkbox
                 id="team-api-key-retain-logs"
                 checked={teamApiKeyDeletionModal.retainLogs}
@@ -902,10 +902,10 @@ export function TeamManagementView() {
                 className="mt-0.5"
               />
               <div className="min-w-0 space-y-1">
-                <Label htmlFor="team-api-key-retain-logs" className="text-xs font-medium leading-snug text-zinc-800">
+                <Label htmlFor="team-api-key-retain-logs" className="text-xs font-medium leading-snug text-foreground">
                   팀 API 사용 기록 보존
                 </Label>
-                <p className="text-xs leading-relaxed text-zinc-600">
+                <p className="text-xs leading-relaxed text-muted-foreground">
                   체크 해제 시, API Key가 최종적으로 완전히 삭제되는 시점에 이 키로 발생한 모든 팀 호출 로그와 통계도 함께 영구적으로 삭제됩니다.
                 </p>
               </div>
@@ -913,7 +913,7 @@ export function TeamManagementView() {
             <div className="mt-5 flex flex-wrap justify-end gap-2">
               <button
                 type="button"
-                className="h-9 rounded-md border border-zinc-300 bg-white px-3 text-xs font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-50"
+                className="h-9 rounded-md border border-input bg-background px-3 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
                 disabled={
                   deleteLoadingKey === `${teamApiKeyDeletionModal.teamId}:${teamApiKeyDeletionModal.keyId}`
                 }
@@ -926,7 +926,7 @@ export function TeamManagementView() {
                 className={
                   teamDeletionModalParsed?.valid && teamDeletionModalParsed.immediate
                     ? "h-9 rounded-md bg-red-600 px-3 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
-                    : "h-9 rounded-md border border-red-300 bg-white px-3 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                    : "h-9 rounded-md border border-red-300 bg-background px-3 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
                 }
                 disabled={
                   !teamDeletionModalParsed?.valid ||
@@ -944,9 +944,9 @@ export function TeamManagementView() {
           </div>
         </div>
       ) : null}
-      <aside className="w-full min-w-0 max-w-full shrink-0 border-r border-border bg-muted/20">
+      <aside className="h-full w-full min-w-0 max-w-full shrink-0 border-r border-border bg-muted/20">
         <div className="flex h-full min-h-0 min-w-0 flex-col">
-          <div className="border-b border-border px-4 py-4">
+          <div className="sticky top-0 z-10 border-b border-border bg-muted/20 px-4 py-4 backdrop-blur-sm">
             <div className="flex items-center justify-between gap-2">
               <h2 className="text-base font-semibold text-foreground">팀 목록</h2>
               <button
@@ -960,10 +960,10 @@ export function TeamManagementView() {
             </div>
             <p className="mt-1 text-xs text-muted-foreground">팀을 선택하면 항목 아래에서 상세 정보를 확인할 수 있습니다.</p>
             <div className="relative mt-3">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" aria-hidden />
               <input
                 id="team-search"
-                className="h-10 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm text-foreground outline-none transition placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
+                className="h-11 min-h-[60px] w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm text-foreground outline-none transition placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
                 placeholder="팀 이름 검색"
@@ -1067,7 +1067,7 @@ export function TeamManagementView() {
                 <p className="text-xs font-semibold text-amber-800">만료된 초대 알림</p>
                 <button
                   type="button"
-                  className="h-7 rounded border border-amber-300 bg-white px-2 text-[11px] text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+                  className="h-7 rounded border border-amber-300 bg-background px-2 text-[11px] text-amber-800 hover:bg-amber-100 disabled:opacity-50"
                   onClick={() => void loadExpiredInvitationNotices()}
                   disabled={expiredInvitationLoading}
                 >
@@ -1083,23 +1083,23 @@ export function TeamManagementView() {
                   {visibleExpiredInvitationNotices.map((notice) => (
                     <li
                       key={`expired-invitation-${notice.invitationId}`}
-                      className="rounded-md border border-amber-200 bg-white px-2 py-2"
+                      className="rounded-md border border-amber-200 bg-background px-2 py-2"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="truncate text-xs font-semibold text-zinc-900">{notice.teamName}</p>
-                          <p className="mt-1 text-[11px] text-zinc-700">
+                          <p className="truncate text-xs font-semibold text-amber-900">{notice.teamName}</p>
+                          <p className="mt-1 text-[11px] text-amber-800">
                             {notice.viewerRole === "INVITER"
                               ? "보낸 초대가 만료되었습니다. 다시 초대를 보내주세요."
                               : "받은 초대가 만료되었습니다."}
                           </p>
                           {notice.respondedAt ? (
-                            <p className="mt-1 text-[10px] text-zinc-500">만료 처리: {formatDateTime(notice.respondedAt)}</p>
+                            <p className="mt-1 text-[10px] text-amber-800/80">만료 처리: {formatDateTime(notice.respondedAt)}</p>
                           ) : null}
                         </div>
                         <button
                           type="button"
-                          className="h-6 rounded border border-zinc-300 bg-white px-1.5 text-[10px] text-zinc-700 hover:bg-zinc-50"
+                          className="h-6 rounded border border-amber-300 bg-background px-1.5 text-[10px] text-amber-800 hover:bg-amber-100"
                           onClick={() =>
                             setDismissedInvitationNoticeIds((prev) => ({
                               ...prev,
@@ -1121,7 +1121,7 @@ export function TeamManagementView() {
               <p className="px-2 py-3 text-sm text-muted-foreground">{debouncedKeyword.trim() ? "검색된 팀이 없습니다" : "참여 중인 팀이 없습니다."}</p>
             ) : null}
             {!loading && teams.length > 0 ? (
-              <ul className="space-y-2">
+              <ul className="flex min-h-full flex-col space-y-2">
                 {teams.map((team) => {
                   const isSelected = selectedTeamId === team.id
                   return (
@@ -1151,20 +1151,20 @@ export function TeamManagementView() {
                       {isSelected ? (
                         <div className="min-w-0 space-y-3 overflow-x-hidden break-words rounded-lg border border-border bg-card p-3">
                           <div className="flex items-center justify-between gap-2">
-                            <p className="text-xs font-semibold text-zinc-800">멤버 목록</p>
-                            <p className="text-[11px] text-zinc-500">
+                            <p className="text-xs font-semibold text-foreground">멤버 목록</p>
+                            <p className="text-[11px] text-muted-foreground">
                               {(teamMemberIdsByTeamId[team.id] ?? []).length}명
                             </p>
                           </div>
                           {(teamMemberIdsByTeamId[team.id] ?? []).length > 0 ? (
-                            <ul className="space-y-1 text-xs text-zinc-600">
+                            <ul className="space-y-1 text-xs text-muted-foreground">
                               {(teamMemberIdsByTeamId[team.id] ?? []).map((memberId) => (
                                 <li key={`${team.id}-member-inline-${memberId}`} className="flex items-center justify-between gap-2">
                                   <span className="truncate">{memberId}</span>
                                   {isTeamOwnerByTeamId[team.id] === true ? (
                                     <button
                                       type="button"
-                                      className="rounded border border-red-300 bg-white px-2 py-1 text-[11px] text-red-600 disabled:opacity-50"
+                                      className="rounded border border-red-300 bg-background px-2 py-1 text-[11px] text-red-600 disabled:opacity-50"
                                       disabled={removeMemberLoadingKey === `${team.id}:${memberId}`}
                                       onClick={() => void _removeTeamMember(team.id, memberId)}
                                     >
@@ -1175,13 +1175,13 @@ export function TeamManagementView() {
                               ))}
                             </ul>
                           ) : (
-                            <p className="text-xs text-zinc-500">등록된 팀원이 없습니다.</p>
+                            <p className="text-xs text-muted-foreground">등록된 팀원이 없습니다.</p>
                           )}
-                          <div className="space-y-2 rounded-md border border-zinc-100 bg-zinc-50 p-2">
+                          <div className="space-y-2 rounded-md border border-border bg-muted/40 p-2">
                             {(inviteInputsByTeamId[team.id] ?? []).map((row) => (
                               <div key={`${team.id}-${row.id}`} className="flex min-w-0 flex-wrap gap-2">
                                 <input
-                                  className="h-8 min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-2 text-xs"
+                                  className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-xs text-foreground"
                                   value={row.value}
                                   onChange={(e) => {
                                     const v = e.target.value
@@ -1197,7 +1197,7 @@ export function TeamManagementView() {
                                 {(inviteInputsByTeamId[team.id] ?? []).length > 1 ? (
                                   <button
                                     type="button"
-                                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-input bg-background text-foreground hover:bg-muted disabled:opacity-50"
                                     aria-label="이 초대 행 삭제"
                                     disabled={inviteLoadingTeamId === team.id}
                                     onClick={() =>
@@ -1215,7 +1215,7 @@ export function TeamManagementView() {
                             <div className="flex min-w-0 flex-wrap gap-2">
                               <button
                                 type="button"
-                                className="h-8 rounded-md border border-dashed border-zinc-300 bg-white px-2 text-[11px] text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                                className="h-8 rounded-md border border-dashed border-input bg-background px-2 text-[11px] text-foreground hover:bg-muted disabled:opacity-50"
                                 disabled={inviteLoadingTeamId === team.id}
                                 onClick={() =>
                                   setInviteInputsByTeamId((prev) => {
@@ -1228,7 +1228,7 @@ export function TeamManagementView() {
                               </button>
                               <button
                                 type="button"
-                                className="h-8 rounded-md border border-zinc-300 bg-white px-2 text-[11px] font-medium disabled:opacity-60"
+                                className="h-8 rounded-md border border-input bg-background px-2 text-[11px] font-medium text-foreground disabled:opacity-60"
                                 disabled={inviteLoadingTeamId === team.id}
                                 onClick={() => void _invite(team.id)}
                               >
@@ -1237,11 +1237,11 @@ export function TeamManagementView() {
                             </div>
                           </div>
 
-                          <div className="border-t border-zinc-100 pt-3">
-                            <p className="text-xs font-semibold text-zinc-800">API Key 목록</p>
-                            <div className="mt-2 space-y-2 rounded-md border border-zinc-100 bg-zinc-50 p-2">
+                          <div className="border-t border-border pt-3">
+                            <p className="text-xs font-semibold text-foreground">API Key 목록</p>
+                            <div className="mt-2 space-y-2 rounded-md border border-border bg-muted/40 p-2">
                               <select
-                                className="h-8 w-full rounded-md border border-zinc-300 bg-white px-2 text-xs"
+                                className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground"
                                 value={apiKeyProviderByTeamId[team.id] ?? "OPENAI"}
                                 onChange={(e) =>
                                   setApiKeyProviderByTeamId((prev) => ({
@@ -1258,7 +1258,7 @@ export function TeamManagementView() {
                                 ))}
                               </select>
                               <input
-                                className="h-8 w-full rounded-md border border-zinc-300 bg-white px-2 text-xs"
+                                className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground"
                                 value={apiKeyAliasByTeamId[team.id] ?? ""}
                                 onChange={(e) => setApiKeyAliasByTeamId((prev) => ({ ...prev, [team.id]: e.target.value }))}
                                 placeholder="API Key 별칭"
@@ -1267,7 +1267,7 @@ export function TeamManagementView() {
                               />
                               <input
                                 type="password"
-                                className="h-8 w-full rounded-md border border-zinc-300 bg-white px-2 text-xs"
+                                className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground"
                                 value={apiKeyValueByTeamId[team.id] ?? ""}
                                 onChange={(e) => setApiKeyValueByTeamId((prev) => ({ ...prev, [team.id]: e.target.value }))}
                                 placeholder="API Key 값"
@@ -1278,7 +1278,7 @@ export function TeamManagementView() {
                                 type="number"
                                 step={0.01}
                                 min={0}
-                                className="h-8 w-full rounded-md border border-zinc-300 bg-white px-2 text-xs"
+                                className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground"
                                 value={apiKeyMonthlyBudgetByTeamId[team.id] ?? ""}
                                 onChange={(e) => setApiKeyMonthlyBudgetByTeamId((prev) => ({ ...prev, [team.id]: e.target.value }))}
                                 placeholder="월 예산 USD"
@@ -1288,7 +1288,7 @@ export function TeamManagementView() {
                               />
                               <button
                                 type="button"
-                                className="h-8 rounded-md border border-zinc-300 bg-white px-2 text-[11px] font-medium disabled:opacity-60"
+                                className="h-8 rounded-md border border-input bg-background px-2 text-[11px] font-medium text-foreground disabled:opacity-60"
                                 disabled={apiKeyLoadingTeamId === team.id}
                                 onClick={() => void _registerTeamApiKey(team.id)}
                               >
@@ -1296,26 +1296,26 @@ export function TeamManagementView() {
                               </button>
                             </div>
                             {(teamApiKeysByTeamId[team.id] ?? []).length > 0 ? (
-                              <ul className="mt-2 space-y-2 text-xs text-zinc-600">
+                              <ul className="mt-2 space-y-2 text-xs text-muted-foreground">
                                 {(teamApiKeysByTeamId[team.id] ?? []).map((apiKey) => {
                                   const isEditing =
                                     editingTeamApiKey?.teamId === team.id && editingTeamApiKey?.keyId === apiKey.id
                                   const keyPendingDeletion = Boolean(apiKey.deletionRequestedAt)
                                   const keyAction = `${team.id}:${apiKey.id}`
                                   return (
-                                    <li key={`${team.id}-key-inline-${apiKey.id}`} className="rounded border border-zinc-200 bg-white p-2">
+                                    <li key={`${team.id}-key-inline-${apiKey.id}`} className="rounded border border-border bg-card p-2">
                                       {!isEditing ? (
                                         <div className="space-y-1">
                                           <p className="truncate">
                                             {apiKey.provider} · {apiKey.alias}
                                             {keyPendingDeletion ? (
-                                              <span className="ml-1 rounded bg-zinc-200 px-1 py-0.5 text-[10px] font-medium text-zinc-700">삭제 예정</span>
+                                              <span className="ml-1 rounded bg-muted px-1 py-0.5 text-[10px] font-medium text-foreground">삭제 예정</span>
                                             ) : null}
                                           </p>
                                           <div className="flex flex-wrap gap-1">
                                             <button
                                               type="button"
-                                              className="h-7 rounded border border-zinc-300 bg-white px-2 text-[11px] font-medium disabled:opacity-50"
+                                              className="h-7 rounded border border-input bg-background px-2 text-[11px] font-medium text-foreground disabled:opacity-50"
                                               disabled={keyPendingDeletion}
                                               onClick={() => _startEditTeamApiKey(team.id, apiKey)}
                                             >
@@ -1324,7 +1324,7 @@ export function TeamManagementView() {
                                             {keyPendingDeletion ? (
                                               <button
                                                 type="button"
-                                                className="h-7 rounded border border-zinc-300 bg-white px-2 text-[11px] font-medium disabled:opacity-50"
+                                                className="h-7 rounded border border-input bg-background px-2 text-[11px] font-medium text-foreground disabled:opacity-50"
                                                 disabled={cancelDeleteLoadingKey === keyAction}
                                                 onClick={() => void _cancelTeamApiKeyDeletion(team.id, apiKey.id)}
                                               >
@@ -1333,7 +1333,7 @@ export function TeamManagementView() {
                                             ) : (
                                               <button
                                                 type="button"
-                                                className="h-7 rounded border border-red-300 bg-white px-2 text-[11px] font-medium text-red-600 disabled:opacity-50"
+                                                className="h-7 rounded border border-red-300 bg-background px-2 text-[11px] font-medium text-red-600 disabled:opacity-50"
                                                 disabled={deleteLoadingKey === keyAction}
                                                 onClick={() => _openTeamApiKeyDeletionModal(team.id, apiKey.id)}
                                               >
@@ -1345,7 +1345,7 @@ export function TeamManagementView() {
                                       ) : (
                                         <div className="space-y-2">
                                           <input
-                                            className="h-8 w-full rounded-md border border-zinc-300 bg-white px-2 text-xs"
+                                            className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground"
                                             value={editTeamApiKeyAlias}
                                             onChange={(e) => setEditTeamApiKeyAlias(e.target.value)}
                                             placeholder="별칭"
@@ -1355,7 +1355,7 @@ export function TeamManagementView() {
                                             type="number"
                                             step={0.01}
                                             min={0}
-                                            className="h-8 w-full rounded-md border border-zinc-300 bg-white px-2 text-xs"
+                                            className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground"
                                             value={editTeamApiKeyBudget}
                                             onChange={(e) => setEditTeamApiKeyBudget(e.target.value)}
                                             placeholder="월 예산 USD"
@@ -1372,7 +1372,7 @@ export function TeamManagementView() {
                                             </button>
                                             <button
                                               type="button"
-                                              className="h-7 rounded border border-zinc-300 bg-white px-2 text-[11px] font-medium"
+                                              className="h-7 rounded border border-input bg-background px-2 text-[11px] font-medium text-foreground"
                                               disabled={teamApiKeyUpdateLoading === keyAction}
                                               onClick={cancelEditTeamApiKey}
                                             >
@@ -1386,15 +1386,15 @@ export function TeamManagementView() {
                                 })}
                               </ul>
                             ) : (
-                              <p className="mt-1 text-xs text-zinc-500">등록된 팀 API Key가 없습니다.</p>
+                              <p className="mt-1 text-xs text-muted-foreground">등록된 팀 API Key가 없습니다.</p>
                             )}
                           </div>
                           {isTeamOwnerByTeamId[team.id] === true ? (
                             <div className="rounded-md border border-red-200 bg-red-50 p-2">
-                              <p className="text-[11px] text-zinc-600">팀장은 팀 API 키를 모두 정리한 뒤 팀을 삭제할 수 있습니다.</p>
+                              <p className="text-[11px] text-muted-foreground">팀장은 팀 API 키를 모두 정리한 뒤 팀을 삭제할 수 있습니다.</p>
                               <button
                                 type="button"
-                                className="mt-1 rounded border border-red-300 bg-white px-2 py-1 text-[11px] font-medium text-red-600 disabled:opacity-50"
+                                className="mt-1 rounded border border-red-300 bg-background px-2 py-1 text-[11px] font-medium text-red-600 disabled:opacity-50"
                                 disabled={deleteTeamLoadingId === team.id}
                                 onClick={() => void _deleteTeam(team.id, team.name)}
                               >
@@ -1402,14 +1402,14 @@ export function TeamManagementView() {
                               </button>
                             </div>
                           ) : isTeamOwnerByTeamId[team.id] === false ? (
-                            <div className="rounded-md border border-zinc-200 bg-zinc-50 p-2">
-                              <p className="text-[11px] text-zinc-600">
+                            <div className="rounded-md border border-border bg-muted/40 p-2">
+                              <p className="text-[11px] text-muted-foreground">
                                 팀 삭제는 팀장만 가능합니다. (현재 계정은 팀장 권한이 아닙니다)
                               </p>
                             </div>
                           ) : (
-                            <div className="rounded-md border border-zinc-200 bg-zinc-50 p-2">
-                              <p className="text-[11px] text-zinc-600">팀장 권한을 확인하는 중입니다.</p>
+                            <div className="rounded-md border border-border bg-muted/40 p-2">
+                              <p className="text-[11px] text-muted-foreground">팀장 권한을 확인하는 중입니다.</p>
                             </div>
                           )}
                         </div>

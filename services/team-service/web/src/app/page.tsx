@@ -4,7 +4,7 @@ import TeamManagementEntry from "@/components/mf/team-management-entry"
 export default function TeamWebRootRedirectPage() {
   if (process.env.NODE_ENV === "development") {
     return (
-      <main className="min-h-0 flex-1">
+      <main className="min-h-0 flex-1 bg-sidebar text-sidebar-foreground">
         <TeamManagementEntry />
       </main>
     )
