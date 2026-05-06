@@ -4,7 +4,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 public record PolicyRecommendationResponse(
-		String recommendationLevel,
+		RecommendationLevel recommendationLevel,
 		String recommendedAction,
 		BigDecimal utilizationRatePercent,
 		List<String> reasons
