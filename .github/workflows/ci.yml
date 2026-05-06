@@ -256,12 +256,27 @@ jobs:
           pnpm --filter agent-web run build
         working-directory: .
       - uses: docker/setup-buildx-action@v3
+      - name: Docker image (web-node-deps base)
+        id: docker_web_node_deps
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/web-node-deps.Dockerfile
+          tags: web-node-deps:ci
+          load: true
+          push: false
+          cache-from: type=gha,scope=web-node-deps-ci
+          cache-to: type=gha,mode=min,scope=web-node-deps-ci
       - name: Docker image (agent-web, standalone) (cache gha)
         id: docker_agent_web
         uses: docker/build-push-action@v6
         with:
           context: .
           file: services/agent-service/web/Dockerfile
+          build-contexts: |
+            ci-deps=docker-image://web-node-deps:ci
+          build-args: |
+            WEB_NODE_DEPS_IMAGE=ci-deps
           tags: agent-web:ci
           load: true
           push: false
@@ -271,9 +286,10 @@ jobs:
         if: always()
         run: |
           echo "## Docker image build summary (agent-web)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- web-node-deps tag: \`web-node-deps:ci\` digest: \`${{ steps.docker_web_node_deps.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Tag: \`agent-web:ci\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Digest: \`${{ steps.docker_agent_web.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Cache scope: \`agent-web\` (type=gha)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Cache scopes: \`web-node-deps-ci\`, \`agent-web\` (type=gha)" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
   web-edge:

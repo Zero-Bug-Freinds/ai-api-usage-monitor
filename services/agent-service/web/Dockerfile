@@ -9,7 +9,7 @@ COPY packages/shell/package.json ./packages/shell/
 COPY services/agent-service/web/package.json ./services/agent-service/web/
 RUN pnpm install --frozen-lockfile
 
-FROM deps-local AS deps
+FROM ${WEB_NODE_DEPS_IMAGE} AS deps
 
 FROM node:22-alpine AS builder
 WORKDIR /repo
