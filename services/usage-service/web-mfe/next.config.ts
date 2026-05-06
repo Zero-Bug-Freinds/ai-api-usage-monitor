@@ -3,7 +3,10 @@ import path from "path";
 import type { Configuration as WebpackConfig } from "webpack";
 import NextFederationPlugin from "@module-federation/nextjs-mf";
 
+const usageAssetPrefix = (process.env.NEXT_PUBLIC_MFE_ASSET_PREFIX ?? "/mfe/usage").replace(/\/+$/, "");
+
 const nextConfig: NextConfig = {
+  assetPrefix: usageAssetPrefix,
   output: "standalone",
   outputFileTracingRoot: path.join(__dirname, "../../.."),
   transpilePackages: ["@ai-usage/ui", "@ai-usage/shell", "@ai-usage/team-workspace-cache"],

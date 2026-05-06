@@ -1,5 +1,6 @@
 import type { AppContext, AppInitialProps, AppProps } from "next/app";
 import NextApp from "next/app";
+import * as React from "react";
 import { HostRuntimeSafeguard } from "@/components/host-runtime-safeguard";
 import { HostShellLayout } from "@/components/host-shell-layout";
 import { ShellRouterErrorBoundary } from "@/components/shell-router-error-boundary";

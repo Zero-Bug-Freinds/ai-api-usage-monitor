@@ -1,6 +1,6 @@
 # Team API Key Status Changed Event Contract
 
-버전: 1.0  
+버전: 1.1  
 대상: Usage Service, Billing Service
 
 ---
@@ -26,7 +26,7 @@
 
 - Event Type: `TEAM_API_KEY_STATUS_CHANGED`
 - DTO 타입: `TeamDomainOutboundEvent.TeamApiKeyStatusChangedEvent`
-- Schema Version: `"v1"` (초기 버전)
+- Schema Version: `"v1"` (필드 확장 포함)
 
 ---
 
@@ -42,6 +42,7 @@
 | `teamApiKeyId` | `Long` | Y | Team API Key 식별자. |
 | `alias` | `String` | Y | Team API Key 별칭. |
 | `provider` | `String` | Y | Key 공급자 식별자(예: `OPENAI`). |
+| `monthlyBudgetUsd` | `BigDecimal` | Y | Team API Key 월 예산(USD). Billing 임계치 판단 기준. |
 | `status` | `Enum` | Y | Team API Key 상태. `ACTIVE`, `DELETION_REQUESTED`, `DELETED`. |
 | `retainLogs` | `Boolean` | N | 삭제 시점 로그 보존 여부. 상태가 `DELETED`일 때 주로 의미가 있으며, 값이 없을 수 있다. |
 
@@ -50,6 +51,7 @@
 - `schemaVersion`: 스키마 확장/변경 시 소비자 분기 처리 기준으로 사용한다.
 - `eventId`: 중복 발행/재전송 상황에서 소비자 dedupe 키로 사용한다.
 - `status`: API Key 라이프사이클 상태 동기화의 중심 필드다.
+- `monthlyBudgetUsd`: 상태 변경과 별개로 예산 변경이 전파되므로 read model 동기화에 사용한다.
 - `retainLogs`: 삭제 이후 로그 보존 정책 전달용 필드다.
 
 ---
@@ -74,6 +76,7 @@
   "teamApiKeyId": 1007,
   "alias": "production-openai-key",
   "provider": "OPENAI",
+  "monthlyBudgetUsd": 120.00,
   "status": "DELETION_REQUESTED",
   "retainLogs": true
 }

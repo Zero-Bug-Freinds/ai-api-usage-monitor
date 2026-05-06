@@ -7,6 +7,7 @@ import type { NextRouter } from "next/router";
 import { ConsoleLayoutOverride } from "@ai-usage/shell/pages";
 import { useLogoutCleanup } from "@ai-usage/team-workspace-cache";
 import { TeamWorkspaceProvider } from "@/components/team-workspace-context";
+import { RemoteErrorBoundary } from "@/components/remote-error-boundary";
 
 const sidebarSkeleton = (
   <aside
@@ -20,8 +21,18 @@ const TeamSidebarDynamic = dynamic(() => import("@/components/team-sidebar-lazy"
   loading: () => sidebarSkeleton,
 });
 
+const TeamManagementLazy = dynamic(() => import("team/TeamManagement"), {
+  ssr: false,
+  loading: () => <p className="p-3 text-sm text-muted-foreground">Team remote loading…</p>,
+});
+
 function HostShellInner({ children, router }: { children: ReactNode; router: NextRouter }) {
   useLogoutCleanup();
+  const [teamChunkAllowed, setTeamChunkAllowed] = React.useState(false);
+
+  React.useEffect(() => {
+    setTeamChunkAllowed(true);
+  }, []);
 
   const idOrigin = (process.env.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN ?? "").replace(/\/$/, "");
   const logoutApiPath = idOrigin ? `${idOrigin}/api/auth/logout` : "/api/auth/logout";
@@ -46,9 +57,25 @@ function HostShellInner({ children, router }: { children: ReactNode; router: Nex
       </p>
     );
 
+  const secondarySidebar = (
+    <aside className="team-team-mf-slot sticky top-0 ml-2 flex h-screen min-h-0 w-80 min-w-[320px] max-w-[420px] shrink-0 flex-col overflow-x-hidden rounded-l-lg border border-sidebar-border bg-sidebar text-sidebar-foreground">
+      {teamChunkAllowed ? (
+        <RemoteErrorBoundary
+          resetKey={`${router.asPath}`}
+          fallback={<p className="p-3 text-sm text-muted-foreground">Team remote를 불러오지 못했습니다.</p>}
+        >
+          <TeamManagementLazy />
+        </RemoteErrorBoundary>
+      ) : (
+        <p className="p-3 text-sm text-muted-foreground">원격 모듈을 준비하는 중…</p>
+      )}
+    </aside>
+  );
+
   return (
     <ConsoleLayoutOverride
       primarySidebar={primarySidebar}
+      secondarySidebar={secondarySidebar}
       contentClassName="mx-auto min-h-full w-full max-w-none flex-1 px-3 py-4 sm:px-5 lg:px-6"
     >
       {mainSlot}

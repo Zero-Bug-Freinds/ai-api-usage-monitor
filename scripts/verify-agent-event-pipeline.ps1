@@ -28,6 +28,8 @@ $gatewayPort = Get-OrDefault "API_GATEWAY_PORT" "8080"
 $rabbitMgmtPort = Get-OrDefault "RABBITMQ_MANAGEMENT_PORT" "15672"
 $rabbitUser = Get-OrDefault "RABBITMQ_USER" "guest"
 $rabbitPass = Get-OrDefault "RABBITMQ_PASSWORD" "guest"
+$gatewayDevRaw = [Environment]::GetEnvironmentVariable("GATEWAY_DEV_MODE")
+$gatewayDevMode = ($null -eq $gatewayDevRaw -or $gatewayDevRaw.Trim() -eq "" -or $gatewayDevRaw.Trim().ToLowerInvariant() -in @("true", "1", "yes"))
 
 function New-BasicAuthHeader([string]$user, [string]$pass) {
     $pair = "{0}:{1}" -f $user, $pass
@@ -37,6 +39,37 @@ function New-BasicAuthHeader([string]$user, [string]$pass) {
 
 function Get-JsonOrThrow([string]$url, [hashtable]$headers = @{}, [int]$timeoutSec = 20) {
     return Invoke-RestMethod -Uri $url -Method Get -Headers $headers -TimeoutSec $timeoutSec
+}
+
+function Resolve-GatewayJwt {
+    $pre = [Environment]::GetEnvironmentVariable("EXPENDITURE_VERIFY_GATEWAY_JWT")
+    if ($pre -and $pre.Trim() -ne "") {
+        return $pre.Trim()
+    }
+    $email = [Environment]::GetEnvironmentVariable("EXPENDITURE_VERIFY_LOGIN_EMAIL")
+    $pw = [Environment]::GetEnvironmentVariable("EXPENDITURE_VERIFY_LOGIN_PASSWORD")
+    if (-not $email -or $email.Trim() -eq "" -or -not $pw) {
+        return $null
+    }
+    $base = [Environment]::GetEnvironmentVariable("EXPENDITURE_VERIFY_IDENTITY_URL")
+    if (-not $base -or $base.Trim() -eq "") {
+        $base = [Environment]::GetEnvironmentVariable("IDENTITY_SERVICE_URL")
+    }
+    if (-not $base -or $base.Trim() -eq "") {
+        $base = "http://127.0.0.1:8090"
+    }
+    $base = $base.Trim().TrimEnd("/")
+    $loginUrl = "${base}/api/auth/login"
+    try {
+        $bodyObj = @{ email = $email.Trim(); password = $pw }
+        $r = Invoke-RestMethod -Uri $loginUrl -Method Post -ContentType "application/json" -Body ($bodyObj | ConvertTo-Json -Compress) -ErrorAction Stop
+        if ($r.success -eq $true -and $null -ne $r.data -and $r.data.accessToken) {
+            return [string]$r.data.accessToken
+        }
+    } catch {
+        Write-Host ("  - gateway JWT fetch failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+    }
+    return $null
 }
 
 function Show-TopEventTypes([array]$events) {
@@ -94,8 +127,21 @@ function Invoke-ProxyLiveTraffic {
     $url = "http://localhost:$gatewayPort/api/v1/ai/$Provider/v1/chat/completions"
     Write-Host ""
     Write-Host "Sending live proxy traffic: $url" -ForegroundColor Yellow
+    $headers = @{}
+    if ($gatewayDevMode) {
+        $headers["X-User-Id"] = $UserId
+    } else {
+        $jwt = Resolve-GatewayJwt
+        if (-not $jwt) {
+            Write-Host "  - proxy request skipped: GATEWAY_DEV_MODE=false 이지만 JWT를 찾지 못했습니다." -ForegroundColor Yellow
+            Write-Host "    EXPENDITURE_VERIFY_GATEWAY_JWT 또는 EXPENDITURE_VERIFY_LOGIN_EMAIL/PASSWORD를 설정하세요."
+            return
+        }
+        $headers["Authorization"] = "Bearer $jwt"
+    }
+
     try {
-        $resp = Invoke-WebRequest -Uri $url -Method Post -ContentType "application/json" -Headers @{ "X-User-Id" = $UserId } -Body $body -TimeoutSec 60
+        $resp = Invoke-WebRequest -Uri $url -Method Post -ContentType "application/json" -Headers $headers -Body $body -TimeoutSec 60
         Write-Host ("  - proxy response HTTP {0}" -f $resp.StatusCode) -ForegroundColor Green
     } catch {
         Write-Host ("  - proxy request failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow

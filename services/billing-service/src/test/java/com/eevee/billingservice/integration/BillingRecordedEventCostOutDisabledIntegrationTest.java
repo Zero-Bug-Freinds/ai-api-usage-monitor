@@ -75,6 +75,7 @@ class BillingRecordedEventCostOutDisabledIntegrationTest {
                 null,
                 null,
                 "key-disabled",
+                null,
                 "cafebabedeadbeef",
                 "managed",
                 AiProvider.OPENAI,

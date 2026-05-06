@@ -45,24 +45,28 @@ public class ApiKeyClient {
     /**
      * @param keyLookupUserId numeric platform user id when available, else gateway subject (e.g. email)
      */
-    public Mono<ResolvedApiKey> resolveApiKey(String keyLookupUserId, AiProvider provider) {
-        String cacheKey = keyLookupUserId + ":" + provider.pathSegment();
+    public Mono<ResolvedApiKey> resolveApiKey(String keyLookupUserId, String teamId, AiProvider provider) {
+        String normalizedTeamId = teamId == null ? "" : teamId.trim();
+        String cacheKey = keyLookupUserId + ":" + normalizedTeamId + ":" + provider.pathSegment();
         return Mono.fromCallable(() -> cache.get(cacheKey))
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
     private ResolvedApiKey loadKeyBlocking(String cacheKey) {
-        int idx = cacheKey.indexOf(':');
-        if (idx <= 0) {
+        int firstIdx = cacheKey.indexOf(':');
+        int lastIdx = cacheKey.lastIndexOf(':');
+        if (firstIdx <= 0 || lastIdx <= firstIdx) {
             throw new IllegalStateException("invalid cache key");
         }
-        String keyLookupUserId = cacheKey.substring(0, idx);
-        String segment = cacheKey.substring(idx + 1);
+        String keyLookupUserId = cacheKey.substring(0, firstIdx);
+        String teamId = cacheKey.substring(firstIdx + 1, lastIdx);
+        String segment = cacheKey.substring(lastIdx + 1);
         AiProvider provider = AiProvider.fromPathSegment(segment);
+        boolean teamRequest = !teamId.isBlank();
 
         String mock = resolveMockKey(provider);
         if (mock != null && !mock.isBlank()) {
-            return new ResolvedApiKey(mock, null, fingerprint(mock), "mock");
+            return new ResolvedApiKey(mock, null, null, fingerprint(mock), "mock");
         }
 
         String token = proxyProperties.getKeyService().getInternalToken();
@@ -71,6 +75,7 @@ public class ApiKeyClient {
                     .uri(uriBuilder -> uriBuilder
                             .path("/internal/api-keys/{provider}")
                             .queryParam("userId", keyLookupUserId)
+                            .queryParam("teamId", teamId)
                             .build(provider.pathSegment()))
                     .headers(h -> {
                         if (token != null && !token.isBlank()) {
@@ -86,8 +91,9 @@ public class ApiKeyClient {
             return new ResolvedApiKey(
                     body.plainKey(),
                     body.keyId(),
+                    teamRequest ? body.keyId() : null,
                     fingerprint(body.plainKey()),
-                    "managed"
+                    teamRequest ? "team" : "managed"
             );
         } catch (WebClientResponseException e) {
             if (e.getStatusCode().value() == 404) {
@@ -131,6 +137,7 @@ public class ApiKeyClient {
     public record ResolvedApiKey(
             String plainKey,
             String keyId,
+            String teamApiKeyId,
             String keyFingerprint,
             String keySource
     ) {

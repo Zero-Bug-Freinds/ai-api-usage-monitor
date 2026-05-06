@@ -70,6 +70,9 @@ jobs:
           filters: |
             web_edge:
               - 'docker/web-edge/**'
+              - 'apps/web/**'
+              - 'services/team-service/web-mfe/**'
+              - 'services/usage-service/web-mfe/**'
               - 'docker-compose.yml'
               - '.github/workflows/**'
             api_gateway:

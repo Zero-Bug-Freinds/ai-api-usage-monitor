@@ -109,6 +109,7 @@ class BillingRecordedEventPipelineIntegrationTest {
                 null,
                 null,
                 "key-it",
+                null,
                 "cafebabedeadbeef",
                 "managed",
                 AiProvider.OPENAI,

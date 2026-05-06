@@ -54,6 +54,8 @@ curl "http://localhost:8097/api/v1/agents/billing-signals"
 curl "http://localhost:3005/agent/api/v1/agents/available-context" -H "x-user-id: 1"
 ```
 
+호스트에서 `agent-service`는 보통 **8097**로 노출된다(`docker-compose`: 알림 등과 8096 충돌 방지). 컨테이너 내부·서비스 간 호출은 `8096`이다.
+
 정상 기준:
 - `debug/events`: `UsageCostFinalizedEvent`, `DailyCumulativeTokensUpdatedEvent` 존재
 - `billing-signals`: 대상 키의 `latestEstimatedCostUsd` 0 초과
@@ -66,3 +68,11 @@ curl "http://localhost:3005/agent/api/v1/agents/available-context" -H "x-user-id
 - 실시간 체인은 `usage.recorded`를 시작으로 진행됩니다.
   - `usage.recorded` -> billing 처리 -> `usage.cost.finalized`
   - `usage.recorded` -> usage 누적 처리 -> `usage.daily.cumulative.tokens`
+- **`billing-signals`가 비어 있는데 billing DB에는 지출이 있는 경우**
+  - RabbitMQ 큐(`ai-agent.billing.cost-finalized.queue`)에 메시지가 안 쌓이거나, 재시작 직후 이벤트가 아직 없을 수 있습니다.
+  - 바인딩은 `billing.events` + 라우팅 키 `usage.cost.finalized`가 정상인지 RabbitMQ Management에서 확인합니다.
+  - 완화: `BillingSignalSnapshotService`는 **Redis**에 스냅샷을 저장·복구하고, `BillingSignalReconciliationService`가 billing **`expenditure/summary`**(수정 불가 전제의 공개 API)로 주기 보정합니다. 상세는 `docs/agent-service-overview-20260430.md` §6·§9.
+- **Billing 지출 % vs Agent 키 카드 %**
+  - Billing **상단** 개인 배너는 **모든 키 지출 합 / 사용자 단위 월 예산**입니다.
+  - Billing에서 **특정 키·프로바이더**를 고른 뒤의 요약 %와 Agent 키 카드는 둘 다 **`expenditure/summary` 키 단위**에 맞추는 것이 목표입니다. 상단 %와 키 카드 %를 직접 비교하면 어긋날 수 있습니다.
+- **Gateway JWT 모드**에서 Proxy 실트래픽·일부 스크립트는 `Authorization: Bearer`가 필요합니다. `scripts/verify-expenditure-chain.ps1` 주석의 `EXPENDITURE_VERIFY_GATEWAY_JWT` 등을 참고합니다.
