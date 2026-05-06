@@ -41,6 +41,9 @@
   - 설명: `usage.prediction.signals` 기반 일평균 지출/토큰 신호 조회
 - `GET /debug/events?limit={n}`
   - 설명: 최근 수신 이벤트 디버그 조회
+- `GET /model-catalog`
+  - 출력: `CatalogSnapshot`
+  - 동작: 추천 엔진이 사용하는 모델 단가 카탈로그(현재 스냅샷, 마지막 갱신 시각/성공 여부)를 조회한다.
 
 ## 3. RabbitMQ 소비 이벤트
 
@@ -87,6 +90,9 @@
 - `GET /agent/api/v1/agents/policy-recommendations/{keyId}?scopeType=...&scopeId=...`
   - 백엔드 추천 조회 API 프록시
   - UI 카드에 추천 신뢰도/절감률/근거 지표를 렌더링할 때 사용한다.
+- `GET /agent/api/v1/agents/model-catalog`
+  - 백엔드 `model-catalog` API 프록시
+  - UI에서 현재 추천 단가 기준(모델별 input/output 단가, 소스, 마지막 갱신 상태) 표시 시 사용한다.
 
 웹 UI에서 API Key별 "다음 결제일"은 브라우저 `localStorage`에 저장한다.
 
@@ -121,6 +127,9 @@
   - `AI_AGENT_RECOMMENDATION_CATALOG_URL` (optional, 외부 모델 단가 JSON URL)
   - `AI_AGENT_RECOMMENDATION_CATALOG_REFRESH_MS` (default: `300000`)
   - `AI_AGENT_RECOMMENDATION_CATALOG_REQUEST_TIMEOUT_MS` (default: `5000`)
+  - `AI_AGENT_RECOMMENDATION_CATALOG_API_KEY` (optional, 외부 카탈로그 Authorization Bearer)
+  - `AI_AGENT_RECOMMENDATION_CATALOG_OPENROUTER_REFERER` (optional, OpenRouter `HTTP-Referer`)
+  - `AI_AGENT_RECOMMENDATION_CATALOG_OPENROUTER_TITLE` (optional, OpenRouter `X-Title`)
 - Web BFF
   - `AI_AGENT_SERVICE_INTERNAL_ORIGIN`
   - `BILLING_SERVICE_INTERNAL_ORIGIN` (optional, `available-context`에서 summary 호출 시)
