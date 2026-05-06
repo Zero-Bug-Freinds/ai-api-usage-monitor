@@ -5,8 +5,12 @@ package com.zerobugfreinds.identity_service.domain;
  */
 public enum ExternalApiKeyProvider {
 	GEMINI,
+	GOOGLE,
 	OPENAI,
 	ANTHROPIC,
+	META,
+	MISTRAL,
+	COHERE,
 	GROK;
 
 	public static ExternalApiKeyProvider fromInternalPathSegment(String segment) {
@@ -17,7 +21,11 @@ public enum ExternalApiKeyProvider {
 		return switch (normalized) {
 			case "openai" -> OPENAI;
 			case "anthropic" -> ANTHROPIC;
-			case "google", "gemini" -> GEMINI;
+			case "google" -> GOOGLE;
+			case "gemini" -> GEMINI;
+			case "meta" -> META;
+			case "mistral" -> MISTRAL;
+			case "cohere" -> COHERE;
 			case "grok" -> GROK;
 			default -> throw new IllegalArgumentException("unknown provider: " + segment);
 		};
