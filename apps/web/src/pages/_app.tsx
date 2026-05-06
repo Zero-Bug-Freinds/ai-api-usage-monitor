@@ -5,7 +5,6 @@ import { HostRuntimeSafeguard } from "@/components/host-runtime-safeguard";
 import { HostShellLayout } from "@/components/host-shell-layout";
 import { ShellRouterErrorBoundary } from "@/components/shell-router-error-boundary";
 import { PagesHostRouterProvider } from "@/context/pages-host-router-context";
-import { hostGeistMono, hostGeistSans } from "@/lib/host-document-fonts";
 import "@/styles/globals.css";
 
 /**
@@ -18,14 +17,6 @@ import "@/styles/globals.css";
  * SSR 이중 React 회피: 클라이언트만 MF·react 별칭; 서버는 리모트 스텁 + MF 미적용(next.config.mjs).
  */
 export default function WebApp({ Component, pageProps, router }: AppProps) {
-  React.useEffect(() => {
-    const root = document.documentElement;
-    root.classList.add(hostGeistSans.variable, hostGeistMono.variable);
-    return () => {
-      root.classList.remove(hostGeistSans.variable, hostGeistMono.variable);
-    };
-  }, []);
-
   return (
     <PagesHostRouterProvider router={router}>
       <HostRuntimeSafeguard router={router}>
