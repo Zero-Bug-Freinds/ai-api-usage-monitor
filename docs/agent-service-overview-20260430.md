@@ -60,7 +60,11 @@
 - `GET /agent/api/v1/agents/available-context`
   - 개인 API Key(alias 중심) + 팀 API Key + Billing Signal + User Context를 합쳐 UI에 전달
   - 개인 API Key는 우선 agent 이벤트 스냅샷을 사용하고, 비어 있을 때 Identity 예산 API(`/api/identity/v1/users/{userId}/budget` 또는 이메일 기반 `/api/identity/v1/users/budget`)를 fallback으로 조회한다.
+  - **Billing 웹(지출) 키별 요약과 동일한 기준으로 예산 사용률을 맞춘다.** 키마다 `billing-service`의 `GET /api/v1/expenditure/summary`를 호출해, 응답의 **`totalCostUsd`와 `monthlyBudgetUsd`**를 사용한다(기간: **Asia/Seoul** 기준 이번 달 1일 ~ 오늘, `services/billing-service/web/src/lib/expenditure/dates.ts`의 `currentMonthRangeKst`와 동일한 의도). `billing-service` 수정 없이 공개 API만 사용한다.
+  - 지출은 이벤트 스냅샷(`billing-signals`의 `latestEstimatedCostUsd`)과 위 summary의 `totalCostUsd` 중 **큰 값**을 취해, 실시간 이벤트와 집계 DB가 어긋날 때도 보수적으로 표시한다.
+  - 내부 HTTP 호출 시 원 요청의 `Authorization`·`Cookie`·`x-user-id`·`x-user-email`을 전달하고, billing direct 호출에는 **`X-Gateway-Auth`**(`GATEWAY_SHARED_SECRET`, BFF 기본값은 로컬 개발용 시크릿)를 붙인다.
   - 로그인 세션(`/api/auth/session`)에서 이메일을 파싱해 내부 호출 시 `x-user-email` 헤더로 전달하고, 식별 헤더(`x-user-id`)가 없으면 `AI_AGENT_FALLBACK_USER_ID`를 사용한다.
+  - 개인 키 스냅샷 조회는 숫자 `userId` 헤더가 있으면 `GET /api/v1/agents/identity-api-keys/{userId}`로 한정해, 타 사용자 키와 섞이지 않도록 한다.
   - Team 서비스 조회 결과가 비어 있으면 다음 사용자 식별자 후보(헤더/세션/환경값)를 순차 시도한다.
   - 팀명은 괄호 메타정보를 제거한 표시명으로 정규화한다. 예: `Platform Team (T-12)` -> `Platform Team`
 - `POST /agent/api/v1/agents/budget-forecast-assistant`
@@ -88,23 +92,43 @@
   - `SPRING_RABBITMQ_HOST`, `SPRING_RABBITMQ_PORT`
   - `SPRING_RABBITMQ_USERNAME`, `SPRING_RABBITMQ_PASSWORD`
   - `AI_AGENT_RABBIT_*` 계열(Identity/Team/Billing queue, exchange, routing key, enabled)
+- Redis (billing-signals 영속화)
+  - `SPRING_REDIS_HOST` / `REDIS_HOST` (default: 컨테이너 네트워크에서는 `redis`)
+  - `SPRING_REDIS_PORT` / `REDIS_PORT` (default: `6379`)
+- Billing 스냅샷 보정 (HTTP, billing-service 수정 없음)
+  - `ai-agent.billing-reconcile.*` (`application.properties` 참고)
+  - `AI_AGENT_BILLING_RECONCILE_ENABLED` (default: `true`)
+  - `AI_AGENT_BILLING_BASE_URL` (default: `http://billing-service:8095`)
+  - `GATEWAY_SHARED_SECRET` (billing expenditure API 신뢰 헤더, BFF·reconcile 공통)
+  - `AI_AGENT_BILLING_RECONCILE_INITIAL_DELAY_MS`, `AI_AGENT_BILLING_RECONCILE_FIXED_DELAY_MS` (주기 보정 간격)
 - Web BFF
   - `AI_AGENT_SERVICE_INTERNAL_ORIGIN`
+  - `BILLING_SERVICE_INTERNAL_ORIGIN` (optional, `available-context`에서 summary 호출 시)
   - `IDENTITY_SERVICE_INTERNAL_ORIGIN` (optional, 미지정 시 `localhost:8090` 등 기본 후보 사용)
   - `TEAM_SERVICE_INTERNAL_ORIGIN` (optional)
   - `AI_AGENT_FALLBACK_USER_ID` (optional, 미설정 시 `"1"`)
   - `AI_AGENT_TEAM_CATALOG_USER_ID` (optional override, 기본 미사용)
+  - `GATEWAY_SHARED_SECRET` (billing 내부 호출 시 `X-Gateway-Auth`)
 
 ## 6. 운영상 주의점
 
-- 스냅샷 저장소는 메모리 기반(`ConcurrentHashMap`, `ConcurrentLinkedDeque`)이라 서비스 재시작 시 상태가 초기화된다.
+- **Billing 비용 신호(`BillingSignalSnapshotService`)**: 메모리 맵에 더해 **Redis Hash**(`ai-agent:billing-signals`)에 직렬화 저장한다. 재시작 후에도 Redis가 살아 있으면 스냅샷이 복구된다. Redis가 없으면 기존처럼 메모리만 사용한다.
+- **보정 잡(`BillingSignalReconciliationService`)**: 애플리케이션 기동 후 및 고정 지연마다, Identity 키 스냅샷에 있는 키에 대해 `billing-service`의 `GET /api/v1/expenditure/summary`를 호출해 비용을 보강한다(기간: **Asia/Seoul** 이번 달 1일 ~ 오늘). 이벤트 유입이 없거나 재시작 직후 `billing-signals`가 비는 구간을 줄인다.
+- Identity/팀/기타 스냅샷은 여전히 메모리 기반이라, 해당 컴포넌트는 재시작 시 초기화될 수 있다(이벤트 재유입 또는 BFF fallback에 의존).
+- **호스트 포트**: 루트 `docker-compose.yml`에서 알림 서비스가 호스트 `8096`을 쓰는 경우가 있어, `agent-service`는 호스트에 **`8097:8096`**으로 노출되는 구성이 일반적이다. 로컬 점검 시 `http://localhost:8097/api/v1/agents/...`를 사용한다.
 - `debug/events`는 운영 환경에서 접근 통제와 민감정보 마스킹 정책을 반드시 적용해야 한다.
 - 컨텍스트 집계는 이벤트 도착 순서와 시점에 따라 일시적으로 비어 있을 수 있다.
 - 개인 키 이벤트가 아직 유입되지 않은 초기 상태에서는 개인 키 목록이 비어 보일 수 있으며, 이때는 Identity fallback 조회 성공 여부(오리진/포트/권한 헤더)를 함께 점검해야 한다.
 - `docker compose --profile web up` 실행 시 `agent-web`은 `agent-service`, `team-service` 의존으로 함께 올라오도록 구성되어야 한다. 내부 오리진 기본값은 컨테이너 DNS(`http://agent-service:8096`)를 사용한다.
 - `web-edge`에서 `/agent`, `/agent/`, `/agent/*`는 `agent-web`으로 프록시되어야 한다. 템플릿 변경 후에는 `web-edge` 재기동/재생성이 필요하다.
 
-## 7. 최근 반영 사항 (2026-04-30)
+## 7. Billing UI vs Agent UI 예산 사용률
+
+- **Billing 지출 화면 상단(개인)**: `monthly-budget-status` 기준으로 **사용자 전체 지출 합**과 **사용자 단위 월 예산**으로 %를 낸다. 여러 API 키가 있으면 지출은 합산된다.
+- **Billing 지출 화면에서 특정 키·프로바이더 선택 후 요약**: `expenditure/summary` 기준으로 **그 키의 지출**과 **그 키의 월 예산**으로 %를 낸다.
+- **Agent UI 키 카드**: 위와 동일하게 **키별** `expenditure/summary`의 `totalCostUsd`·`monthlyBudgetUsd`를 우선 사용하므로, Billing의 **키 선택 요약 %**와 맞추는 것이 목표다. 상단 배너 %와 숫자가 다르면 집계 단위가 다른 것이므로, 비교 시 Billing에서도 **같은 키**를 선택해 확인한다.
+
+## 8. 최근 반영 사항 (2026-04-30)
 
 - `available-context`와 `budget-forecast-assistant` BFF의 기본 백엔드 오리진을 동일하게 정리했다.
 - Identity 이벤트 리스너에서 예외를 삼키지 않고 재전파하도록 수정했다.
@@ -118,3 +142,11 @@
 - BFF(`available-context`, `budget-forecast-assistant`)에서 로그인 세션 이메일을 파싱해 `x-user-email` 헤더를 내부 백엔드 호출에 전달하도록 변경했다.
 - Agent UI 분석 액션을 개인 키/팀 키 버튼으로 분리했다.
 - API Key별 "다음 결제일" 입력값을 브라우저 `localStorage`에 저장/복원하도록 정리했다.
+
+## 9. 최근 반영 사항 (2026-05-06)
+
+- `BillingSignalSnapshotService`: Redis 영속화, `usage.cost.finalized` / `billing.cost.corrected` 수신 시 저장, 기동 시 Redis에서 복원.
+- `BillingSignalReconciliationService`: 기동 시 및 스케줄로 billing `expenditure/summary` 호출해 스냅샷 보정(billing-service 코드 변경 없음).
+- `available-context` BFF: 키별 billing summary(`totalCostUsd`, `monthlyBudgetUsd`)·KST 월초~오늘·`X-Gateway-Auth`·세션/Authorization 전달, 개인 키 조회 경로 정리.
+- `scripts/verify-agent-event-pipeline.ps1`: `GATEWAY_DEV_MODE=false`일 때 Gateway JWT 경로 지원.
+- 문서: Billing 상단 % vs 키별 % vs Agent 키 카드 구분, 로컬 agent 호스트 포트 `8097` 안내.

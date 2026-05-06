@@ -19,6 +19,7 @@ public class BudgetForecastService {
 	private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
 	private static final BigDecimal WARNING_THRESHOLD = BigDecimal.valueOf(80);
 	private static final BigDecimal CRITICAL_THRESHOLD = BigDecimal.valueOf(100);
+	private static final long BILLING_GAP_CRITICAL_DAYS = 1;
 
 	private final GeminiAssistantService geminiAssistantService;
 
@@ -134,7 +135,7 @@ public class BudgetForecastService {
 
 	private static String resolveHealthStatus(BigDecimal utilizationPercent, Long billingDateGapDays, boolean spendSpike) {
 		if (utilizationPercent.compareTo(CRITICAL_THRESHOLD) >= 0
-				|| (billingDateGapDays != null && billingDateGapDays >= 0)) {
+				|| (billingDateGapDays != null && billingDateGapDays > BILLING_GAP_CRITICAL_DAYS)) {
 			return "CRITICAL";
 		}
 		if (utilizationPercent.compareTo(WARNING_THRESHOLD) >= 0 || spendSpike) {

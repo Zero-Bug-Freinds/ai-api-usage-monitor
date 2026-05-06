@@ -25,7 +25,8 @@ import java.util.Optional;
 public class GeminiAssistantService {
 
 	private static final Logger log = LoggerFactory.getLogger(GeminiAssistantService.class);
-	private static final String DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+	private static final String DEFAULT_GEMINI_MODEL = "gemini-1.5-flash";
+	private static final double FORECAST_TEMPERATURE = 0.0;
 	private static final List<String> DEFAULT_ACTIONS = List.of("사용 패턴을 점검하고, 필요 시 예산 또는 모델 사용 한도를 조정하세요.");
 
 	private final AiAgentGeminiProperties properties;
@@ -48,22 +49,44 @@ public class GeminiAssistantService {
 		try {
 			String inputJson = objectMapper.writeValueAsString(buildInputMap(request));
 			String prompt = """
-					You are a budget forecasting assistant for an AI API usage product.
-					Given the JSON input, estimate when the user's monthly budget is likely to run out and assess risk.
+					You are a strictly analytical budget forecasting assistant for an AI API usage product.
+					Do NOT output any conversational text.
+					Output ONLY valid raw JSON.
 
-					Input JSON:
+					[Risk assessment rules]
+					1) CRITICAL: utilization is over 90%%, OR the budget will likely run out before billing cycle end.
+					2) WARNING: sudden spike in daily spend, or moderate utilization with trend risk.
+					3) HEALTHY: utilization is low and remaining budget is sufficient, even if billing cycle end is near.
+
+					[Example]
+					Input: {"monthlyBudgetUsd":100,"currentSpendUsd":0.05,"billingCycleEndDate":"%s","recentDailySpendUsd":[0.01,0.01,0.01]}
+					Output: {
+					  "predictedRunOutDate": "%s",
+					  "daysUntilRunOut": 999,
+					  "healthStatus": "HEALTHY",
+					  "budgetUtilizationPercent": "0.05",
+					  "assistantMessage": "예산 사용량이 매우 적어 상태가 양호합니다.",
+					  "recommendedActions": ["현재 추세를 유지하세요.", "주간 단위로 사용량만 점검하세요."]
+					}
+
+					[Actual input JSON]
 					%s
 
-					Respond with ONLY one raw JSON object (no markdown code fences, no commentary). Use these keys exactly:
-					- predictedRunOutDate: string yyyy-MM-dd (date when budget is expected to be exhausted; if already exhausted use today in UTC+9 sense as calendar "today")
-					- daysUntilRunOut: integer >= 0, calendar days from today until predictedRunOutDate (must be consistent with predictedRunOutDate)
-					- healthStatus: one of HEALTHY, WARNING, CRITICAL
-					- budgetUtilizationPercent: string with two decimal places, e.g. "72.50" (estimated current utilization percent)
-					- assistantMessage: one short Korean sentence summarizing the situation for the user
-					- recommendedActions: JSON array of 2-5 short Korean action strings
+					[Required output format]
+					Return ONLY one raw JSON object.
+					Never wrap in markdown (no ```json).
+					Never add extra keys.
+					{
+					  "predictedRunOutDate": "yyyy-MM-dd",
+					  "daysUntilRunOut": <integer>,
+					  "healthStatus": "CRITICAL|WARNING|HEALTHY",
+					  "budgetUtilizationPercent": "<string with 2 decimals>",
+					  "assistantMessage": "<one Korean sentence>",
+					  "recommendedActions": ["<Korean action 1>", "<Korean action 2>"]
+					}
 
 					Today's date for reference: %s
-					""".formatted(inputJson, LocalDate.now());
+					""".formatted(LocalDate.now().plusDays(1), LocalDate.now().plusDays(999), inputJson, LocalDate.now());
 
 			String responseBody = callGenerateContent(prompt);
 			if (responseBody == null || responseBody.isBlank()) {
@@ -110,7 +133,7 @@ public class GeminiAssistantService {
 				},
 				"generationConfig", Map.of(
 						"responseMimeType", "application/json",
-						"temperature", 0.2
+						"temperature", FORECAST_TEMPERATURE
 				)
 		);
 

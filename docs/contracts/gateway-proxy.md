@@ -167,6 +167,12 @@ Usage 소비 코드: [`UsageRecordedEventListener`](../../services/usage-service
 | `requestSuccessful` | `Boolean` | null이면 `true` |
 | `upstreamStatusCode` | `Integer` | 선택 |
 
+Team API Key 요청 식별 규약:
+
+- `apiKeySource="team"`
+- `apiKeyId=String(teamApiKeyId)` (`team-service`의 팀 키 PK 문자열)
+- Billing/Usage는 팀 키 집계·예산 임계 판단 시 `apiKeySource + apiKeyId` 조합으로 팀 키를 식별한다.
+
 ### 6.1.3 Usage 서비스의 HTTP 소비 API(조회)
 
 Usage는 MQ로 적재 후 HTTP 조회를 제공한다(컨트롤러: `UsageAnalyticsController`):
