@@ -2,10 +2,7 @@
 
 import { TeamManagementView } from "@web/components/team/team-management-view"
 
+/** MF expose 엔트리: 호스트 aside가 레이아웃·폭을 담당하므로 추가 래퍼 없이 뷰만 내보냄 */
 export default function TeamManagementEntry() {
-  return (
-    <div className="team-mf-root min-h-0 w-full min-w-0 max-w-full overflow-x-hidden">
-      <TeamManagementView />
-    </div>
-  )
+  return <TeamManagementView />
 }

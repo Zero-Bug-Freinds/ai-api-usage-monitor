@@ -570,6 +570,8 @@ services:
       - team-web
     expose:
       - "3000"
+    ports:
+      - "${TEAM_WEB_MFE_PORT:-3012}:3000"
 
   web-edge:
     profiles:
