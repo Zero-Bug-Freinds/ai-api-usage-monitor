@@ -3,6 +3,7 @@ package com.zerobugfreinds.team_service.event;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -463,6 +464,7 @@ public sealed interface TeamDomainOutboundEvent permits
 			String visibility,
 			String alias,
 			String provider,
+			BigDecimal monthlyBudgetUsd,
 			TeamApiKeyStatus status,
 			Boolean retainLogs
 	) implements TeamDomainOutboundEvent {
@@ -481,6 +483,7 @@ public sealed interface TeamDomainOutboundEvent permits
 				String visibility,
 				String alias,
 				String provider,
+				BigDecimal monthlyBudgetUsd,
 				TeamApiKeyStatus status,
 				Boolean retainLogs
 		) {
@@ -496,6 +499,7 @@ public sealed interface TeamDomainOutboundEvent permits
 					visibility,
 					alias,
 					provider,
+					monthlyBudgetUsd,
 					status,
 					retainLogs
 			);

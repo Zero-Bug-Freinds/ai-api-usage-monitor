@@ -118,6 +118,7 @@ public class TeamApiKeyService {
                 saved.getId(),
                 saved.getKeyAlias(),
                 saved.getProvider().name(),
+                saved.getMonthlyBudgetUsd(),
                 TeamApiKeyStatus.ACTIVE,
                 null
         );
@@ -194,6 +195,7 @@ public class TeamApiKeyService {
                 entity.getId(),
                 entity.getKeyAlias(),
                 entity.getProvider().name(),
+                entity.getMonthlyBudgetUsd(),
                 TeamApiKeyStatus.ACTIVE,
                 null
         );
@@ -239,6 +241,7 @@ public class TeamApiKeyService {
                     entity.getId(),
                     entity.getKeyAlias(),
                     entity.getProvider().name(),
+                    entity.getMonthlyBudgetUsd(),
                     TeamApiKeyStatus.DELETED,
                     retainLogs
             );
@@ -263,6 +266,7 @@ public class TeamApiKeyService {
                 entity.getId(),
                 entity.getKeyAlias(),
                 entity.getProvider().name(),
+                entity.getMonthlyBudgetUsd(),
                 TeamApiKeyStatus.DELETION_REQUESTED,
                 retainLogs
         );
@@ -317,6 +321,15 @@ public class TeamApiKeyService {
                 entity.getKeyAlias(),
                 Instant.now()
         ));
+        publishTeamApiKeyStatusChanged(
+                teamId,
+                entity.getId(),
+                entity.getKeyAlias(),
+                entity.getProvider().name(),
+                entity.getMonthlyBudgetUsd(),
+                TeamApiKeyStatus.ACTIVE,
+                null
+        );
         return toSummary(entity);
     }
 
@@ -430,6 +443,7 @@ public class TeamApiKeyService {
             Long teamApiKeyId,
             String alias,
             String provider,
+            BigDecimal monthlyBudgetUsd,
             TeamApiKeyStatus status,
             Boolean retainLogs
     ) {
@@ -442,6 +456,7 @@ public class TeamApiKeyService {
                         "TEAM",
                         alias,
                         provider,
+                        monthlyBudgetUsd,
                         status,
                         retainLogs
                 )
