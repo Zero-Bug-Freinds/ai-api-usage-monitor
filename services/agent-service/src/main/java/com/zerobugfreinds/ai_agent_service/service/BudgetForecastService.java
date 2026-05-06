@@ -22,23 +22,29 @@ public class BudgetForecastService {
 	private static final long BILLING_GAP_CRITICAL_DAYS = 1;
 
 	private final GeminiAssistantService geminiAssistantService;
+	private final UsageRecordedTokenRollupService usageRecordedTokenRollupService;
 
-	public BudgetForecastService(GeminiAssistantService geminiAssistantService) {
+	public BudgetForecastService(
+			GeminiAssistantService geminiAssistantService,
+			UsageRecordedTokenRollupService usageRecordedTokenRollupService
+	) {
 		this.geminiAssistantService = geminiAssistantService;
+		this.usageRecordedTokenRollupService = usageRecordedTokenRollupService;
 	}
 
 	public BudgetForecastResponse forecast(BudgetForecastRequest request) {
-		Optional<AiBudgetForecastResult> ai = geminiAssistantService.inferForecast(request);
+		BudgetForecastRequest normalizedRequest = normalizeByUsageRollup(request);
+		Optional<AiBudgetForecastResult> ai = geminiAssistantService.inferForecast(normalizedRequest);
 		if (ai.isPresent()) {
 			AiBudgetForecastResult result = ai.get();
 			Long daysUntilBillingCycleEnd = null;
 			Long billingDateGapDays = null;
-			if (request.billingCycleEndDate() != null) {
+			if (normalizedRequest.billingCycleEndDate() != null) {
 				daysUntilBillingCycleEnd = Math.max(
 						0,
-						ChronoUnit.DAYS.between(LocalDate.now(), request.billingCycleEndDate())
+						ChronoUnit.DAYS.between(LocalDate.now(), normalizedRequest.billingCycleEndDate())
 				);
-				billingDateGapDays = ChronoUnit.DAYS.between(result.predictedRunOutDate(), request.billingCycleEndDate());
+				billingDateGapDays = ChronoUnit.DAYS.between(result.predictedRunOutDate(), normalizedRequest.billingCycleEndDate());
 			}
 
 			return new BudgetForecastResponse(
@@ -52,7 +58,41 @@ public class BudgetForecastService {
 					result.recommendedActions()
 			);
 		}
-		return deterministicForecast(request);
+		return deterministicForecast(normalizedRequest);
+	}
+
+	private BudgetForecastRequest normalizeByUsageRollup(BudgetForecastRequest request) {
+		if (request.keyId() == null) {
+			return request;
+		}
+		boolean isTeamScope = request.teamId() != null && !request.teamId().isBlank();
+		String scopeType = isTeamScope ? "TEAM" : "PERSONAL";
+		String scopeId = isTeamScope ? request.teamId().trim() : request.userId().trim();
+		UsageRecordedTokenRollupService.SevenDayTokenSummary summary =
+				usageRecordedTokenRollupService.summarizeLastSevenDays(
+						String.valueOf(request.keyId()),
+						scopeType,
+						scopeId
+				);
+		long observedSevenDayTokens = summary.totalInputTokens() + summary.totalOutputTokens();
+		if (observedSevenDayTokens <= 0) {
+			return request;
+		}
+		BigDecimal observedAverageDailyTokenUsage = BigDecimal.valueOf(observedSevenDayTokens)
+				.divide(BigDecimal.valueOf(7), 4, RoundingMode.HALF_UP)
+				.max(BigDecimal.ONE);
+		return new BudgetForecastRequest(
+				request.userId(),
+				request.teamId(),
+				request.keyId(),
+				request.monthlyBudgetUsd(),
+				request.currentSpendUsd(),
+				request.remainingTokens(),
+				observedAverageDailyTokenUsage,
+				request.averageDailySpendUsd(),
+				request.billingCycleEndDate(),
+				request.recentDailySpendUsd()
+		);
 	}
 
 	private BudgetForecastResponse deterministicForecast(BudgetForecastRequest request) {
