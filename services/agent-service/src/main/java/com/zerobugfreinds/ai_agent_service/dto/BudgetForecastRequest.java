@@ -11,6 +11,8 @@ import java.util.List;
 public record BudgetForecastRequest(
 		@NotBlank(message = "userId는 필수입니다")
 		String userId,
+		String teamId,
+		Long keyId,
 		@NotNull(message = "monthlyBudgetUsd는 필수입니다")
 		@DecimalMin(value = "0.0", inclusive = true, message = "monthlyBudgetUsd는 0 이상이어야 합니다")
 		BigDecimal monthlyBudgetUsd,
