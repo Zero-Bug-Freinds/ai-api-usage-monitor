@@ -92,6 +92,7 @@ class UsageRecordedEventPipelineIntegrationTest {
                 null,
                 null,
                 "key-it",
+                null,
                 "cafebabedeadbeef",
                 "managed",
                 AiProvider.OPENAI,
