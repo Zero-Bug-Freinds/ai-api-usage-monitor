@@ -61,6 +61,65 @@ curl "http://localhost:3005/agent/api/v1/agents/available-context" -H "x-user-id
 - `billing-signals`: 대상 키의 `latestEstimatedCostUsd` 0 초과
 - `available-context`: `budgetStats.currentSpendUsd`, `budgetStats.budgetUsagePercent` 갱신
 
+## 3-1) 예산 예측(개인/팀) AI 응답 계약 점검
+
+아래는 **개인 키/팀 키 모두 동일한 체크 기준**이다.
+
+개인 키 예시:
+
+```bash
+curl -X POST "http://localhost:8097/api/v1/agents/budget-forecast-assistant" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "userId":"1",
+    "teamId":null,
+    "keyId":1001,
+    "monthlyBudgetUsd":100,
+    "currentSpendUsd":25,
+    "remainingTokens":100000,
+    "averageDailyTokenUsage":12000,
+    "averageDailySpendUsd":3.2,
+    "billingCycleEndDate":"2026-05-31",
+    "recentDailySpendUsd":[2.8,3.0,3.1,3.4,3.2,3.5,3.6],
+    "recentDailyTokenUsage7d":[11000,11800,12100,12900,12400,13200,13600],
+    "modelUsageDistribution7d":[
+      {"model":"gemini-1.5-flash","percentage":70},
+      {"model":"claude-3-haiku","percentage":30}
+    ],
+    "hourlyTokenUsage24h":[120,90,80,70,60,55,65,95,160,220,280,320,300,290,270,260,240,210,180,150,130,115,100,90]
+  }'
+```
+
+팀 키 예시(`teamId`만 지정):
+
+```bash
+curl -X POST "http://localhost:8097/api/v1/agents/budget-forecast-assistant" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "userId":"12",
+    "teamId":"12",
+    "keyId":2001,
+    "monthlyBudgetUsd":500,
+    "currentSpendUsd":210,
+    "remainingTokens":800000,
+    "averageDailyTokenUsage":54000,
+    "averageDailySpendUsd":11.4,
+    "billingCycleEndDate":"2026-05-31",
+    "recentDailySpendUsd":[10.2,10.8,11.3,11.9,12.0,11.5,12.1],
+    "recentDailyTokenUsage7d":[51000,53000,54800,56000,57000,54500,55500],
+    "modelUsageDistribution7d":[
+      {"model":"gpt-4o-mini","percentage":55},
+      {"model":"gemini-1.5-flash","percentage":45}
+    ],
+    "hourlyTokenUsage24h":[400,320,280,250,220,210,230,340,520,680,760,820,800,780,740,710,660,590,520,470,430,390,360,340]
+  }'
+```
+
+정상 기준:
+- 성공 시 응답에 `anomalySummary`, `routingRecommendation`, `estimatedRoutingSavingsPercent`가 포함된다.
+- 실패 시 `503` + `{"code":"AI_INFERENCE_FAILED", ...}`가 반환된다.
+- 개인/팀 모두 같은 오류 정책(무조건 AI 호출, fallback 없음)을 따른다.
+
 ## 4) 자주 헷갈리는 포인트
 
 - `usage.prediction.signals`는 실시간이 아니라 스케줄 발행입니다.

@@ -29,6 +29,7 @@
   - 입력: `BudgetForecastRequest`
   - 출력: `BudgetForecastResponse`
   - 동작: Gemini 예측을 **필수 호출**한다. AI 결과가 없거나 계약 검증에 실패하면 `503` + `AI_INFERENCE_FAILED`를 반환한다(수식 fallback 없음).
+  - 스코프: 개인 키(`PERSONAL`)와 팀 키(`TEAM`) 모두 동일 경로/정책을 사용한다.
   - 입력 확장: `recentDailyTokenUsage7d`, `modelUsageDistribution7d`, `hourlyTokenUsage24h`를 함께 전달해 이상 탐지/라우팅 분석을 강화한다.
   - 출력 확장: `anomalySummary`, `routingRecommendation`, `estimatedRoutingSavingsPercent`, `riskCriteria`, `confidenceLevel`, `confidenceCriteria`.
 - `GET /identity-api-keys`
@@ -85,6 +86,7 @@
   - 팀명은 괄호 메타정보를 제거한 표시명으로 정규화한다. 예: `Platform Team (T-12)` -> `Platform Team`
 - `POST /agent/api/v1/agents/budget-forecast-assistant`
   - 백엔드 `budget-forecast-assistant` API 프록시
+  - 개인 키 분석과 팀 키 분석 모두 동일하게 프록시하며, 동일한 AI 실패 처리(`AI_INFERENCE_FAILED`)와 응답 계약을 적용한다.
   - 세션 이메일을 파싱해 내부 호출 시 `x-user-email` 헤더로 전달한다.
   - 내부 호출 타임아웃은 20초로 설정되어 Gemini 응답 지연 시 조기 실패를 줄인다.
 - `POST /agent/api/v1/agents/policy-recommendations/analyze`
