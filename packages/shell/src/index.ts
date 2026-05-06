@@ -23,6 +23,7 @@ export {
   type ConsoleShellProps,
   resolveIdentityLogoutPathsFromEnv,
 } from "./console-shell"
+export { ConsoleShellInAppToastClient } from "./console-shell-in-app-toast-client"
 export { ConsoleLayoutOverride } from "./console-layout-override"
 
 /** Alias for billing layouts (same layout as `ConsoleShell`). */
