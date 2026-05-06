@@ -19,13 +19,17 @@ import static org.mockito.Mockito.when;
 class BudgetForecastServiceTest {
 
 	private GeminiAssistantService geminiAssistantService;
+	private UsageRecordedTokenRollupService usageRecordedTokenRollupService;
 	private BudgetForecastService budgetForecastService;
 
 	@BeforeEach
 	void setUp() {
 		geminiAssistantService = Mockito.mock(GeminiAssistantService.class);
+		usageRecordedTokenRollupService = Mockito.mock(UsageRecordedTokenRollupService.class);
+		when(usageRecordedTokenRollupService.summarizeLastSevenDays(any(), any(), any()))
+				.thenReturn(new UsageRecordedTokenRollupService.SevenDayTokenSummary(0L, 0L, 0L));
 		when(geminiAssistantService.inferForecast(any())).thenReturn(Optional.empty());
-		budgetForecastService = new BudgetForecastService(geminiAssistantService);
+		budgetForecastService = new BudgetForecastService(geminiAssistantService, usageRecordedTokenRollupService);
 	}
 
 	@Test
@@ -48,6 +52,8 @@ class BudgetForecastServiceTest {
 	void forecast_doesNotMarkCritical_whenGapIsZeroWithVeryLowUtilization() {
 		BudgetForecastRequest request = new BudgetForecastRequest(
 				"user@test.com",
+				null,
+				1L,
 				BigDecimal.valueOf(100),
 				BigDecimal.valueOf(0.01),
 				0L,
@@ -113,6 +119,8 @@ class BudgetForecastServiceTest {
 
 		BudgetForecastRequest request = new BudgetForecastRequest(
 				"user@test.com",
+				null,
+				1L,
 				BigDecimal.ZERO,
 				BigDecimal.ZERO,
 				200_000L,
@@ -138,6 +146,8 @@ class BudgetForecastServiceTest {
 	) {
 		return new BudgetForecastRequest(
 				"user@test.com",
+				null,
+				1L,
 				budget,
 				spend,
 				remainingTokens,

@@ -7,12 +7,19 @@ import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 class PolicyRecommendationAgentServiceTest {
 
 	@Test
 	void recommend_returnsWarn_whenUtilizationOver80Percent() {
-		PolicyRecommendationAgentService service = new PolicyRecommendationAgentService();
+		PolicyRecommendationAgentService service = new PolicyRecommendationAgentService(
+				mock(BillingSignalSnapshotService.class),
+				mock(ExternalModelCatalogService.class),
+				mock(DailyCumulativeTokenSnapshotService.class),
+				mock(UsagePredictionSignalSnapshotService.class),
+				mock(UsageRecordedTokenRollupService.class)
+		);
 		PolicyRecommendationRequest request = new PolicyRecommendationRequest(
 				"user@test.com",
 				"team-1",
