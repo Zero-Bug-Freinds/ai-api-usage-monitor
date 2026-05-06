@@ -79,6 +79,21 @@ type TeamGroup = {
 
 type AnalysisScope = "PERSONAL" | "TEAM"
 
+type ModelCatalogSnapshot = {
+  source: string
+  updatedAt: string
+  lastAttemptAt?: string
+  lastRefreshSucceeded?: boolean
+  lastRefreshError?: string | null
+  models: Array<{
+    provider?: string | null
+    modelName: string
+    inputPricePer1mUsd: number
+    outputPricePer1mUsd: number
+    status?: string | null
+  }>
+}
+
 type RecommendationQueryResponse = {
   keyId: string
   keyType: "PERSONAL" | "TEAM" | string
@@ -319,6 +334,23 @@ export default function AgentPage() {
   const [showTeamList, setShowTeamList] = useState<boolean>(true)
   const [bootstrapError, setBootstrapError] = useState<string>("")
   const [currentUserId, setCurrentUserId] = useState<number | null>(null)
+  const [modelCatalog, setModelCatalog] = useState<ModelCatalogSnapshot | null>(null)
+  const modelCatalogStats = useMemo(() => {
+    if (!modelCatalog) return null
+    const activeModels = modelCatalog.models.filter((model: ModelCatalogSnapshot["models"][number]) => {
+      return (model.status ?? "ACTIVE").toUpperCase() === "ACTIVE"
+    })
+    const byProvider = activeModels.reduce<Record<string, number>>((acc: Record<string, number>, model: ModelCatalogSnapshot["models"][number]) => {
+      const provider = (model.provider ?? "UNKNOWN").toUpperCase()
+      acc[provider] = (acc[provider] ?? 0) + 1
+      return acc
+    }, {})
+    return {
+      activeCount: activeModels.length,
+      providerCounts: byProvider,
+    }
+  }, [modelCatalog])
+
   /** `p:{keyId}` 개인 키, `t:{teamId}:{teamApiKeyId}` 팀 키 → yyyy-MM-dd */
   const [billingByLedgerKey, setBillingByLedgerKey] = useState<Record<string, string>>({})
 
@@ -360,6 +392,16 @@ export default function AgentPage() {
   const loadAvailableContext = async () => {
     setBootstrapError("")
     try {
+      try {
+        const catalogResponse = await fetch("/agent/api/v1/agents/model-catalog", { cache: "no-store" })
+        if (catalogResponse.ok) {
+          const catalogPayload = (await catalogResponse.json()) as ModelCatalogSnapshot
+          setModelCatalog(catalogPayload)
+        }
+      } catch {
+        // ignore model catalog fetch failure
+      }
+
       let payload: AvailableContextPayload = {}
       for (let attempt = 0; attempt < 3; attempt += 1) {
         const response = await fetch("/agent/api/v1/agents/available-context", { cache: "no-store" })
@@ -726,6 +768,30 @@ export default function AgentPage() {
             {loading ? "분석 중..." : "선택 팀 키 분석 시작"}
           </button>
         </div>
+        {modelCatalog ? (
+          <div className="rounded-md border border-dashed bg-muted/30 p-2 text-xs text-muted-foreground">
+            <p>
+              모델 카탈로그: <span className="font-medium">{modelCatalog.source || "unknown"}</span>
+            </p>
+            <p>모델 수: {modelCatalog.models?.length ?? 0}개</p>
+            <p>ACTIVE 모델 수: {modelCatalogStats?.activeCount ?? 0}개</p>
+            {modelCatalogStats ? (
+              <p>
+                Provider별:{" "}
+                {Object.entries(modelCatalogStats.providerCounts)
+                  .map(([provider, count]) => `${provider} ${count}`)
+                  .join(", ") || "-"}
+              </p>
+            ) : null}
+            <p>갱신 시각: {modelCatalog.updatedAt ? new Date(modelCatalog.updatedAt).toLocaleString() : "-"}</p>
+            {modelCatalog.lastRefreshSucceeded === false ? (
+              <p className="mt-1 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
+                갱신 실패 경고: 최근 카탈로그 갱신에 실패했습니다.
+                {modelCatalog.lastRefreshError ? ` (원인: ${modelCatalog.lastRefreshError})` : ""}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
       </aside>
 
       <section className="space-y-4 md:col-span-9">
