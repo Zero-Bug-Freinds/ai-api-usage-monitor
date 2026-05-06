@@ -1,6 +1,7 @@
 import type { AppContext, AppInitialProps, AppProps } from "next/app";
 import NextApp from "next/app";
 import * as React from "react";
+import { ConsoleShellInAppToastClient } from "@ai-usage/shell";
 import { HostRuntimeSafeguard } from "@/components/host-runtime-safeguard";
 import { HostShellLayout } from "@/components/host-shell-layout";
 import { ShellRouterErrorBoundary } from "@/components/shell-router-error-boundary";
@@ -21,11 +22,13 @@ export default function WebApp({ Component, pageProps, router }: AppProps) {
     <PagesHostRouterProvider router={router}>
       <HostRuntimeSafeguard router={router}>
         <ShellRouterErrorBoundary>
-          <HostShellLayout router={router}>
-            <div className="host-shell min-h-screen">
-              <Component {...pageProps} />
-            </div>
-          </HostShellLayout>
+          <ConsoleShellInAppToastClient>
+            <HostShellLayout router={router}>
+              <div className="host-shell min-h-screen">
+                <Component {...pageProps} />
+              </div>
+            </HostShellLayout>
+          </ConsoleShellInAppToastClient>
         </ShellRouterErrorBoundary>
       </HostRuntimeSafeguard>
     </PagesHostRouterProvider>
