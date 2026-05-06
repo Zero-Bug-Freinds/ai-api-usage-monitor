@@ -26,8 +26,8 @@ public class GeminiAssistantService {
 
 	private static final Logger log = LoggerFactory.getLogger(GeminiAssistantService.class);
 	private static final String DEFAULT_GEMINI_MODEL = "gemini-1.5-flash";
+	private static final String FALLBACK_GEMINI_MODEL = "gemini-2.5-flash";
 	private static final double FORECAST_TEMPERATURE = 0.0;
-	private static final List<String> DEFAULT_ACTIONS = List.of("사용 패턴을 점검하고, 필요 시 예산 또는 모델 사용 한도를 조정하세요.");
 
 	private final AiAgentGeminiProperties properties;
 	private final ObjectMapper objectMapper;
@@ -48,7 +48,35 @@ public class GeminiAssistantService {
 		}
 		try {
 			String inputJson = objectMapper.writeValueAsString(buildInputMap(request));
-			String prompt = """
+			String prompt = buildForecastPrompt(inputJson, false);
+			Optional<AiBudgetForecastResult> primary = inferByPrompt(prompt);
+			if (primary.isPresent()) {
+				return primary;
+			}
+			// Keep AI-only policy while improving connectivity: second try with stricter JSON instructions.
+			String retryPrompt = buildForecastPrompt(inputJson, true);
+			Optional<AiBudgetForecastResult> secondary = inferByPrompt(retryPrompt);
+			if (secondary.isPresent()) {
+				return secondary;
+			}
+			log.warn("Gemini inference failed after retry: invalid payload shape");
+			return Optional.empty();
+		} catch (Exception ex) {
+			log.warn("Gemini inference failed: {}", ex.getMessage());
+			return Optional.empty();
+		}
+	}
+
+	private String buildForecastPrompt(String inputJson, boolean retryMode) {
+		String retryDirective = retryMode
+				? """
+					[Retry note]
+					Previous output was invalid.
+					You MUST include all required keys with valid values.
+					Do not omit keys. Do not use null.
+					"""
+				: "";
+		return """
 					You are a strictly analytical budget forecasting assistant for an AI API usage product.
 					Do NOT output any conversational text.
 					Output ONLY valid raw JSON.
@@ -57,6 +85,8 @@ public class GeminiAssistantService {
 					1) CRITICAL: utilization is over 90%%, OR the budget will likely run out before billing cycle end.
 					2) WARNING: sudden spike in daily spend, or moderate utilization with trend risk.
 					3) HEALTHY: utilization is low and remaining budget is sufficient, even if billing cycle end is near.
+					4) Detect anomalies from hourlyTokenUsage24h and recentDailyTokenUsage7d.
+					5) Propose routing optimization from modelUsageDistribution7d.
 
 					[Example]
 					Input: {"monthlyBudgetUsd":100,"currentSpendUsd":0.05,"billingCycleEndDate":"%s","recentDailySpendUsd":[0.01,0.01,0.01]}
@@ -66,7 +96,10 @@ public class GeminiAssistantService {
 					  "healthStatus": "HEALTHY",
 					  "budgetUtilizationPercent": "0.05",
 					  "assistantMessage": "예산 사용량이 매우 적어 상태가 양호합니다.",
-					  "recommendedActions": ["현재 추세를 유지하세요.", "주간 단위로 사용량만 점검하세요."]
+					  "recommendedActions": ["현재 추세를 유지하세요.", "주간 단위로 사용량만 점검하세요."],
+					  "anomalySummary": "유의미한 이상 징후가 관찰되지 않았습니다.",
+					  "routingRecommendation": "현재 모델 구성이 안정적입니다.",
+					  "estimatedRoutingSavingsPercent": "0.00"
 					}
 
 					[Actual input JSON]
@@ -82,12 +115,19 @@ public class GeminiAssistantService {
 					  "healthStatus": "CRITICAL|WARNING|HEALTHY",
 					  "budgetUtilizationPercent": "<string with 2 decimals>",
 					  "assistantMessage": "<one Korean sentence>",
-					  "recommendedActions": ["<Korean action 1>", "<Korean action 2>"]
+					  "recommendedActions": ["<Korean action 1>", "<Korean action 2>"],
+					  "anomalySummary": "<Korean one sentence anomaly finding>",
+					  "routingRecommendation": "<Korean one sentence model routing suggestion>",
+					  "estimatedRoutingSavingsPercent": "<string with 2 decimals>"
 					}
 
 					Today's date for reference: %s
-					""".formatted(LocalDate.now().plusDays(1), LocalDate.now().plusDays(999), inputJson, LocalDate.now());
+					%s
+					""".formatted(LocalDate.now().plusDays(1), LocalDate.now().plusDays(999), inputJson, LocalDate.now(), retryDirective);
+	}
 
+	private Optional<AiBudgetForecastResult> inferByPrompt(String prompt) {
+		try {
 			String responseBody = callGenerateContent(prompt);
 			if (responseBody == null || responseBody.isBlank()) {
 				log.warn("Gemini inference returned empty response body");
@@ -108,7 +148,7 @@ public class GeminiAssistantService {
 			JsonNode forecast = objectMapper.readTree(rawJson);
 			return parseAiForecast(forecast);
 		} catch (Exception ex) {
-			log.warn("Gemini inference failed: {}", ex.getMessage());
+			log.warn("Gemini inference attempt failed: {}", ex.getMessage());
 			return Optional.empty();
 		}
 	}
@@ -123,6 +163,9 @@ public class GeminiAssistantService {
 		map.put("averageDailySpendUsd", request.averageDailySpendUsd());
 		map.put("billingCycleEndDate", request.billingCycleEndDate() != null ? request.billingCycleEndDate().toString() : null);
 		map.put("recentDailySpendUsd", request.recentDailySpendUsd() != null ? request.recentDailySpendUsd() : List.of());
+		map.put("recentDailyTokenUsage7d", request.recentDailyTokenUsage7d() != null ? request.recentDailyTokenUsage7d() : List.of());
+		map.put("modelUsageDistribution7d", request.modelUsageDistribution7d() != null ? request.modelUsageDistribution7d() : List.of());
+		map.put("hourlyTokenUsage24h", request.hourlyTokenUsage24h() != null ? request.hourlyTokenUsage24h() : List.of());
 		return map;
 	}
 
@@ -137,21 +180,39 @@ public class GeminiAssistantService {
 				)
 		);
 
-		String model = (properties.model() == null || properties.model().isBlank())
+		String configuredModel = (properties.model() == null || properties.model().isBlank())
 				? DEFAULT_GEMINI_MODEL
-				: properties.model();
+				: properties.model().trim();
 		String baseUrl = (properties.baseUrl() == null || properties.baseUrl().isBlank())
 				? "https://generativelanguage.googleapis.com"
 				: properties.baseUrl();
-		try {
-			return callGenerateContentWithModel(baseUrl, model, body);
-		} catch (RestClientResponseException ex) {
-			if (ex.getStatusCode().value() == 404 && !DEFAULT_GEMINI_MODEL.equals(model)) {
-				log.warn("Gemini model {} not found. Retrying with fallback model {}", model, DEFAULT_GEMINI_MODEL);
-				return callGenerateContentWithModel(baseUrl, DEFAULT_GEMINI_MODEL, body);
-			}
-			throw ex;
+
+		List<String> modelCandidates = new ArrayList<>();
+		modelCandidates.add(configuredModel);
+		if (!DEFAULT_GEMINI_MODEL.equals(configuredModel)) {
+			modelCandidates.add(DEFAULT_GEMINI_MODEL);
 		}
+		if (!FALLBACK_GEMINI_MODEL.equals(configuredModel) && !FALLBACK_GEMINI_MODEL.equals(DEFAULT_GEMINI_MODEL)) {
+			modelCandidates.add(FALLBACK_GEMINI_MODEL);
+		}
+
+		RestClientResponseException lastException = null;
+		for (String model : modelCandidates) {
+			try {
+				return callGenerateContentWithModel(baseUrl, model, body);
+			} catch (RestClientResponseException ex) {
+				lastException = ex;
+				if (ex.getStatusCode().value() == 404) {
+					log.warn("Gemini model {} not found. Trying next model candidate.", model);
+					continue;
+				}
+				throw ex;
+			}
+		}
+		if (lastException != null) {
+			throw lastException;
+		}
+		throw new IllegalStateException("No Gemini model candidate available");
 	}
 
 	private String callGenerateContentWithModel(String baseUrl, String model, Map<String, Object> body) {
@@ -182,12 +243,14 @@ public class GeminiAssistantService {
 		long computedDays = Math.max(0, ChronoUnit.DAYS.between(today, predicted));
 
 		long daysUntilRunOut = computedDays;
-		if (node.get("daysUntilRunOut").isIntegralNumber()) {
-			long modelDays = node.get("daysUntilRunOut").asLong();
-			if (Math.abs(modelDays - computedDays) <= 1) {
-				daysUntilRunOut = modelDays;
-			}
+		if (!node.has("daysUntilRunOut") || !node.get("daysUntilRunOut").isIntegralNumber()) {
+			return Optional.empty();
 		}
+		long modelDays = node.get("daysUntilRunOut").asLong();
+		if (Math.abs(modelDays - computedDays) > 1) {
+			return Optional.empty();
+		}
+		daysUntilRunOut = modelDays;
 
 		String health = textOrNull(node.get("healthStatus"));
 		if (health == null) {
@@ -195,18 +258,18 @@ public class GeminiAssistantService {
 		}
 		health = health.trim().toUpperCase();
 		if (!"HEALTHY".equals(health) && !"WARNING".equals(health) && !"CRITICAL".equals(health)) {
-			health = "WARNING";
+			return Optional.empty();
 		}
 
 		BigDecimal utilization = parseBigDecimalFlexible(node.get("budgetUtilizationPercent"));
 		if (utilization == null) {
-			utilization = BigDecimal.ZERO;
+			return Optional.empty();
 		}
 		utilization = utilization.setScale(2, RoundingMode.HALF_UP);
 
 		String message = textOrNull(node.get("assistantMessage"));
 		if (message == null || message.isBlank()) {
-			message = "예산 소진 예측을 요약할 수 없습니다.";
+			return Optional.empty();
 		}
 
 		List<String> actions = new ArrayList<>();
@@ -220,8 +283,22 @@ public class GeminiAssistantService {
 			}
 		}
 		if (actions.isEmpty()) {
-			actions.addAll(DEFAULT_ACTIONS);
+			return Optional.empty();
 		}
+
+		String anomalySummary = textOrNull(node.get("anomalySummary"));
+		if (anomalySummary == null || anomalySummary.isBlank()) {
+			return Optional.empty();
+		}
+		String routingRecommendation = textOrNull(node.get("routingRecommendation"));
+		if (routingRecommendation == null || routingRecommendation.isBlank()) {
+			return Optional.empty();
+		}
+		BigDecimal estimatedRoutingSavingsPercent = parseBigDecimalFlexible(node.get("estimatedRoutingSavingsPercent"));
+		if (estimatedRoutingSavingsPercent == null || estimatedRoutingSavingsPercent.signum() < 0) {
+			return Optional.empty();
+		}
+		estimatedRoutingSavingsPercent = estimatedRoutingSavingsPercent.setScale(2, RoundingMode.HALF_UP);
 
 		return Optional.of(new AiBudgetForecastResult(
 				predicted,
@@ -229,7 +306,10 @@ public class GeminiAssistantService {
 				health,
 				utilization,
 				message.trim(),
-				List.copyOf(actions)
+				List.copyOf(actions),
+				anomalySummary.trim(),
+				routingRecommendation.trim(),
+				estimatedRoutingSavingsPercent
 		));
 	}
 
