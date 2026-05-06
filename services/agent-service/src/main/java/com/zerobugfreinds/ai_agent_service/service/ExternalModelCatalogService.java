@@ -311,7 +311,7 @@ public class ExternalModelCatalogService {
 			return false;
 		}
 		BigDecimal upperBound = previous.multiply(MAX_PRICE_JUMP_MULTIPLIER);
-		BigDecimal lowerBound = previous.divide(MIN_PRICE_DROP_DIVISOR, 6, java.math.RoundingMode.HALF_UP);
+		BigDecimal lowerBound = previous.divide(MIN_PRICE_DROP_DIVISOR, 6, RoundingMode.HALF_UP);
 		return current.compareTo(upperBound) > 0 || current.compareTo(lowerBound) < 0;
 	}
 
