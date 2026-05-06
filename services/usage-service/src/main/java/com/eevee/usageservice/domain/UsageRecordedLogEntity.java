@@ -51,6 +51,9 @@ public class UsageRecordedLogEntity {
     @Column(name = "api_key_id")
     private String apiKeyId;
 
+    @Column(name = "team_api_key_id")
+    private String teamApiKeyId;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @NotFound(action = NotFoundAction.IGNORE)
     @JoinColumn(
@@ -127,6 +130,7 @@ public class UsageRecordedLogEntity {
             String organizationId,
             String teamId,
             String apiKeyId,
+            String teamApiKeyId,
             String apiKeyFingerprint,
             String apiKeySource,
             AiProvider provider,
@@ -151,6 +155,7 @@ public class UsageRecordedLogEntity {
         this.organizationId = organizationId;
         this.teamId = teamId;
         this.apiKeyId = apiKeyId;
+        this.teamApiKeyId = teamApiKeyId;
         this.apiKeyFingerprint = apiKeyFingerprint;
         this.apiKeySource = apiKeySource;
         this.provider = provider;
@@ -176,6 +181,7 @@ public class UsageRecordedLogEntity {
     public String getOrganizationId() { return organizationId; }
     public String getTeamId() { return teamId; }
     public String getApiKeyId() { return apiKeyId; }
+    public String getTeamApiKeyId() { return teamApiKeyId; }
     public ApiKeyMetadataEntity getApiKeyMetadata() { return apiKeyMetadata; }
     public String getApiKeyFingerprint() { return apiKeyFingerprint; }
     public String getApiKeySource() { return apiKeySource; }

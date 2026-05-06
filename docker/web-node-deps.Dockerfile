@@ -12,6 +12,7 @@ COPY packages/ui/package.json ./packages/ui/
 COPY packages/shell/package.json ./packages/shell/
 COPY packages/team-workspace-cache/package.json ./packages/team-workspace-cache/
 COPY services/identity-service/web/package.json ./services/identity-service/web/
+COPY services/agent-service/web/package.json ./services/agent-service/web/
 COPY services/usage-service/web/package.json ./services/usage-service/web/
 COPY services/usage-service/web-mfe/package.json ./services/usage-service/web-mfe/
 COPY services/billing-service/web/package.json ./services/billing-service/web/

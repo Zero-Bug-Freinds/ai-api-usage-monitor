@@ -35,6 +35,7 @@ class UsageRecordedEventWireFormatTest {
                 "org-1",
                 "team-1",
                 "key-wire",
+                null,
                 "f00dbabe11223344",
                 "managed",
                 AiProvider.OPENAI,

@@ -1,3 +1,7 @@
 @import "tailwindcss";
-@source "../../../../packages/ui/src/**/*.{ts,tsx}";
-@source "../../../../packages/shell/src/**/*.{ts,tsx}";
+@source "../../../../../packages/ui/src/**/*.{ts,tsx}";
+@source "../../../../../packages/shell/src/**/*.{ts,tsx}";
+@source "../../../web/src/**/*.{ts,tsx}";
+@source "../components/**/*.{ts,tsx}";
+@source "../**/*.{ts,tsx}";
+@import "@ai-usage/ui/styles/design-system.css";

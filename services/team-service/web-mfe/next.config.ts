@@ -4,8 +4,10 @@ import type { Configuration as WebpackConfig } from "webpack";
 import NextFederationPlugin from "@module-federation/nextjs-mf";
 
 const usageRemoteOrigin = process.env.NEXT_PUBLIC_MFE_USAGE_REMOTE_URL ?? "http://localhost:3011";
+const teamAssetPrefix = (process.env.NEXT_PUBLIC_MFE_ASSET_PREFIX ?? "/mfe/team").replace(/\/+$/, "");
 
 const nextConfig: NextConfig = {
+  assetPrefix: teamAssetPrefix,
   output: "standalone",
   outputFileTracingRoot: path.join(__dirname, "../../.."),
   transpilePackages: ["@ai-usage/ui", "@ai-usage/shell"],
