@@ -36,6 +36,10 @@ public class IdentityBudgetClient {
     }
 
     public Optional<BigDecimal> fetchMonthlyBudgetUsdForKey(String userId, AiProvider provider, String apiKeyId) {
+        return fetchMonthlyBudgetKeyRow(userId, provider, apiKeyId).map(IdentityBudgetKeyRow::monthlyBudgetUsd);
+    }
+
+    public Optional<IdentityBudgetKeyRow> fetchMonthlyBudgetKeyRow(String userId, AiProvider provider, String apiKeyId) {
         if (provider == null || apiKeyId == null || apiKeyId.isBlank()) {
             return Optional.empty();
         }
@@ -51,7 +55,6 @@ public class IdentityBudgetClient {
                         .filter(v -> v.externalApiKeyId().equals(externalKeyId.get()))
                         .filter(v -> v.provider() != null && v.provider().equalsIgnoreCase(identityProvider))
                         .findFirst()
-                        .map(IdentityBudgetKeyRow::monthlyBudgetUsd)
                 );
     }
 

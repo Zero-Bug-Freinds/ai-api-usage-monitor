@@ -95,9 +95,11 @@ public class BillingRecordedService {
 
         var monthlyTotalAfter = aggregationJdbc.sumDailyCostUsdForKstCalendarMonthAndProvider(
                 bc.monthStart(), bc.userId(), bc.apiKeyId(), bc.provider());
-        var monthlyBudgetUsd = identityBudgetClient
-                .fetchMonthlyBudgetUsdForKey(bc.userId(), bc.provider(), bc.apiKeyId())
+        var keyBudget = identityBudgetClient
+                .fetchMonthlyBudgetKeyRow(bc.userId(), bc.provider(), bc.apiKeyId())
                 .orElse(null);
+        var monthlyBudgetUsd = keyBudget != null ? keyBudget.monthlyBudgetUsd() : null;
+        var apiKeyAlias = keyBudget != null ? keyBudget.alias() : null;
 
         processedEventRepository.save(new BillingProcessedEventEntity(event.eventId(), processedAt, applicable));
 
@@ -111,6 +113,7 @@ public class BillingRecordedService {
                     bc.userId(),
                     bc.teamId(),
                     bc.apiKeyId(),
+                    apiKeyAlias,
                     bc.monthStart(),
                     monthlyTotalBefore == null ? BigDecimal.ZERO : monthlyTotalBefore,
                     monthlyTotalAfter == null ? BigDecimal.ZERO : monthlyTotalAfter,

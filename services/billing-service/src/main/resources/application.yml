@@ -20,9 +20,6 @@ spring:
     properties:
       hibernate:
         format_sql: true
-  jackson:
-    deserialization:
-      fail-on-unknown-properties: false
   rabbitmq:
     host: ${SPRING_RABBITMQ_HOST:localhost}
     port: ${SPRING_RABBITMQ_PORT:5672}
