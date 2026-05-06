@@ -103,6 +103,8 @@ class BudgetAgentControllerTest {
 	private static BudgetForecastRequest validRequest() {
 		return new BudgetForecastRequest(
 				"user@test.com",
+				null,
+				1L,
 				BigDecimal.valueOf(100),
 				BigDecimal.valueOf(80),
 				50_000L,
