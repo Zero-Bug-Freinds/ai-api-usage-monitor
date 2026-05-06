@@ -10,6 +10,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -40,7 +41,23 @@ public class ExternalModelCatalogService {
 	@Value("${ai-agent.recommendation.catalog.request-timeout-ms:5000}")
 	private long requestTimeoutMs;
 
-	private volatile CatalogSnapshot snapshot = new CatalogSnapshot(defaultModels(), "default", Instant.now());
+	@Value("${ai-agent.recommendation.catalog.api-key:}")
+	private String catalogApiKey;
+
+	@Value("${ai-agent.recommendation.catalog.openrouter.referer:}")
+	private String openRouterReferer;
+
+	@Value("${ai-agent.recommendation.catalog.openrouter.title:}")
+	private String openRouterTitle;
+
+	private volatile CatalogSnapshot snapshot = new CatalogSnapshot(
+			defaultModels(),
+			"default",
+			Instant.now(),
+			Instant.now(),
+			true,
+			null
+	);
 
 	public ExternalModelCatalogService(ObjectMapper objectMapper) {
 		this.objectMapper = objectMapper;
@@ -69,33 +86,63 @@ public class ExternalModelCatalogService {
 			return;
 		}
 		try {
-			HttpRequest request = HttpRequest.newBuilder(URI.create(trimmedUrl))
+			HttpRequest.Builder requestBuilder = HttpRequest.newBuilder(URI.create(trimmedUrl))
 					.GET()
-					.timeout(Duration.ofMillis(requestTimeoutMs))
-					.build();
+					.timeout(Duration.ofMillis(requestTimeoutMs));
+			if (catalogApiKey != null && !catalogApiKey.isBlank()) {
+				requestBuilder.header("Authorization", "Bearer " + catalogApiKey.trim());
+			}
+			if (openRouterReferer != null && !openRouterReferer.isBlank()) {
+				requestBuilder.header("HTTP-Referer", openRouterReferer.trim());
+			}
+			if (openRouterTitle != null && !openRouterTitle.isBlank()) {
+				requestBuilder.header("X-Title", openRouterTitle.trim());
+			}
+
+			HttpRequest request = requestBuilder.build();
 			HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 			if (response.statusCode() < 200 || response.statusCode() >= 300) {
 				log.warn("Model catalog fetch failed. status={}", response.statusCode());
+				markRefreshFailure("HTTP " + response.statusCode());
 				return;
 			}
 			List<ModelPricing> parsed = parseCatalog(response.body());
 			if (parsed.isEmpty()) {
 				log.warn("Model catalog fetch returned empty payload. keep previous snapshot.");
+				markRefreshFailure("EMPTY_PAYLOAD");
 				return;
 			}
 			List<ModelPricing> validated = validateWithPreviousSnapshot(parsed, snapshot.models());
 			if (validated.isEmpty()) {
 				log.warn("Model catalog validation rejected all fetched rows. keep previous snapshot.");
+				markRefreshFailure("VALIDATION_REJECTED");
 				return;
 			}
-			snapshot = new CatalogSnapshot(validated, trimmedUrl, Instant.now());
+			Instant now = Instant.now();
+			snapshot = new CatalogSnapshot(validated, trimmedUrl, now, now, true, null);
 		} catch (Exception ex) {
 			log.warn("Failed to refresh model catalog from external source. keep previous snapshot.", ex);
+			markRefreshFailure(ex.getClass().getSimpleName());
 		}
+	}
+
+	private void markRefreshFailure(String reason) {
+		CatalogSnapshot current = snapshot;
+		snapshot = new CatalogSnapshot(
+				current.models(),
+				current.source(),
+				current.updatedAt(),
+				Instant.now(),
+				false,
+				reason
+		);
 	}
 
 	private List<ModelPricing> parseCatalog(String body) throws Exception {
 		JsonNode root = objectMapper.readTree(body);
+		if (root.has("data") && root.get("data").isArray()) {
+			return parseOpenRouterData(root.get("data"));
+		}
 		JsonNode modelArray = root.isArray() ? root : root.path("models");
 		if (modelArray == null || !modelArray.isArray()) {
 			return List.of();
@@ -136,6 +183,62 @@ public class ExternalModelCatalogService {
 		return deduplicated.values().stream()
 				.sorted(Comparator.comparing(ModelPricing::modelName))
 				.toList();
+	}
+
+	private List<ModelPricing> parseOpenRouterData(JsonNode dataArray) {
+		List<ModelPricing> result = new ArrayList<>();
+		for (JsonNode node : dataArray) {
+			String modelName = firstText(node, "id", "name");
+			if (modelName == null || modelName.isBlank()) {
+				continue;
+			}
+			JsonNode pricing = node.path("pricing");
+			if (pricing.isMissingNode() || pricing.isNull()) {
+				continue;
+			}
+			BigDecimal promptPerTokenUsd = firstDecimal(pricing, "prompt", "input");
+			BigDecimal completionPerTokenUsd = firstDecimal(pricing, "completion", "output");
+			if (promptPerTokenUsd == null || completionPerTokenUsd == null) {
+				continue;
+			}
+			BigDecimal inputPer1mUsd = promptPerTokenUsd.multiply(BigDecimal.valueOf(1_000_000L)).setScale(6, RoundingMode.HALF_UP);
+			BigDecimal outputPer1mUsd = completionPerTokenUsd.multiply(BigDecimal.valueOf(1_000_000L)).setScale(6, RoundingMode.HALF_UP);
+
+			Integer contextWindow = null;
+			JsonNode topProvider = node.path("top_provider");
+			if (topProvider.isObject()) {
+				contextWindow = firstInteger(topProvider, "context_length", "max_context_length");
+			}
+
+			result.add(new ModelPricing(
+					extractProviderFromModelId(modelName),
+					modelName.trim(),
+					inputPer1mUsd,
+					outputPer1mUsd,
+					"OpenRouter 실시간 카탈로그 기반",
+					contextWindow,
+					"ACTIVE"
+			));
+		}
+		Map<String, ModelPricing> deduplicated = result.stream().collect(Collectors.toMap(
+				item -> item.modelName().toLowerCase(Locale.ROOT),
+				Function.identity(),
+				(existing, replacement) -> replacement
+		));
+		return deduplicated.values().stream()
+				.sorted(Comparator.comparing(ModelPricing::modelName))
+				.toList();
+	}
+
+	private static String extractProviderFromModelId(String modelId) {
+		if (modelId == null || modelId.isBlank()) {
+			return "UNKNOWN";
+		}
+		int slashIdx = modelId.indexOf('/');
+		if (slashIdx <= 0) {
+			return "UNKNOWN";
+		}
+		return modelId.substring(0, slashIdx).toUpperCase(Locale.ROOT);
 	}
 
 	private List<ModelPricing> validateWithPreviousSnapshot(
@@ -262,7 +365,10 @@ public class ExternalModelCatalogService {
 	public record CatalogSnapshot(
 			List<ModelPricing> models,
 			String source,
-			Instant updatedAt
+			Instant updatedAt,
+			Instant lastAttemptAt,
+			boolean lastRefreshSucceeded,
+			String lastRefreshError
 	) {
 	}
 
