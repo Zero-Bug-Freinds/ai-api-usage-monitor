@@ -45,6 +45,26 @@ class BudgetForecastServiceTest {
 	}
 
 	@Test
+	void forecast_doesNotMarkCritical_whenGapIsZeroWithVeryLowUtilization() {
+		BudgetForecastRequest request = new BudgetForecastRequest(
+				"user@test.com",
+				BigDecimal.valueOf(100),
+				BigDecimal.valueOf(0.01),
+				0L,
+				BigDecimal.valueOf(10_000),
+				BigDecimal.valueOf(1),
+				LocalDate.now(),
+				List.of(BigDecimal.valueOf(0.01), BigDecimal.valueOf(0.01), BigDecimal.valueOf(0.01), BigDecimal.valueOf(0.01))
+		);
+
+		BudgetForecastResponse response = budgetForecastService.forecast(request);
+
+		assertThat(response.billingDateGapDays()).isEqualTo(0);
+		assertThat(response.healthStatus()).isEqualTo("HEALTHY");
+		assertThat(response.budgetUtilizationPercent()).isEqualByComparingTo("0.01");
+	}
+
+	@Test
 	void forecast_usesAiForecast_whenGeminiReturnsPayload() {
 		LocalDate predicted = LocalDate.now().plusDays(9);
 		when(geminiAssistantService.inferForecast(any())).thenReturn(Optional.of(

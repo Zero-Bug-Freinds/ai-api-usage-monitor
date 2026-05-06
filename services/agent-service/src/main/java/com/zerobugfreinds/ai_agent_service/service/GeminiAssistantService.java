@@ -51,6 +51,12 @@ public class GeminiAssistantService {
 					You are a budget forecasting assistant for an AI API usage product.
 					Given the JSON input, estimate when the user's monthly budget is likely to run out and assess risk.
 
+					[Risk assessment rules]
+					1) CRITICAL: only when utilization is already over 90%%, or budget depletion is highly likely before billing cycle end.
+					2) WARNING: when utilization is moderate but trend/spike risk exists.
+					3) HEALTHY: when utilization is very low (for example below 5%%) and remaining budget is clearly sufficient,
+					   even if billing cycle end is near. Do not overreact based only on end-date proximity.
+
 					Input JSON:
 					%s
 
