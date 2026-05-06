@@ -63,6 +63,7 @@
 - Usage 이벤트(`usage.events`)
   - `usage.prediction.signals`
   - `usage.daily.cumulative.tokens`
+  - `usage.recorded`
 
 구체 큐/라우팅키는 `services/agent-service/src/main/resources/application.properties`를 따른다.
 
@@ -151,7 +152,11 @@
 - `docker compose --profile web up` 실행 시 `agent-web`은 `agent-service`, `team-service` 의존으로 함께 올라오도록 구성되어야 한다. 내부 오리진 기본값은 컨테이너 DNS(`http://agent-service:8096`)를 사용한다.
 - `web-edge`에서 `/agent`, `/agent/`, `/agent/*`는 `agent-web`으로 프록시되어야 한다. 템플릿 변경 후에는 `web-edge` 재기동/재생성이 필요하다.
 - 모델 추천 단가 카탈로그 URL을 설정하지 않으면 추천 엔진은 내장 기본 카탈로그(`default`)를 사용한다.
-- 현재 추천의 `input/output` 비율은 usage 스냅샷(일일 누적/예측 신호) + fallback 규칙을 함께 사용한다. 키별 완전 실측 비율을 위해서는 `usage.recorded`의 호출당 `prompt_tokens`/`completion_tokens` 롤링 집계를 추가로 소비해야 한다.
+- `GET /model-catalog` 응답의 `source`가 `default`이면 외부 카탈로그 fetch가 실패했거나 URL/인증 헤더가 비어 fallback이 동작한 상태다. 이 경우 추천 후보 provider도 내장 기본 모델 집합 기준으로만 보인다.
+- `GET /model-catalog` 응답의 `source`가 `openrouter`(또는 외부 소스명)로 바뀌어야 외부 provider 목록이 반영된 상태다.
+- OpenRouter 사용 시 최소 환경변수는 `AI_AGENT_RECOMMENDATION_CATALOG_URL=https://openrouter.ai/api/v1/models`이며, 필요 시 `AI_AGENT_RECOMMENDATION_CATALOG_API_KEY`, `AI_AGENT_RECOMMENDATION_CATALOG_OPENROUTER_REFERER`, `AI_AGENT_RECOMMENDATION_CATALOG_OPENROUTER_TITLE`를 함께 설정한다.
+- `agent-web` UI는 현재 모델 카탈로그 섹션에서 `Provider별` 집계 텍스트를 노출하지 않는다(요청에 따라 제거). provider 값은 추천 후보 카드의 모델 라인과 백엔드 `model-catalog` 응답에서 확인한다.
+- 현재 추천의 `input/output` 비율은 `usage.recorded` 이벤트의 호출 단위 토큰(`prompt_tokens`/`completion_tokens`)을 7일 롤링으로 집계한 실측치를 우선 사용하고, 데이터가 부족한 경우에만 기존 스냅샷 기반 fallback을 사용한다.
 
 ## 7. Billing UI vs Agent UI 예산 사용률
 
@@ -184,3 +189,5 @@
 - Recommendation 엔진: `policy-recommendations/analyze|{keyId}` API 추가, UI 추천 카드(절감률/절감액/근거 지표) 노출.
 - 외부 모델 단가 카탈로그 동기화(`ExternalModelCatalogService`) 추가: URL 설정 시 주기 갱신, 실패 시 이전 스냅샷 유지.
 - 업그레이드 추천 규칙 추가: 고지연(`HIGH_LATENCY`) 패턴에서는 비용 절감 우선이 아니라 고성능 후보를 우선 추천.
+- `usage.recorded` 소비/7일 롤링 토큰 집계(`UsageRecordedTokenRollupService`)를 추천/예산 예측에 연결해 키별 input-output 비율 및 예측 정확도를 개선.
+- UI 카탈로그 섹션의 `Provider별` 표시를 제거하고, `source`/활성 모델 수/갱신 실패 상태 중심으로 운영 가시성을 정리.

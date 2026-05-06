@@ -126,7 +126,7 @@ public class PolicyRecommendationAgentService {
 		);
 		List<CandidateCost> topCandidates = rankedCandidates.stream().limit(3).toList();
 		CandidateCost bestCandidate = topCandidates.isEmpty()
-				? new CandidateCost("fallback-low-cost", currentMonthlyCost, BigDecimal.ZERO, "카탈로그 미연결 fallback")
+				? new CandidateCost("UNKNOWN", "fallback-low-cost", currentMonthlyCost, BigDecimal.ZERO, "카탈로그 미연결 fallback", 0, false)
 				: topCandidates.getFirst();
 		BigDecimal recommendedMonthlyCost = bestCandidate.expectedMonthlyCostUsd();
 		BigDecimal estimatedSavingsPct = calculateSavingsPercent(currentMonthlyCost, recommendedMonthlyCost);
