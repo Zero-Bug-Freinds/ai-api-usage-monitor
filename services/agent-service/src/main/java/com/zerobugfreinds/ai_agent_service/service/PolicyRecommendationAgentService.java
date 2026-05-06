@@ -18,8 +18,10 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -34,6 +36,9 @@ public class PolicyRecommendationAgentService {
 	private static final long HIGH_LATENCY_THRESHOLD_MS = 1100L;
 	private static final String RECOMMENDATION_AVAILABLE = "RECOMMENDATION_AVAILABLE";
 	private static final String RECOMMENDATION_EMPTY = "NO_RECOMMENDATION";
+	private static final Set<String> TIER_1_PROVIDERS = Set.of(
+			"OPENAI", "ANTHROPIC", "GOOGLE", "META", "MISTRAL", "COHERE"
+	);
 
 	private final Map<RecommendationCacheKey, RecommendationQueryResponse> recommendationStore = new ConcurrentHashMap<>();
 	private final BillingSignalSnapshotService billingSignalSnapshotService;
@@ -269,22 +274,59 @@ public class PolicyRecommendationAgentService {
 			List<ExternalModelCatalogService.ModelPricing> modelCatalog,
 			boolean preferHighPerformance
 	) {
-		Comparator<CandidateCost> sortOrder = preferHighPerformance
+		Comparator<CandidateCost> costOrder = preferHighPerformance
 				? Comparator.comparing(CandidateCost::expectedMonthlyCostUsd).reversed()
 				: Comparator.comparing(CandidateCost::expectedMonthlyCostUsd);
+
+		Comparator<CandidateCost> sortOrder = Comparator
+				.comparing((CandidateCost candidate) -> !candidate.tier1Provider())
+				.thenComparing(costOrder)
+				.thenComparing(Comparator.comparing(CandidateCost::contextWindow).reversed());
+
 		return modelCatalog.stream()
+				.filter(PolicyRecommendationAgentService::isRecommendationCandidate)
 				.map(model -> {
 					BigDecimal expectedCost = estimateMonthlyCost(totalInputTokens, totalOutputTokens, model);
 					BigDecimal diffPercent = calculateDiffPercent(currentMonthlyCost, expectedCost);
+					String provider = normalizeProvider(model.provider(), model.modelName());
 					return new CandidateCost(
+							provider,
 							model.modelName(),
 							expectedCost,
 							diffPercent,
-							model.keyFeature()
+							model.keyFeature(),
+							model.contextWindow() != null ? model.contextWindow() : 0,
+							TIER_1_PROVIDERS.contains(provider)
 					);
 				})
 				.sorted(sortOrder)
 				.toList();
+	}
+
+	private static boolean isRecommendationCandidate(ExternalModelCatalogService.ModelPricing model) {
+		if (model == null || model.modelName() == null || model.modelName().isBlank()) {
+			return false;
+		}
+		if (model.status() != null && !model.status().isBlank() && !"ACTIVE".equalsIgnoreCase(model.status().trim())) {
+			return false;
+		}
+		String modelNameLower = model.modelName().toLowerCase(Locale.ROOT);
+		return !modelNameLower.contains(":free")
+				&& !modelNameLower.contains("beta");
+	}
+
+	private static String normalizeProvider(String provider, String modelName) {
+		if (provider != null && !provider.isBlank()) {
+			return provider.trim().toUpperCase(Locale.ROOT);
+		}
+		if (modelName == null) {
+			return "UNKNOWN";
+		}
+		int slashIdx = modelName.indexOf('/');
+		if (slashIdx <= 0) {
+			return "UNKNOWN";
+		}
+		return modelName.substring(0, slashIdx).toUpperCase(Locale.ROOT);
 	}
 
 	private static RecommendationReasonCode resolveReasonCode(
@@ -465,10 +507,13 @@ public class PolicyRecommendationAgentService {
 	}
 
 	private record CandidateCost(
+			String provider,
 			String modelName,
 			BigDecimal expectedMonthlyCostUsd,
 			BigDecimal diffPercentFromCurrent,
-			String keyFeature
+			String keyFeature,
+			int contextWindow,
+			boolean tier1Provider
 	) {
 	}
 
