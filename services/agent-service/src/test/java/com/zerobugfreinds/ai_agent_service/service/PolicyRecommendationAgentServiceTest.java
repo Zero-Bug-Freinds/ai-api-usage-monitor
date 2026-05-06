@@ -2,6 +2,7 @@ package com.zerobugfreinds.ai_agent_service.service;
 
 import com.zerobugfreinds.ai_agent_service.dto.PolicyRecommendationRequest;
 import com.zerobugfreinds.ai_agent_service.dto.PolicyRecommendationResponse;
+import com.zerobugfreinds.ai_agent_service.dto.RecommendationLevel;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -31,7 +32,7 @@ class PolicyRecommendationAgentServiceTest {
 
 		PolicyRecommendationResponse response = service.recommend(request);
 
-		assertThat(response.recommendationLevel()).isEqualTo("WARN");
+		assertThat(response.recommendationLevel()).isEqualTo(RecommendationLevel.WARN);
 		assertThat(response.utilizationRatePercent()).isEqualByComparingTo("85.00");
 	}
 }
