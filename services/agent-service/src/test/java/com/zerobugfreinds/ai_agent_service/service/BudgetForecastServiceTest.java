@@ -147,7 +147,7 @@ class BudgetForecastServiceTest {
 				LocalDate.now().plusDays(10),
 				recentDailySpendUsd,
 				List.of(1000L, 1100L, 1200L, 900L, 1000L, 950L, 1050L),
-				List.of(new BudgetForecastRequest.ModelUsageShare("gemini-1.5-flash", BigDecimal.valueOf(65))),
+				List.of(new BudgetForecastRequest.ModelUsageShare("gemini-2.5-flash", BigDecimal.valueOf(65))),
 				List.of(20L, 18L, 16L, 14L, 12L, 10L, 9L, 8L, 7L, 10L, 12L, 16L, 20L, 22L, 25L, 24L, 21L, 19L, 17L, 15L, 14L, 13L, 12L, 11L)
 		);
 	}

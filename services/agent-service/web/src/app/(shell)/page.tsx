@@ -315,7 +315,7 @@ function resolveForecastInputs(
     return Math.max(1, Math.round(averageDailyTokenUsage * spendRatio))
   })
   const modelUsageDistribution7d = [
-    { model: `${stats.currentSpendUsd > monthlyBudgetUsd * 0.8 ? "gpt-4o-mini" : "gemini-1.5-flash"}`, percentage: 70 },
+    { model: `${stats.currentSpendUsd > monthlyBudgetUsd * 0.8 ? "gpt-4o-mini" : "gemini-2.5-flash"}`, percentage: 70 },
     { model: "claude-3-haiku", percentage: 30 },
   ]
   const hourlyTokenUsage24h = Array.from({ length: 24 }, (_, hour) => {

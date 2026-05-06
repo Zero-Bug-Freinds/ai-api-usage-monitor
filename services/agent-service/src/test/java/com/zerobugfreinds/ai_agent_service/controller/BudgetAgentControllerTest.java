@@ -136,7 +136,7 @@ class BudgetAgentControllerTest {
 				LocalDate.now().plusDays(7),
 				List.of(BigDecimal.valueOf(4), BigDecimal.valueOf(5), BigDecimal.valueOf(6), BigDecimal.valueOf(5)),
 				List.of(1000L, 1100L, 1200L, 900L, 1050L, 980L, 1150L),
-				List.of(new BudgetForecastRequest.ModelUsageShare("gemini-1.5-flash", BigDecimal.valueOf(70))),
+				List.of(new BudgetForecastRequest.ModelUsageShare("gemini-2.5-flash", BigDecimal.valueOf(70))),
 				List.of(20L, 15L, 10L, 8L, 6L, 5L, 7L, 12L, 20L, 25L, 30L, 35L, 28L, 26L, 24L, 22L, 18L, 16L, 14L, 12L, 10L, 9L, 8L, 7L)
 		);
 	}

@@ -83,7 +83,7 @@ curl -X POST "http://localhost:8097/api/v1/agents/budget-forecast-assistant" \
     "recentDailySpendUsd":[2.8,3.0,3.1,3.4,3.2,3.5,3.6],
     "recentDailyTokenUsage7d":[11000,11800,12100,12900,12400,13200,13600],
     "modelUsageDistribution7d":[
-      {"model":"gemini-1.5-flash","percentage":70},
+      {"model":"gemini-2.5-flash","percentage":70},
       {"model":"claude-3-haiku","percentage":30}
     ],
     "hourlyTokenUsage24h":[120,90,80,70,60,55,65,95,160,220,280,320,300,290,270,260,240,210,180,150,130,115,100,90]
@@ -109,7 +109,7 @@ curl -X POST "http://localhost:8097/api/v1/agents/budget-forecast-assistant" \
     "recentDailyTokenUsage7d":[51000,53000,54800,56000,57000,54500,55500],
     "modelUsageDistribution7d":[
       {"model":"gpt-4o-mini","percentage":55},
-      {"model":"gemini-1.5-flash","percentage":45}
+      {"model":"gemini-2.5-flash","percentage":45}
     ],
     "hourlyTokenUsage24h":[400,320,280,250,220,210,230,340,520,680,760,820,800,780,740,710,660,590,520,470,430,390,360,340]
   }'
