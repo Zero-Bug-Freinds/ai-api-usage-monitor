@@ -54,6 +54,26 @@ public class EncryptionUtil {
         }
     }
 
+    public String decryptAes256Gcm(String encryptedText) {
+        try {
+            byte[] payload = java.util.Base64.getDecoder().decode(encryptedText);
+            if (payload.length <= GCM_IV_LENGTH) {
+                throw new IllegalArgumentException("암호문 형식이 올바르지 않습니다");
+            }
+            byte[] iv = new byte[GCM_IV_LENGTH];
+            byte[] cipherBytes = new byte[payload.length - GCM_IV_LENGTH];
+            System.arraycopy(payload, 0, iv, 0, GCM_IV_LENGTH);
+            System.arraycopy(payload, GCM_IV_LENGTH, cipherBytes, 0, cipherBytes.length);
+
+            Cipher cipher = Cipher.getInstance(AES_GCM);
+            cipher.init(Cipher.DECRYPT_MODE, aesKey, new GCMParameterSpec(GCM_TAG_BITS, iv));
+            byte[] plainBytes = cipher.doFinal(cipherBytes);
+            return new String(plainBytes, StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            throw new IllegalStateException("API 키 복호화에 실패했습니다", e);
+        }
+    }
+
     private static SecretKey deriveAes256Key(String secret) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");

@@ -42,5 +42,10 @@ public interface TeamApiKeyRepository extends JpaRepository<TeamApiKeyEntity, Lo
 
     boolean existsByTeamId(Long teamId);
 
+    Optional<TeamApiKeyEntity> findFirstByTeamIdAndProviderAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(
+            Long teamId,
+            TeamApiKeyProvider provider
+    );
+
     List<TeamApiKeyEntity> findAllByPermanentDeletionAtIsNotNullAndPermanentDeletionAtBefore(Instant now);
 }
