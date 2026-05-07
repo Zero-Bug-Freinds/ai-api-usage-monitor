@@ -296,7 +296,7 @@ function localizeAssistantMessage(message: string): string {
 }
 
 export default function AgentPage() {
-  const [loading, setLoading] = useState<boolean>(false)
+  const [loadingAction, setLoadingAction] = useState<AnalysisAction | null>(null)
   const [loadingMessage, setLoadingMessage] = useState<string>("")
   const [results, setResults] = useState<AnalysisResult[]>([])
   const [keys, setKeys] = useState<AvailableKeyContext[]>([])
@@ -434,7 +434,7 @@ export default function AgentPage() {
     const targetKeys: AvailableKeyContext[] = resolveTargetKeys(scope, keys, selectedTeamKeys)
     if (targetKeys.length === 0) return
 
-    setLoading(true)
+    setLoadingAction(action)
     try {
       const nextResults =
         action === "ANALYSIS"
@@ -496,7 +496,7 @@ export default function AgentPage() {
         return Array.from(byKeyId.values())
       })
     } finally {
-      setLoading(false)
+      setLoadingAction(null)
       setLoadingMessage("")
     }
   }
@@ -659,17 +659,17 @@ export default function AgentPage() {
               type="button"
               className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60"
               onClick={() => void runAnalysis("PERSONAL", "ANALYSIS")}
-              disabled={loading || keys.length === 0}
+              disabled={loadingAction != null || keys.length === 0}
             >
-              {loading ? "처리 중..." : "개인 키 분석"}
+              {loadingAction === "ANALYSIS" ? "분석 로딩..." : "개인 키 분석"}
             </button>
             <button
               type="button"
               className="w-full rounded-md border bg-background px-4 py-2 text-sm font-medium disabled:opacity-60"
               onClick={() => void runAnalysis("PERSONAL", "RECOMMENDATION")}
-              disabled={loading || keys.length === 0}
+              disabled={loadingAction != null || keys.length === 0}
             >
-              {loading ? "처리 중..." : "개인 키 추천"}
+              {loadingAction === "RECOMMENDATION" ? "추천 로딩..." : "개인 키 추천"}
             </button>
           </div>
           <div className="grid grid-cols-2 gap-2">
@@ -677,17 +677,17 @@ export default function AgentPage() {
               type="button"
               className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60"
               onClick={() => void runAnalysis("TEAM", "ANALYSIS")}
-              disabled={loading || selectedTeamId == null || selectedTeamKeys.length === 0}
+              disabled={loadingAction != null || selectedTeamId == null || selectedTeamKeys.length === 0}
             >
-              {loading ? "처리 중..." : "팀 키 분석"}
+              {loadingAction === "ANALYSIS" ? "분석 로딩..." : "팀 키 분석"}
             </button>
             <button
               type="button"
               className="w-full rounded-md border bg-background px-4 py-2 text-sm font-medium disabled:opacity-60"
               onClick={() => void runAnalysis("TEAM", "RECOMMENDATION")}
-              disabled={loading || selectedTeamId == null || selectedTeamKeys.length === 0}
+              disabled={loadingAction != null || selectedTeamId == null || selectedTeamKeys.length === 0}
             >
-              {loading ? "처리 중..." : "팀 키 추천"}
+              {loadingAction === "RECOMMENDATION" ? "추천 로딩..." : "팀 키 추천"}
             </button>
           </div>
         </div>
@@ -713,16 +713,7 @@ export default function AgentPage() {
       </aside>
 
       <section className="space-y-4 md:col-span-9">
-        {loading ? (
-          <div className="flex min-h-[260px] flex-col items-center justify-center gap-3 rounded-xl border bg-card p-6 text-center">
-            <div className="h-10 w-10 animate-spin rounded-full border-4 border-muted border-t-primary" />
-            <p className="text-sm text-muted-foreground">
-              {loadingMessage || "개인 API 키 사용량을 분석 중입니다..."}
-            </p>
-          </div>
-        ) : null}
-
-        {!loading && results.length > 0
+        {results.length > 0
           ? results.map((result: AnalysisResult) => (
               <article key={result.keyId} className="space-y-3 rounded-xl border bg-card p-4">
                 <div className="flex items-center justify-between gap-2">
@@ -749,176 +740,192 @@ export default function AgentPage() {
                   </div>
                 ) : null}
 
-                {result.data ? (
-                  <>
-                    <div className="grid gap-2 text-sm md:grid-cols-2">
-                      <p>예상 소진일: {result.data.predictedRunOutDate}</p>
-                      <p>소진까지 남은 일수: {result.data.daysUntilRunOut}일</p>
-                      <p>결제일까지 남은 일수: {formatBillingMetric(result.data.daysUntilBillingCycleEnd)}</p>
-                      <p>결제일 차이(결제일-소진일): {formatBillingMetric(result.data.billingDateGapDays)}</p>
-                      <p>
-                        예산 사용률:{" "}
-                        {typeof result.data.budgetUtilizationPercent === "number"
-                          ? result.data.budgetUtilizationPercent.toFixed(2)
-                          : result.data.budgetUtilizationPercent}
-                        %
-                      </p>
-                      <p>신뢰도: {localizedConfidenceLevel(result.data.confidenceLevel)}</p>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      소진까지 남은 일수 = 하루에 얼마나 쓰는지(소모 속도, velocity)로 미래를 예측한 값
-                    </p>
-                    {result.data.riskCriteria || result.data.confidenceCriteria ? (
-                      <div className="rounded-md border border-dashed bg-muted/40 p-3 text-xs text-muted-foreground">
-                        {result.data.riskCriteria ? <p>판정 기준: {result.data.riskCriteria}</p> : null}
-                        {result.data.confidenceCriteria ? <p>신뢰도 기준: {result.data.confidenceCriteria}</p> : null}
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <div className="space-y-2 rounded-md border border-dashed bg-muted/20 p-3 lg:order-1">
+                    <p className="text-xs font-medium text-muted-foreground">모델 추천</p>
+                    {loadingAction === "RECOMMENDATION" ? (
+                      <div className="rounded-md border bg-background p-3 text-xs text-muted-foreground">
+                        {loadingMessage || "추천 로딩 중..."}
+                      </div>
+                    ) : null}
+                    {result.recommendationError ? (
+                      <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                        모델 추천 조회에 실패했습니다: {result.recommendationError}
                       </div>
                     ) : null}
 
-                    <div className="rounded-md bg-muted p-3 text-sm">
-                      {localizeAssistantMessage(result.data.assistantMessage)}
-                    </div>
-                    {result.data.anomalySummary ? (
-                      <div className="rounded-md border border-orange-200 bg-orange-50 p-3 text-sm text-orange-900">
-                        이상 탐지: {result.data.anomalySummary}
-                      </div>
-                    ) : null}
-                    {result.data.routingRecommendation ? (
-                      <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
-                        비용 라우팅: {result.data.routingRecommendation}
-                        {result.data.estimatedRoutingSavingsPercent != null ? (
-                          <span className="ml-1">
-                            (예상 절감률{" "}
-                            {typeof result.data.estimatedRoutingSavingsPercent === "number"
-                              ? result.data.estimatedRoutingSavingsPercent.toFixed(2)
-                              : result.data.estimatedRoutingSavingsPercent}
-                            %)
+                    {result.recommendation?.status === "RECOMMENDATION_AVAILABLE" &&
+                    result.recommendation.recommendationDetails ? (
+                      <div className="space-y-2 rounded-md border bg-background p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-sm font-semibold">{result.recommendation.recommendationDetails.title}</p>
+                          <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700">
+                            신뢰도 {result.recommendation.recommendationDetails.confidenceLevel}
                           </span>
+                        </div>
+                        <p className="text-sm text-muted-foreground">{result.recommendation.recommendationDetails.reasonMessage}</p>
+                        <p className="text-sm">
+                          예상 절감률:{" "}
+                          {typeof result.recommendation.recommendationDetails.estimatedSavingsPct === "number"
+                            ? result.recommendation.recommendationDetails.estimatedSavingsPct.toFixed(2)
+                            : result.recommendation.recommendationDetails.estimatedSavingsPct}
+                          %
+                        </p>
+                        {(() => {
+                          const primaryCandidate = result.recommendation?.recommendationDetails?.candidates?.[0]
+                          const estimatedSavingsUsd = primaryCandidate
+                            ? estimateSavingsUsd(
+                                result.recommendation.recommendationDetails.estimatedSavingsPct,
+                                primaryCandidate.expectedMonthlyCostUsd,
+                              )
+                            : null
+                          return estimatedSavingsUsd != null ? (
+                            <p className="text-sm font-medium text-emerald-700">
+                              예상 절감액(월): ${estimatedSavingsUsd.toFixed(2)}
+                            </p>
+                          ) : null
+                        })()}
+                        {result.recommendation.recommendationDetails.disclaimer ? (
+                          <p className="text-xs text-amber-700">{result.recommendation.recommendationDetails.disclaimer}</p>
                         ) : null}
+                        {result.recommendation.metricsContext ? (
+                          <div className="space-y-2 rounded-md border border-dashed bg-muted/30 p-2">
+                            <p className="text-xs font-medium text-muted-foreground">추천 근거 지표</p>
+                            <div className="grid gap-2 md:grid-cols-2">
+                              {(() => {
+                                const ratio = parseInputOutputRatio(result.recommendation?.metricsContext?.inputOutputRatio)
+                                const dominance = ratioDominance(ratio)
+                                return (
+                                  <div className="space-y-1 rounded border bg-background px-2 py-1.5">
+                                    <div className="flex items-center justify-between">
+                                      <p className="text-xs font-medium">입출력 비율</p>
+                                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${dominance.className}`}>
+                                        {dominance.label}
+                                      </span>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">
+                                      {result.recommendation?.metricsContext?.inputOutputRatio ?? "N/A"}
+                                    </p>
+                                    <div className="h-1.5 w-full overflow-hidden rounded bg-muted">
+                                      <div className="h-full bg-blue-500" style={{ width: `${dominance.inputPct}%` }} />
+                                    </div>
+                                    <p className="text-[10px] text-muted-foreground">
+                                      input {dominance.inputPct.toFixed(0)}% / output {dominance.outputPct.toFixed(0)}%
+                                    </p>
+                                  </div>
+                                )
+                              })()}
+                              {(() => {
+                                const rawLatency = result.recommendation?.metricsContext?.averageLatencyMs
+                                const latency = rawLatency == null ? null : Number(rawLatency)
+                                const latencyMeta = latencyStatusNullable(latency)
+                                return (
+                                  <div className="space-y-1 rounded border bg-background px-2 py-1.5">
+                                    <div className="flex items-center justify-between">
+                                      <p className="text-xs font-medium">최근 평균 지연</p>
+                                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${latencyMeta.className}`}>
+                                        {latencyMeta.label}
+                                      </span>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">
+                                      {latency == null || !Number.isFinite(latency) ? "N/A" : `${latency.toFixed(0)} ms`}
+                                    </p>
+                                    <div className="h-1.5 w-full overflow-hidden rounded bg-muted">
+                                      <div className="h-full bg-amber-500" style={{ width: `${latencyMeta.progress}%` }} />
+                                    </div>
+                                  </div>
+                                )
+                              })()}
+                            </div>
+                          </div>
+                        ) : null}
+                        <ul className="space-y-1 text-sm">
+                          {result.recommendation.recommendationDetails.candidates.map((candidate) => (
+                            <li key={`${result.keyId}-${candidate.modelName}`} className="rounded border px-2 py-1">
+                              <p className="font-medium">{candidate.modelName}</p>
+                              <p className="text-xs text-muted-foreground">{candidate.keyFeature}</p>
+                              <p className="text-xs text-muted-foreground">
+                                예상 월 비용 ${Number(candidate.expectedMonthlyCostUsd).toFixed(2)} / 변화율{" "}
+                                {typeof candidate.expectedCostDiffPct === "number"
+                                  ? candidate.expectedCostDiffPct.toFixed(2)
+                                  : candidate.expectedCostDiffPct}
+                                %
+                              </p>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">추천 결과가 없습니다. 상단의 추천 버튼을 눌러주세요.</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2 rounded-md border border-dashed bg-muted/20 p-3 lg:order-2">
+                    <p className="text-xs font-medium text-muted-foreground">예산 분석</p>
+                    {loadingAction === "ANALYSIS" ? (
+                      <div className="rounded-md border bg-background p-3 text-xs text-muted-foreground">
+                        {loadingMessage || "분석 로딩 중..."}
                       </div>
                     ) : null}
-
-                    <ul className="list-disc space-y-1 pl-5 text-sm">
-                      {result.data.recommendedActions.map((action: string) => (
-                        <li key={`${result.keyId}-${action}`}>{action}</li>
-                      ))}
-                    </ul>
-
-                  </>
-                ) : null}
-
-                <div className="space-y-2 rounded-md border border-dashed bg-muted/20 p-3">
-                  <p className="text-xs font-medium text-muted-foreground">모델 추천</p>
-                  {result.recommendationError ? (
-                    <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                      모델 추천 조회에 실패했습니다: {result.recommendationError}
-                    </div>
-                  ) : null}
-
-                  {result.recommendation?.status === "RECOMMENDATION_AVAILABLE" &&
-                  result.recommendation.recommendationDetails ? (
-                    <div className="space-y-2 rounded-md border bg-background p-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="text-sm font-semibold">{result.recommendation.recommendationDetails.title}</p>
-                        <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700">
-                          신뢰도 {result.recommendation.recommendationDetails.confidenceLevel}
-                        </span>
-                      </div>
-                      <p className="text-sm text-muted-foreground">{result.recommendation.recommendationDetails.reasonMessage}</p>
-                      <p className="text-sm">
-                        예상 절감률:{" "}
-                        {typeof result.recommendation.recommendationDetails.estimatedSavingsPct === "number"
-                          ? result.recommendation.recommendationDetails.estimatedSavingsPct.toFixed(2)
-                          : result.recommendation.recommendationDetails.estimatedSavingsPct}
-                        %
-                      </p>
-                      {(() => {
-                        const primaryCandidate = result.recommendation?.recommendationDetails?.candidates?.[0]
-                        const estimatedSavingsUsd = primaryCandidate
-                          ? estimateSavingsUsd(
-                              result.recommendation.recommendationDetails.estimatedSavingsPct,
-                              primaryCandidate.expectedMonthlyCostUsd,
-                            )
-                          : null
-                        return estimatedSavingsUsd != null ? (
-                          <p className="text-sm font-medium text-emerald-700">
-                            예상 절감액(월): ${estimatedSavingsUsd.toFixed(2)}
+                    {result.data ? (
+                      <>
+                        <div className="grid gap-2 text-sm md:grid-cols-2">
+                          <p>예상 소진일: {result.data.predictedRunOutDate}</p>
+                          <p>소진까지 남은 일수: {result.data.daysUntilRunOut}일</p>
+                          <p>결제일까지 남은 일수: {formatBillingMetric(result.data.daysUntilBillingCycleEnd)}</p>
+                          <p>결제일 차이(결제일-소진일): {formatBillingMetric(result.data.billingDateGapDays)}</p>
+                          <p>
+                            예산 사용률:{" "}
+                            {typeof result.data.budgetUtilizationPercent === "number"
+                              ? result.data.budgetUtilizationPercent.toFixed(2)
+                              : result.data.budgetUtilizationPercent}
+                            %
                           </p>
-                        ) : null
-                      })()}
-                      {result.recommendation.recommendationDetails.disclaimer ? (
-                        <p className="text-xs text-amber-700">{result.recommendation.recommendationDetails.disclaimer}</p>
-                      ) : null}
-                      {result.recommendation.metricsContext ? (
-                        <div className="space-y-2 rounded-md border border-dashed bg-muted/30 p-2">
-                          <p className="text-xs font-medium text-muted-foreground">추천 근거 지표</p>
-                          <div className="grid gap-2 md:grid-cols-2">
-                            {(() => {
-                              const ratio = parseInputOutputRatio(result.recommendation?.metricsContext?.inputOutputRatio)
-                              const dominance = ratioDominance(ratio)
-                              return (
-                                <div className="space-y-1 rounded border bg-background px-2 py-1.5">
-                                  <div className="flex items-center justify-between">
-                                    <p className="text-xs font-medium">입출력 비율</p>
-                                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${dominance.className}`}>
-                                      {dominance.label}
-                                    </span>
-                                  </div>
-                                  <p className="text-xs text-muted-foreground">
-                                    {result.recommendation?.metricsContext?.inputOutputRatio ?? "N/A"}
-                                  </p>
-                                  <div className="h-1.5 w-full overflow-hidden rounded bg-muted">
-                                    <div className="h-full bg-blue-500" style={{ width: `${dominance.inputPct}%` }} />
-                                  </div>
-                                  <p className="text-[10px] text-muted-foreground">
-                                    input {dominance.inputPct.toFixed(0)}% / output {dominance.outputPct.toFixed(0)}%
-                                  </p>
-                                </div>
-                              )
-                            })()}
-                            {(() => {
-                              const rawLatency = result.recommendation?.metricsContext?.averageLatencyMs
-                              const latency = rawLatency == null ? null : Number(rawLatency)
-                              const latencyMeta = latencyStatusNullable(latency)
-                              return (
-                                <div className="space-y-1 rounded border bg-background px-2 py-1.5">
-                                  <div className="flex items-center justify-between">
-                                    <p className="text-xs font-medium">최근 평균 지연</p>
-                                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${latencyMeta.className}`}>
-                                      {latencyMeta.label}
-                                    </span>
-                                  </div>
-                                  <p className="text-xs text-muted-foreground">
-                                    {latency == null || !Number.isFinite(latency) ? "N/A" : `${latency.toFixed(0)} ms`}
-                                  </p>
-                                  <div className="h-1.5 w-full overflow-hidden rounded bg-muted">
-                                    <div className="h-full bg-amber-500" style={{ width: `${latencyMeta.progress}%` }} />
-                                  </div>
-                                </div>
-                              )
-                            })()}
-                          </div>
+                          <p>신뢰도: {localizedConfidenceLevel(result.data.confidenceLevel)}</p>
                         </div>
-                      ) : null}
-                      <ul className="space-y-1 text-sm">
-                        {result.recommendation.recommendationDetails.candidates.map((candidate) => (
-                          <li key={`${result.keyId}-${candidate.modelName}`} className="rounded border px-2 py-1">
-                            <p className="font-medium">{candidate.modelName}</p>
-                            <p className="text-xs text-muted-foreground">{candidate.keyFeature}</p>
-                            <p className="text-xs text-muted-foreground">
-                              예상 월 비용 ${Number(candidate.expectedMonthlyCostUsd).toFixed(2)} / 변화율{" "}
-                              {typeof candidate.expectedCostDiffPct === "number"
-                                ? candidate.expectedCostDiffPct.toFixed(2)
-                                : candidate.expectedCostDiffPct}
-                              %
-                            </p>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">추천 결과가 없습니다. 상단의 추천 버튼을 눌러주세요.</p>
-                  )}
+                        <p className="text-xs text-muted-foreground">
+                          소진까지 남은 일수 = 하루에 얼마나 쓰는지(소모 속도, velocity)로 미래를 예측한 값
+                        </p>
+                        {result.data.riskCriteria || result.data.confidenceCriteria ? (
+                          <div className="rounded-md border border-dashed bg-muted/40 p-3 text-xs text-muted-foreground">
+                            {result.data.riskCriteria ? <p>판정 기준: {result.data.riskCriteria}</p> : null}
+                            {result.data.confidenceCriteria ? <p>신뢰도 기준: {result.data.confidenceCriteria}</p> : null}
+                          </div>
+                        ) : null}
+
+                        <div className="rounded-md bg-muted p-3 text-sm">
+                          {localizeAssistantMessage(result.data.assistantMessage)}
+                        </div>
+                        {result.data.anomalySummary ? (
+                          <div className="rounded-md border border-orange-200 bg-orange-50 p-3 text-sm text-orange-900">
+                            이상 탐지: {result.data.anomalySummary}
+                          </div>
+                        ) : null}
+                        {result.data.routingRecommendation ? (
+                          <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                            비용 라우팅: {result.data.routingRecommendation}
+                            {result.data.estimatedRoutingSavingsPercent != null ? (
+                              <span className="ml-1">
+                                (예상 절감률{" "}
+                                {typeof result.data.estimatedRoutingSavingsPercent === "number"
+                                  ? result.data.estimatedRoutingSavingsPercent.toFixed(2)
+                                  : result.data.estimatedRoutingSavingsPercent}
+                                %)
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : null}
+
+                        <ul className="list-disc space-y-1 pl-5 text-sm">
+                          {result.data.recommendedActions.map((action: string) => (
+                            <li key={`${result.keyId}-${action}`}>{action}</li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">분석 결과가 없습니다. 상단의 분석 버튼을 눌러주세요.</p>
+                    )}
+                  </div>
                 </div>
               </article>
             ))
