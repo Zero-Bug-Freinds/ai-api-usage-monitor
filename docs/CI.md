@@ -21,7 +21,7 @@
 | **Build proxy-service** | Java 21 + Gradle build/test + `docker/build-push-action@v6` (`type=gha`, scope `proxy-service`) |
 | **Build usage-service** | Java 21 + usage-web lint/test/build + usage-service/usage-web 이미지 빌드(`type=gha`) |
 | **Build billing-service** | Java 21 + billing-web lint/test/build + billing-service/billing-web 이미지 빌드(`type=gha`) |
-| **Build team-service** | Java 21 + team-web lint/test/build + team-web 이미지 빌드(`type=gha`) |
+| **Build team-service** | Java 21 + team-service backend build (web-mfe는 별도 web-mfe job에서 검증) |
 | **Build notification-service** | Nest build + notification-web lint/test/build + notification-service/notification-web 이미지 빌드(`type=gha`) |
 | **Build identity-service** | Java 21 + identity-web lint/test/build + identity-web 이미지 빌드(`type=gha`) |
 | **Build web-mfe remotes** | usage/team `web-mfe` lint/typecheck/build + 각 이미지 빌드(`type=gha`) |
@@ -32,7 +32,7 @@
 ## Docker 빌드 캐시 (로컬 vs CI)
 
 - **로컬 (`docker compose build` / `up --build`)**: 루트 `docker-compose.yml`에는 **container registry 기반 `cache_from` / `cache_to`를 두지 않는다**. 즉, **팀원은 GHCR 로그인 없이도** 동일한 Compose 명령으로 개발을 시작할 수 있다. 캐시는 각 서비스 Dockerfile의 `RUN --mount=type=cache`(pnpm store, Gradle, Next `.next/cache` 등)로 처리해 반복 빌드 시간을 줄인다.
-- **CI (GitHub Actions)**: 서비스별 job에서 `docker/build-push-action@v6` + BuildKit **`type=gha` cache**를 사용한다. `scope`는 이미지 단위(`api-gateway-service`, `proxy-service`, `usage-service`, `usage-web`, `billing-service`, `billing-web`, `team-web`, `notification-service`, `notification-web`, `identity-web`, `usage-web-mfe`, `team-web-mfe`)로 분리한다.
+- **CI (GitHub Actions)**: 서비스별 job에서 `docker/build-push-action@v6` + BuildKit **`type=gha` cache**를 사용한다. `scope`는 이미지 단위(`api-gateway-service`, `proxy-service`, `usage-service`, `usage-web`, `billing-service`, `billing-web`, `notification-service`, `notification-web`, `identity-web`, `usage-web-mfe`, `team-web-mfe`)로 분리한다.
 
 - **권한 최소화(보안)**: 전역 권한은 `contents: read`, `actions: read`를 유지하고, `cache-to: type=gha`를 사용하는 서비스 빌드 잡에서만 `actions: write`를 잡 단위로 부여한다.
 
@@ -55,7 +55,7 @@
 ### `scope` 네이밍·용량(10GB) 표준
 
 - **네이밍 규칙**: 이미지 태그(`*-web:ci`)와 동일한 문자열을 `scope`로 사용한다.
-  - 예: `identity-web` → `scope=identity-web`, `usage-web` → `scope=usage-web`, `billing-web` → `scope=billing-web`, `team-web` → `scope=team-web`, `notification-web` → `scope=notification-web`
+  - 예: `identity-web` → `scope=identity-web`, `usage-web` → `scope=usage-web`, `billing-web` → `scope=billing-web`, `notification-web` → `scope=notification-web`
   - MFE(remote)도 동일 규칙 적용: `usage-web-mfe` → `scope=usage-web-mfe`, `team-web-mfe` → `scope=team-web-mfe`
   - 현재 `ci.yml` 기준 공통 Stage A 캐시는 사용하지 않고, 서비스별 scope 중심으로 운영한다.
 - **용량 정책(무료 티어 10GB)**:

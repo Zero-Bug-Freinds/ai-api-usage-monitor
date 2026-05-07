@@ -365,7 +365,7 @@ services:
       IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
       USAGE_WEB_INTERNAL_ORIGIN: ${USAGE_WEB_INTERNAL_ORIGIN:-http://host.docker.internal:3001}
       BILLING_WEB_INTERNAL_ORIGIN: ${BILLING_WEB_INTERNAL_ORIGIN:-http://host.docker.internal:3003}
-      TEAM_WEB_INTERNAL_ORIGIN: ${TEAM_WEB_INTERNAL_ORIGIN:-http://team-web:3000}
+      TEAM_WEB_INTERNAL_ORIGIN: ${TEAM_WEB_INTERNAL_ORIGIN:-http://team-web-mfe:3000}
       WEB_HOST_INTERNAL_ORIGIN: ${WEB_HOST_INTERNAL_ORIGIN:-http://web-host:3000}
       AGENT_WEB_INTERNAL_ORIGIN: ${AGENT_WEB_INTERNAL_ORIGIN:-http://agent-web:3000}
       AI_AGENT_WEB_INTERNAL_ORIGIN: ${AI_AGENT_WEB_INTERNAL_ORIGIN:-http://agent-web:3000}
@@ -540,27 +540,6 @@ services:
     ports:
       - "${WEB_HOST_PORT:-3002}:3000"
 
-  team-web:
-    profiles:
-      - web
-    restart: unless-stopped
-    build:
-      context: .
-      dockerfile: services/team-service/web/Dockerfile
-      args:
-        WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
-    depends_on:
-      - team-service
-    environment:
-      GATEWAY_URL: ${WEB_GATEWAY_URL:-http://api-gateway-service:8080}
-      TEAM_SERVICE_URL: ${WEB_TEAM_SERVICE_URL:-http://team-service:8093}
-      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
-      NEXT_PUBLIC_TEAM_CONSOLE_URL: ${NEXT_PUBLIC_TEAM_CONSOLE_URL:-http://localhost:${WEB_EDGE_PORT:-8888}/teams}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    ports:
-      - "${TEAM_WEB_PORT:-3022}:3000"
-
   team-web-mfe:
     profiles:
       - web
@@ -571,7 +550,14 @@ services:
       args:
         WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
     depends_on:
-      - team-web
+      - team-service
+      - api-gateway-service
+      - identity-service
+    environment:
+      GATEWAY_URL: ${WEB_GATEWAY_URL:-http://api-gateway-service:8080}
+      WEB_GATEWAY_URL: ${WEB_GATEWAY_URL:-http://api-gateway-service:8080}
+      TEAM_SERVICE_URL: ${WEB_TEAM_SERVICE_URL:-http://team-service:8093}
+      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
     expose:
       - "3000"
     ports:
@@ -586,7 +572,6 @@ services:
       - identity-web
       - usage-web
       - billing-web
-      - team-web
       - web-host
       - team-web-mfe
       - usage-web-mfe

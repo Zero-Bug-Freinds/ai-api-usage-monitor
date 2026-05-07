@@ -32,8 +32,8 @@
 | `DELETE /api/team/v1/teams/{teamId}/api-keys/{keyId}` | Team BFF `DELETE ...` → Gateway `DELETE ...` → Team Service `DELETE /api/v1/teams/{teamId}/api-keys/{keyId}` (선택 쿼리 `gracePeriodDays`) |
 | `POST /api/team/v1/teams/{teamId}/api-keys/{keyId}/deletion/cancel` | Team BFF `POST ...` → Gateway `POST ...` → Team Service `POST /api/v1/teams/{teamId}/api-keys/{keyId}/deletion/cancel` |
 
-- **팀 콘솔 UI**는 `web-edge`의 **`/teams` → `web-host`(Main Shell, `apps/web`)** 에서 렌더링한다(Task37-13·MFE). `team-web`은 BFF만 담당한다.
-- Identity `web`는 Next `rewrites()`로 **`/teams/api/*`** 및 **`/api/team/v1/*`** 를 Team BFF(`team-web`)로 넘긴다(브라우저가 identity 오리진으로 BFF를 부를 때 — 삭제 예정 해제용 `POST .../deletion/cancel` 포함). 풀페이지 `/teams` HTML은 identity가 아닌 **web-host**가 제공한다.
+- **팀 콘솔 UI**는 `web-edge`의 **`/teams` → `web-host`(Main Shell, `apps/web`)** 에서 렌더링한다(Task37-13·MFE). Team BFF는 `team-web-mfe`가 담당한다.
+- Identity `web`는 Next `rewrites()`로 **`/teams/api/*`** 및 **`/api/team/v1/*`** 를 Team BFF(`team-web-mfe`)로 넘긴다(브라우저가 identity 오리진으로 BFF를 부를 때 — 삭제 예정 해제용 `POST .../deletion/cancel` 포함). 풀페이지 `/teams` HTML은 identity가 아닌 **web-host**가 제공한다.
 - Team BFF는 `GATEWAY_URL` 환경 변수로 Gateway를 프록시한다.
 - Team BFF는 `IDENTITY_SERVICE_URL`로 세션 확인(`GET /api/auth/session`)을 프록시한다.
 

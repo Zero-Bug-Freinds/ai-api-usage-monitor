@@ -2,7 +2,7 @@
 # Usage Next basePath=/dashboard, Billing basePath=/billing, Team basePath=/teams,
 # Notification basePath=/notifications, Agent basePath=/agent.
 # Team UI: /teams (and /teams/* except /teams/api/* BFF) proxies to web_host.
-# /teams/api/* -> team_web (BFF). /api/v1/* -> api-gateway; default location / -> identity_web.
+# /teams/api/* -> team_bff (team-web-mfe BFF). /api/v1/* -> api-gateway; default location / -> identity_web.
 #
 # Deployment note:
 # - In production, inject GATEWAY_SHARED_SECRET from an external Secret Manager
@@ -35,8 +35,8 @@ http {
     server usage-web:3000;
   }
 
-  upstream team_web {
-    server team-web:3000;
+  upstream team_bff {
+    server team-web-mfe:3000;
   }
 
   upstream web_host {
@@ -135,7 +135,7 @@ http {
 
     # Longest prefix wins vs ^~ /teams/: /teams/api/* → team BFF only (never web_host).
     location ^~ /teams/api/ {
-      proxy_pass http://team_web;
+      proxy_pass http://team_bff/api/;
       proxy_set_header Upgrade $http_upgrade;
       proxy_set_header Connection $connection_upgrade;
     }

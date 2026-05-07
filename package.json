@@ -6,6 +6,7 @@
     "@eslint/eslintrc": "^3.3.5",
     "@swc/helpers": "^0.5.21",
     "eslint": "^9",
+    "json-stable-stringify-without-jsonify": "^1.0.1",
     "next": "15.2.4",
     "styled-jsx": "^5.1.7",
     "vitest": "^4.1.1"
@@ -22,9 +23,9 @@
     "build:identity-web": "pnpm --filter identity-web build",
     "build:usage-web": "pnpm --filter usage-web build",
     "build:billing-web": "pnpm --filter billing-web build",
-    "build:team-web": "pnpm --filter team-web build",
+    "build:team-web-mfe": "pnpm --filter team-web-mfe build",
     "build:notification-service": "pnpm --filter notification-service build",
-    "build:web": "pnpm build:web-host && pnpm build:identity-web && pnpm build:usage-web && pnpm build:billing-web && pnpm build:team-web",
+    "build:web": "pnpm build:web-host && pnpm build:identity-web && pnpm build:usage-web && pnpm build:billing-web && pnpm build:team-web-mfe",
     "docker:compose:web:build": "powershell -ExecutionPolicy Bypass -NoProfile -File ./scripts/docker-web-profile-build.ps1",
     "docker:compose:web:build:unix": "bash ./scripts/docker-web-profile-build.sh"
   }

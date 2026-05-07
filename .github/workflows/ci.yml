@@ -291,7 +291,6 @@ jobs:
           docker run --rm \
             --add-host identity-web:127.0.0.1 \
             --add-host usage-web:127.0.0.1 \
-            --add-host team-web:127.0.0.1 \
             --add-host web-host:127.0.0.1 \
             --add-host team-web-mfe:127.0.0.1 \
             --add-host usage-web-mfe:127.0.0.1 \
@@ -567,35 +566,6 @@ jobs:
       - name: Install workspace
         run: pnpm install --frozen-lockfile
         working-directory: .
-      # ESLint: omit --max-warnings so only errors fail the step; warnings do not stop CI
-      - name: Lint / test / build (team-web)
-        run: |
-          pnpm --filter team-web run lint
-          pnpm --filter team-web test
-          pnpm run build:team-web
-        working-directory: .
-      - uses: docker/setup-buildx-action@v3
-      - name: Docker image (team-web, standalone) (cache gha)
-        id: docker_team_web
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: services/team-service/web/Dockerfile
-          tags: team-web:ci
-          load: true
-          push: false
-          cache-from: type=gha,scope=team-web
-          # NOTE: 무료 티어(10GB)에서 캐시가 커지면 mode=min으로 유지하는 편이 안정적이다.
-          cache-to: type=gha,mode=min,scope=team-web
-      - name: Team-web image summary
-        if: always()
-        run: |
-          echo "## Docker image build summary (team-web)" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Tag: \\`team-web:ci\\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Digest: \\`${{ steps.docker_team_web.outputs.digest }}\\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Cache scope: \\`team-web\\` (type=gha)" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-
   notification-service:
     name: Build notification-service
     runs-on: ubuntu-latest
