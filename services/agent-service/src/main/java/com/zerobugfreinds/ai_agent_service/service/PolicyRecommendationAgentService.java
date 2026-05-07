@@ -100,17 +100,15 @@ public class PolicyRecommendationAgentService {
 	public OptimizationRecommendationIssuedEvent analyzeAndStore(RecommendationAnalyzeRequest request) {
 		Instant endAt = Instant.now();
 		Instant startAt = endAt.minus(request.windowDays(), ChronoUnit.DAYS);
+		long totalRequests = Math.max(100, request.windowDays() * 140L);
 
 		BillingSignalSnapshotService.BillingKeySignal billingSignal =
 				resolveBillingSignal(request.scopeType(), request.scopeId(), request.keyId());
 		UsageProfile usageProfile = buildUsageProfile(request, billingSignal);
-		long totalRequests = usageProfile.totalRequests() > 0
-				? usageProfile.totalRequests()
-				: Math.max(100, request.windowDays() * 140L);
 		long totalInputTokens = usageProfile.totalInputTokens();
 		long totalOutputTokens = usageProfile.totalOutputTokens();
 		BigDecimal ratio = calculateRatio(totalInputTokens, totalOutputTokens);
-		Long averageLatencyMs = usageProfile.averageLatencyMs();
+		long averageLatencyMs = usageProfile.averageLatencyMs();
 		RecommendationReasonCode reasonCode = resolveReasonCode(request.scopeType(), ratio, averageLatencyMs);
 		RecommendationConfidenceLevel confidenceLevel = usageProfile.confidenceLevel();
 
@@ -334,9 +332,9 @@ public class PolicyRecommendationAgentService {
 	private static RecommendationReasonCode resolveReasonCode(
 			RecommendationScopeType scopeType,
 			BigDecimal inputOutputRatio,
-			Long averageLatencyMs
+			long averageLatencyMs
 	) {
-		if (averageLatencyMs != null && averageLatencyMs >= HIGH_LATENCY_THRESHOLD_MS) {
+		if (averageLatencyMs >= HIGH_LATENCY_THRESHOLD_MS) {
 			return RecommendationReasonCode.HIGH_LATENCY;
 		}
 		if (inputOutputRatio.compareTo(BigDecimal.valueOf(10)) >= 0) {
@@ -361,15 +359,15 @@ public class PolicyRecommendationAgentService {
 						request.scopeId()
 				);
 		if (rollupSummary.totalInputTokens() > 0 || rollupSummary.totalOutputTokens() > 0) {
+			long fallbackLatency = resolvePatternProfile(request, billingSignal).avgLatencyMs();
 			RecommendationConfidenceLevel confidence = rollupSummary.totalRequests() >= 5
 					? RecommendationConfidenceLevel.HIGH
 					: RecommendationConfidenceLevel.MEDIUM;
 			return new UsageProfile(
 					rollupSummary.totalInputTokens(),
 					rollupSummary.totalOutputTokens(),
-					null,
-					confidence,
-					rollupSummary.totalRequests()
+					fallbackLatency,
+					confidence
 			);
 		}
 
@@ -390,7 +388,7 @@ public class PolicyRecommendationAgentService {
 		RecommendationConfidenceLevel confidence = dailyTokens > 0 || averageDailyTokenUsage.compareTo(BigDecimal.ZERO) > 0
 				? RecommendationConfidenceLevel.HIGH
 				: RecommendationConfidenceLevel.MEDIUM;
-		return new UsageProfile(totalInputTokens, totalOutputTokens, null, confidence, 0L);
+		return new UsageProfile(totalInputTokens, totalOutputTokens, profile.avgLatencyMs(), confidence);
 	}
 
 	private long resolveDailyTokensByKey(RecommendationAnalyzeRequest request) {
@@ -528,9 +526,8 @@ public class PolicyRecommendationAgentService {
 	private record UsageProfile(
 			long totalInputTokens,
 			long totalOutputTokens,
-			Long averageLatencyMs,
-			RecommendationConfidenceLevel confidenceLevel,
-			long totalRequests
+			long averageLatencyMs,
+			RecommendationConfidenceLevel confidenceLevel
 	) {
 	}
 }

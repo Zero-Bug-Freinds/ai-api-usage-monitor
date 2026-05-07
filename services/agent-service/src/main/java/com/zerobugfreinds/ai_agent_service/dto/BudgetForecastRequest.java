@@ -30,14 +30,6 @@ public record BudgetForecastRequest(
 		BigDecimal averageDailySpendUsd,
 		/** When null, billing-cycle metrics in the response are null (no billing-cycle event / not configured). */
 		LocalDate billingCycleEndDate,
-		List<BigDecimal> recentDailySpendUsd,
-		List<Long> recentDailyTokenUsage7d,
-		List<ModelUsageShare> modelUsageDistribution7d,
-		List<Long> hourlyTokenUsage24h
+		List<BigDecimal> recentDailySpendUsd
 ) {
-	public record ModelUsageShare(
-			String model,
-			BigDecimal percentage
-	) {
-	}
 }

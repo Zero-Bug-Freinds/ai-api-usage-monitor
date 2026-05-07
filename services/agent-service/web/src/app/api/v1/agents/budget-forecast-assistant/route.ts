@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 
 const ORIGIN_PROBE_TIMEOUT_MS = 3000
-const FORECAST_FETCH_TIMEOUT_MS = 45000
+const FORECAST_FETCH_TIMEOUT_MS = 20000
 
 type SessionApiResponse = {
   success?: boolean
@@ -98,44 +98,26 @@ export async function POST(request: NextRequest) {
     forwardedHeaders["x-user-email"] = forwardedEmail
   }
 
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const response = await fetchWithTimeout(targetUrl, FORECAST_FETCH_TIMEOUT_MS, {
-        method: "POST",
-        headers: forwardedHeaders,
-        body,
-        cache: "no-store",
-      })
+  try {
+    const response = await fetchWithTimeout(targetUrl, FORECAST_FETCH_TIMEOUT_MS, {
+      method: "POST",
+      headers: forwardedHeaders,
+      body,
+      cache: "no-store",
+    })
 
-      const responseBody = await response.text()
-      const contentType = response.headers.get("content-type") ?? "application/json"
-      return new NextResponse(responseBody, {
-        status: response.status,
-        headers: { "content-type": contentType },
-      })
-    } catch (error) {
-      const isLastAttempt = attempt === 1
-      if (!isLastAttempt) {
-        continue
-      }
-      const detail =
-        error instanceof Error && error.message.trim().length > 0
-          ? error.message
-          : "unknown fetch error"
-      return NextResponse.json(
-        {
-          message: "budget forecast backend 호출에 실패했습니다.",
-          detail,
-        },
-        { status: 502 },
-      )
-    }
+    const responseBody = await response.text()
+    const contentType = response.headers.get("content-type") ?? "application/json"
+    return new NextResponse(responseBody, {
+      status: response.status,
+      headers: { "content-type": contentType },
+    })
+  } catch {
+    return NextResponse.json(
+      {
+        message: "budget forecast backend 호출에 실패했습니다.",
+      },
+      { status: 502 },
+    )
   }
-  return NextResponse.json(
-    {
-      message: "budget forecast backend 호출에 실패했습니다.",
-      detail: "unexpected routing branch",
-    },
-    { status: 502 },
-  )
 }

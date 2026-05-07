@@ -201,21 +201,6 @@ function pickTeamIdFromSources(list: TeamSummary[], viewQ: string | undefined, s
   return pickOldestTeamId(list);
 }
 
-function kstDaysInclusive(fromIso: string, toIso: string): number {
-  const a = Date.parse(`${fromIso}T12:00:00+09:00`);
-  const b = Date.parse(`${toIso}T12:00:00+09:00`);
-  if (Number.isNaN(a) || Number.isNaN(b) || b < a) return 1;
-  return Math.floor((b - a) / 86_400_000) + 1;
-}
-
-function kpiPeriodPrefix(fromIso: string, toIso: string, todayIso: string): string {
-  const n = kstDaysInclusive(fromIso, toIso);
-  if (n === 1 && fromIso === todayIso && toIso === todayIso) return "오늘의";
-  if (n === 7) return "7일간";
-  if (n === 30) return "30일간";
-  return `${n}일간`;
-}
-
 type MainRow = {
   label: string;
   requestCount: number;
@@ -509,9 +494,6 @@ export default function TeamDashboard({
   const rangeCost = toNumber(summary?.totalEstimatedCost);
   const rangeSuccess = rangeRequests > 0 ? Math.max(0, rangeRequests - rangeErrors) : 0;
   const successRatePercent = rangeRequests > 0 ? (100 * rangeSuccess) / rangeRequests : 0;
-  const periodPrefix = kpiPeriodPrefix(range.from, range.to, todayKst);
-  const errorSubStyle = rangeErrors >= 1 ? "text-red-500" : "text-foreground";
-
   const pieData = React.useMemo(() => {
     const models = data?.byModel ?? [];
     const totalReq = models.reduce((s, m) => s + m.requestCount, 0);
@@ -704,44 +686,23 @@ export default function TeamDashboard({
       ) : null}
 
       {effectiveTeamId && (loading || error) ? (
-        <div aria-busy={loading ? "true" : undefined} aria-label="대시보드 로딩 또는 오류 시 플레이스홀더">
-          <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {[0, 1, 2, 3].map((k) => (
-              <div key={k} className="h-[5.5rem] animate-pulse rounded-lg border border-border bg-muted/50" />
-            ))}
-          </div>
-          <div className="mb-8 h-[380px] min-h-[380px] w-full animate-pulse rounded-lg border border-border bg-muted/40" />
+        <div aria-busy={loading ? "true" : undefined} aria-label="대시보드 로딩 또는 오류 시 플레이스홀더" className="space-y-6">
+          <div className="h-[360px] min-h-[360px] w-full animate-pulse rounded-lg border border-border bg-muted/40" />
+          <div className="h-[300px] min-h-[300px] w-full animate-pulse rounded-lg border border-border bg-muted/40" />
+          <div className="h-[300px] min-h-[300px] w-full animate-pulse rounded-lg border border-border bg-muted/40" />
         </div>
       ) : null}
 
       {effectiveTeamId && !loading && !error ? (
         <>
-          <section className="mb-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
-              <p className="text-xs font-medium text-muted-foreground">{periodPrefix} 총 비용 (USD)</p>
-              <p className="mt-1 text-2xl font-semibold tabular-nums">{formatUsd(rangeCost)}</p>
-            </div>
-            <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
-              <p className="text-xs font-medium text-muted-foreground">{periodPrefix} 총 요청 수</p>
-              <p className="mt-1 text-2xl font-semibold tabular-nums">{formatRequestCount(rangeRequests)}</p>
-            </div>
-            <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
-              <p className="text-xs font-medium text-muted-foreground">{periodPrefix} 총 입력 토큰</p>
-              <p className="mt-1 text-2xl font-semibold tabular-nums">{formatTokenCount(rangeTokens)}</p>
-            </div>
-            <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
-              <p className="text-xs font-medium text-muted-foreground">{periodPrefix} 성공률</p>
-              <p className="mt-1 text-2xl font-semibold tabular-nums">{successRatePercent.toFixed(1)}%</p>
-              <p className={`mt-2 text-xs tabular-nums ${errorSubStyle}`}>
-                오류 {rangeErrors.toLocaleString("en-US")}건 / 총 {rangeRequests.toLocaleString("en-US")}건
-              </p>
-            </div>
-          </section>
-
           {!hasMainData ? (
-            <p className="mb-10 text-center text-sm text-muted-foreground">
-              등록된 데이터가 없습니다. (선택한 기간·필터에 대한 사용 데이터가 없을 수 있습니다)
-            </p>
+            <section className="mb-8 rounded-lg border border-border p-4 shadow-sm">
+              <h2 className="mb-4 text-lg font-medium">{mainChartTitle(data?.usageSeriesUnit)}</h2>
+              <div className="h-[360px] min-h-[360px] w-full rounded-lg border border-dashed border-border bg-muted/20" />
+              <p className="mt-3 text-center text-sm text-muted-foreground">
+                등록된 데이터가 없습니다. (선택한 기간·필터에 대한 사용 데이터가 없을 수 있습니다)
+              </p>
+            </section>
           ) : null}
 
           <section className="mb-8 w-full min-w-0 rounded-lg border border-border p-4 shadow-sm">
@@ -793,9 +754,13 @@ export default function TeamDashboard({
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
+            <div className="mt-3 text-xs text-muted-foreground">
+              총 요청 {formatRequestCount(rangeRequests)} · 오류 {rangeErrors.toLocaleString("en-US")}건 · 성공률{" "}
+              {successRatePercent.toFixed(1)}% · 총 비용 {formatUsd(rangeCost)} · 총 입력 토큰 {formatTokenCount(rangeTokens)}
+            </div>
           </section>
 
-          <div className="mb-8 grid min-w-0 gap-6 lg:grid-cols-2">
+          <div className="mb-8 flex min-w-0 flex-col gap-6">
             <section className="min-w-0 rounded-lg border border-border p-4 shadow-sm">
               <h2 className="mb-4 text-lg font-medium">모델별 요청 비중</h2>
               <div className="flex min-h-[300px] flex-col items-center gap-4 sm:flex-row">

@@ -13,9 +13,6 @@ public record AiBudgetForecastResult(
 		String healthStatus,
 		BigDecimal budgetUtilizationPercent,
 		String assistantMessage,
-		List<String> recommendedActions,
-		String anomalySummary,
-		String routingRecommendation,
-		BigDecimal estimatedRoutingSavingsPercent
+		List<String> recommendedActions
 ) {
 }

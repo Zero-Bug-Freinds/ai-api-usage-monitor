@@ -16,16 +16,49 @@ export default function TeamUsageDashboard({ viewTeamIdFromQuery, shellTeamList 
   useLogoutCleanup();
   const [selectedUserId, setSelectedUserId] = React.useState<string>("");
   const [bffTeamId, setBffTeamId] = React.useState<string>("");
+  const [activeTab, setActiveTab] = React.useState<"team" | "member">("team");
 
   return (
-    <div className="space-y-4">
-      <TeamDashboard
-        viewTeamIdFromQuery={viewTeamIdFromQuery}
-        shellTeamList={shellTeamList}
-        onSelectUser={setSelectedUserId}
-        onEffectiveTeamChange={setBffTeamId}
-      />
-      <TeamMemberUsageLog teamId={bffTeamId} userId={selectedUserId} />
-    </div>
+    <section className="w-full min-w-0 rounded-xl border border-border bg-background p-4 shadow-sm">
+      <div className="mb-4 border-b border-border">
+        <div className="flex flex-wrap items-center gap-5">
+          <button
+            type="button"
+            className={`pb-2 text-sm font-semibold transition ${
+              activeTab === "team"
+                ? "border-b-2 border-blue-500 text-blue-600"
+                : "border-b-2 border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+            onClick={() => setActiveTab("team")}
+          >
+            대시보드
+          </button>
+          <button
+            type="button"
+            className={`pb-2 text-sm font-semibold transition ${
+              activeTab === "member"
+                ? "border-b-2 border-blue-500 text-blue-600"
+                : "border-b-2 border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+            onClick={() => setActiveTab("member")}
+          >
+            멤버 상세
+          </button>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-border bg-card p-4">
+        {activeTab === "team" ? (
+          <TeamDashboard
+            viewTeamIdFromQuery={viewTeamIdFromQuery}
+            shellTeamList={shellTeamList}
+            onSelectUser={setSelectedUserId}
+            onEffectiveTeamChange={setBffTeamId}
+          />
+        ) : (
+          <TeamMemberUsageLog teamId={bffTeamId} userId={selectedUserId} isActive={activeTab === "member"} />
+        )}
+      </div>
+    </section>
   );
 }

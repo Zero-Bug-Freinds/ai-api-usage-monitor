@@ -355,7 +355,7 @@ public class ExternalModelCatalogService {
 
 	private static List<ModelPricing> defaultModels() {
 		return List.of(
-				new ModelPricing("GOOGLE", "gemini-2.5-flash", new BigDecimal("0.075"), new BigDecimal("0.30"), "입력 단가가 낮아 대량 입력 패턴에 유리", 1000000, "ACTIVE"),
+				new ModelPricing("GOOGLE", "gemini-1.5-flash", new BigDecimal("0.075"), new BigDecimal("0.30"), "입력 단가가 낮아 대량 입력 패턴에 유리", 1000000, "ACTIVE"),
 				new ModelPricing("ANTHROPIC", "claude-3-haiku", new BigDecimal("0.25"), new BigDecimal("1.25"), "저비용/빠른 응답으로 일반 대화형에 적합", 200000, "ACTIVE"),
 				new ModelPricing("OPENAI", "gpt-4o-mini", new BigDecimal("0.15"), new BigDecimal("0.60"), "균형형 품질/비용 모델", 128000, "ACTIVE"),
 				new ModelPricing("GROQ", "llama-3-8b-groq", new BigDecimal("0.05"), new BigDecimal("0.08"), "초저지연/저비용 워크로드에 적합", 8192, "ACTIVE")

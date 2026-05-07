@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { createPortal } from "react-dom"
 import { ChevronRight, Minus, Plus, Search } from "lucide-react"
 import { Checkbox, Label } from "@ai-usage/ui"
 
@@ -229,6 +230,7 @@ export function TeamManagementView() {
   const [cancelDeleteLoadingKey, setCancelDeleteLoadingKey] = React.useState<string | null>(null)
   const [removeMemberLoadingKey, setRemoveMemberLoadingKey] = React.useState<string | null>(null)
   const [deleteTeamLoadingId, setDeleteTeamLoadingId] = React.useState<string | null>(null)
+  const [teamDeletionModal, setTeamDeletionModal] = React.useState<{ teamId: string; teamName: string } | null>(null)
   const [selectedTeamId, setSelectedTeamId] = React.useState<string | null>(null)
   const latestLoadSeqRef = React.useRef(0)
 
@@ -784,8 +786,16 @@ export function TeamManagementView() {
     }
   }
 
-  async function _deleteTeam(teamId: string, teamName: string) {
-    if (!window.confirm(`"${teamName}" 팀을 삭제할까요?\n(팀 API 키를 먼저 모두 삭제해야 합니다)`)) return
+  function openTeamDeletionModal(teamId: string, teamName: string) {
+    setMessage(null)
+    setTeamDeletionModal({ teamId, teamName })
+  }
+
+  function closeTeamDeletionModal() {
+    setTeamDeletionModal(null)
+  }
+
+  async function _deleteTeam(teamId: string) {
     setDeleteTeamLoadingId(teamId)
     setMessage(null)
     try {
@@ -797,6 +807,7 @@ export function TeamManagementView() {
       setMessage({ kind: "success", text: "팀을 삭제했습니다" })
       await loadTeams(debouncedKeyword)
       cancelEditTeamApiKey()
+      closeTeamDeletionModal()
     } catch {
       setMessage({ kind: "error", text: "팀 삭제에 실패했습니다" })
     } finally {
@@ -835,12 +846,56 @@ export function TeamManagementView() {
   const visibleExpiredInvitationNotices = expiredInvitationNotices.filter(
     (notice) => dismissedInvitationNoticeIds[notice.invitationId] !== true,
   )
+  const teamDeletionModalLayer = teamDeletionModal ? (
+    <div
+      className="fixed inset-0 z-[49] flex items-center justify-center bg-black/60 px-4 py-6"
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && deleteTeamLoadingId === null) closeTeamDeletionModal()
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="team-delete-title"
+        className="w-full max-w-md rounded-lg border border-gray-200 bg-white p-5 shadow-2xl"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <h3 id="team-delete-title" className="text-sm font-semibold text-foreground">
+          팀 삭제
+        </h3>
+        <p className="mt-2 text-sm text-muted-foreground">
+          &quot;{teamDeletionModal?.teamName}&quot; 팀을 삭제할까요?
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">팀 API 키를 먼저 모두 정리한 뒤 삭제를 진행해 주세요.</p>
+        <p className="mt-1 text-xs text-muted-foreground">API Key가 연결된 팀은 삭제할 수 없습니다.</p>
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            className="h-9 rounded-md border border-input bg-background px-3 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+            disabled={deleteTeamLoadingId !== null}
+            onClick={closeTeamDeletionModal}
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            className="h-9 rounded-md border border-red-500 bg-background px-3 text-xs font-medium text-red-500 hover:bg-red-50 disabled:opacity-50"
+            disabled={deleteTeamLoadingId !== null}
+            onClick={() => teamDeletionModal && void _deleteTeam(teamDeletionModal.teamId)}
+          >
+            {deleteTeamLoadingId === teamDeletionModal?.teamId ? "팀 삭제 중…" : "팀 삭제"}
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null
 
   return (
     <main className="flex h-full min-h-0 w-full min-w-0 max-w-full flex-col overflow-x-hidden bg-background text-foreground">
       {teamApiKeyDeletionModal ? (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4 py-6"
+          className="fixed inset-0 z-[49] flex items-center justify-center bg-black/40 px-4 py-6"
           role="presentation"
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) closeTeamApiKeyDeletionModal()
@@ -850,7 +905,7 @@ export function TeamManagementView() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="team-api-key-delete-title"
-            className="w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-lg"
+            className="w-full max-w-md rounded-lg border border-border bg-white p-5 shadow-xl"
             onMouseDown={(e) => e.stopPropagation()}
           >
             <h3 id="team-api-key-delete-title" className="text-sm font-semibold text-foreground">
@@ -944,6 +999,11 @@ export function TeamManagementView() {
           </div>
         </div>
       ) : null}
+      {teamDeletionModalLayer
+        ? typeof document !== "undefined"
+          ? createPortal(teamDeletionModalLayer, document.body)
+          : teamDeletionModalLayer
+        : null}
       <aside className="w-full min-w-0 max-w-full shrink-0 border-r border-border bg-sidebar">
         <div className="min-w-0 p-3">
           <div className="sticky top-0 z-10 rounded-t-lg border border-border bg-background px-4 py-4 backdrop-blur-sm">
@@ -971,7 +1031,7 @@ export function TeamManagementView() {
               />
             </div>
             {showCreateForm ? (
-              <form className="mt-3 space-y-3 rounded-md border border-border bg-background p-3" onSubmit={createTeam}>
+              <form className="relative z-20 mt-6 space-y-3 rounded-md border border-border bg-white p-3 shadow-2xl" onSubmit={createTeam}>
                 <div className="space-y-1">
                   <label className="text-xs font-medium text-foreground">팀 이름 (필수)</label>
                   <input
@@ -1401,7 +1461,7 @@ export function TeamManagementView() {
                                 type="button"
                                 className="rounded border border-red-300 bg-background px-2 py-1 text-[11px] font-medium text-red-600 disabled:opacity-50"
                                 disabled={deleteTeamLoadingId === team.id}
-                                onClick={() => void _deleteTeam(team.id, team.name)}
+                                onClick={() => openTeamDeletionModal(team.id, team.name)}
                               >
                                 {deleteTeamLoadingId === team.id ? "팀 삭제 중…" : "팀 삭제"}
                               </button>
