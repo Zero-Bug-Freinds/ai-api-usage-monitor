@@ -146,11 +146,8 @@
 
 ## 6. 운영상 주의점
 
-<<<<<<< HEAD
-=======
 - `budget-forecast-assistant`는 AI 의존 경로다. Gemini API key/모델/네트워크 이슈 시 fallback 없이 `503(AI_INFERENCE_FAILED)`가 발생한다.
 - `GeminiAssistantService`는 필수 필드 누락을 보정하지 않는다. `healthStatus`, `assistantMessage`, `recommendedActions`, `anomalySummary`, `routingRecommendation`, `estimatedRoutingSavingsPercent` 중 하나라도 비정상이면 실패 처리된다.
->>>>>>> origin/develop
 - **Billing 비용 신호(`BillingSignalSnapshotService`)**: 메모리 맵에 더해 **Redis Hash**(`ai-agent:billing-signals`)에 직렬화 저장한다. 재시작 후에도 Redis가 살아 있으면 스냅샷이 복구된다. Redis가 없으면 기존처럼 메모리만 사용한다.
 - **보정 잡(`BillingSignalReconciliationService`)**: 애플리케이션 기동 후 및 고정 지연마다, Identity 키 스냅샷에 있는 키에 대해 `billing-service`의 `GET /api/v1/expenditure/summary`를 호출해 비용을 보강한다(기간: **Asia/Seoul** 이번 달 1일 ~ 오늘). 이벤트 유입이 없거나 재시작 직후 `billing-signals`가 비는 구간을 줄인다.
 - Identity/팀/기타 스냅샷은 여전히 메모리 기반이라, 해당 컴포넌트는 재시작 시 초기화될 수 있다(이벤트 재유입 또는 BFF fallback에 의존).
@@ -200,9 +197,6 @@
 - 업그레이드 추천 규칙 추가: 고지연(`HIGH_LATENCY`) 패턴에서는 비용 절감 우선이 아니라 고성능 후보를 우선 추천.
 - `usage.recorded` 소비/7일 롤링 토큰 집계(`UsageRecordedTokenRollupService`)를 추천/예산 예측에 연결해 키별 input-output 비율 및 예측 정확도를 개선.
 - UI 카탈로그 섹션의 `Provider별` 표시를 제거하고, `source`/활성 모델 수/갱신 실패 상태 중심으로 운영 가시성을 정리.
-<<<<<<< HEAD
-=======
 - 예산 예측 경로를 AI-agent 중심으로 전환: deterministic fallback 제거, `AI_INFERENCE_FAILED` 표준 에러(`503`) 도입.
 - 예산 예측 AI 계약 강화: 필수 응답 필드 검증 실패 시 요청 실패 처리(보정/기본값 대체 제거).
 - 프롬프트/스키마 확장: 7일 토큰 배열·모델 사용 분포·24시간 토큰 패턴 입력 및 anomaly/routing 출력 필드 반영.
->>>>>>> origin/develop

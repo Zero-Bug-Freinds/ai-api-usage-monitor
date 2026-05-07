@@ -31,7 +31,6 @@ import org.slf4j.LoggerFactory;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.TimeUnit;
 import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -116,7 +115,6 @@ public class ProxyRelayService {
         } else {
             withBody = spec;
         }
-        long startNanos = System.nanoTime();
 
         return withBody.exchangeToMono(response -> mapResponse(
                 response,
@@ -125,8 +123,7 @@ public class ProxyRelayService {
                 provider,
                 resolvedApiKey,
                 exchange.getRequest().getPath().value(),
-                streaming,
-                startNanos
+                streaming
         ));
     }
 
@@ -137,8 +134,7 @@ public class ProxyRelayService {
             AiProvider provider,
             ApiKeyClient.ResolvedApiKey resolvedApiKey,
             String requestPath,
-            boolean streaming,
-            long startNanos
+            boolean streaming
     ) {
         HttpHeaders responseHeaders = filterResponseHeaders(response.headers().asHttpHeaders());
         HttpStatusCode status = response.statusCode();
@@ -155,10 +151,9 @@ public class ProxyRelayService {
                         acc.append(new String(copy, StandardCharsets.UTF_8));
                         return bufferFactory.wrap(copy);
                     })
-                    .doFinally(signalType -> {
+                    .doOnComplete(() -> {
                         TokenUsage u = handler.parseUsageFromSse(acc.toString());
-                        long latencyMs = elapsedMillis(startNanos);
-                        publishUsage(ctx, provider, resolvedApiKey, requestPath, u, upstreamHost, latencyMs, true, status).subscribe();
+                        publishUsage(ctx, provider, resolvedApiKey, requestPath, u, upstreamHost, true, status).subscribe();
                     });
             return Mono.just(ResponseEntity.status(status).headers(responseHeaders).body(body));
         }
@@ -170,19 +165,13 @@ public class ProxyRelayService {
                     TokenUsage u = handler.parseUsageFromResponseJson(bodyStr);
                     byte[] bytes = bodyStr.getBytes(StandardCharsets.UTF_8);
                     Flux<DataBuffer> flux = Flux.just(bufferFactory.wrap(bytes));
-                    long latencyMs = elapsedMillis(startNanos);
-                    return publishUsage(ctx, provider, resolvedApiKey, requestPath, u, safeHost(requestUri), latencyMs, false, status)
+                    return publishUsage(ctx, provider, resolvedApiKey, requestPath, u, safeHost(requestUri), false, status)
                             .onErrorResume(ex -> {
                                 log.warn("Usage event publish failed but proxy response is preserved: {}", ex.getMessage());
                                 return Mono.empty();
                             })
                             .thenReturn(ResponseEntity.status(status).headers(responseHeaders).body(flux));
                 });
-    }
-
-    private static long elapsedMillis(long startNanos) {
-        long elapsedNanos = System.nanoTime() - startNanos;
-        return TimeUnit.NANOSECONDS.toMillis(Math.max(elapsedNanos, 0L));
     }
 
     private static String safeHost(URI uri) {
@@ -207,7 +196,6 @@ public class ProxyRelayService {
             String requestPath,
             TokenUsage usage,
             String upstreamHost,
-            Long latencyMs,
             boolean streaming,
             HttpStatusCode upstreamStatus
     ) {
@@ -230,7 +218,6 @@ public class ProxyRelayService {
                 BigDecimal.ZERO,
                 requestPath,
                 upstreamHost,
-                latencyMs,
                 streaming,
                 successful,
                 statusCode

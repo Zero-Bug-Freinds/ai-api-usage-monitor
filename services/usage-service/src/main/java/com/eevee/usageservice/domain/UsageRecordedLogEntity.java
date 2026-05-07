@@ -108,9 +108,6 @@ public class UsageRecordedLogEntity {
 
     private String upstreamHost;
 
-    @Column(name = "latency_ms")
-    private Long latencyMs;
-
     private Boolean streaming;
 
     @Column(name = "request_successful", nullable = false)
@@ -146,7 +143,6 @@ public class UsageRecordedLogEntity {
             BigDecimal estimatedCost,
             String requestPath,
             String upstreamHost,
-            Long latencyMs,
             Boolean streaming,
             boolean requestSuccessful,
             Integer upstreamStatusCode,
@@ -172,66 +168,10 @@ public class UsageRecordedLogEntity {
         this.estimatedCost = estimatedCost;
         this.requestPath = requestPath;
         this.upstreamHost = upstreamHost;
-        this.latencyMs = latencyMs;
         this.streaming = streaming;
         this.requestSuccessful = requestSuccessful;
         this.upstreamStatusCode = upstreamStatusCode;
         this.persistedAt = persistedAt;
-    }
-
-    public UsageRecordedLogEntity(
-            UUID eventId,
-            Instant occurredAt,
-            String correlationId,
-            String userId,
-            String organizationId,
-            String teamId,
-            String apiKeyId,
-            String teamApiKeyId,
-            String apiKeyFingerprint,
-            String apiKeySource,
-            AiProvider provider,
-            String model,
-            Long promptTokens,
-            Long completionTokens,
-            Long totalTokens,
-            Long estimatedReasoningTokens,
-            String providerTokenDetails,
-            BigDecimal estimatedCost,
-            String requestPath,
-            String upstreamHost,
-            Boolean streaming,
-            boolean requestSuccessful,
-            Integer upstreamStatusCode,
-            Instant persistedAt
-    ) {
-        this(
-                eventId,
-                occurredAt,
-                correlationId,
-                userId,
-                organizationId,
-                teamId,
-                apiKeyId,
-                teamApiKeyId,
-                apiKeyFingerprint,
-                apiKeySource,
-                provider,
-                model,
-                promptTokens,
-                completionTokens,
-                totalTokens,
-                estimatedReasoningTokens,
-                providerTokenDetails,
-                estimatedCost,
-                requestPath,
-                upstreamHost,
-                null,
-                streaming,
-                requestSuccessful,
-                upstreamStatusCode,
-                persistedAt
-        );
     }
 
     public UUID getEventId() { return eventId; }
@@ -255,7 +195,6 @@ public class UsageRecordedLogEntity {
     public BigDecimal getEstimatedCost() { return estimatedCost; }
     public String getRequestPath() { return requestPath; }
     public String getUpstreamHost() { return upstreamHost; }
-    public Long getLatencyMs() { return latencyMs; }
     public Boolean getStreaming() { return streaming; }
     public boolean isRequestSuccessful() { return requestSuccessful; }
     public Integer getUpstreamStatusCode() { return upstreamStatusCode; }
