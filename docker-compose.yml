@@ -27,7 +27,7 @@
 #   Identity BFF는 기본적으로 호스트의 identity-service 를 host.docker.internal 로 향함(WEB_IDENTITY_SERVICE_URL).
 #   단일 도메인: web-edge(Nginx, docker/web-edge/nginx.conf) → 기본 ${WEB_EDGE_PORT:-8888}
 #     /dashboard·/billing·/teams·/notifications·/agent 는 각 web으로 분기;
-#     identity 소유 경로만 identity-web; /api/team/v1/* 는 team-web BFF; /api/v1/* 는 api-gateway; 그 외 → 404.
+  #     identity 소유 경로만 identity-web; /api/team/v1/* 는 team-web-mfe BFF; /api/v1/* 는 api-gateway; 그 외 → 404.
 #
 # Docker 빌드 캐시: 로컬 Compose에는 registry cache_from/cache_to 를 두지 않는다(팀원 GHCR 로그인 불필요).
 # 각 Dockerfile 의 RUN --mount=type=cache(pnpm store, Gradle, .next/cache 등)로 로컬 빌드 속도를 유지한다.
@@ -450,7 +450,7 @@ services:
       API_GATEWAY_URL: http://api-gateway-service:8080
       IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
       GATEWAY_DEV_MODE: ${GATEWAY_DEV_MODE:-true}
-      # billing-web 서버 라우트가 컨테이너 내부에서 /api/team/v1/**(web-edge → team-web BFF)로 호출할 때 사용할 오리진.
+      # billing-web 서버 라우트가 컨테이너 내부에서 /api/team/v1/**(web-edge → team-web-mfe BFF)로 호출할 때 사용할 오리진.
       BILLING_TEAM_BFF_BASE_URL: ${BILLING_TEAM_BFF_BASE_URL:-http://web-edge}
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -539,27 +539,6 @@ services:
     ports:
       - "${WEB_HOST_PORT:-3002}:3000"
 
-  team-web:
-    profiles:
-      - web
-    restart: unless-stopped
-    build:
-      context: .
-      dockerfile: services/team-service/web/Dockerfile
-      args:
-        WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
-    depends_on:
-      - team-service
-    environment:
-      GATEWAY_URL: ${WEB_GATEWAY_URL:-http://api-gateway-service:8080}
-      TEAM_SERVICE_URL: ${WEB_TEAM_SERVICE_URL:-http://team-service:8093}
-      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
-      NEXT_PUBLIC_TEAM_CONSOLE_URL: ${NEXT_PUBLIC_TEAM_CONSOLE_URL:-http://localhost:${WEB_EDGE_PORT:-8888}/teams}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    ports:
-      - "${TEAM_WEB_PORT:-3022}:3000"
-
   team-web-mfe:
     profiles:
       - web
@@ -592,7 +571,6 @@ services:
       - identity-web
       - usage-web
       - billing-web
-      - team-web
       - web-host
       - team-web-mfe
       - usage-web-mfe
