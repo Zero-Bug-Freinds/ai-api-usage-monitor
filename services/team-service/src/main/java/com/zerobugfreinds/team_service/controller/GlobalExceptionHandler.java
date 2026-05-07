@@ -4,8 +4,10 @@ import com.zerobugfreinds.team_service.common.ApiResponse;
 import com.zerobugfreinds.team_service.exception.DuplicateTeamMemberException;
 import com.zerobugfreinds.team_service.exception.DuplicateTeamInvitationException;
 import com.zerobugfreinds.team_service.exception.ForbiddenTeamAccessException;
+import com.zerobugfreinds.team_service.exception.InternalRequestUnauthorizedException;
 import com.zerobugfreinds.team_service.exception.InvalidTeamInvitationStateException;
 import com.zerobugfreinds.team_service.exception.OwnerPermissionRequiredException;
+import com.zerobugfreinds.team_service.exception.TeamApiKeyNotFoundException;
 import com.zerobugfreinds.team_service.exception.TeamDeletionBlockedException;
 import com.zerobugfreinds.team_service.exception.TeamNotFoundException;
 import com.zerobugfreinds.team_service.exception.TeamInvitationNotFoundException;
@@ -46,6 +48,12 @@ public class GlobalExceptionHandler {
 		return ApiResponse.fail(ex.getMessage());
 	}
 
+	@ExceptionHandler(InternalRequestUnauthorizedException.class)
+	@ResponseStatus(HttpStatus.FORBIDDEN)
+	public ApiResponse<Void> handleInternalUnauthorized(InternalRequestUnauthorizedException ex) {
+		return ApiResponse.fail(ex.getMessage());
+	}
+
 	@ExceptionHandler(OwnerPermissionRequiredException.class)
 	@ResponseStatus(HttpStatus.FORBIDDEN)
 	public ApiResponse<Void> handleOwnerOnly(OwnerPermissionRequiredException ex) {
@@ -79,6 +87,12 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(TeamDeletionBlockedException.class)
 	@ResponseStatus(HttpStatus.CONFLICT)
 	public ApiResponse<Void> handleTeamDeletionBlocked(TeamDeletionBlockedException ex) {
+		return ApiResponse.fail(ex.getMessage());
+	}
+
+	@ExceptionHandler(TeamApiKeyNotFoundException.class)
+	@ResponseStatus(HttpStatus.NOT_FOUND)
+	public ApiResponse<Void> handleTeamApiKeyNotFound(TeamApiKeyNotFoundException ex) {
 		return ApiResponse.fail(ex.getMessage());
 	}
 
