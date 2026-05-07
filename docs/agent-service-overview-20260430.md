@@ -191,5 +191,3 @@
 - 업그레이드 추천 규칙 추가: 고지연(`HIGH_LATENCY`) 패턴에서는 비용 절감 우선이 아니라 고성능 후보를 우선 추천.
 - `usage.recorded` 소비/7일 롤링 토큰 집계(`UsageRecordedTokenRollupService`)를 추천/예산 예측에 연결해 키별 input-output 비율 및 예측 정확도를 개선.
 - UI 카탈로그 섹션의 `Provider별` 표시를 제거하고, `source`/활성 모델 수/갱신 실패 상태 중심으로 운영 가시성을 정리.
-
-롤백위한수정 또 수정 어떤걸 또 수정할까
