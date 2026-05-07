@@ -294,7 +294,7 @@ export function isConsoleNavActive(profile: ConsoleProfile, pathname: string, id
 
   if (profile === "agent") {
     if (id === "teams") return p === "/teams" || p.startsWith("/teams/")
-    if (id === "assistant") return p === "/agent" || p.startsWith("/agent/")
+    if (id === "assistant") return p === "/" || p === "/agent" || p.startsWith("/agent/")
     return false
   }
 

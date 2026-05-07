@@ -21,7 +21,8 @@ public class UsageRecordedTokenRollupService {
 			String scopeId,
 			Instant occurredAt,
 			Long promptTokens,
-			Long completionTokens
+			Long completionTokens,
+			Long latencyMs
 	) {
 		if (keyId == null || keyId.isBlank() || occurredAt == null) {
 			return;
@@ -34,13 +35,15 @@ public class UsageRecordedTokenRollupService {
 		LocalDate day = occurredAt.atZone(KST).toLocalDate();
 		RollupKey key = new RollupKey(keyId.trim(), normalize(scopeType), normalize(scopeId), day);
 		rollups.compute(key, (unused, current) -> {
+			long sanitizedLatency = sanitize(latencyMs);
 			if (current == null) {
-				return new DailyTokenRollup(input, output, 1L, occurredAt);
+				return new DailyTokenRollup(input, output, 1L, sanitizedLatency, occurredAt);
 			}
 			return new DailyTokenRollup(
 					current.inputTokens() + input,
 					current.outputTokens() + output,
 					current.requestCount() + 1,
+					current.totalLatencyMs() + sanitizedLatency,
 					occurredAt.isAfter(current.lastUpdatedAt()) ? occurredAt : current.lastUpdatedAt()
 			);
 		});
@@ -48,7 +51,7 @@ public class UsageRecordedTokenRollupService {
 
 	public SevenDayTokenSummary summarizeLastSevenDays(String keyId, String scopeType, String scopeId) {
 		if (keyId == null || keyId.isBlank()) {
-			return new SevenDayTokenSummary(0L, 0L, 0L);
+			return new SevenDayTokenSummary(0L, 0L, 0L, null);
 		}
 		LocalDate today = LocalDate.now(KST);
 		LocalDate from = today.minusDays(6);
@@ -58,6 +61,7 @@ public class UsageRecordedTokenRollupService {
 		long totalInput = 0L;
 		long totalOutput = 0L;
 		long totalRequests = 0L;
+		long totalLatencyMs = 0L;
 		for (Map.Entry<RollupKey, DailyTokenRollup> entry : rollups.entrySet()) {
 			RollupKey key = entry.getKey();
 			if (!key.keyId().equals(keyId.trim())) {
@@ -76,8 +80,10 @@ public class UsageRecordedTokenRollupService {
 			totalInput += rollup.inputTokens();
 			totalOutput += rollup.outputTokens();
 			totalRequests += rollup.requestCount();
+			totalLatencyMs += rollup.totalLatencyMs();
 		}
-		return new SevenDayTokenSummary(totalInput, totalOutput, totalRequests);
+		Long averageLatencyMs = totalRequests > 0 ? Math.round((double) totalLatencyMs / totalRequests) : null;
+		return new SevenDayTokenSummary(totalInput, totalOutput, totalRequests, averageLatencyMs);
 	}
 
 	private static long sanitize(Long value) {
@@ -103,6 +109,7 @@ public class UsageRecordedTokenRollupService {
 			long inputTokens,
 			long outputTokens,
 			long requestCount,
+			long totalLatencyMs,
 			Instant lastUpdatedAt
 	) {
 	}
@@ -110,7 +117,8 @@ public class UsageRecordedTokenRollupService {
 	public record SevenDayTokenSummary(
 			long totalInputTokens,
 			long totalOutputTokens,
-			long totalRequests
+			long totalRequests,
+			Long averageLatencyMs
 	) {
 	}
 }

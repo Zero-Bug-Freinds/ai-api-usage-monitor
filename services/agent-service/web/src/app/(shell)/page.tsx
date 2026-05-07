@@ -85,6 +85,7 @@ type TeamGroup = {
 }
 
 type AnalysisScope = "PERSONAL" | "TEAM"
+type AnalysisAction = "ANALYSIS" | "RECOMMENDATION"
 
 type ModelCatalogSnapshot = {
   source: string
@@ -231,6 +232,7 @@ function formatBillingMetric(value: number | null | undefined): string {
 }
 
 const MANUAL_BILLING_STORAGE_PREFIX = "agent.manualBillingCycleEnd."
+const ANALYSIS_RESULTS_STORAGE_KEY = "agent.analysisResults.v1"
 
 function storagePathPersonalKey(keyId: number): string {
   return `${MANUAL_BILLING_STORAGE_PREFIX}personal.${keyId}`
@@ -265,6 +267,32 @@ function writeBillingToStorage(path: string, isoDate: string): void {
     } else {
       window.localStorage.setItem(path, isoDate.trim())
     }
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+function readAnalysisResultsFromStorage(): AnalysisResult[] {
+  if (typeof window === "undefined") return []
+  try {
+    const raw = window.localStorage.getItem(ANALYSIS_RESULTS_STORAGE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as AnalysisResult[]
+    if (!Array.isArray(parsed)) return []
+    return parsed
+  } catch {
+    return []
+  }
+}
+
+function writeAnalysisResultsToStorage(results: AnalysisResult[]): void {
+  if (typeof window === "undefined") return
+  try {
+    if (results.length === 0) {
+      window.localStorage.removeItem(ANALYSIS_RESULTS_STORAGE_KEY)
+      return
+    }
+    window.localStorage.setItem(ANALYSIS_RESULTS_STORAGE_KEY, JSON.stringify(results))
   } catch {
     // ignore quota / private mode
   }
@@ -379,6 +407,7 @@ export default function AgentPage() {
   const [bootstrapError, setBootstrapError] = useState<string>("")
   const [currentUserId, setCurrentUserId] = useState<number | null>(null)
   const [modelCatalog, setModelCatalog] = useState<ModelCatalogSnapshot | null>(null)
+  const [resultsHydrated, setResultsHydrated] = useState<boolean>(false)
   const modelCatalogStats = useMemo(() => {
     if (!modelCatalog) return null
     const activeModels = modelCatalog.models.filter((model: ModelCatalogSnapshot["models"][number]) => {
@@ -408,8 +437,18 @@ export default function AgentPage() {
   )
 
   useEffect(() => {
+    setResults(readAnalysisResultsFromStorage())
+    setResultsHydrated(true)
+  }, [])
+
+  useEffect(() => {
     void loadAvailableContext()
   }, [])
+
+  useEffect(() => {
+    if (!resultsHydrated) return
+    writeAnalysisResultsToStorage(results)
+  }, [results, resultsHydrated])
 
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -488,7 +527,7 @@ export default function AgentPage() {
     }
   }
 
-  const runAnalysis = async (scope: AnalysisScope) => {
+  const runAnalysis = async (scope: AnalysisScope, action: AnalysisAction, targetKeyId?: number) => {
     if (scope === "TEAM" && selectedTeamId == null) {
       return
     }
@@ -509,18 +548,23 @@ export default function AgentPage() {
               recentDailySpendUsd: [],
             },
           }))
-    if (targetKeys.length === 0) return
+    const filteredTargetKeys =
+      targetKeyId == null ? targetKeys : targetKeys.filter((item: AvailableKeyContext) => item.keyId === targetKeyId)
+    if (filteredTargetKeys.length === 0) return
 
     setLoading(true)
-    setResults([])
     const nextResults: AnalysisResult[] = []
     try {
       for (let i = 0; i < targetKeys.length; i += 1) {
-        const keyItem = targetKeys[i]
+        const keyItem = filteredTargetKeys[i]
         setLoadingMessage(
-          scope === "PERSONAL"
-            ? `개인 API 키 사용량을 분석 중입니다... (${i + 1}/${targetKeys.length})`
-            : `${selectedTeamLabel || `Team ${selectedTeamId}`} 키 사용량을 분석 중입니다... (${i + 1}/${targetKeys.length})`,
+          action === "ANALYSIS"
+            ? scope === "PERSONAL"
+              ? `${keyItem.keyLabel} 사용량을 분석 중입니다... (${i + 1}/${filteredTargetKeys.length})`
+              : `${selectedTeamLabel || `Team ${selectedTeamId}`} ${keyItem.keyLabel} 사용량을 분석 중입니다... (${i + 1}/${filteredTargetKeys.length})`
+            : scope === "PERSONAL"
+              ? `${keyItem.keyLabel} 모델 추천을 분석 중입니다... (${i + 1}/${filteredTargetKeys.length})`
+              : `${selectedTeamLabel || `Team ${selectedTeamId}`} ${keyItem.keyLabel} 모델 추천을 분석 중입니다... (${i + 1}/${filteredTargetKeys.length})`,
         )
 
         try {
@@ -534,7 +578,6 @@ export default function AgentPage() {
             })
             continue
           }
-          const forecast = resolveForecastInputs(keyItem.providerStats, keyItem.monthlyBudgetUsd)
           const resolvedTeamId = keyItem.teamIdForBilling ?? selectedTeamId ?? null
           if (scope === "TEAM" && resolvedTeamId == null) {
             nextResults.push({
@@ -551,39 +594,52 @@ export default function AgentPage() {
               ? ledgerKeyPersonal(keyItem.keyId)
               : ledgerKeyTeam(resolvedTeamIdNumber, keyItem.keyId)
           const billingCycleIso = (billingByLedgerKey[billingLedgerKey] ?? "").trim()
-          const response = await fetch("/agent/api/v1/agents/budget-forecast-assistant", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              userId: scope === "PERSONAL" ? String(currentUserId) : String(resolvedTeamId),
-              teamId: scope === "PERSONAL" ? null : resolvedTeamIdNumber,
-              keyId: keyItem.keyId,
-              provider: keyItem.provider,
-              model: keyItem.provider,
-              monthlyBudgetUsd: keyItem.monthlyBudgetUsd,
-              currentSpendUsd: keyItem.providerStats.currentSpendUsd,
-              remainingTokens: forecast.remainingTokens,
-              averageDailyTokenUsage: forecast.averageDailyTokenUsage,
-              averageDailySpendUsd: forecast.averageDailySpendUsd,
-              billingCycleEndDate: billingCycleIso !== "" ? billingCycleIso : null,
-              recentDailySpendUsd: forecast.recentDailySpendUsd,
-              recentDailyTokenUsage7d: forecast.recentDailyTokenUsage7d,
-              modelUsageDistribution7d: forecast.modelUsageDistribution7d,
-              hourlyTokenUsage24h: forecast.hourlyTokenUsage24h,
-            }),
-          })
-
-          if (!response.ok) {
-            const text = await response.text()
-            throw new Error(text || `요청 실패 (${response.status})`)
-          }
-
-          const data = (await response.json()) as BudgetForecastResponse
-          let recommendation: RecommendationQueryResponse | undefined
-          let recommendationError: string | undefined
           const recommendationScopeType = scope
           const recommendationScopeId =
             scope === "PERSONAL" ? String(currentUserId) : String(resolvedTeamIdNumber)
+
+          if (action === "ANALYSIS") {
+            const forecast = resolveForecastInputs(keyItem.providerStats, keyItem.monthlyBudgetUsd)
+            const response = await fetch("/agent/api/v1/agents/budget-forecast-assistant", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                userId: scope === "PERSONAL" ? String(currentUserId) : String(resolvedTeamId),
+                teamId: scope === "PERSONAL" ? null : resolvedTeamIdNumber,
+                keyId: keyItem.keyId,
+                provider: keyItem.provider,
+                model: keyItem.provider,
+                monthlyBudgetUsd: keyItem.monthlyBudgetUsd,
+                currentSpendUsd: keyItem.providerStats.currentSpendUsd,
+                remainingTokens: forecast.remainingTokens,
+                averageDailyTokenUsage: forecast.averageDailyTokenUsage,
+                averageDailySpendUsd: forecast.averageDailySpendUsd,
+                billingCycleEndDate: billingCycleIso !== "" ? billingCycleIso : null,
+                recentDailySpendUsd: forecast.recentDailySpendUsd,
+                recentDailyTokenUsage7d: forecast.recentDailyTokenUsage7d,
+                modelUsageDistribution7d: forecast.modelUsageDistribution7d,
+                hourlyTokenUsage24h: forecast.hourlyTokenUsage24h,
+              }),
+            })
+
+            if (!response.ok) {
+              const text = await response.text()
+              throw new Error(text || `요청 실패 (${response.status})`)
+            }
+
+            const data = (await response.json()) as BudgetForecastResponse
+            nextResults.push({
+              keyId: keyItem.keyId,
+              keyLabel: keyItem.keyLabel,
+              provider: keyItem.provider,
+              data,
+              forecastGaps: forecast.gaps.length > 0 ? forecast.gaps : undefined,
+            })
+            continue
+          }
+
+          let recommendation: RecommendationQueryResponse | undefined
+          let recommendationError: string | undefined
           try {
             const analyzeResponse = await fetch("/agent/api/v1/agents/policy-recommendations/analyze", {
               method: "POST",
@@ -622,10 +678,8 @@ export default function AgentPage() {
             keyId: keyItem.keyId,
             keyLabel: keyItem.keyLabel,
             provider: keyItem.provider,
-            data,
             recommendation,
             recommendationError,
-            forecastGaps: forecast.gaps.length > 0 ? forecast.gaps : undefined,
           })
         } catch (error) {
           const message = error instanceof Error ? error.message : "분석 요청 실패"
@@ -638,7 +692,29 @@ export default function AgentPage() {
         }
       }
 
-      setResults(nextResults)
+      setResults((prev: AnalysisResult[]) => {
+        const byKeyId = new Map<number, AnalysisResult>()
+        for (const item of prev) {
+          byKeyId.set(item.keyId, item)
+        }
+        for (const item of nextResults) {
+          const current = byKeyId.get(item.keyId)
+          if (!current) {
+            byKeyId.set(item.keyId, item)
+            continue
+          }
+          byKeyId.set(item.keyId, {
+            ...current,
+            ...item,
+            data: item.data ?? current.data,
+            recommendation: item.recommendation ?? current.recommendation,
+            forecastGaps: item.forecastGaps ?? current.forecastGaps,
+            error: item.error ?? current.error,
+            recommendationError: item.recommendationError ?? current.recommendationError,
+          })
+        }
+        return Array.from(byKeyId.values())
+      })
     } finally {
       setLoading(false)
       setLoadingMessage("")
@@ -696,6 +772,24 @@ export default function AgentPage() {
                       </button>
                     ) : null}
                   </div>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-1">
+                  <button
+                    type="button"
+                    className="rounded border bg-background px-2 py-1 text-[11px] disabled:opacity-60"
+                    onClick={() => void runAnalysis("PERSONAL", "ANALYSIS", item.keyId)}
+                    disabled={loading}
+                  >
+                    분석
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded border bg-background px-2 py-1 text-[11px] disabled:opacity-60"
+                    onClick={() => void runAnalysis("PERSONAL", "RECOMMENDATION", item.keyId)}
+                    disabled={loading}
+                  >
+                    추천
+                  </button>
                 </div>
               </li>
             ))}
@@ -780,6 +874,24 @@ export default function AgentPage() {
                       ) : null}
                     </div>
                   </div>
+                  <div className="mt-2 grid grid-cols-2 gap-1">
+                    <button
+                      type="button"
+                      className="rounded border bg-background px-2 py-1 text-[11px] disabled:opacity-60"
+                      onClick={() => void runAnalysis("TEAM", "ANALYSIS", item.teamApiKeyId)}
+                      disabled={loading}
+                    >
+                      분석
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded border bg-background px-2 py-1 text-[11px] disabled:opacity-60"
+                      onClick={() => void runAnalysis("TEAM", "RECOMMENDATION", item.teamApiKeyId)}
+                      disabled={loading}
+                    >
+                      추천
+                    </button>
+                  </div>
                 </li>
               ))}
               {selectedTeamId != null && selectedTeamKeys.length === 0 ? (
@@ -797,23 +909,8 @@ export default function AgentPage() {
           )}
         </div>
 
-        <div className="grid gap-2">
-          <button
-            type="button"
-            className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60"
-            onClick={() => void runAnalysis("PERSONAL")}
-            disabled={loading || keys.length === 0}
-          >
-            {loading ? "분석 중..." : "개인 키 분석 시작"}
-          </button>
-          <button
-            type="button"
-            className="w-full rounded-md border bg-background px-4 py-2 text-sm font-medium disabled:opacity-60"
-            onClick={() => void runAnalysis("TEAM")}
-            disabled={loading || selectedTeamId == null || selectedTeamKeys.length === 0}
-          >
-            {loading ? "분석 중..." : "선택 팀 키 분석 시작"}
-          </button>
+        <div className="rounded-md border border-dashed bg-muted/30 px-2 py-1.5 text-xs text-muted-foreground">
+          각 키 카드의 `분석` / `추천` 버튼을 눌러 필요한 요청만 실행합니다.
         </div>
         {modelCatalog ? (
           <div className="rounded-md border border-dashed bg-muted/30 p-2 text-xs text-muted-foreground">

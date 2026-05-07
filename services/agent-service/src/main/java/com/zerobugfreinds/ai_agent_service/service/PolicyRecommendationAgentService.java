@@ -367,7 +367,7 @@ public class PolicyRecommendationAgentService {
 			return new UsageProfile(
 					rollupSummary.totalInputTokens(),
 					rollupSummary.totalOutputTokens(),
-					null,
+					rollupSummary.averageLatencyMs(),
 					confidence,
 					rollupSummary.totalRequests()
 			);
@@ -390,7 +390,7 @@ public class PolicyRecommendationAgentService {
 		RecommendationConfidenceLevel confidence = dailyTokens > 0 || averageDailyTokenUsage.compareTo(BigDecimal.ZERO) > 0
 				? RecommendationConfidenceLevel.HIGH
 				: RecommendationConfidenceLevel.MEDIUM;
-		return new UsageProfile(totalInputTokens, totalOutputTokens, null, confidence, 0L);
+		return new UsageProfile(totalInputTokens, totalOutputTokens, profile.avgLatencyMs(), confidence, 0L);
 	}
 
 	private long resolveDailyTokensByKey(RecommendationAnalyzeRequest request) {

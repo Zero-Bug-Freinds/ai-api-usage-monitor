@@ -73,6 +73,9 @@ public class UsageCostFinalizedEventPublisher {
             if (hasText(source.apiKeyId())) {
                 props.setHeader("apiKeyId", source.apiKeyId());
             }
+            if (hasText(source.teamApiKeyId())) {
+                props.setHeader("teamApiKeyId", source.teamApiKeyId());
+            }
             Message message = new Message(json.getBytes(StandardCharsets.UTF_8), props);
             rabbitTemplate.send(out.getExchange(), out.getRoutingKey(), message);
         } catch (JsonProcessingException e) {
