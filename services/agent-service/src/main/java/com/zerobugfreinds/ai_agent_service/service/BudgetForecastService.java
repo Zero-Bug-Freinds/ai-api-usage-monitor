@@ -1,6 +1,8 @@
 package com.zerobugfreinds.ai_agent_service.service;
 
 import com.zerobugfreinds.ai_agent_service.dto.AiBudgetForecastResult;
+import com.zerobugfreinds.ai_agent_service.dto.BudgetForecastBatchRequest;
+import com.zerobugfreinds.ai_agent_service.dto.BudgetForecastBatchResponse;
 import com.zerobugfreinds.ai_agent_service.dto.BudgetForecastRequest;
 import com.zerobugfreinds.ai_agent_service.dto.BudgetForecastResponse;
 import org.springframework.stereotype.Service;
@@ -11,6 +13,7 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Service
@@ -34,7 +37,38 @@ public class BudgetForecastService {
 		if (ai.isEmpty()) {
 			throw new IllegalStateException("AI_INFERENCE_FAILED");
 		}
-		AiBudgetForecastResult result = ai.get();
+		return buildForecastResponse(normalizedRequest, context.rollupApplied(), ai.get());
+	}
+
+	public BudgetForecastBatchResponse forecastBatch(BudgetForecastBatchRequest request) {
+		List<NormalizedRequestContext> contexts = request.requests().stream()
+				.map(this::normalizeByUsageRollup)
+				.toList();
+		List<BudgetForecastRequest> normalizedRequests = contexts.stream()
+				.map(NormalizedRequestContext::request)
+				.toList();
+		Map<Long, AiBudgetForecastResult> aiByKeyId = geminiAssistantService.inferForecasts(normalizedRequests);
+		List<BudgetForecastBatchResponse.Item> results = new ArrayList<>();
+		for (int i = 0; i < contexts.size(); i++) {
+			BudgetForecastRequest normalizedRequest = contexts.get(i).request();
+			if (normalizedRequest.keyId() == null) {
+				continue;
+			}
+			AiBudgetForecastResult aiResult = aiByKeyId.get(normalizedRequest.keyId());
+			if (aiResult == null) {
+				continue;
+			}
+			BudgetForecastResponse response = buildForecastResponse(normalizedRequest, contexts.get(i).rollupApplied(), aiResult);
+			results.add(new BudgetForecastBatchResponse.Item(normalizedRequest.keyId(), response));
+		}
+		return new BudgetForecastBatchResponse(List.copyOf(results));
+	}
+
+	private static BudgetForecastResponse buildForecastResponse(
+			BudgetForecastRequest normalizedRequest,
+			boolean rollupApplied,
+			AiBudgetForecastResult result
+	) {
 		Long daysUntilBillingCycleEnd = null;
 		Long billingDateGapDays = null;
 		if (normalizedRequest.billingCycleEndDate() != null) {
@@ -46,7 +80,7 @@ public class BudgetForecastService {
 		}
 		String healthStatusLabel = toHealthStatusLabel(result.healthStatus());
 		String riskCriteria = buildRiskCriteria(result.budgetUtilizationPercent(), billingDateGapDays);
-		ConfidenceAssessment confidenceAssessment = assessConfidence(normalizedRequest, context.rollupApplied());
+		ConfidenceAssessment confidenceAssessment = assessConfidence(normalizedRequest, rollupApplied);
 
 		return new BudgetForecastResponse(
 				result.healthStatus(),

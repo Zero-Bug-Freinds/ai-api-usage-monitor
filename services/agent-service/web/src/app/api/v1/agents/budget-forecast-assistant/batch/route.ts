@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 
 const ORIGIN_PROBE_TIMEOUT_MS = 3000
-const FORECAST_FETCH_TIMEOUT_MS = 45000
+const REQUEST_TIMEOUT_MS = 45000
 
 type SessionApiResponse = {
   success?: boolean
@@ -81,12 +81,12 @@ export async function POST(request: NextRequest) {
   if (origin == null) {
     return NextResponse.json(
       {
-        message: "budget forecast backend 호출에 실패했습니다. (agent-service 연결 불가)",
+        message: "budget forecast batch backend 호출에 실패했습니다. (agent-service 연결 불가)",
       },
       { status: 502 },
     )
   }
-  const targetUrl = `${origin}/api/v1/agents/budget-forecast-assistant`
+  const targetUrl = `${origin}/api/v1/agents/budget-forecast-assistant/batch`
   const sessionEmail = await resolveSessionEmail(request)
   const forwardedUserId = request.headers.get("x-user-id")?.trim() ?? ""
   const forwardedEmail = sessionEmail ?? request.headers.get("x-user-email")?.trim() ?? ""
@@ -97,15 +97,13 @@ export async function POST(request: NextRequest) {
   if (forwardedEmail.length > 0) {
     forwardedHeaders["x-user-email"] = forwardedEmail
   }
-
   try {
-    const response = await fetchWithTimeout(targetUrl, FORECAST_FETCH_TIMEOUT_MS, {
+    const response = await fetchWithTimeout(targetUrl, REQUEST_TIMEOUT_MS, {
       method: "POST",
       headers: forwardedHeaders,
       body,
       cache: "no-store",
     })
-
     const responseBody = await response.text()
     const contentType = response.headers.get("content-type") ?? "application/json"
     return new NextResponse(responseBody, {
@@ -119,7 +117,7 @@ export async function POST(request: NextRequest) {
         : "unknown fetch error"
     return NextResponse.json(
       {
-        message: "budget forecast backend 호출에 실패했습니다.",
+        message: "budget forecast batch backend 호출에 실패했습니다.",
         detail,
       },
       { status: 502 },
