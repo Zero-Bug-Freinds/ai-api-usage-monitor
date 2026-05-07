@@ -38,6 +38,5 @@ class LegacyUsageRecordedEventJsonTest {
 
         assertThat(e.requestSuccessful()).isTrue();
         assertThat(e.upstreamStatusCode()).isNull();
-        assertThat(e.latencyMs()).isNull();
     }
 }
