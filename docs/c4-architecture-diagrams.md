@@ -440,8 +440,6 @@ flowchart TB
       LOGIN["login/page.tsx"]
       SIGNUP["signup/page.tsx"]
       subgraph PROT["보호 catch-all 페이지"]
-        ORG["organizations/[[...path]]"]
-        TEAM["teams/[[...path]]"]
         SET["settings/[[...path]]"]
       end
       subgraph API["api Route Handlers"]
@@ -459,7 +457,7 @@ flowchart TB
       direction TB
       LF["login/login-form.tsx"]
       SF["signup/signup-form.tsx"]
-      ACCT["account/ account-settings-view · organizations-view 등"]
+      ACCT["account/ account-settings-view 등"]
       LAND["landing/ …"]
       UI["ui/ shadcn"]
     end
@@ -491,7 +489,7 @@ sequenceDiagram
   participant GW as API Gateway
   participant I as Identity
 
-  B->>P: GET login signup settings orgs teams
+  B->>P: GET login signup settings
   P->>H: POST login or signup
   H->>I: POST login or signup
   I-->>H: tokens
@@ -538,7 +536,7 @@ sequenceDiagram
   GW-->>U: upstream
   U-->>B: usage JSON
 
-  Note over B: Identity middleware: settings orgs teams (dashboard는 Usage Web)
+  Note over B: Identity middleware: settings (dashboard는 Usage Web)
 ```
 
 ### W3 — 레이어 관계 (Identity Web: UI · client-fetch · BFF)
@@ -606,14 +604,12 @@ flowchart TD
   subgraph MT["matcher (현행 Identity Web)"]
     direction TB
     M2["/settings/:path*"]
-    M3["/organizations/:path*"]
-    M4["/teams/:path*"]
   end
 
   MW -.-> MT
 ```
 
-`matcher` 에 맞는 **`src/app/settings|organizations|teams/...` 페이지**를 추가·이동하면 W1과 `docs/repository-structure.md` 를 함께 갱신한다. **대시보드 보호**는 `services/usage-service/web/middleware.ts` 를 본다.
+`matcher` 에 맞는 **`src/app/settings/...` 페이지**를 추가·이동하면 W1과 `docs/repository-structure.md` 를 함께 갱신한다. **대시보드 보호**는 `services/usage-service/web/middleware.ts` 를 본다.
 
 ### W5 — Usage Web 요약 (`services/usage-service/web`)
 

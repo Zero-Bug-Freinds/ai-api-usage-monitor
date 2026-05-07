@@ -142,18 +142,6 @@ http {
       proxy_set_header Connection $connection_upgrade;
     }
 
-    location = /organizations {
-      proxy_pass http://identity_web;
-      proxy_set_header Upgrade $http_upgrade;
-      proxy_set_header Connection $connection_upgrade;
-    }
-
-    location ^~ /organizations/ {
-      proxy_pass http://identity_web;
-      proxy_set_header Upgrade $http_upgrade;
-      proxy_set_header Connection $connection_upgrade;
-    }
-
     location ^~ /api/auth/ {
       proxy_pass http://identity_web;
       proxy_set_header Upgrade $http_upgrade;

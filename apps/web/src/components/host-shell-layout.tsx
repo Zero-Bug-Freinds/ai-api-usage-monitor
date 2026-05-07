@@ -16,10 +16,13 @@ const sidebarSkeleton = (
   />
 );
 
-const TeamSidebarDynamic = dynamic(() => import("@/components/team-sidebar-lazy"), {
-  ssr: false,
-  loading: () => sidebarSkeleton,
-});
+const TeamSidebarDynamic = dynamic(
+  () => import("@ai-usage/shell/pages").then((mod) => mod.ConsoleSidebarPages),
+  {
+    ssr: false,
+    loading: () => sidebarSkeleton,
+  }
+);
 
 const TeamManagementLazy = dynamic(() => import("team/TeamManagement"), {
   ssr: false,
@@ -34,17 +37,11 @@ function HostShellInner({ children, router }: { children: ReactNode; router: Nex
     setTeamChunkAllowed(true);
   }, []);
 
-  const idOrigin = (process.env.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN ?? "").replace(/\/$/, "");
-  const logoutApiPath = idOrigin ? `${idOrigin}/api/auth/logout` : "/api/auth/logout";
-  const logoutRedirectPath = idOrigin ? `${idOrigin}/login` : "/login";
-
   const primarySidebar = (
     <TeamSidebarDynamic
       profile="team"
       pagesRouter={router}
       showTeamSidebarSection={false}
-      logoutApiPath={logoutApiPath}
-      logoutRedirectPath={logoutRedirectPath}
     />
   );
 

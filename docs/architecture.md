@@ -467,7 +467,7 @@
 
 ### 13.1 담당·연동
 
-- **Identity 계열**: `services/identity-service` + `services/identity-service/web/` — 랜딩·인증·조직/팀 설정 UI, `/api/auth/**`·`/api/identity/**` BFF 등. 계약: `docs/contracts/web-identity-bff.md`.
+- **Identity 계열**: `services/identity-service` + `services/identity-service/web/` — 랜딩·인증·계정 설정 UI, `/api/auth/**`·`/api/identity/**` BFF 등. 계약: `docs/contracts/web-identity-bff.md`.
 - **Usage·대시보드 계열**: `services/usage-service` + `services/usage-service/web/` — 사용량 대시보드, `/api/usage/**` BFF → 게이트웨이. 계약: `docs/contracts/web-gateway-bff.md`, `docs/contracts/gateway-proxy.md`.
 - **Team 계열**: `services/team-service` + `services/team-service/web/` — 팀 도메인 REST·Team BFF. 팀 API Key·월 예산(USD)은 Team Main Shell(`/teams`)에서 제공하며, 브라우저 → `web-edge` → `/teams/api/**` 또는 `/api/team/v1/**` → Team BFF → `team-service` 흐름을 따른다. 계약: `docs/contracts/web-team-bff.md`.
 - **Notification 계열**: `services/notification-service` + `services/notification-service/web/` — 인앱 알림 UI(`/notifications/*`) + Notification BFF(`/notifications/api/notification/*`) → notification-service(Nest) 내부 호출. 계약: `docs/contracts/web-notification-bff.md`.

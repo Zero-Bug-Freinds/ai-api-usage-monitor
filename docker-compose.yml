@@ -377,12 +377,14 @@ services:
       dockerfile: services/agent-service/web/Dockerfile
       args:
         WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
+        NEXT_PUBLIC_WEB_EDGE_ORIGIN: ${NEXT_PUBLIC_WEB_EDGE_ORIGIN:-http://localhost:${WEB_EDGE_PORT:-8888}}
         NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${WEB_EDGE_PORT:-8888}}
     depends_on:
       - identity-web
       - agent-service
       - team-service
     environment:
+      NEXT_PUBLIC_WEB_EDGE_ORIGIN: ${NEXT_PUBLIC_WEB_EDGE_ORIGIN:-http://localhost:${WEB_EDGE_PORT:-8888}}
       NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${WEB_EDGE_PORT:-8888}}
       AI_AGENT_SERVICE_INTERNAL_ORIGIN: ${AI_AGENT_SERVICE_INTERNAL_ORIGIN:-http://agent-service:8096}
       AI_AGENT_FALLBACK_USER_ID: ${AI_AGENT_FALLBACK_USER_ID:-}
@@ -401,6 +403,7 @@ services:
       dockerfile: services/usage-service/web/Dockerfile
       args:
         WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
+        NEXT_PUBLIC_WEB_EDGE_ORIGIN: ${NEXT_PUBLIC_WEB_EDGE_ORIGIN:-http://localhost:${WEB_EDGE_PORT:-8888}}
         NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${WEB_EDGE_PORT:-8888}}
         NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_BASE_PATH:-/dashboard}
     depends_on:
@@ -438,6 +441,7 @@ services:
       dockerfile: services/billing-service/web/Dockerfile
       args:
         WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
+        NEXT_PUBLIC_WEB_EDGE_ORIGIN: ${NEXT_PUBLIC_WEB_EDGE_ORIGIN:-http://localhost:${WEB_EDGE_PORT:-8888}}
         NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${WEB_EDGE_PORT:-8888}}
     depends_on:
       - api-gateway-service
@@ -526,6 +530,7 @@ services:
     environment:
       NEXT_TELEMETRY_DISABLED: "1"
       NEXT_PRIVATE_LOCAL_WEBPACK: "true"
+      NEXT_PUBLIC_WEB_EDGE_ORIGIN: ${NEXT_PUBLIC_WEB_EDGE_ORIGIN:-http://localhost:${WEB_EDGE_PORT:-8888}}
       NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${WEB_EDGE_PORT:-8888}}
       NEXT_PUBLIC_MFE_TEAM_REMOTE_URL: ${NEXT_PUBLIC_MFE_TEAM_REMOTE_URL:-http://localhost:8888/mfe/team}
       NEXT_PUBLIC_MFE_USAGE_REMOTE_URL: ${NEXT_PUBLIC_MFE_USAGE_REMOTE_URL:-http://localhost:8888/mfe/usage}

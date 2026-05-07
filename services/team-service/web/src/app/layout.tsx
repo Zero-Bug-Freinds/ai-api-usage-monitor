@@ -22,20 +22,10 @@ export const metadata: Metadata = {
 }
 
 export default function RootLayout({ children }: { children: ReactNode }) {
-  const idOrigin = (process.env.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN ?? "").replace(/\/$/, "")
-  const logoutApiPath = `${idOrigin}/api/auth/logout`
-  const logoutRedirectPath = `${idOrigin}/login`
-
   return (
     <html lang="ko" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
-        <ConsoleShell
-          profile="team"
-          logoutApiPath={logoutApiPath}
-          logoutRedirectPath={logoutRedirectPath}
-        >
-          {children}
-        </ConsoleShell>
+        <ConsoleShell profile="team">{children}</ConsoleShell>
       </body>
     </html>
   )

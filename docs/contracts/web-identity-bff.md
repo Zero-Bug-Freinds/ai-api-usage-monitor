@@ -174,11 +174,11 @@
 
 ### 5.2 Identity 관리 API BFF (`/api/identity/v1/**`)
 
-- 조직·팀 등 **Identity 보호 REST**(게이트웨이가 아닌 Identity 직접)는 브라우저가 **`/api/identity/v1/...`** 로만 호출하고, BFF가 **`{IDENTITY_SERVICE_URL}/api/v1/...`** 로 동일 메서드·쿼리·본문을 프록시한다. 구현: `services/identity-service/web/src/app/api/identity/[[...path]]/route.ts`.
+- **Identity 보호 REST**(게이트웨이가 아닌 Identity 직접)는 브라우저가 **`/api/identity/v1/...`** 로만 호출하고, BFF가 **`{IDENTITY_SERVICE_URL}/api/v1/...`** 로 동일 메서드·쿼리·본문을 프록시한다. 구현: `services/identity-service/web/src/app/api/identity/[[...path]]/route.ts`.
 - `access_token` **httpOnly 쿠키**가 없으면 BFF는 Identity를 호출하지 않고 `401`을 반환한다.
-- 경로는 **`v1`으로 시작하는 세그먼트만** 허용한다(예: 브라우저 `GET /api/identity/v1/me/organizations` → 업스트림 `GET /api/v1/me/organizations`). **`/api/auth/*`** 는 §2의 전용 BFF 라우트를 쓴다.
+- 경로는 **`v1`으로 시작하는 세그먼트만** 허용한다(예: 브라우저 `GET /api/identity/v1/me/profile` → 업스트림 `GET /api/v1/me/profile`). **`/api/auth/*`** 는 §2의 전용 BFF 라우트를 쓴다.
 - 응답 본문·상태 코드는 업스트림을 그대로 전달한다(캐시는 `Cache-Control: no-store`).
-- 웹 **설정** 화면의 계정 요약은 `GET /api/auth/session`(§2)을 사용한다. **조직 목록**은 Identity 서비스의 `GET /api/v1/me/organizations`를 사용하며, 팀 도메인은 `team-service`로 분리되어 [web-team-bff.md](./web-team-bff.md)를 따른다. **`/teams`** 에서 팀 API를 호출할 때는 `web-edge`가 `/api/team/v1/*`를 Team BFF로 라우팅한다.
+- 웹 **설정** 화면의 계정 요약은 `GET /api/auth/session`(§2)을 사용한다. 팀 도메인은 `team-service`로 분리되어 [web-team-bff.md](./web-team-bff.md)를 따른다. **`/teams`** 에서 팀 API를 호출할 때는 `web-edge`가 `/api/team/v1/*`를 Team BFF로 라우팅한다.
 
 ---
 
@@ -201,11 +201,11 @@
 
 | 항목 | 내용 |
 |------|------|
-| **matcher (정본)** | `/settings/:path*`, `/organizations/:path*`, `/teams/:path*` |
+| **matcher (정본)** | `/settings/:path*` |
 | **판단 기준** | 요청에 **`access_token` httpOnly 쿠키**가 있고 값이 비어 있지 않으면 통과. **JWT 서명·만료 검증은 여기서 하지 않는다** (쿠키만 없으면 로그인 유도). 토큰 유효성은 `GET /api/auth/session`(§2.1) 등 BFF·업스트림에서 판단한다. |
 | **미통과 시** | `307` 리다이렉트 → `/login?next=<원래 pathname>` (`next`는 로그인 후 되돌아갈 경로; 소비 시 오픈 리다이렉트 방지를 위해 `services/identity-service/web/src/lib/auth/safe-next-path.ts` 등으로 검증한다). |
 | **대응 라우트** | 위 접두사마다 App Router **`[[...path]]` optional catch-all** 페이지를 둔다. **사용량 대시보드**는 `services/usage-service/web/src/app/dashboard/[[...path]]/page.tsx` 및 Usage `middleware.ts`를 본다. |
-| **현재 UI 성격** | **설정**은 세션(§2)·**조직·팀**은 §5.2 BFF·Identity 관리 API와 연동한다(업스트림 미구현 시 빈 목록·안내). 서버 측 권한·테넌트 검증은 Identity·게이트웨이에 유지한다(프론트 규칙: `.cursor/rules/project-common-nextjs.mdc`). |
+| **현재 UI 성격** | **설정**은 세션(§2)을 사용한다. 팀 UI는 web-host/Team BFF 경계를 따른다. 서버 측 권한·테넌트 검증은 Identity·게이트웨이에 유지한다(프론트 규칙: `.cursor/rules/project-common-nextjs.mdc`). |
 
 **유지보수:** matcher에 경로를 추가·변경하면 (1) 동일 접두사의 `app/<segment>/[[...path]]/page.tsx`(또는 합의된 라우트)를 추가하거나, (2) 의도적으로 페이지가 없다면 matcher에서 해당 패턴을 제거한다. 회귀 방지용 테스트: `services/identity-service/web/middleware.test.ts`, `services/identity-service/web/src/app/protected-routes.test.ts`.
 

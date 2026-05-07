@@ -65,7 +65,7 @@
 - `services/api-gateway-service` — API Gateway(Spring Cloud Gateway), JWT·라우팅·Proxy로 신뢰 헤더 전달
 - `services/proxy-service` — AI Provider 프록시(WebFlux), usage 이벤트 발행
 - `services/usage-service` — `UsageRecordedEvent` 소비·PostgreSQL 원장 저장(Spring AMQP + JPA)
-- `services/identity-service` — 계정·조직·API Key 등(Identity; 목표 Next는 `services/identity-service/web/`)
+- `services/identity-service` — 계정·API Key 등(Identity; 목표 Next는 `services/identity-service/web/`)
 - `services/team-service` — 팀·팀원·팀 API Key 등(Team; Next는 `services/team-service/web/`)
 - `services/billing-service` — 지출·집계·비용 확정 AMQP 발행 등(Spring; Next·BFF는 `services/billing-service/web/`)
 - `services/notification-service` — 알림 백엔드(팀 스택에 맞는 Node/Nest 등; `docs/repository-structure.md` §2)
