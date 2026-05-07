@@ -56,7 +56,7 @@
 
 1. **Java:** `proxy-service`·`api-gateway-service` 는 이미지 빌드 전 해당 디렉터리에서 `./gradlew bootJar` 로 `app.jar` 를 둔다. **identity-service**·**usage-service** 백엔드 Dockerfile 은 이미지 안에서 Gradle 을 돌려 JAR 을 만든다(usage 는 저장소 루트에서 `docker build -f services/usage-service/Dockerfile …`).
 2. **Next.js:** 저장소 루트에서 **`pnpm install`**(전역 pnpm 없으면 `npx pnpm@9 install`) 후 **`pnpm build:web`**(또는 각 `web`에서 `pnpm build`). `output: 'standalone'` 산출물을 Docker가 복사(`docs/architecture.md` §10.1).
-3. **공유 UI:** **`packages/ui`**(`@ai-usage/ui`) — Shadcn 래퍼·`cn`; 세 Next 앱(identity-web·usage-web·team-web)이 workspace 로 참조한다.
+3. **공유 UI:** **`packages/ui`**(`@ai-usage/ui`) — Shadcn 래퍼·`cn`; 세 Next 앱(identity-web·usage-web·team-web-mfe)이 workspace 로 참조한다.
 
 로컬 포트·`.env` 힌트는 루트 **`.env.example`**, 각 **`services/*/web/.env.example`**, **`docs/contracts/web-identity-bff.md` §9**, **`docs/contracts/web-split-boundary.md`** 를 본다.
 

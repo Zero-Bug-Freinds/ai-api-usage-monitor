@@ -204,7 +204,7 @@ http {
 
     # Longest prefix wins vs ^~ /teams/: /teams/api/* → team BFF only (never web_host).
     location ^~ /teams/api/ {
-      proxy_pass http://team_web;
+      proxy_pass http://team_web/api/;
       proxy_set_header Upgrade $http_upgrade;
       proxy_set_header Connection $connection_upgrade;
     }

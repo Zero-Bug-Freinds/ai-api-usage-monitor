@@ -570,7 +570,14 @@ services:
       args:
         WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
     depends_on:
-      - team-web
+      - team-service
+      - api-gateway-service
+      - identity-service
+    environment:
+      GATEWAY_URL: ${WEB_GATEWAY_URL:-http://api-gateway-service:8080}
+      WEB_GATEWAY_URL: ${WEB_GATEWAY_URL:-http://api-gateway-service:8080}
+      TEAM_SERVICE_URL: ${WEB_TEAM_SERVICE_URL:-http://team-service:8093}
+      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
     expose:
       - "3000"
     ports:
