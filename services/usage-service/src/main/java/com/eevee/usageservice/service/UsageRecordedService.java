@@ -154,6 +154,7 @@ public class UsageRecordedService {
                 event.estimatedCost(),
                 event.requestPath(),
                 event.upstreamHost(),
+                event.latencyMs(),
                 event.streaming(),
                 successful,
                 event.upstreamStatusCode(),
