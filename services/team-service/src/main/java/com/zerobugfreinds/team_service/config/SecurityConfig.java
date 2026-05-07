@@ -31,6 +31,7 @@ public class SecurityConfig {
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.exceptionHandling(exception -> exception.authenticationEntryPoint(restAuthenticationEntryPoint))
 				.authorizeHttpRequests(auth -> auth
+						.requestMatchers("/internal/api-keys/**").permitAll()
 						.requestMatchers("/internal/teams/**").permitAll()
 						.requestMatchers("/internal/v1/teams/**").permitAll()
 						.requestMatchers("/internal/v1/team-invitations/**").permitAll()
