@@ -6,8 +6,8 @@
 
 ## 1. 목적
 
-- **Next.js 15**·**React 19** 모노레포에서 **App Router** 기반 `web/`(BFF·운영 UI)과 **Module Federation remote** 요구를 동시에 만족시키기 위해, **Usage·Team** 만 **`web-mfe/`**(Pages Router)를 추가로 둔다.
-- **호스트**는 주로 **`apps/web`**(`web-host`)가 `remotes`로 `usage`·`team` remoteEntry를 로드한다.
+- **Next.js 15**·**React 19** 모노레포에서 **App Router** 기반 `web/`(BFF·운영 UI)과 **Module Federation remote** 요구를 동시에 만족시키기 위해, **Team** 에 **`web-mfe/`**(Pages Router)를 둔다.
+- **호스트**는 주로 **`apps/web`**(`web-host`)가 `remotes`로 `team` remoteEntry를 로드한다.
 - **브라우저 단일 오리진**으로 여러 도메인 UI를 붙이는 경로 통합은 **`services/identity-service/web/next.config.ts`의 `rewrites`**(및 선택 Nginx **`web-edge`**)가 담당한다. MF 전용 포트는 개발 시 호스트·remote가 직접 맞춘다.
 
 ---
@@ -17,7 +17,6 @@
 | 역할 | 경로 | 라우터 | 비고 |
 |------|------|--------|------|
 | Usage 운영·BFF | `services/usage-service/web/` | App Router | `basePath=/dashboard`, Usage BFF |
-| Usage MF remote | `services/usage-service/web-mfe/` | Pages Router | `NextFederationPlugin` `exposes` 만 |
 | Team 운영·BFF | `services/team-service/web/` | App Router | `basePath=/teams` |
 | Team MF remote | `services/team-service/web-mfe/` | Pages Router | 동일 |
 | MF 호스트 | `apps/web/` | App Router + webpack MF | `remotes` → 위 remoteEntry URL |
@@ -43,9 +42,8 @@ Identity **`web/`** 에는 MF 플러그인을 두지 않고, **rewrite 게이트
 ## 5. 로컬 개발 힌트
 
 - 호스트: `pnpm --filter web-host dev`(기본 포트 `3100` 등 `package.json` 정본).
-- Usage remote: `pnpm --filter usage-web-mfe dev` — 포트는 `usage-service/web-mfe/package.json`의 `dev` 스크립트 정본.
 - Team remote: `pnpm --filter team-web-mfe dev`.
-- 환경 변수: `NEXT_PUBLIC_MFE_USAGE_REMOTE_URL`, `NEXT_PUBLIC_MFE_TEAM_REMOTE_URL` 등(호스트 `next.config` 기본값과 맞출 것).
+- 환경 변수: `NEXT_PUBLIC_MFE_TEAM_REMOTE_URL` 등(호스트 `next.config` 기본값과 맞출 것).
 
 ---
 

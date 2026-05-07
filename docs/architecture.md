@@ -113,7 +113,6 @@
 - `services/team-service` + `services/team-service/web` + `services/team-service/web-mfe`
 - `services/agent-service` + `services/agent-service/web`
 - `services/notification-service`(NestJS/Prisma) + `services/notification-service/web`
-- `services/usage-service/web-mfe` (MF remote)
 - `apps/web` (web-host; 통합 호스트 용도)
 - `packages/ui`, `packages/shell` (웹 공통 패키지)
 
