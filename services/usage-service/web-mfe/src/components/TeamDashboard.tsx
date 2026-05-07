@@ -574,7 +574,7 @@ export default function TeamDashboard({
         </Button>
       </header>
 
-      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-end">
+      <div className="mb-6 flex flex-row flex-wrap items-end gap-4">
         <div className="space-y-2 sm:w-44">
           <Label htmlFor="team-dash-period">기간</Label>
           <Select
@@ -680,9 +680,11 @@ export default function TeamDashboard({
       ) : null}
 
       {!effectiveTeamId ? (
-        <p className="mb-8 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-          조회할 팀을 선택해 주세요.
-        </p>
+        <section className="mb-8 rounded-lg border border-border p-4 shadow-sm">
+          <h2 className="mb-4 text-lg font-medium">{mainChartTitle(data?.usageSeriesUnit)}</h2>
+          <div className="h-[360px] min-h-[360px] w-full rounded-lg border border-dashed border-border bg-muted/20" />
+          <p className="mt-3 text-center text-sm text-muted-foreground">조회할 팀을 선택해 주세요.</p>
+        </section>
       ) : null}
 
       {effectiveTeamId && (loading || error) ? (
