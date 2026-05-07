@@ -278,15 +278,15 @@ public class GeminiAssistantService {
 				if (!item.isObject()) {
 					continue;
 				}
-				JsonNode keyIdNode = item.get("keyId");
-				if (keyIdNode == null || !keyIdNode.canConvertToLong()) {
+				Long parsedKeyId = parseKeyId(item.get("keyId"));
+				if (parsedKeyId == null) {
 					continue;
 				}
 				Optional<AiBudgetForecastResult> parsed = parseAiForecast(item);
 				if (parsed.isEmpty()) {
 					continue;
 				}
-				results.put(keyIdNode.asLong(), parsed.get());
+				results.put(parsedKeyId, parsed.get());
 			}
 			return results;
 		} catch (Exception ex) {
@@ -546,6 +546,28 @@ public class GeminiAssistantService {
 		}
 		String t = n.asText();
 		return t == null ? null : t;
+	}
+
+	private static Long parseKeyId(JsonNode node) {
+		if (node == null || node.isNull() || node.isMissingNode()) {
+			return null;
+		}
+		if (node.isIntegralNumber()) {
+			return node.asLong();
+		}
+		String raw = node.asText("");
+		if (raw == null) {
+			return null;
+		}
+		String trimmed = raw.trim();
+		if (trimmed.isEmpty()) {
+			return null;
+		}
+		try {
+			return Long.parseLong(trimmed);
+		} catch (NumberFormatException ex) {
+			return null;
+		}
 	}
 
 	private static BigDecimal parseBigDecimalFlexible(JsonNode n) {

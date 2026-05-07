@@ -483,13 +483,19 @@ export default function AgentPage() {
               : item.recommendationError !== undefined
                 ? item.recommendationError
                 : current.recommendationError
+          const mergedAnalysisError =
+            action === "ANALYSIS"
+              ? item.error !== undefined
+                ? item.error
+                : undefined
+              : current.error
           byKeyId.set(item.keyId, {
             ...current,
             ...item,
             data: mergedData,
             recommendation: mergedRecommendation,
             forecastGaps: item.forecastGaps ?? current.forecastGaps,
-            error: item.error ?? current.error,
+            error: mergedAnalysisError,
             recommendationError: mergedRecommendationError,
           })
         }
@@ -518,7 +524,7 @@ export default function AgentPage() {
                 {item.keyLabel}
                 <span className="text-xs"> ({item.provider})</span>
                 <div className="text-xs text-muted-foreground">
-                  남은 예산 ${((item.budgetStats?.remainingBudgetUsd ?? item.monthlyBudgetUsd) || 0).toFixed(2)} / 사용률{" "}
+                  예산 ${((item.budgetStats?.remainingBudgetUsd ?? item.monthlyBudgetUsd) || 0).toFixed(2)} / 사용률{" "}
                   {((item.budgetStats?.budgetUsagePercent ?? 0) || 0).toFixed(1)}%
                 </div>
                 <div className="mt-1 flex flex-col gap-1 border-t border-border/60 pt-1">
@@ -598,7 +604,7 @@ export default function AgentPage() {
                 <li key={`${item.teamId}-${item.teamApiKeyId}`} className="rounded-md border px-2 py-1">
                   {item.alias}
                   <div className="text-xs text-muted-foreground">
-                    남은 예산 ${((item.budgetStats?.remainingBudgetUsd ?? item.monthlyBudgetUsd ?? 0) || 0).toFixed(2)} / 사용률{" "}
+                    예산 ${((item.budgetStats?.remainingBudgetUsd ?? item.monthlyBudgetUsd ?? 0) || 0).toFixed(2)} / 사용률{" "}
                     {((item.budgetStats?.budgetUsagePercent ?? 0) || 0).toFixed(1)}%
                   </div>
                   <div className="mt-1 flex flex-col gap-1 border-t border-border/60 pt-1">
@@ -741,7 +747,7 @@ export default function AgentPage() {
                 ) : null}
 
                 <div className="grid gap-3 lg:grid-cols-2">
-                  <div className="space-y-2 rounded-md border border-dashed bg-muted/20 p-3 lg:order-1">
+                  <div className="space-y-2 rounded-md border border-dashed bg-muted/20 p-3 lg:order-2">
                     <p className="text-xs font-medium text-muted-foreground">모델 추천</p>
                     {loadingAction === "RECOMMENDATION" ? (
                       <div className="rounded-md border bg-background p-3 text-xs text-muted-foreground">
@@ -860,7 +866,7 @@ export default function AgentPage() {
                     )}
                   </div>
 
-                  <div className="space-y-2 rounded-md border border-dashed bg-muted/20 p-3 lg:order-2">
+                  <div className="space-y-2 rounded-md border border-dashed bg-muted/20 p-3 lg:order-1">
                     <p className="text-xs font-medium text-muted-foreground">예산 분석</p>
                     {loadingAction === "ANALYSIS" ? (
                       <div className="rounded-md border bg-background p-3 text-xs text-muted-foreground">
