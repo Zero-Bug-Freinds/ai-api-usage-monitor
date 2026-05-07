@@ -24,7 +24,7 @@ import { formatRequestCount } from "@web/lib/usage/format";
 import { formatKstIsoDate, addKstDays } from "@web/lib/usage/kst-dates";
 import { teamUsageBffBase } from "../lib/team-usage-bff-base";
 
-type TeamMemberUsageLogProps = {
+type TeamMemberDashboardProps = {
   teamId: string;
   userId: string;
   isActive: boolean;
@@ -169,7 +169,7 @@ function MemberModelTooltip({
   );
 }
 
-export default function TeamMemberUsageLog({ teamId, userId, isActive }: TeamMemberUsageLogProps) {
+export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMemberDashboardProps) {
   const todayKst = formatKstIsoDate();
   const [periodMode, setPeriodMode] = useState<PeriodMode>("7d");
   const [provider, setProvider] = useState<string>(PROVIDER_ALL);

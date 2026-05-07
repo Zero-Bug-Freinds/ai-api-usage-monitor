@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useLogoutCleanup, type CachedTeamItem } from "@ai-usage/team-workspace-cache";
 import TeamDashboard from "./TeamDashboard";
-import TeamMemberUsageLog from "./TeamMemberUsageLog";
+import TeamMemberDashboard from "./TeamMemberDashboard";
 
 type TeamUsageDashboardProps = {
   /** URL `viewTeamId` — 새로고침 시 조회 팀 힌트(관리 UI와 자동 동기화 없음). */
@@ -56,7 +56,7 @@ export default function TeamUsageDashboard({ viewTeamIdFromQuery, shellTeamList 
             onEffectiveTeamChange={setBffTeamId}
           />
         ) : (
-          <TeamMemberUsageLog teamId={bffTeamId} userId={selectedUserId} isActive={activeTab === "member"} />
+          <TeamMemberDashboard teamId={bffTeamId} userId={selectedUserId} isActive={activeTab === "member"} />
         )}
       </div>
     </section>
