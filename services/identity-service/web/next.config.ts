@@ -12,7 +12,7 @@ function usageOrigin(): string {
 function teamOrigin(): string {
   return (
     process.env.TEAM_WEB_INTERNAL_ORIGIN ??
-    "http://team-web-mfe:3000"
+    "http://team-web:3000"
   ).replace(/\/+$/, "");
 }
 
