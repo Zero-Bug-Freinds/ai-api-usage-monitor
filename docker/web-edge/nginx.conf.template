@@ -1,7 +1,7 @@
 # Single-domain edge for local compose.
 # Usage Next basePath=/dashboard, Billing basePath=/billing, Team basePath=/teams,
 # Notification basePath=/notifications, Agent basePath=/agent.
-# Team UI: /teams (and /teams/* except /teams/api/* BFF) proxies to web_host.
+# Team UI: /teams (and /teams/* except /teams/api/* BFF) proxies to team_web.
 # /teams/api/* -> team_bff (team-web-mfe BFF). /api/v1/* -> api-gateway; default location / -> identity_web.
 #
 # Deployment note:
@@ -39,12 +39,8 @@ http {
     server team-web-mfe:3000;
   }
 
-  upstream web_host {
-    server web-host:3000;
-  }
-
-  upstream team_mfe {
-    server team-web-mfe:3000;
+  upstream team_web {
+    server team-web:3000;
   }
 
   upstream billing_web {
@@ -129,39 +125,32 @@ http {
       proxy_set_header Connection $connection_upgrade;
     }
 
-    # Longest prefix wins vs ^~ /teams/: /teams/api/* → team BFF only (never web_host).
+    # Longest prefix wins vs ^~ /teams/: /teams/api/* → team BFF only (never team_web).
     location ^~ /teams/api/ {
       proxy_pass http://team_bff/api/;
       proxy_set_header Upgrade $http_upgrade;
       proxy_set_header Connection $connection_upgrade;
     }
 
-    # `/teams/api`만 오면 `^~ /teams/`에 잡혀 web-host로 갈 수 있으므로 BFF 접두로 정규화
+    # `/teams/api`만 오면 `^~ /teams/`에 잡혀 team-web으로 갈 수 있으므로 BFF 접두로 정규화
     location = /teams/api {
       return 308 /teams/api/;
     }
 
-    location ^~ /mfe/team/ {
-      proxy_pass http://team_mfe/;
-      proxy_set_header Host $http_host;
-      proxy_set_header Upgrade $http_upgrade;
-      proxy_set_header Connection $connection_upgrade;
-    }
-
     location = /teams {
-      proxy_pass http://web_host;
+      proxy_pass http://team_web;
       proxy_set_header Upgrade $http_upgrade;
       proxy_set_header Connection $connection_upgrade;
     }
 
     location = /teams/ {
-      proxy_pass http://web_host;
+      proxy_pass http://team_web;
       proxy_set_header Upgrade $http_upgrade;
       proxy_set_header Connection $connection_upgrade;
     }
 
     location ^~ /teams/ {
-      proxy_pass http://web_host;
+      proxy_pass http://team_web;
       proxy_set_header Upgrade $http_upgrade;
       proxy_set_header Connection $connection_upgrade;
     }
