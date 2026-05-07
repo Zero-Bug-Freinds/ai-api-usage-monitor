@@ -46,19 +46,22 @@ public class PolicyRecommendationAgentService {
 	private final DailyCumulativeTokenSnapshotService dailyCumulativeTokenSnapshotService;
 	private final UsagePredictionSignalSnapshotService usagePredictionSignalSnapshotService;
 	private final UsageRecordedTokenRollupService usageRecordedTokenRollupService;
+	private final GeminiAssistantService geminiAssistantService;
 
 	public PolicyRecommendationAgentService(
 			BillingSignalSnapshotService billingSignalSnapshotService,
 			ExternalModelCatalogService externalModelCatalogService,
 			DailyCumulativeTokenSnapshotService dailyCumulativeTokenSnapshotService,
 			UsagePredictionSignalSnapshotService usagePredictionSignalSnapshotService,
-			UsageRecordedTokenRollupService usageRecordedTokenRollupService
+			UsageRecordedTokenRollupService usageRecordedTokenRollupService,
+			GeminiAssistantService geminiAssistantService
 	) {
 		this.billingSignalSnapshotService = billingSignalSnapshotService;
 		this.externalModelCatalogService = externalModelCatalogService;
 		this.dailyCumulativeTokenSnapshotService = dailyCumulativeTokenSnapshotService;
 		this.usagePredictionSignalSnapshotService = usagePredictionSignalSnapshotService;
 		this.usageRecordedTokenRollupService = usageRecordedTokenRollupService;
+		this.geminiAssistantService = geminiAssistantService;
 	}
 
 	public PolicyRecommendationResponse recommend(PolicyRecommendationRequest request) {
@@ -134,6 +137,27 @@ public class PolicyRecommendationAgentService {
 		BigDecimal estimatedSavingsPct = calculateSavingsPercent(currentMonthlyCost, recommendedMonthlyCost);
 		String primaryModel = bestCandidate.modelName();
 		List<String> candidateModels = topCandidates.stream().map(CandidateCost::modelName).toList();
+		GeminiRecommendationOverride llmOverride = inferRecommendationOverride(
+				request,
+				reasonCode,
+				averageLatencyMs,
+				totalInputTokens,
+				totalOutputTokens,
+				totalRequests,
+				currentMonthlyCost,
+				recommendedMonthlyCost,
+				estimatedSavingsPct,
+				topCandidates
+		);
+		RecommendationConfidenceLevel finalConfidenceLevel =
+				llmOverride.confidenceLevel() != null ? llmOverride.confidenceLevel() : confidenceLevel;
+		String finalTitle = llmOverride.title() != null ? llmOverride.title() : "모델 최적화 추천";
+		String finalReasonMessage = llmOverride.reasonMessage() != null
+				? llmOverride.reasonMessage() + " (단가 카탈로그: " + catalogSnapshot.source() + ")"
+				: buildReasonMessage(reasonCode) + " (단가 카탈로그: " + catalogSnapshot.source() + ")";
+		String finalDisclaimer = llmOverride.disclaimer() != null
+				? llmOverride.disclaimer()
+				: (finalConfidenceLevel == RecommendationConfidenceLevel.LOW ? "추천 신뢰도가 낮아 후보군 중심으로 안내됩니다." : null);
 
 		OptimizationRecommendationIssuedEvent event = new OptimizationRecommendationIssuedEvent(
 				UUID.randomUUID().toString(),
@@ -154,13 +178,13 @@ public class PolicyRecommendationAgentService {
 				),
 				new OptimizationRecommendationIssuedEvent.Recommendation(
 						reasonCode,
-						confidenceLevel,
+						finalConfidenceLevel,
 						primaryModel,
 						candidateModels,
 						currentMonthlyCost,
 						recommendedMonthlyCost,
 						estimatedSavingsPct,
-						buildReasonMessage(reasonCode) + " (단가 카탈로그: " + catalogSnapshot.source() + ")"
+						finalReasonMessage
 				),
 				new OptimizationRecommendationIssuedEvent.Delivery(
 						buildDedupeKey(request.scopeType(), request.scopeId(), request.keyId(), reasonCode)
@@ -180,11 +204,11 @@ public class PolicyRecommendationAgentService {
 						totalRequests
 				),
 				new RecommendationQueryResponse.RecommendationDetails(
-						"모델 최적화 추천",
+						finalTitle,
 						reasonCode,
-						buildReasonMessage(reasonCode) + " (단가 카탈로그: " + catalogSnapshot.source() + ")",
-						confidenceLevel,
-						confidenceLevel == RecommendationConfidenceLevel.LOW ? "추천 신뢰도가 낮아 후보군 중심으로 안내됩니다." : null,
+						finalReasonMessage,
+						finalConfidenceLevel,
+						finalDisclaimer,
 						estimatedSavingsPct,
 						topCandidates.stream()
 								.map(candidate -> new RecommendationQueryResponse.CandidateModel(
@@ -472,6 +496,49 @@ public class PolicyRecommendationAgentService {
 		};
 	}
 
+	private GeminiRecommendationOverride inferRecommendationOverride(
+			RecommendationAnalyzeRequest request,
+			RecommendationReasonCode reasonCode,
+			Long averageLatencyMs,
+			long totalInputTokens,
+			long totalOutputTokens,
+			long totalRequests,
+			BigDecimal currentMonthlyCost,
+			BigDecimal recommendedMonthlyCost,
+			BigDecimal estimatedSavingsPct,
+			List<CandidateCost> topCandidates
+	) {
+		List<Map<String, String>> candidatePayload = topCandidates.stream()
+				.map(candidate -> Map.of(
+						"modelName", candidate.modelName(),
+						"expectedMonthlyCostUsd", candidate.expectedMonthlyCostUsd().toPlainString(),
+						"expectedCostDiffPct", candidate.diffPercentFromCurrent().toPlainString(),
+						"keyFeature", candidate.keyFeature()
+				))
+				.toList();
+		return geminiAssistantService.inferRecommendation(
+				new GeminiAssistantService.AiRecommendationPromptRequest(
+						request.scopeType().name(),
+						request.scopeId(),
+						request.keyId(),
+						reasonCode.name(),
+						averageLatencyMs,
+						totalInputTokens + ":" + totalOutputTokens,
+						totalRequests,
+						totalInputTokens + totalOutputTokens,
+						currentMonthlyCost.toPlainString(),
+						recommendedMonthlyCost.toPlainString(),
+						estimatedSavingsPct.toPlainString(),
+						candidatePayload
+				)
+		).map(result -> new GeminiRecommendationOverride(
+				result.title(),
+				result.reasonMessage(),
+				result.confidenceLevel(),
+				result.disclaimer()
+		)).orElseThrow(() -> new IllegalStateException("AI_RECOMMENDATION_INFERENCE_FAILED"));
+	}
+
 	private static String buildDedupeKey(
 			RecommendationScopeType scopeType,
 			String scopeId,
@@ -531,6 +598,14 @@ public class PolicyRecommendationAgentService {
 			Long averageLatencyMs,
 			RecommendationConfidenceLevel confidenceLevel,
 			long totalRequests
+	) {
+	}
+
+	private record GeminiRecommendationOverride(
+			String title,
+			String reasonMessage,
+			RecommendationConfidenceLevel confidenceLevel,
+			String disclaimer
 	) {
 	}
 }
