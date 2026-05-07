@@ -44,7 +44,6 @@ class UsageRecordedEventWireFormatTest {
                 new BigDecimal("0.0012"),
                 "/proxy/openai/v1/chat/completions",
                 "api.openai.com",
-                321L,
                 false,
                 true,
                 200
@@ -59,6 +58,5 @@ class UsageRecordedEventWireFormatTest {
         assertThat(read.provider()).isEqualTo(AiProvider.OPENAI);
         assertThat(read.tokenUsage()).isNotNull();
         assertThat(read.tokenUsage().totalTokens()).isEqualTo(12L);
-        assertThat(read.latencyMs()).isEqualTo(321L);
     }
 }
