@@ -31,8 +31,6 @@ services:
     build:
       context: ./web
       dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_USAGE_WEB_ORIGIN: ${NEXT_PUBLIC_USAGE_WEB_ORIGIN:-http://usage-web:3000}
     image: identity-service-web:local
     ports:
       - "${IDENTITY_STACK_WEB_PORT:-3000}:3000"
@@ -40,8 +38,5 @@ services:
       - backend
     environment:
       IDENTITY_SERVICE_URL: http://backend:8080
-      USAGE_WEB_INTERNAL_ORIGIN: ${USAGE_WEB_INTERNAL_ORIGIN:-http://localhost:3001}
-      # 루트 Compose `team-web` 호스트 포트 기본은 TEAM_WEB_PORT=3022. 동일 Docker 네트워크면 http://team-web:3000.
-      TEAM_WEB_INTERNAL_ORIGIN: ${TEAM_WEB_INTERNAL_ORIGIN:-http://host.docker.internal:3022}
     networks:
       - internal

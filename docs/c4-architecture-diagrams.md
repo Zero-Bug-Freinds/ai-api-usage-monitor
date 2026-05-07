@@ -110,7 +110,7 @@ Person(browserUser, "Browser user", "Web UI and same-origin BFF")
 
 System_Boundary(platform, "AI Usage Platform") {
     Container(webEdge, "web-edge", "Nginx", "단일 진입점 :8888; /api/v1*→Gateway; path 기반 web 분기")
-    Container(idWeb, "Identity Web", "Next.js 15", "랜딩·인증·설정; rewrites→타 도메인 web; /api/auth/* · /api/identity/* BFF")
+    Container(idWeb, "Identity Web", "Next.js 15", "랜딩·인증·설정; /api/auth/* · /api/identity/* BFF")
     Container(usWeb, "Usage Web", "Next.js 15", "대시보드; /api/usage/* BFF → Gateway; web-mfe=MF remote")
     Container(billWeb, "Billing Web", "Next.js 15", "지출·비용; /api/expenditure/* BFF → Gateway /api/v1/expenditure")
     Container(ntfWeb, "Notification Web", "Next.js 15", "인앱 알림; BFF → notification-service REST")
@@ -419,7 +419,7 @@ RoleRepository --> Role
 1. `services/identity-service/web/src/app` 아래 **새 `page.tsx` / `route.ts` / 동적 세그먼트**가 생기면 W1·흐름도에 반영한다.
 2. `services/identity-service/web/middleware.ts`의 **`config.matcher`** 가 바뀌면 W4와 설명을 맞춘다.
 3. BFF가 Identity 업스트림을 호출하는 방식이 바뀌면 W2를 수정한다(계약: `docs/contracts/web-identity-bff.md`).
-4. **`next.config.ts`의 `rewrites()`** 가 바뀌면 `docs/contracts/web-split-boundary.md` §2.6·`docs/architecture.md` §13.3 과 맞춘다.
+4. **`docker/web-edge/nginx.conf.template`** 의 공개 라우팅이 바뀌면 `docs/contracts/web-split-boundary.md` §2.6·`docs/architecture.md` §13.3 과 맞춘다.
 5. **구현과 계약 문서가 어긋나면 다이어그램은 코드 우선**으로 둔다.
 
 ### W1 — 디렉터리·파일 맵 (논리 트리)
@@ -440,8 +440,6 @@ flowchart TB
       LOGIN["login/page.tsx"]
       SIGNUP["signup/page.tsx"]
       subgraph PROT["보호 catch-all 페이지"]
-        ORG["organizations/[[...path]]"]
-        TEAM["teams/[[...path]]"]
         SET["settings/[[...path]]"]
       end
       subgraph API["api Route Handlers"]
@@ -459,7 +457,7 @@ flowchart TB
       direction TB
       LF["login/login-form.tsx"]
       SF["signup/signup-form.tsx"]
-      ACCT["account/ account-settings-view · organizations-view 등"]
+      ACCT["account/ account-settings-view 등"]
       LAND["landing/ …"]
       UI["ui/ shadcn"]
     end
@@ -491,7 +489,7 @@ sequenceDiagram
   participant GW as API Gateway
   participant I as Identity
 
-  B->>P: GET login signup settings orgs teams
+  B->>P: GET login signup settings
   P->>H: POST login or signup
   H->>I: POST login or signup
   I-->>H: tokens
@@ -538,7 +536,7 @@ sequenceDiagram
   GW-->>U: upstream
   U-->>B: usage JSON
 
-  Note over B: Identity middleware: settings orgs teams (dashboard는 Usage Web)
+  Note over B: Identity middleware: settings (dashboard는 Usage Web)
 ```
 
 ### W3 — 레이어 관계 (Identity Web: UI · client-fetch · BFF)
@@ -606,14 +604,12 @@ flowchart TD
   subgraph MT["matcher (현행 Identity Web)"]
     direction TB
     M2["/settings/:path*"]
-    M3["/organizations/:path*"]
-    M4["/teams/:path*"]
   end
 
   MW -.-> MT
 ```
 
-`matcher` 에 맞는 **`src/app/settings|organizations|teams/...` 페이지**를 추가·이동하면 W1과 `docs/repository-structure.md` 를 함께 갱신한다. **대시보드 보호**는 `services/usage-service/web/middleware.ts` 를 본다.
+`matcher` 에 맞는 **`src/app/settings/...` 페이지**를 추가·이동하면 W1과 `docs/repository-structure.md` 를 함께 갱신한다. **대시보드 보호**는 `services/usage-service/web/middleware.ts` 를 본다.
 
 ### W5 — Usage Web 요약 (`services/usage-service/web`)
 

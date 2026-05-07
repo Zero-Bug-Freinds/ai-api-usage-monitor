@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef } from "react"
 
 import { useInAppToast } from "./in-app-toast-provider"
 
-/** Same-origin path at the identity edge; not tied to any app `basePath`. */
+/** Same-origin path at web-edge; not tied to any app `basePath`. */
 export const IN_APP_NOTIFICATIONS_POLL_URL =
   "/notifications/api/notification/in-app-notifications?limit=10" as const
 

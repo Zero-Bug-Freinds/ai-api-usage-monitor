@@ -4,7 +4,7 @@ type RouterLike = { replace: (href: string) => void }
 
 /**
  * Usage 웹 앱으로 가는 링크용 href.
- * 현재는 Identity 웹(3000)에서 `/dashboard` 경로로 진입하도록 고정한다.
+ * 공개 진입은 web-edge에서 `/dashboard` 경로로 분기한다.
  */
 export function usageAppHref(path: string): string {
   const normalized = path.startsWith("/") ? path : `/${path}`
@@ -12,7 +12,7 @@ export function usageAppHref(path: string): string {
 }
 
 /**
- * `/dashboard`·`/billing` 은 rewrite 대상 앱으로 전체 네비게이션으로 이동한다.
+ * `/dashboard`·`/billing` 은 다른 Next 앱이므로 전체 네비게이션으로 이동한다.
  */
 export function navigateAfterLogin(nextPath: string, router: RouterLike): void {
   // Defense-in-depth: only allow same-origin absolute paths to prevent open redirect.

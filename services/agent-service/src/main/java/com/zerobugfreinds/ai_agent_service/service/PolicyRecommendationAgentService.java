@@ -17,6 +17,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -46,19 +47,22 @@ public class PolicyRecommendationAgentService {
 	private final DailyCumulativeTokenSnapshotService dailyCumulativeTokenSnapshotService;
 	private final UsagePredictionSignalSnapshotService usagePredictionSignalSnapshotService;
 	private final UsageRecordedTokenRollupService usageRecordedTokenRollupService;
+	private final RecommendationGeminiService recommendationGeminiService;
 
 	public PolicyRecommendationAgentService(
 			BillingSignalSnapshotService billingSignalSnapshotService,
 			ExternalModelCatalogService externalModelCatalogService,
 			DailyCumulativeTokenSnapshotService dailyCumulativeTokenSnapshotService,
 			UsagePredictionSignalSnapshotService usagePredictionSignalSnapshotService,
-			UsageRecordedTokenRollupService usageRecordedTokenRollupService
+			UsageRecordedTokenRollupService usageRecordedTokenRollupService,
+			RecommendationGeminiService recommendationGeminiService
 	) {
 		this.billingSignalSnapshotService = billingSignalSnapshotService;
 		this.externalModelCatalogService = externalModelCatalogService;
 		this.dailyCumulativeTokenSnapshotService = dailyCumulativeTokenSnapshotService;
 		this.usagePredictionSignalSnapshotService = usagePredictionSignalSnapshotService;
 		this.usageRecordedTokenRollupService = usageRecordedTokenRollupService;
+		this.recommendationGeminiService = recommendationGeminiService;
 	}
 
 	public PolicyRecommendationResponse recommend(PolicyRecommendationRequest request) {
@@ -134,6 +138,27 @@ public class PolicyRecommendationAgentService {
 		BigDecimal estimatedSavingsPct = calculateSavingsPercent(currentMonthlyCost, recommendedMonthlyCost);
 		String primaryModel = bestCandidate.modelName();
 		List<String> candidateModels = topCandidates.stream().map(CandidateCost::modelName).toList();
+		GeminiRecommendationOverride llmOverride = inferRecommendationOverride(
+				request,
+				reasonCode,
+				averageLatencyMs,
+				totalInputTokens,
+				totalOutputTokens,
+				totalRequests,
+				currentMonthlyCost,
+				recommendedMonthlyCost,
+				estimatedSavingsPct,
+				topCandidates
+		);
+		RecommendationConfidenceLevel finalConfidenceLevel =
+				llmOverride.confidenceLevel() != null ? llmOverride.confidenceLevel() : confidenceLevel;
+		String finalTitle = llmOverride.title() != null ? llmOverride.title() : "모델 최적화 추천";
+		String finalReasonMessage = llmOverride.reasonMessage() != null
+				? llmOverride.reasonMessage() + " (단가 카탈로그: " + catalogSnapshot.source() + ")"
+				: buildReasonMessage(reasonCode) + " (단가 카탈로그: " + catalogSnapshot.source() + ")";
+		String finalDisclaimer = llmOverride.disclaimer() != null
+				? llmOverride.disclaimer()
+				: (finalConfidenceLevel == RecommendationConfidenceLevel.LOW ? "추천 신뢰도가 낮아 후보군 중심으로 안내됩니다." : null);
 
 		OptimizationRecommendationIssuedEvent event = new OptimizationRecommendationIssuedEvent(
 				UUID.randomUUID().toString(),
@@ -154,13 +179,13 @@ public class PolicyRecommendationAgentService {
 				),
 				new OptimizationRecommendationIssuedEvent.Recommendation(
 						reasonCode,
-						confidenceLevel,
+						finalConfidenceLevel,
 						primaryModel,
 						candidateModels,
 						currentMonthlyCost,
 						recommendedMonthlyCost,
 						estimatedSavingsPct,
-						buildReasonMessage(reasonCode) + " (단가 카탈로그: " + catalogSnapshot.source() + ")"
+						finalReasonMessage
 				),
 				new OptimizationRecommendationIssuedEvent.Delivery(
 						buildDedupeKey(request.scopeType(), request.scopeId(), request.keyId(), reasonCode)
@@ -180,11 +205,11 @@ public class PolicyRecommendationAgentService {
 						totalRequests
 				),
 				new RecommendationQueryResponse.RecommendationDetails(
-						"모델 최적화 추천",
+						finalTitle,
 						reasonCode,
-						buildReasonMessage(reasonCode) + " (단가 카탈로그: " + catalogSnapshot.source() + ")",
-						confidenceLevel,
-						confidenceLevel == RecommendationConfidenceLevel.LOW ? "추천 신뢰도가 낮아 후보군 중심으로 안내됩니다." : null,
+						finalReasonMessage,
+						finalConfidenceLevel,
+						finalDisclaimer,
 						estimatedSavingsPct,
 						topCandidates.stream()
 								.map(candidate -> new RecommendationQueryResponse.CandidateModel(
@@ -198,6 +223,136 @@ public class PolicyRecommendationAgentService {
 		);
 		recommendationStore.put(new RecommendationCacheKey(request.scopeType(), request.scopeId(), request.keyId()), queryResponse);
 		return event;
+	}
+
+	public Map<String, RecommendationQueryResponse> analyzeAndStoreBatch(List<RecommendationAnalyzeRequest> requests) {
+		if (requests == null || requests.isEmpty()) {
+			return Map.of();
+		}
+		List<BatchDraft> drafts = new ArrayList<>();
+		for (RecommendationAnalyzeRequest request : requests) {
+			Instant endAt = Instant.now();
+			Instant startAt = endAt.minus(request.windowDays(), ChronoUnit.DAYS);
+			BillingSignalSnapshotService.BillingKeySignal billingSignal =
+					resolveBillingSignal(request.scopeType(), request.scopeId(), request.keyId());
+			UsageProfile usageProfile = buildUsageProfile(request, billingSignal);
+			long totalRequests = usageProfile.totalRequests() > 0
+					? usageProfile.totalRequests()
+					: Math.max(100, request.windowDays() * 140L);
+			long totalInputTokens = usageProfile.totalInputTokens();
+			long totalOutputTokens = usageProfile.totalOutputTokens();
+			BigDecimal ratio = calculateRatio(totalInputTokens, totalOutputTokens);
+			Long averageLatencyMs = usageProfile.averageLatencyMs();
+			RecommendationReasonCode reasonCode = resolveReasonCode(request.scopeType(), ratio, averageLatencyMs);
+			RecommendationConfidenceLevel confidenceLevel = usageProfile.confidenceLevel();
+			BigDecimal currentMonthlyCost = billingSignal != null && billingSignal.latestEstimatedCostUsd() != null
+					? billingSignal.latestEstimatedCostUsd()
+					: DEFAULT_CURRENT_MONTHLY_COST_USD;
+			ExternalModelCatalogService.CatalogSnapshot catalogSnapshot = externalModelCatalogService.currentCatalog();
+			List<CandidateCost> rankedCandidates = rankCandidates(
+					currentMonthlyCost,
+					totalInputTokens,
+					totalOutputTokens,
+					catalogSnapshot.models(),
+					reasonCode == RecommendationReasonCode.HIGH_LATENCY
+			);
+			List<CandidateCost> topCandidates = rankedCandidates.stream().limit(3).toList();
+			CandidateCost bestCandidate = topCandidates.isEmpty()
+					? new CandidateCost("UNKNOWN", "fallback-low-cost", currentMonthlyCost, BigDecimal.ZERO, "카탈로그 미연결 fallback", 0, false)
+					: topCandidates.getFirst();
+			BigDecimal recommendedMonthlyCost = bestCandidate.expectedMonthlyCostUsd();
+			BigDecimal estimatedSavingsPct = calculateSavingsPercent(currentMonthlyCost, recommendedMonthlyCost);
+			drafts.add(new BatchDraft(
+					request,
+					endAt,
+					startAt,
+					totalRequests,
+					totalInputTokens,
+					totalOutputTokens,
+					ratio,
+					averageLatencyMs,
+					reasonCode,
+					confidenceLevel,
+					currentMonthlyCost,
+					recommendedMonthlyCost,
+					estimatedSavingsPct,
+					topCandidates,
+					catalogSnapshot.source()
+			));
+		}
+
+		List<RecommendationGeminiService.AiRecommendationPromptRequest> promptRequests = drafts.stream()
+				.map(draft -> toGeminiPromptRequest(
+						draft.request(),
+						draft.reasonCode(),
+						draft.averageLatencyMs(),
+						draft.totalInputTokens(),
+						draft.totalOutputTokens(),
+						draft.totalRequests(),
+						draft.currentMonthlyCost(),
+						draft.recommendedMonthlyCost(),
+						draft.estimatedSavingsPct(),
+						draft.topCandidates()
+				))
+				.toList();
+		Map<String, RecommendationGeminiService.AiRecommendationResult> overridesByKeyId =
+				recommendationGeminiService.inferRecommendations(promptRequests);
+		Map<String, RecommendationQueryResponse> responses = new LinkedHashMap<>();
+		for (BatchDraft draft : drafts) {
+			RecommendationGeminiService.AiRecommendationResult llmResult = overridesByKeyId.get(draft.request().keyId());
+			GeminiRecommendationOverride llmOverride = llmResult == null
+					? new GeminiRecommendationOverride(null, null, null, null)
+					: new GeminiRecommendationOverride(
+					llmResult.title(),
+					llmResult.reasonMessage(),
+					llmResult.confidenceLevel(),
+					llmResult.disclaimer()
+			);
+			RecommendationConfidenceLevel finalConfidenceLevel =
+					llmOverride.confidenceLevel() != null ? llmOverride.confidenceLevel() : draft.confidenceLevel();
+			String finalTitle = llmOverride.title() != null ? llmOverride.title() : "모델 최적화 추천";
+			String finalReasonMessage = llmOverride.reasonMessage() != null
+					? llmOverride.reasonMessage() + " (단가 카탈로그: " + draft.catalogSource() + ")"
+					: buildReasonMessage(draft.reasonCode()) + " (단가 카탈로그: " + draft.catalogSource() + ")";
+			String finalDisclaimer = llmOverride.disclaimer() != null
+					? llmOverride.disclaimer()
+					: (finalConfidenceLevel == RecommendationConfidenceLevel.LOW ? "추천 신뢰도가 낮아 후보군 중심으로 안내됩니다." : null);
+			RecommendationQueryResponse queryResponse = new RecommendationQueryResponse(
+					draft.request().keyId(),
+					draft.request().scopeType(),
+					RECOMMENDATION_AVAILABLE,
+					draft.endAt(),
+					new RecommendationQueryResponse.MetricsContext(
+							draft.request().windowDays(),
+							draft.totalInputTokens() + draft.totalOutputTokens(),
+							draft.totalInputTokens() + ":" + draft.totalOutputTokens(),
+							draft.averageLatencyMs(),
+							draft.totalRequests()
+					),
+					new RecommendationQueryResponse.RecommendationDetails(
+							finalTitle,
+							draft.reasonCode(),
+							finalReasonMessage,
+							finalConfidenceLevel,
+							finalDisclaimer,
+							draft.estimatedSavingsPct(),
+							draft.topCandidates().stream()
+									.map(candidate -> new RecommendationQueryResponse.CandidateModel(
+											candidate.modelName(),
+											candidate.diffPercentFromCurrent(),
+											candidate.expectedMonthlyCostUsd(),
+											candidate.keyFeature()
+									))
+									.toList()
+					)
+			);
+			recommendationStore.put(
+					new RecommendationCacheKey(draft.request().scopeType(), draft.request().scopeId(), draft.request().keyId()),
+					queryResponse
+			);
+			responses.put(draft.request().keyId(), queryResponse);
+		}
+		return responses;
 	}
 
 	public RecommendationQueryResponse getRecommendation(
@@ -367,7 +522,7 @@ public class PolicyRecommendationAgentService {
 			return new UsageProfile(
 					rollupSummary.totalInputTokens(),
 					rollupSummary.totalOutputTokens(),
-					null,
+					rollupSummary.averageLatencyMs(),
 					confidence,
 					rollupSummary.totalRequests()
 			);
@@ -390,7 +545,7 @@ public class PolicyRecommendationAgentService {
 		RecommendationConfidenceLevel confidence = dailyTokens > 0 || averageDailyTokenUsage.compareTo(BigDecimal.ZERO) > 0
 				? RecommendationConfidenceLevel.HIGH
 				: RecommendationConfidenceLevel.MEDIUM;
-		return new UsageProfile(totalInputTokens, totalOutputTokens, null, confidence, 0L);
+		return new UsageProfile(totalInputTokens, totalOutputTokens, profile.avgLatencyMs(), confidence, 0L);
 	}
 
 	private long resolveDailyTokensByKey(RecommendationAnalyzeRequest request) {
@@ -472,6 +627,85 @@ public class PolicyRecommendationAgentService {
 		};
 	}
 
+	private GeminiRecommendationOverride inferRecommendationOverride(
+			RecommendationAnalyzeRequest request,
+			RecommendationReasonCode reasonCode,
+			Long averageLatencyMs,
+			long totalInputTokens,
+			long totalOutputTokens,
+			long totalRequests,
+			BigDecimal currentMonthlyCost,
+			BigDecimal recommendedMonthlyCost,
+			BigDecimal estimatedSavingsPct,
+			List<CandidateCost> topCandidates
+	) {
+		List<Map<String, String>> candidatePayload = topCandidates.stream()
+				.map(candidate -> Map.of(
+						"modelName", candidate.modelName(),
+						"expectedMonthlyCostUsd", candidate.expectedMonthlyCostUsd().toPlainString(),
+						"expectedCostDiffPct", candidate.diffPercentFromCurrent().toPlainString(),
+						"keyFeature", candidate.keyFeature()
+				))
+				.toList();
+		return recommendationGeminiService.inferRecommendation(
+				new RecommendationGeminiService.AiRecommendationPromptRequest(
+						request.scopeType().name(),
+						request.scopeId(),
+						request.keyId(),
+						reasonCode.name(),
+						averageLatencyMs,
+						totalInputTokens + ":" + totalOutputTokens,
+						totalRequests,
+						totalInputTokens + totalOutputTokens,
+						currentMonthlyCost.toPlainString(),
+						recommendedMonthlyCost.toPlainString(),
+						estimatedSavingsPct.toPlainString(),
+						candidatePayload
+				)
+			).map(result -> new GeminiRecommendationOverride(
+				result.title(),
+				result.reasonMessage(),
+				result.confidenceLevel(),
+				result.disclaimer()
+		)).orElseThrow(() -> new IllegalStateException("AI_RECOMMENDATION_INFERENCE_FAILED"));
+	}
+
+	private static RecommendationGeminiService.AiRecommendationPromptRequest toGeminiPromptRequest(
+			RecommendationAnalyzeRequest request,
+			RecommendationReasonCode reasonCode,
+			Long averageLatencyMs,
+			long totalInputTokens,
+			long totalOutputTokens,
+			long totalRequests,
+			BigDecimal currentMonthlyCost,
+			BigDecimal recommendedMonthlyCost,
+			BigDecimal estimatedSavingsPct,
+			List<CandidateCost> topCandidates
+	) {
+		List<Map<String, String>> candidatePayload = topCandidates.stream()
+				.map(candidate -> Map.of(
+						"modelName", candidate.modelName(),
+						"expectedMonthlyCostUsd", candidate.expectedMonthlyCostUsd().toPlainString(),
+						"expectedCostDiffPct", candidate.diffPercentFromCurrent().toPlainString(),
+						"keyFeature", candidate.keyFeature()
+				))
+				.toList();
+		return new RecommendationGeminiService.AiRecommendationPromptRequest(
+				request.scopeType().name(),
+				request.scopeId(),
+				request.keyId(),
+				reasonCode.name(),
+				averageLatencyMs,
+				totalInputTokens + ":" + totalOutputTokens,
+				totalRequests,
+				totalInputTokens + totalOutputTokens,
+				currentMonthlyCost.toPlainString(),
+				recommendedMonthlyCost.toPlainString(),
+				estimatedSavingsPct.toPlainString(),
+				candidatePayload
+		);
+	}
+
 	private static String buildDedupeKey(
 			RecommendationScopeType scopeType,
 			String scopeId,
@@ -531,6 +765,33 @@ public class PolicyRecommendationAgentService {
 			Long averageLatencyMs,
 			RecommendationConfidenceLevel confidenceLevel,
 			long totalRequests
+	) {
+	}
+
+	private record GeminiRecommendationOverride(
+			String title,
+			String reasonMessage,
+			RecommendationConfidenceLevel confidenceLevel,
+			String disclaimer
+	) {
+	}
+
+	private record BatchDraft(
+			RecommendationAnalyzeRequest request,
+			Instant endAt,
+			Instant startAt,
+			long totalRequests,
+			long totalInputTokens,
+			long totalOutputTokens,
+			BigDecimal ratio,
+			Long averageLatencyMs,
+			RecommendationReasonCode reasonCode,
+			RecommendationConfidenceLevel confidenceLevel,
+			BigDecimal currentMonthlyCost,
+			BigDecimal recommendedMonthlyCost,
+			BigDecimal estimatedSavingsPct,
+			List<CandidateCost> topCandidates,
+			String catalogSource
 	) {
 	}
 }

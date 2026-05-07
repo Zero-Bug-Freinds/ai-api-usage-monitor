@@ -546,7 +546,7 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
       ) : null}
       <div className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">설정</h1>
-        <p className="text-sm text-muted-foreground">로그인 계정 정보입니다. 조직·팀은 각 메뉴에서 관리합니다.</p>
+        <p className="text-sm text-muted-foreground">로그인 계정 정보입니다. 팀은 팀 메뉴에서 관리합니다.</p>
       </div>
 
       {subpath ? (

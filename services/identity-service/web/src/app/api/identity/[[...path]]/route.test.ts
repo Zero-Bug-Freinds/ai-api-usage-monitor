@@ -23,9 +23,9 @@ function ctx(path?: string[]) {
 
 describe("GET /api/identity/[[...path]] (Identity management BFF)", () => {
   it("returns 401 when access_token cookie is missing", async () => {
-    const req = new Request("http://localhost/api/identity/v1/me/organizations")
+    const req = new Request("http://localhost/api/identity/v1/me/profile")
 
-    const res = await GET(req, ctx(["v1", "me", "organizations"]))
+    const res = await GET(req, ctx(["v1", "me", "profile"]))
     expect(res.status).toBe(401)
     const json = (await res.json()) as { message: string }
     expect(json.message).toContain("로그인")
@@ -35,11 +35,11 @@ describe("GET /api/identity/[[...path]] (Identity management BFF)", () => {
   it("returns 500 when GATEWAY_URL and WEB_GATEWAY_URL are missing", async () => {
     delete process.env.GATEWAY_URL
     delete process.env.WEB_GATEWAY_URL
-    const req = new Request("http://localhost/api/identity/v1/me/organizations", {
+    const req = new Request("http://localhost/api/identity/v1/me/profile", {
       headers: { cookie: "access_token=tok" },
     })
 
-    const res = await GET(req, ctx(["v1", "me", "organizations"]))
+    const res = await GET(req, ctx(["v1", "me", "profile"]))
     expect(res.status).toBe(500)
     const json = (await res.json()) as { message: string }
     expect(json.message).toContain("GATEWAY_URL")
@@ -65,7 +65,7 @@ describe("GET /api/identity/[[...path]] (Identity management BFF)", () => {
 
   it("proxies to Gateway /api/identity/v1/... with Bearer", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      expect(url).toBe("http://localhost:8888/api/identity/v1/me/organizations")
+      expect(url).toBe("http://localhost:8888/api/identity/v1/me/profile")
       expect(init?.method).toBe("GET")
       const h = init?.headers as Headers
       expect(h.get("Authorization")).toBe("Bearer test-token-value")
@@ -77,11 +77,11 @@ describe("GET /api/identity/[[...path]] (Identity management BFF)", () => {
     })
     vi.stubGlobal("fetch", fetchMock)
 
-    const req = new Request("http://localhost/api/identity/v1/me/organizations", {
+    const req = new Request("http://localhost/api/identity/v1/me/profile", {
       headers: { cookie: "access_token=test-token-value" },
     })
 
-    const res = await GET(req, ctx(["v1", "me", "organizations"]))
+    const res = await GET(req, ctx(["v1", "me", "profile"]))
     expect(res.status).toBe(200)
     const json = (await res.json()) as { success: boolean; data: unknown[] }
     expect(json.success).toBe(true)
@@ -109,7 +109,7 @@ describe("GET /api/identity/[[...path]] (Identity management BFF)", () => {
 describe("POST /api/identity/[[...path]]", () => {
   it("proxies JSON body to upstream", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      expect(url).toBe("http://localhost:8888/api/identity/v1/organizations")
+      expect(url).toBe("http://localhost:8888/api/identity/v1/account/profile")
       expect(init?.method).toBe("POST")
       const h = init?.headers as Headers
       expect(h.get("Content-Type")).toBe("application/json")
@@ -121,16 +121,16 @@ describe("POST /api/identity/[[...path]]", () => {
     })
     vi.stubGlobal("fetch", fetchMock)
 
-    const req = new Request("http://localhost/api/identity/v1/organizations", {
+    const req = new Request("http://localhost/api/identity/v1/account/profile", {
       method: "POST",
       headers: {
         cookie: "access_token=tok",
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ name: "Acme" }),
+      body: JSON.stringify({ displayName: "Acme" }),
     })
 
-    const res = await POST(req, ctx(["v1", "organizations"]))
+    const res = await POST(req, ctx(["v1", "account", "profile"]))
     expect(res.status).toBe(201)
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
