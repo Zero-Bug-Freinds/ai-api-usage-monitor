@@ -87,7 +87,7 @@ class ExpenditureSummaryVsBudgetThresholdNumeratorIntegrationTest {
                 1L
         ));
         dailyRepository.save(new DailyExpenditureAggEntity(
-                new DailyExpenditureAggId(aggDay, userId, apiKeyId, AiProvider.GOOGLE, "gemini-1.5-flash"),
+                new DailyExpenditureAggId(aggDay, userId, apiKeyId, AiProvider.GOOGLE, "gemini-2.5-flash"),
                 new BigDecimal("0.0100"),
                 1L,
                 1L

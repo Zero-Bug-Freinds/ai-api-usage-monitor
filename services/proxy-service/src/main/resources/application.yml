@@ -31,6 +31,10 @@ proxy:
     mock-key-google: ${PROXY_GOOGLE_TEST_API_KEY:}
     mock-key: ${PROXY_MOCK_KEY_FALLBACK:}
     cache-ttl: PT5M
+  team-key-service:
+    base-url: ${PROXY_TEAM_KEY_SERVICE_BASE_URL:http://localhost:8093}
+    internal-token: ${PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN:}
+    path-template: ${PROXY_TEAM_KEY_SERVICE_PATH_TEMPLATE:/internal/api-keys/{provider}}
   rabbit:
     usage-exchange: usage.events
     usage-routing-key: usage.recorded
