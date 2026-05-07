@@ -12,7 +12,7 @@ function usageOrigin(): string {
 function teamOrigin(): string {
   return (
     process.env.TEAM_WEB_INTERNAL_ORIGIN ??
-    "http://team-web:3000"
+    "http://team-web-mfe:3000"
   ).replace(/\/+$/, "");
 }
 
@@ -81,7 +81,7 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/teams/api/:path*",
-        destination: `${team}/teams/api/:path*`,
+        destination: `${team}/api/:path*`,
       },
       /* Team console HTML/static: use web-edge (8888) → web-host directly; avoid duplicate proxy via identity. */
       {
@@ -94,7 +94,7 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/api/team/v1/:path*",
-        destination: `${team}/teams/api/team/v1/:path*`,
+        destination: `${team}/api/team/v1/:path*`,
       },
     ];
   },

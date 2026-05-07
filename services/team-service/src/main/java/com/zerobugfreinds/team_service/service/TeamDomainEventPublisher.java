@@ -39,9 +39,23 @@ public class TeamDomainEventPublisher {
 			props.setHeader("eventType", event.eventType());
 			props.setContentType(MessageProperties.CONTENT_TYPE_JSON);
 			Message message = new Message(json.getBytes(java.nio.charset.StandardCharsets.UTF_8), props);
+			// Backward compatibility: keep publishing to legacy routing key.
 			rabbitTemplate.send(exchange, routingKey, message);
+
+			// New consumers (e.g. usage-service) can bind with semantic keys like `team.created`.
+			String typedRoutingKey = toTypedRoutingKey(event.eventType());
+			if (!routingKey.equals(typedRoutingKey)) {
+				rabbitTemplate.send(exchange, typedRoutingKey, message);
+			}
 		} catch (JsonProcessingException e) {
 			throw new IllegalStateException("team domain event serialization failed: " + event.eventType(), e);
 		}
+	}
+
+	private String toTypedRoutingKey(String eventType) {
+		if (eventType == null || eventType.isBlank()) {
+			return "team.unknown";
+		}
+		return eventType.trim().toLowerCase().replace('_', '.');
 	}
 }

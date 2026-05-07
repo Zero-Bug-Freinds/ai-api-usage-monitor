@@ -96,7 +96,7 @@
   - 웹 UI(브라우저) 및 다른 서비스는 실행 위치(호스트/컨테이너)에 따라 `localhost` 또는 `host.docker.internal`/Compose 서비스명(`api-gateway-service` 등) + 환경변수로 브로커·DB·API 주소에 연결한다.
 - 다른 애플리케이션 서비스(Identity, Usage Tracking, Team 등)도 기본은 **호스트 로컬 실행**으로 두되, 팀 합의에 따라 루트 Compose `profile: web`/서비스별 Compose에 포함해 함께 기동할 수 있다.
 - **team-service**는 `TEAM_SERVICE_PORT` 없으면 기본 **8093**, **billing-service**는 `BILLING_SERVICE_PORT` 없으면 기본 **8095** — 기본값끼리는 포트가 겹치지 않는다. `scripts/bootrun.ps1`·`bootrun.sh`는 team **8094**·billing **8095**를 넣어 과거(둘 다 8093) 충돌을 피한다. API Gateway **`GATEWAY_BILLING_URI`** 기본은 **`http://localhost:8095`** 와 billing 기본 포트가 일치한다(Compose 게이트웨이는 `host.docker.internal:8095`). 스모크: `scripts/verify-expenditure-chain.ps1` / `verify-expenditure-chain.sh`.
-- 루트 Compose의 **`team-service`**(`profiles: web`)는 **호스트 포트 매핑**에 **`TEAM_SERVICE_HOST_PORT`**(기본 **8093**)를 쓰고, 호스트에서 JVM으로 기동할 때의 **`TEAM_SERVICE_PORT`**(예: **8094**)와 변수명을 분리한다. 과거에는 둘 다 `TEAM_SERVICE_PORT`로 치환되어 `.env`에 **8094**를 두면 Compose가 호스트 **8094**를 Docker에 바인딩하고, 같은 머신에서 `bootRun`이 **8094**를 다시 쓰려 할 때(점유 PID가 **java**가 아니라 **Docker / wslrelay**인 유형) 충돌이 났다. **`TEAM_SERVICE_HOST_PORT`**는 Compose 전용, **`TEAM_SERVICE_PORT`**는 호스트 JVM용으로 구분한다. **`team-web`**은 같은 Compose 스택에서는 기본 **`http://team-service:8093`**, 호스트에서만 team을 띄울 때는 **`WEB_TEAM_SERVICE_URL`**을 호스트 포트에 맞춘다(`.env.example`).
+- 루트 Compose의 **`team-service`**(`profiles: web`)는 **호스트 포트 매핑**에 **`TEAM_SERVICE_HOST_PORT`**(기본 **8093**)를 쓰고, 호스트에서 JVM으로 기동할 때의 **`TEAM_SERVICE_PORT`**(예: **8094**)와 변수명을 분리한다. 과거에는 둘 다 `TEAM_SERVICE_PORT`로 치환되어 `.env`에 **8094**를 두면 Compose가 호스트 **8094**를 Docker에 바인딩하고, 같은 머신에서 `bootRun`이 **8094**를 다시 쓰려 할 때(점유 PID가 **java**가 아니라 **Docker / wslrelay**인 유형) 충돌이 났다. **`TEAM_SERVICE_HOST_PORT`**는 Compose 전용, **`TEAM_SERVICE_PORT`**는 호스트 JVM용으로 구분한다. **`team-web-mfe`**는 같은 Compose 스택에서는 기본 **`http://team-service:8093`**, 호스트에서만 team을 띄울 때는 **`WEB_TEAM_SERVICE_URL`**을 호스트 포트에 맞춘다(`.env.example`).
 
 ---
 
@@ -380,7 +380,7 @@
 
 - **원칙**: Spring Boot 서비스는 **해당 서비스 디렉터리**의 `Dockerfile`로 빌드하고, Next.js는 **`services/<svc>/web/Dockerfile`**(standalone)로 빌드하되 **build context는 저장소 루트**(루트 `pnpm` workspace·`packages/ui` 포함)를 쓴다. 운영·스테이징에서도 **Compose(또는 동등한 오케스트레이션)로 각 이미지를 나란히 띄우는 모델**을 따른다.
 - **로컬**: 루트 `docker-compose.yml`은 인프라·일부 앱(예: proxy·gateway)을 포함할 수 있으며, **웹 컨테이너는 `profile: web`(`identity-web`, `usage-web`, `web-edge`) 등으로 선택 기동**해 호스트 개발과 병행할 수 있다. 호스트에서 Next를 직접 띄울 때는 저장소 루트 **`pnpm install`** 후 **`pnpm --filter identity-web dev`** / **`pnpm --filter usage-web dev`** 등(`packages/ui` workspace 포함 — `README.md`, `docs/repository-structure.md` §6).
-- 동일 `profile: web` 선택 시 루트 `docker-compose.yml`에는 위에 더해 `team-web`, `team-service` 컨테이너가 포함될 수 있고, 팀 도메인 전용 DB는 `postgres-team` 등 별도 PostgreSQL 컨테이너로 둘 수 있다(`docs/repository-structure.md` §2 참고).
+- 동일 `profile: web` 선택 시 루트 `docker-compose.yml`에는 위에 더해 `team-web-mfe`, `team-service` 컨테이너가 포함될 수 있고, 팀 도메인 전용 DB는 `postgres-team` 등 별도 PostgreSQL 컨테이너로 둘 수 있다(`docs/repository-structure.md` §2 참고).
 - **Compose 환경변수:** `docker compose`는 루트 **`.env`**만 자동 로드한다. `GATEWAY_SHARED_SECRET`처럼 compose 파일에서 `${VAR:-}` 형태로 넘기는 값은, `.env`에 **빈 할당(`VAR=`)만** 있으면 컨테이너에 빈 문자열이 들어가 **Spring `application.yml`의 기본값이 적용되지 않을 수 있다**(게이트웨이 기동 실패 등). **비어 있지 않은 값**으로 맞추거나 변수 줄을 제거하고, 게이트웨이·Proxy·usage-service의 공유 비밀은 [`docs/contracts/gateway-proxy.md`](contracts/gateway-proxy.md) §5와 동일하게 유지한다.
 - **`billing-web`:** 팀 지출 롤업 BFF가 서버에서 팀 멤버 API를 호출할 때, 컨테이너 간 DNS로 **`identity-web:3000`** 에 붙도록 루트 `docker-compose.yml`에 **`BILLING_TEAM_BFF_BASE_URL`** 기본값과 **`depends_on: identity-web`** 을 둔다. 호스트에서만 Identity Next를 띄우는 등 예외는 루트 `.env`의 동일 변수로 덮어쓴다(예시·설명: 루트 `.env.example`, [billing-service-overview-20260412.md](billing-service-overview-20260412.md) §4.10, [web-split-boundary.md](contracts/web-split-boundary.md) §2.7).
 
@@ -401,7 +401,7 @@
 - **선택**
   - API Gateway·Proxy: 저장소 `docker-compose.yml`에 포함 가능(계약: `docs/contracts/gateway-proxy.md`)
   - Next.js: **도메인별 `services/<svc>/web`** — `docker compose --profile web up` 시 **`identity-web`**, **`usage-web`**, **`web-edge`**(루트 `docker-compose.yml`). 구 통합 앱 경로 `apps/web`에는 안내용 `README.md`만 둔다(`docs/repository-structure.md` §6.2).
-  - 동일 프로필에서 **`team-web`**(및 필요 시 **`team-service`**)이 함께 포함될 수 있다.
+  - 동일 프로필에서 **`team-web-mfe`**(및 필요 시 **`team-service`**)이 함께 포함될 수 있다.
   - GitHub Actions(CI): 저장소 정책에 따라 도입(`docs/CI.md`)
   - Prometheus + Grafana, Loki, Jaeger: 시간 여유 시(관측 강화)
 - **Kubernetes / Ingress / ConfigMap·Secret(K8s)**
@@ -420,7 +420,7 @@
 - Identity Service: “인증·사용자·**조직**·멤버십·RBAC; 팀 도메인은 **Team Service**와 HTTP API로 연동(§4.3·§4.10).”
 - Team Service: “팀·팀원·팀 API Key 등 **팀 도메인** 데이터 소유·API(§4.10).”
 - API Key Service: “(논리 경계) 공급사 API Key 암호화 저장/조회; 구현 위치는 **identity-service** 등 팀 합의 경계(§4.4).”
-- **인프라·배포·웹 진입:** 패턴 B **이미지 분리**, 루트 **Docker Compose**, 선택 **`profile: web`**·**`web-edge`**·**`team-web`/`team-service`**·서비스별 DB 등은 **§10** 참고.
+- **인프라·배포·웹 진입:** 패턴 B **이미지 분리**, 루트 **Docker Compose**, 선택 **`profile: web`**·**`web-edge`**·**`team-web-mfe`/`team-service`**·서비스별 DB 등은 **§10** 참고.
 - **집계·알림 전담 백엔드(Analytics·Notification 등)**: 아래 **§12** 참고 — **도메인 UI(`web/`) 담당과 동일 사람이 아닐 수 있음**(서비스 경계 유지).
 - **서비스 단위 웹·BFF**: 아래 **§13** 참고.
 

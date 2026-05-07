@@ -8,13 +8,12 @@ RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY packages/ui/package.json ./packages/ui/
 COPY packages/shell/package.json ./packages/shell/
-COPY services/team-service/web/package.json ./services/team-service/web/
 COPY services/team-service/web-mfe/package.json ./services/team-service/web-mfe/
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm config set store-dir /pnpm/store && \
     pnpm install --frozen-lockfile
 
-FROM ${WEB_NODE_DEPS_IMAGE} AS deps
+FROM deps-local AS deps
 
 FROM node:22-alpine AS builder
 WORKDIR /repo
@@ -28,14 +27,11 @@ COPY --from=deps /repo/packages/ui/package.json ./packages/ui/package.json
 COPY --from=deps /repo/packages/ui/node_modules ./packages/ui/node_modules
 COPY --from=deps /repo/packages/shell/package.json ./packages/shell/package.json
 COPY --from=deps /repo/packages/shell/node_modules ./packages/shell/node_modules
-COPY --from=deps /repo/services/team-service/web/package.json ./services/team-service/web/package.json
-COPY --from=deps /repo/services/team-service/web/node_modules ./services/team-service/web/node_modules
 COPY --from=deps /repo/services/team-service/web-mfe/package.json ./services/team-service/web-mfe/package.json
 COPY --from=deps /repo/services/team-service/web-mfe/node_modules ./services/team-service/web-mfe/node_modules
 
 COPY packages/ui ./packages/ui
 COPY packages/shell ./packages/shell
-COPY services/team-service/web ./services/team-service/web
 COPY services/team-service/web-mfe ./services/team-service/web-mfe
 
 WORKDIR /repo/services/team-service/web-mfe
@@ -44,7 +40,8 @@ ENV NEXT_PRIVATE_LOCAL_WEBPACK=true
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     --mount=type=cache,target=/repo/services/team-service/web-mfe/.next/cache \
     pnpm config set store-dir /pnpm/store && \
-    pnpm run build
+    pnpm install --frozen-lockfile && \
+    pnpm run build:standalone
 
 FROM node:22-alpine AS runner
 ENV NODE_ENV=production
