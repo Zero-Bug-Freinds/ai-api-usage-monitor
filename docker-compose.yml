@@ -419,20 +419,6 @@ services:
     ports:
       - "${USAGE_WEB_PORT:-3001}:3000"
 
-  usage-web-mfe:
-    profiles:
-      - web
-    restart: unless-stopped
-    build:
-      context: .
-      dockerfile: services/usage-service/web-mfe/Dockerfile
-      args:
-        WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
-    depends_on:
-      - usage-web
-    expose:
-      - "3000"
-
   # billing-web 은 usage-web 과 동일 DashboardShell; 빌드 시 NEXT_PUBLIC_IDENTITY_WEB_ORIGIN 등은 루트 .env 와 맞출 것.
   billing-web:
     profiles:
@@ -525,16 +511,12 @@ services:
       dockerfile: apps/web/Dockerfile
       args:
         WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
-        NEXT_PUBLIC_MFE_TEAM_REMOTE_URL: ${NEXT_PUBLIC_MFE_TEAM_REMOTE_URL:-http://localhost:8888/mfe/team}
-        NEXT_PUBLIC_MFE_USAGE_REMOTE_URL: ${NEXT_PUBLIC_MFE_USAGE_REMOTE_URL:-http://localhost:8888/mfe/usage}
     depends_on:
       - team-service
     environment:
       NEXT_TELEMETRY_DISABLED: "1"
       NEXT_PRIVATE_LOCAL_WEBPACK: "true"
       NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${IDENTITY_WEB_PORT:-3000}}
-      NEXT_PUBLIC_MFE_TEAM_REMOTE_URL: ${NEXT_PUBLIC_MFE_TEAM_REMOTE_URL:-http://localhost:8888/mfe/team}
-      NEXT_PUBLIC_MFE_USAGE_REMOTE_URL: ${NEXT_PUBLIC_MFE_USAGE_REMOTE_URL:-http://localhost:8888/mfe/usage}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -574,7 +556,6 @@ services:
       - billing-web
       - web-host
       - team-web-mfe
-      - usage-web-mfe
       - notification-web
       - agent-web
       - api-gateway-service

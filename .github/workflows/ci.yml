@@ -72,7 +72,6 @@ jobs:
               - 'docker/web-edge/**'
               - 'apps/web/**'
               - 'services/team-service/web-mfe/**'
-              - 'services/usage-service/web-mfe/**'
               - 'docker-compose.yml'
               - '.github/workflows/**'
             api_gateway:
@@ -112,7 +111,6 @@ jobs:
               - 'apps/web/**'
               - 'packages/team-workspace-cache/**'
             web_mfe:
-              - 'services/usage-service/web-mfe/**'
               - 'services/team-service/web-mfe/**'
             web_shared:
               - 'packages/ui/**'
@@ -293,7 +291,6 @@ jobs:
             --add-host usage-web:127.0.0.1 \
             --add-host web-host:127.0.0.1 \
             --add-host team-web-mfe:127.0.0.1 \
-            --add-host usage-web-mfe:127.0.0.1 \
             --add-host billing-web:127.0.0.1 \
             --add-host notification-web:127.0.0.1 \
             --add-host agent-web:127.0.0.1 \
@@ -645,7 +642,6 @@ jobs:
     env:
       NEXT_PRIVATE_LOCAL_WEBPACK: "true"
       NEXT_PUBLIC_MFE_TEAM_REMOTE_URL: "http://localhost:8888/mfe/team"
-      NEXT_PUBLIC_MFE_USAGE_REMOTE_URL: "http://localhost:8888/mfe/usage"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -664,9 +660,6 @@ jobs:
           pnpm --filter web-host run lint
           pnpm --filter web-host run test
           pnpm run build:web-host
-      - name: Verify host remotes configuration
-        run: |
-          node -e "const fs=require('node:fs');const p='apps/web/next.config.mjs';const c=fs.readFileSync(p,'utf8');for(const x of ['NextFederationPlugin','team@','usage@','remoteEntry.js','team/TeamManagement','usage/TeamUsageDashboard']){if(!c.includes(x)){throw new Error('missing '+x+' in '+p)}}"
       - uses: docker/setup-buildx-action@v3
       - name: Docker image (web-node-deps base)
         id: docker_web_node_deps
@@ -692,7 +685,6 @@ jobs:
           build-args: |
             WEB_NODE_DEPS_IMAGE=ci-deps
             NEXT_PUBLIC_MFE_TEAM_REMOTE_URL=http://localhost:8888/mfe/team
-            NEXT_PUBLIC_MFE_USAGE_REMOTE_URL=http://localhost:8888/mfe/usage
           tags: web-host:ci
           load: true
           push: false
@@ -731,38 +723,15 @@ jobs:
         run: pnpm store prune
       - name: Install workspace
         run: pnpm install --frozen-lockfile
-      - name: Verify MF plugin settings (usage/team remotes)
+      - name: Verify MF plugin settings (team remote)
         run: |
-          node -e "const fs=require('node:fs');const checks=[['services/usage-service/web-mfe/next.config.ts',['NextFederationPlugin','name: \"usage\"','filename: \"static/chunks/remoteEntry.js\"']],['services/team-service/web-mfe/next.config.ts',['NextFederationPlugin','name: \"team\"','filename: \"static/chunks/remoteEntry.js\"']]];for(const [p,needles] of checks){const c=fs.readFileSync(p,'utf8');for(const n of needles){if(!c.includes(n)){throw new Error('missing '+n+' in '+p)}}}"
+          node -e "const fs=require('node:fs');const p='services/team-service/web-mfe/next.config.ts';const c=fs.readFileSync(p,'utf8');for(const n of ['NextFederationPlugin','name: \"team\"','filename: \"static/chunks/remoteEntry.js\"']){if(!c.includes(n)){throw new Error('missing '+n+' in '+p)}}"
       # ESLint: omit --max-warnings so only errors fail the step; warnings do not stop CI
       - name: Lint / typecheck / build (web-mfe)
         run: |
-          pnpm --filter usage-web-mfe run lint
           pnpm --filter team-web-mfe run lint
-          pnpm --filter usage-web-mfe exec tsc --noEmit
           pnpm --filter team-web-mfe exec tsc --noEmit
-          pnpm --filter usage-web-mfe run build
           pnpm --filter team-web-mfe run build
-      - name: Docker image (usage-web-mfe, standalone)
-        id: docker_usage_web_mfe
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: services/usage-service/web-mfe/Dockerfile
-          tags: usage-web-mfe:ci
-          load: true
-          push: false
-          cache-from: type=gha,scope=usage-web-mfe
-          # NOTE: 무료 티어(10GB)에서 캐시가 커지면 mode=min으로 유지하는 편이 안정적이다.
-          cache-to: type=gha,mode=min,scope=usage-web-mfe
-      - name: Usage-web-mfe image summary
-        if: always()
-        run: |
-          echo "## Docker image build summary (usage-web-mfe)" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Tag: \`usage-web-mfe:ci\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Digest: \`${{ steps.docker_usage_web_mfe.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Cache scope: \`usage-web-mfe\` (type=gha)" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
       - name: Docker image (team-web-mfe, standalone)
         id: docker_team_web_mfe
         uses: docker/build-push-action@v6

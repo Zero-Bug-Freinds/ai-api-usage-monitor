@@ -17,14 +17,13 @@ export {
   type ConsoleNavLinkSpec,
 } from "./console-nav"
 export { ConsoleSidebar } from "./console-sidebar-app"
-export { ConsoleSidebarPages, type ConsoleSidebarProps } from "./console-sidebar"
+export { type ConsoleSidebarProps } from "./console-sidebar"
 export {
   ConsoleShell,
   type ConsoleShellProps,
   resolveIdentityLogoutPathsFromEnv,
 } from "./console-shell"
 export { ConsoleShellInAppToastClient } from "./console-shell-in-app-toast-client"
-export { ConsoleLayoutOverride } from "./console-layout-override"
 
 /** Alias for billing layouts (same layout as `ConsoleShell`). */
 export { ConsoleShell as BillingConsoleShell } from "./console-shell"

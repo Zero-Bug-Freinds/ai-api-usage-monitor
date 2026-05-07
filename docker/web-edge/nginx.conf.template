@@ -47,10 +47,6 @@ http {
     server team-web-mfe:3000;
   }
 
-  upstream usage_mfe {
-    server usage-web-mfe:3000;
-  }
-
   upstream billing_web {
     server billing-web:3000;
   }
@@ -147,13 +143,6 @@ http {
 
     location ^~ /mfe/team/ {
       proxy_pass http://team_mfe/;
-      proxy_set_header Host $http_host;
-      proxy_set_header Upgrade $http_upgrade;
-      proxy_set_header Connection $connection_upgrade;
-    }
-
-    location ^~ /mfe/usage/ {
-      proxy_pass http://usage_mfe/;
       proxy_set_header Host $http_host;
       proxy_set_header Upgrade $http_upgrade;
       proxy_set_header Connection $connection_upgrade;
