@@ -16,7 +16,7 @@ export type RouteOwner = "usage" | "billing" | "identity" | "notification" | "te
 export type ConsoleNavMeta = {
   label: string
   owner: RouteOwner
-  /** Browser path at the identity edge (single host, no basePath on identity app). */
+  /** Browser path at web-edge (single host, no app-specific basePath prefixing here). */
   publicPath: string
 }
 
@@ -83,7 +83,7 @@ export function anchorHrefForPublicPath(publicPath: string): string {
 }
 
 /**
- * Cross-app sidebar links: on the identity host, paths like `/dashboard` are rewritten to other apps.
+ * Cross-app sidebar links: paths like `/dashboard` are routed by web-edge to other apps.
  * When this app is served on its own port (e.g. agent-web :3005), relative paths would 404 — prefix
  * {@link identityWebOrigin} when it is set and the shell is not already the identity app.
  */
@@ -204,7 +204,7 @@ export function identityWebOrigin(): string {
 const NOTIFICATION_UNREAD_COUNT_PATH = "/notifications/api/notification/in-app-notifications/unread-count"
 
 /**
- * Unread-count BFF lives under the notification app (or identity rewrites). On standalone
+ * Unread-count BFF lives under the notification app (via web-edge). On standalone
  * micro-apps (e.g. agent-web), same-origin `/notifications/...` would 404 — use identity origin when set.
  */
 export function notificationUnreadCountFetchUrl(profile: ConsoleProfile): string {

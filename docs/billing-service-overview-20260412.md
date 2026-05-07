@@ -135,7 +135,7 @@
   - **팀 멤버 조회**: 서버가 **`GET {팀 BFF 오리진}/api/team/v1/teams/{teamId}/members`** 를 호출해 `{ success: true, data: string[] }` 형태의 멤버 `userId` 목록을 얻는다. 요청의 **`Cookie`** 를 그대로 넘겨 세션 기반 접근을 맞춘다. 조회 실패·스키마 불일치 시 **502**(`팀 멤버 조회에 실패했습니다` 등).
   - **멤버 검증**: 클라이언트가 보낸 `userIds`(trim·빈값 제거·중복 제거 후)가 멤버 집합에 **전부** 포함되지 않으면 **403**(비멤버 `userId` 탐색 완화).
   - **업스트림**: 검증을 통과한 `userIds`와 `monthStartDate`만으로 **`POST {API_GATEWAY_URL}/api/v1/expenditure/team/month-rollup`** 호출(§4.2 백엔드 계약과 동일 본문).
-- **팀 BFF 오리진**(`BILLING_TEAM_BFF_BASE_URL`, 선택): 설정 시 팀 멤버 조회의 베이스 URL로 **우선** 사용한다. 비우면 `x-forwarded-host`·`host` 등으로 요청 오리진을 조합한다. **Docker Compose**의 `billing-web` 서비스에는 기본으로 **`http://identity-web:3000`** 이 들어가며(루트 `docker-compose.yml`), 컨테이너에서 Identity `web`이 노출하는 **`/api/team/v1/**`** 경로로 붙는 구성이다. 호스트에서만 Identity `web`을 띄우는 등 예외일 때는 루트 `.env`에서 `BILLING_TEAM_BFF_BASE_URL`을 덮어쓴다. 상세 예시는 루트 **`.env.example`**, `services/billing-service/web/.env.example` 참고.
+- **팀 BFF 오리진**(`BILLING_TEAM_BFF_BASE_URL`, 선택): 설정 시 팀 멤버 조회의 베이스 URL로 **우선** 사용한다. 비우면 `x-forwarded-host`·`host` 등으로 요청 오리진을 조합한다. **Docker Compose**의 `billing-web` 서비스에는 기본으로 **`http://web-edge`** 가 들어가며(루트 `docker-compose.yml`), 컨테이너에서 `web-edge`가 노출하는 **`/api/team/v1/**`** 경로로 붙는 구성이다. 호스트 전용 구성에서는 루트 `.env`에서 `BILLING_TEAM_BFF_BASE_URL`을 덮어쓴다. 상세 예시는 루트 **`.env.example`**, `services/billing-service/web/.env.example` 참고.
 - **인증**: 쿠키 `access_token`을 `Authorization: Bearer`로 게이트웨이 호출에 전달.
 - **게이트웨이 개발 모드**(`GATEWAY_DEV_MODE`): Identity `GET /api/auth/session`으로 이메일 등을 받아 **`X-User-Id`**를 세팅(운영에서는 Gateway가 사용자 식별 헤더를 붙이는 패턴).
 - **환경 변수**: `API_GATEWAY_URL` 필수, 개발 모드 시 `IDENTITY_SERVICE_URL` 필수. 팀 멤버 서버 조회 시 **`BILLING_TEAM_BFF_BASE_URL`**(선택, Compose 기본값 있음).

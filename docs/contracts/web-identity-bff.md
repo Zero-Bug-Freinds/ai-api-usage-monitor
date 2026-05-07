@@ -178,7 +178,7 @@
 - `access_token` **httpOnly 쿠키**가 없으면 BFF는 Identity를 호출하지 않고 `401`을 반환한다.
 - 경로는 **`v1`으로 시작하는 세그먼트만** 허용한다(예: 브라우저 `GET /api/identity/v1/me/organizations` → 업스트림 `GET /api/v1/me/organizations`). **`/api/auth/*`** 는 §2의 전용 BFF 라우트를 쓴다.
 - 응답 본문·상태 코드는 업스트림을 그대로 전달한다(캐시는 `Cache-Control: no-store`).
-- 웹 **설정** 화면의 계정 요약은 `GET /api/auth/session`(§2)을 사용한다. **조직 목록**은 Identity 서비스의 `GET /api/v1/me/organizations`를 사용하며, 팀 도메인은 `team-service`로 분리되어 [web-team-bff.md](./web-team-bff.md)를 따른다. **`/teams`** 에서 `TeamsView`가 팀 API를 호출하며, 팀장 전용 버튼 노출은 `GET /api/team/v1/teams/{id}/owner`로 판별한다. 팀 API(`/api/team/v1/*`)는 Team BFF로 rewrite한다.
+- 웹 **설정** 화면의 계정 요약은 `GET /api/auth/session`(§2)을 사용한다. **조직 목록**은 Identity 서비스의 `GET /api/v1/me/organizations`를 사용하며, 팀 도메인은 `team-service`로 분리되어 [web-team-bff.md](./web-team-bff.md)를 따른다. **`/teams`** 에서 팀 API를 호출할 때는 `web-edge`가 `/api/team/v1/*`를 Team BFF로 라우팅한다.
 
 ---
 
@@ -197,7 +197,7 @@
 
 ### 6.2 보호 페이지(App Router) 및 미들웨어 (Identity `web/`)
 
-브라우저가 직접 보는 **페이지 라우트** 중 로그인이 필요한 영역은 Next.js **`middleware.ts`** 로 1차 게이트한다. 구현: `services/identity-service/web/middleware.ts`. **대시보드(`/dashboard` 및 `/dashboard/*`)** 는 Usage `web/` 소유이므로 Identity matcher에 포함하지 않는다([web-split-boundary.md](./web-split-boundary.md) §3). **단일 도메인 엣지**에서는 Nginx가 **`/dashboard`** 및 **`/dashboard/`** 요청을 Usage `web`으로 프록시하고, **`/dashboard2`** 등은 Identity `web`이 받는다(§2.3, [`docker/web-edge/nginx.conf.template`](../../docker/web-edge/nginx.conf.template)).
+브라우저가 직접 보는 **페이지 라우트** 중 로그인이 필요한 영역은 Next.js **`middleware.ts`** 로 1차 게이트한다. 구현: `services/identity-service/web/middleware.ts`. **대시보드(`/dashboard` 및 `/dashboard/*`)** 는 Usage `web/` 소유이므로 Identity matcher에 포함하지 않는다([web-split-boundary.md](./web-split-boundary.md) §3). **단일 도메인 엣지**에서는 Nginx가 **`/dashboard`** 및 **`/dashboard/`** 요청을 Usage `web`으로 프록시하고, **`/dashboard2`** 등 미정의 경로는 404로 닫는다(§2.3, [`docker/web-edge/nginx.conf.template`](../../docker/web-edge/nginx.conf.template)).
 
 | 항목 | 내용 |
 |------|------|

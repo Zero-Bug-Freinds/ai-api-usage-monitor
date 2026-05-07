@@ -32,7 +32,7 @@
 - **백엔드(Proxy 등)**: **Spring Boot + Spring WebFlux** — 비동기 I/O·스트리밍·Provider 중계에 사용. **FastAPI(Python)는 사용하지 않습니다.**
 - **메시지 브로커**: **RabbitMQ** — `usage-recorded` 등 이벤트 발행·구독(Spring AMQP).
 - **기타 서비스**: 동일 Spring 생태계에서 Spring MVC + JPA 등으로 구현 가능(팀 합의).
-- **프론트(웹·BFF):** **Next.js 15**(App Router, 서비스별 `web/`), **React 19** — 루트 `pnpm` 워크스페이스·각 `package.json` 정본. **Module Federation** 원격은 `usage-service`·`team-service`의 **`web-mfe/`**(Pages Router)에서 노출하고, 호스트는 **`apps/web`** 등에서 연결한다. **단일 오리진·경로 통합**은 **`services/identity-service/web/next.config.ts`의 `rewrites`**(및 선택 **`web-edge`** Nginx)가 담당한다.
+- **프론트(웹·BFF):** **Next.js 15**(App Router, 서비스별 `web/`), **React 19** — 루트 `pnpm` 워크스페이스·각 `package.json` 정본. **Module Federation** 원격은 `usage-service`·`team-service`의 **`web-mfe/`**(Pages Router)에서 노출하고, 호스트는 **`apps/web`** 등에서 연결한다. **단일 오리진·경로 통합**은 **`web-edge`** Nginx가 담당한다.
 - 상세: `docs/architecture.md` §2.1, §6.2, §10.2, §13 · 웹 경계: `docs/contracts/web-split-boundary.md` · MFE 분리: `docs/mfe-pages-only-remote-split-guidance-20260414.md`
 
 ## 로컬 개발 관련(중요)
@@ -46,7 +46,7 @@
 - **team-service / billing-service**: team은 `TEAM_SERVICE_PORT` 미설정 시 기본 **8093**, billing은 **`BILLING_SERVICE_PORT` 기본 8095**(`application.yml`)라 기본만으로는 포트가 겹치지 않습니다. `scripts/bootrun.ps1`(·`bootrun.sh`)은 team **8094**·billing **8095**를 넣어 이전(둘 다 8093) 충돌 환경과도 호환됩니다. API Gateway **`GATEWAY_BILLING_URI`** 기본은 **billing과 동일(8095)** 입니다. 지출 체인 스모크: **`scripts/verify-expenditure-chain.ps1`** 또는 **`scripts/verify-expenditure-chain.sh`** (`GATEWAY_DEV_MODE=false`이면 JWT 또는 identity 로그인 env로 ②단계 포함 가능, §6.4·`.env.example` 참고). 상세 점검표는 **`docs/billing-service-overview-20260412.md` §6.4** 를 본다.
 - **Compose `profile: web`의 team-service**는 루트 **`docker-compose.yml`**에서 호스트에 노출하는 포트만 **`TEAM_SERVICE_HOST_PORT`**(기본 **8093**)로 매핑합니다. 호스트에서 JVM으로 team을 띄울 때 쓰는 **`TEAM_SERVICE_PORT`**(예: **8094**)와 이름을 분리해, 예전처럼 같은 변수가 Compose 호스트 바인딩과 겹치면서 Docker Desktop이 호스트 **8094**를 잡고 `bootRun`이 실패하는 경우를 피합니다. `TEAM_SERVICE_PORT`는 Compose `team-service` 컨테이너 안에서는 여전히 **8093**으로 고정이며, **team-web**이 같은 스택에서 부를 때는 기본으로 **`http://team-service:8093`** 을 씁니다(호스트 전용 team이면 `.env`의 **`WEB_TEAM_SERVICE_URL`**을 `host.docker.internal` + 실제 포트로 맞춤).
 - **컨테이너 배포 모델**: 백엔드·프론트 **이미지 분리 + Docker Compose 스택**(패턴 B, `docs/architecture.md` §10.1). Next는 루트 **`pnpm` workspace**(`packages/ui` + 각 `web`)를 포함해 **저장소 루트를 build context**로 `docker build -f services/identity-service/web/Dockerfile …`, `docker build -f services/usage-service/web/Dockerfile …`, `docker build -f services/team-service/web/Dockerfile …` 하거나, **`profile: web`** 으로 Compose에 **`identity-web`**, **`usage-web`**, **`team-web`**, 필요 시 **`team-service`**, **`web-edge`**(Nginx, `docker/web-edge/nginx.conf`)를 함께 올립니다.
-- **단일 도메인**: **`web-edge`** 기본 호스트 포트 **`8888`**(`WEB_EDGE_PORT`)에서 진입 — `/dashboard`는 `/dashboard/`로 리다이렉트(308) 후 **`/dashboard/`** 접두만 Usage `web`; `/teams`는 `/teams/`로 리다이렉트(308) 후 **`/teams/`** 접두만 Team `web`; `/api/v1/` 접두는 API Gateway; 그 외(예: `/dashboard2`)는 Identity `web`(`docker/web-edge/nginx.conf`, `docs/architecture.md` §10.2, `docs/contracts/web-split-boundary.md`).
+- **단일 도메인**: **`web-edge`** 기본 호스트 포트 **`8888`**(`WEB_EDGE_PORT`)에서 진입 — `/dashboard`, `/billing`, `/teams`, `/notifications`, `/agent`는 각 웹 앱으로 분기하고, Identity 소유 경로만 Identity `web`으로 보낸다. `/api/team/v1/*`는 Team BFF, `/api/v1/*`는 API Gateway로 보내며, 그 외(예: `/dashboard2`)는 404로 닫는다(`docker/web-edge/nginx.conf`, `docs/architecture.md` §10.2, `docs/contracts/web-split-boundary.md`).
 
 ## 개발 방식(풀스택·서비스 소유)
 

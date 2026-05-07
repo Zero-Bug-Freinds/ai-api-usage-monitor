@@ -26,7 +26,8 @@
 #   게이트웨이는 컨테이너 네트워크(api-gateway-service:8080)로 연결(API_GATEWAY_URL).
 #   Identity BFF는 기본적으로 호스트의 identity-service 를 host.docker.internal 로 향함(WEB_IDENTITY_SERVICE_URL).
 #   단일 도메인: web-edge(Nginx, docker/web-edge/nginx.conf) → 기본 ${WEB_EDGE_PORT:-8888}
-#     /dashboard → 308 /dashboard/; 접두 /dashboard/ 만 usage-web(/dashboard2 는 제외); /api/v1 → 308 /api/v1/; 접두 /api/v1/ 만 api-gateway(버퍼링 끔·긴 timeout); 그 외 → identity-web.
+#     /dashboard·/billing·/teams·/notifications·/agent 는 각 web으로 분기;
+#     identity 소유 경로만 identity-web; /api/team/v1/* 는 team-web BFF; /api/v1/* 는 api-gateway; 그 외 → 404.
 #
 # Docker 빌드 캐시: 로컬 Compose에는 registry cache_from/cache_to 를 두지 않는다(팀원 GHCR 로그인 불필요).
 # 각 Dockerfile 의 RUN --mount=type=cache(pnpm store, Gradle, .next/cache 등)로 로컬 빌드 속도를 유지한다.
@@ -355,7 +356,7 @@ services:
       dockerfile: services/identity-service/web/Dockerfile
       args:
         WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
-        NEXT_PUBLIC_USAGE_WEB_ORIGIN: ${NEXT_PUBLIC_USAGE_WEB_ORIGIN:-http://usage-web:3000}
+        NEXT_PUBLIC_USAGE_WEB_ORIGIN: ${NEXT_PUBLIC_USAGE_WEB_ORIGIN:-http://localhost:${WEB_EDGE_PORT:-8888}}
     depends_on:
       - api-gateway-service
     environment:
@@ -363,12 +364,6 @@ services:
       GATEWAY_URL: ${WEB_GATEWAY_URL:-http://api-gateway-service:8080}
       WEB_GATEWAY_URL: ${WEB_GATEWAY_URL:-http://api-gateway-service:8080}
       IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
-      USAGE_WEB_INTERNAL_ORIGIN: ${USAGE_WEB_INTERNAL_ORIGIN:-http://host.docker.internal:3001}
-      BILLING_WEB_INTERNAL_ORIGIN: ${BILLING_WEB_INTERNAL_ORIGIN:-http://host.docker.internal:3003}
-      TEAM_WEB_INTERNAL_ORIGIN: ${TEAM_WEB_INTERNAL_ORIGIN:-http://team-web:3000}
-      WEB_HOST_INTERNAL_ORIGIN: ${WEB_HOST_INTERNAL_ORIGIN:-http://web-host:3000}
-      AGENT_WEB_INTERNAL_ORIGIN: ${AGENT_WEB_INTERNAL_ORIGIN:-http://agent-web:3000}
-      AI_AGENT_WEB_INTERNAL_ORIGIN: ${AI_AGENT_WEB_INTERNAL_ORIGIN:-http://agent-web:3000}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -382,13 +377,13 @@ services:
       dockerfile: services/agent-service/web/Dockerfile
       args:
         WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
-        NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${IDENTITY_WEB_PORT:-3000}}
+        NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${WEB_EDGE_PORT:-8888}}
     depends_on:
       - identity-web
       - agent-service
       - team-service
     environment:
-      NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${IDENTITY_WEB_PORT:-3000}}
+      NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${WEB_EDGE_PORT:-8888}}
       AI_AGENT_SERVICE_INTERNAL_ORIGIN: ${AI_AGENT_SERVICE_INTERNAL_ORIGIN:-http://agent-service:8096}
       AI_AGENT_FALLBACK_USER_ID: ${AI_AGENT_FALLBACK_USER_ID:-}
       AI_AGENT_TEAM_CATALOG_USER_ID: ${AI_AGENT_TEAM_CATALOG_USER_ID:-}
@@ -406,7 +401,7 @@ services:
       dockerfile: services/usage-service/web/Dockerfile
       args:
         WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
-        NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${IDENTITY_WEB_PORT:-3000}}
+        NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${WEB_EDGE_PORT:-8888}}
         NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_BASE_PATH:-/dashboard}
     depends_on:
       - api-gateway-service
@@ -443,7 +438,7 @@ services:
       dockerfile: services/billing-service/web/Dockerfile
       args:
         WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
-        NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${IDENTITY_WEB_PORT:-3000}}
+        NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${WEB_EDGE_PORT:-8888}}
     depends_on:
       - api-gateway-service
       - identity-web
@@ -451,9 +446,8 @@ services:
       API_GATEWAY_URL: http://api-gateway-service:8080
       IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
       GATEWAY_DEV_MODE: ${GATEWAY_DEV_MODE:-true}
-      # billing-web 서버 라우트가 컨테이너 내부에서 /api/team/v1/**(identity-web BFF)로 호출할 때 사용할 오리진.
-      # Compose 네트워크에서는 서비스 DNS(identity-web:3000)가 가장 안정적이다. 호스트 전용 구성이면 BILLING_TEAM_BFF_BASE_URL 로 덮어쓴다.
-      BILLING_TEAM_BFF_BASE_URL: ${BILLING_TEAM_BFF_BASE_URL:-http://identity-web:3000}
+      # billing-web 서버 라우트가 컨테이너 내부에서 /api/team/v1/**(web-edge → team-web BFF)로 호출할 때 사용할 오리진.
+      BILLING_TEAM_BFF_BASE_URL: ${BILLING_TEAM_BFF_BASE_URL:-http://web-edge}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -532,7 +526,7 @@ services:
     environment:
       NEXT_TELEMETRY_DISABLED: "1"
       NEXT_PRIVATE_LOCAL_WEBPACK: "true"
-      NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${IDENTITY_WEB_PORT:-3000}}
+      NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${WEB_EDGE_PORT:-8888}}
       NEXT_PUBLIC_MFE_TEAM_REMOTE_URL: ${NEXT_PUBLIC_MFE_TEAM_REMOTE_URL:-http://localhost:8888/mfe/team}
       NEXT_PUBLIC_MFE_USAGE_REMOTE_URL: ${NEXT_PUBLIC_MFE_USAGE_REMOTE_URL:-http://localhost:8888/mfe/usage}
     extra_hosts:

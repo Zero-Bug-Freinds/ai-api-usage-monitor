@@ -16,7 +16,7 @@ Shared console layout: sidebar, `ConsoleShell`, `ConsoleLayoutOverride`.
 
 ### Poll URL (same-origin)
 
-The listener calls a fixed browser path (identity edge / web-edge):
+The listener calls a fixed browser path at web-edge:
 
 `/notifications/api/notification/in-app-notifications?limit=10`
 
@@ -26,7 +26,7 @@ Optional: `NEXT_PUBLIC_NOTIFICATION_POLL_MS` (default 10s, minimum 2s).
 
 ### Manual verification
 
-Use the **integrated** identity or web-edge origin (rewrites to notification web), not a single-service dev port without `/notifications`.
+Use the **integrated** web-edge origin, not a single-service dev port without `/notifications`.
 
 1. Open a `ConsoleShell` page (e.g. `/dashboard`, `/billing`, `/teams`) and stay logged in.
 2. Create an in-app notification (team flow or API) so a new unread item appears.
