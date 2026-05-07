@@ -527,7 +527,7 @@ export default function AgentPage() {
     }
   }
 
-  const runAnalysis = async (scope: AnalysisScope, action: AnalysisAction, targetKeyId?: number) => {
+  const runAnalysis = async (scope: AnalysisScope, action: AnalysisAction) => {
     if (scope === "TEAM" && selectedTeamId == null) {
       return
     }
@@ -548,23 +548,21 @@ export default function AgentPage() {
               recentDailySpendUsd: [],
             },
           }))
-    const filteredTargetKeys =
-      targetKeyId == null ? targetKeys : targetKeys.filter((item: AvailableKeyContext) => item.keyId === targetKeyId)
-    if (filteredTargetKeys.length === 0) return
+    if (targetKeys.length === 0) return
 
     setLoading(true)
     const nextResults: AnalysisResult[] = []
     try {
       for (let i = 0; i < targetKeys.length; i += 1) {
-        const keyItem = filteredTargetKeys[i]
+        const keyItem = targetKeys[i]
         setLoadingMessage(
           action === "ANALYSIS"
             ? scope === "PERSONAL"
-              ? `${keyItem.keyLabel} 사용량을 분석 중입니다... (${i + 1}/${filteredTargetKeys.length})`
-              : `${selectedTeamLabel || `Team ${selectedTeamId}`} ${keyItem.keyLabel} 사용량을 분석 중입니다... (${i + 1}/${filteredTargetKeys.length})`
+              ? `개인 API 키 사용량을 분석 중입니다... (${i + 1}/${targetKeys.length})`
+              : `${selectedTeamLabel || `Team ${selectedTeamId}`} 키 사용량을 분석 중입니다... (${i + 1}/${targetKeys.length})`
             : scope === "PERSONAL"
-              ? `${keyItem.keyLabel} 모델 추천을 분석 중입니다... (${i + 1}/${filteredTargetKeys.length})`
-              : `${selectedTeamLabel || `Team ${selectedTeamId}`} ${keyItem.keyLabel} 모델 추천을 분석 중입니다... (${i + 1}/${filteredTargetKeys.length})`,
+              ? `개인 API 키 모델 추천을 분석 중입니다... (${i + 1}/${targetKeys.length})`
+              : `${selectedTeamLabel || `Team ${selectedTeamId}`} 키 모델 추천을 분석 중입니다... (${i + 1}/${targetKeys.length})`,
         )
 
         try {
@@ -594,9 +592,6 @@ export default function AgentPage() {
               ? ledgerKeyPersonal(keyItem.keyId)
               : ledgerKeyTeam(resolvedTeamIdNumber, keyItem.keyId)
           const billingCycleIso = (billingByLedgerKey[billingLedgerKey] ?? "").trim()
-          const recommendationScopeType = scope
-          const recommendationScopeId =
-            scope === "PERSONAL" ? String(currentUserId) : String(resolvedTeamIdNumber)
 
           if (action === "ANALYSIS") {
             const forecast = resolveForecastInputs(keyItem.providerStats, keyItem.monthlyBudgetUsd)
@@ -640,6 +635,9 @@ export default function AgentPage() {
 
           let recommendation: RecommendationQueryResponse | undefined
           let recommendationError: string | undefined
+          const recommendationScopeType = scope
+          const recommendationScopeId =
+            scope === "PERSONAL" ? String(currentUserId) : String(resolvedTeamIdNumber)
           try {
             const analyzeResponse = await fetch("/agent/api/v1/agents/policy-recommendations/analyze", {
               method: "POST",
@@ -703,14 +701,27 @@ export default function AgentPage() {
             byKeyId.set(item.keyId, item)
             continue
           }
+          const mergedData = item.data ?? current.data
+          const mergedRecommendation =
+            action === "ANALYSIS"
+              ? undefined
+              : item.recommendation !== undefined
+                ? item.recommendation
+                : current.recommendation
+          const mergedRecommendationError =
+            action === "ANALYSIS"
+              ? undefined
+              : item.recommendationError !== undefined
+                ? item.recommendationError
+                : current.recommendationError
           byKeyId.set(item.keyId, {
             ...current,
             ...item,
-            data: item.data ?? current.data,
-            recommendation: item.recommendation ?? current.recommendation,
+            data: mergedData,
+            recommendation: mergedRecommendation,
             forecastGaps: item.forecastGaps ?? current.forecastGaps,
             error: item.error ?? current.error,
-            recommendationError: item.recommendationError ?? current.recommendationError,
+            recommendationError: mergedRecommendationError,
           })
         }
         return Array.from(byKeyId.values())
@@ -772,24 +783,6 @@ export default function AgentPage() {
                       </button>
                     ) : null}
                   </div>
-                </div>
-                <div className="mt-2 grid grid-cols-2 gap-1">
-                  <button
-                    type="button"
-                    className="rounded border bg-background px-2 py-1 text-[11px] disabled:opacity-60"
-                    onClick={() => void runAnalysis("PERSONAL", "ANALYSIS", item.keyId)}
-                    disabled={loading}
-                  >
-                    분석
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded border bg-background px-2 py-1 text-[11px] disabled:opacity-60"
-                    onClick={() => void runAnalysis("PERSONAL", "RECOMMENDATION", item.keyId)}
-                    disabled={loading}
-                  >
-                    추천
-                  </button>
                 </div>
               </li>
             ))}
@@ -874,24 +867,6 @@ export default function AgentPage() {
                       ) : null}
                     </div>
                   </div>
-                  <div className="mt-2 grid grid-cols-2 gap-1">
-                    <button
-                      type="button"
-                      className="rounded border bg-background px-2 py-1 text-[11px] disabled:opacity-60"
-                      onClick={() => void runAnalysis("TEAM", "ANALYSIS", item.teamApiKeyId)}
-                      disabled={loading}
-                    >
-                      분석
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded border bg-background px-2 py-1 text-[11px] disabled:opacity-60"
-                      onClick={() => void runAnalysis("TEAM", "RECOMMENDATION", item.teamApiKeyId)}
-                      disabled={loading}
-                    >
-                      추천
-                    </button>
-                  </div>
                 </li>
               ))}
               {selectedTeamId != null && selectedTeamKeys.length === 0 ? (
@@ -909,8 +884,46 @@ export default function AgentPage() {
           )}
         </div>
 
+        <div className="grid gap-2">
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60"
+              onClick={() => void runAnalysis("PERSONAL", "ANALYSIS")}
+              disabled={loading || keys.length === 0}
+            >
+              {loading ? "처리 중..." : "개인 키 분석"}
+            </button>
+            <button
+              type="button"
+              className="w-full rounded-md border bg-background px-4 py-2 text-sm font-medium disabled:opacity-60"
+              onClick={() => void runAnalysis("PERSONAL", "RECOMMENDATION")}
+              disabled={loading || keys.length === 0}
+            >
+              {loading ? "처리 중..." : "개인 키 추천"}
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60"
+              onClick={() => void runAnalysis("TEAM", "ANALYSIS")}
+              disabled={loading || selectedTeamId == null || selectedTeamKeys.length === 0}
+            >
+              {loading ? "처리 중..." : "팀 키 분석"}
+            </button>
+            <button
+              type="button"
+              className="w-full rounded-md border bg-background px-4 py-2 text-sm font-medium disabled:opacity-60"
+              onClick={() => void runAnalysis("TEAM", "RECOMMENDATION")}
+              disabled={loading || selectedTeamId == null || selectedTeamKeys.length === 0}
+            >
+              {loading ? "처리 중..." : "팀 키 추천"}
+            </button>
+          </div>
+        </div>
         <div className="rounded-md border border-dashed bg-muted/30 px-2 py-1.5 text-xs text-muted-foreground">
-          각 키 카드의 `분석` / `추천` 버튼을 눌러 필요한 요청만 실행합니다.
+          분석/추천 버튼은 각각 해당 요청만 호출합니다.
         </div>
         {modelCatalog ? (
           <div className="rounded-md border border-dashed bg-muted/30 p-2 text-xs text-muted-foreground">
