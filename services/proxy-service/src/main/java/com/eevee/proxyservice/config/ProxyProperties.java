@@ -10,6 +10,7 @@ public class ProxyProperties {
 
     private final Map<String, ProviderEndpoint> providers = new HashMap<>();
     private KeyService keyService = new KeyService();
+    private TeamKeyService teamKeyService = new TeamKeyService();
     private Rabbit rabbit = new Rabbit();
     private Gateway gateway = new Gateway();
 
@@ -31,6 +32,14 @@ public class ProxyProperties {
 
     public void setRabbit(Rabbit rabbit) {
         this.rabbit = rabbit;
+    }
+
+    public TeamKeyService getTeamKeyService() {
+        return teamKeyService;
+    }
+
+    public void setTeamKeyService(TeamKeyService teamKeyService) {
+        this.teamKeyService = teamKeyService;
     }
 
     public Gateway getGateway() {
@@ -107,6 +116,36 @@ public class ProxyProperties {
 
         public void setCacheTtl(String cacheTtl) {
             this.cacheTtl = cacheTtl;
+        }
+    }
+
+    public static class TeamKeyService {
+        private String baseUrl = "http://localhost:8093";
+        private String internalToken = "";
+        private String pathTemplate = "/internal/api-keys/{provider}";
+
+        public String getBaseUrl() {
+            return baseUrl;
+        }
+
+        public void setBaseUrl(String baseUrl) {
+            this.baseUrl = baseUrl;
+        }
+
+        public String getInternalToken() {
+            return internalToken;
+        }
+
+        public void setInternalToken(String internalToken) {
+            this.internalToken = internalToken;
+        }
+
+        public String getPathTemplate() {
+            return pathTemplate;
+        }
+
+        public void setPathTemplate(String pathTemplate) {
+            this.pathTemplate = pathTemplate;
         }
     }
 
