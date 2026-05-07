@@ -5,15 +5,11 @@
 import dynamic from "next/dynamic";
 import type { ComponentType } from "react";
 import * as React from "react";
-import type { CachedTeamItem } from "@ai-usage/team-workspace-cache";
 import { Button } from "@ai-usage/ui";
 import { RemoteErrorBoundary } from "@/components/remote-error-boundary";
 
 /** Matches `usage/TeamUsageDashboard` in services/usage-service/web-mfe (MF remote typing). */
-type TeamUsageDashboardProps = {
-  viewTeamIdFromQuery?: string;
-  shellTeamList?: CachedTeamItem[];
-};
+type TeamUsageDashboardProps = Record<string, never>;
 
 const TeamUsageDashboard = dynamic(
   () =>
@@ -48,15 +44,13 @@ function MfConsumeTickGate({ children }: { children: React.ReactNode }) {
 }
 
 export type TeamMfRemotesProps = {
-  viewTeamId: string;
-  teams: CachedTeamItem[];
   usageResetKey: string;
 };
 
 /**
  * 우측 슬롯(Task37-12): usage-web-mfe만 사용한다. 상단 탭과 무관하게 동일 `TeamUsageDashboard`(탭은 URL·UI 상태용).
  */
-export function TeamMfRemotes({ viewTeamId, teams, usageResetKey }: TeamMfRemotesProps) {
+export function TeamMfRemotes({ usageResetKey }: TeamMfRemotesProps) {
   return (
     <MfConsumeTickGate>
       <RemoteErrorBoundary
@@ -70,7 +64,7 @@ export function TeamMfRemotes({ viewTeamId, teams, usageResetKey }: TeamMfRemote
           </div>
         )}
       >
-        <TeamUsageDashboard viewTeamIdFromQuery={viewTeamId} shellTeamList={teams} />
+        <TeamUsageDashboard />
       </RemoteErrorBoundary>
     </MfConsumeTickGate>
   );

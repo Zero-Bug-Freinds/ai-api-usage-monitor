@@ -617,7 +617,7 @@ export default function TeamDashboard({
         <div className="space-y-2 sm:w-52">
           <Label>팀</Label>
           <Select
-            value={selectedTeamId || undefined}
+            value={selectedTeamId}
             onValueChange={(id) => {
               setSelectedTeamId(id);
               writeLastSelectedTeamId(id);

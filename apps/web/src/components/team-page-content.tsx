@@ -4,7 +4,6 @@ import dynamic from "next/dynamic";
 import * as React from "react";
 import { Button, cn } from "@ai-usage/ui";
 import { usePagesHostRouter } from "@/context/pages-host-router-context";
-import { useTeamWorkspace } from "@/components/team-workspace-context";
 import { normalizeTab, type TeamRouteSection } from "@/components/team-route-types";
 
 export type { TeamRouteSection } from "@/components/team-route-types";
@@ -26,7 +25,6 @@ const TeamMfRemotesLazy = dynamic(
  */
 export function TeamPageContent() {
   const router = usePagesHostRouter();
-  const { teams, syncError } = useTeamWorkspace();
   const [mfChunkAllowed, setMfChunkAllowed] = React.useState(false);
 
   React.useEffect(() => {
@@ -37,20 +35,11 @@ export function TeamPageContent() {
     return <p className="text-sm text-muted-foreground">라우터 준비 중…</p>;
   }
 
-  const viewTeamId =
-    typeof router.query.viewTeamId === "string"
-      ? router.query.viewTeamId
-      : Array.isArray(router.query.viewTeamId)
-        ? router.query.viewTeamId[0] ?? ""
-        : "";
-
   const tab = normalizeTab(router.query.tab);
-  const usageResetKey = `${router.asPath}|${teams.length}|${tab}`;
+  const usageResetKey = `${router.asPath}|${tab}`;
 
   function goTab(next: TeamRouteSection) {
-    const q: Record<string, string> = { tab: next };
-    if (viewTeamId !== "") q.viewTeamId = viewTeamId;
-    void router.replace({ pathname: "/", query: q }, undefined, { shallow: true });
+    void router.replace({ pathname: "/", query: { tab: next } }, undefined, { shallow: true });
   }
 
   return (
@@ -76,12 +65,6 @@ export function TeamPageContent() {
         </Button>
       </div>
 
-      {syncError ? (
-        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          팀 목록 동기화: {syncError} (저장된 목록으로 계속합니다)
-        </p>
-      ) : null}
-
       {process.env.NODE_ENV === "development" ? (
         <p className="text-xs text-muted-foreground" data-testid="mf-usage-remote-hint">
           [dev] usage MF 베이스:{" "}
@@ -94,7 +77,7 @@ export function TeamPageContent() {
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {mfChunkAllowed ? (
-          <TeamMfRemotesLazy viewTeamId={viewTeamId} teams={teams} usageResetKey={usageResetKey} />
+          <TeamMfRemotesLazy usageResetKey={usageResetKey} />
         ) : (
           <p className="text-sm text-muted-foreground">원격 모듈을 준비하는 중…</p>
         )}

@@ -1,0 +1,26 @@
+{
+  "bundler": {
+    "name": "webpack"
+  },
+  "mfConfig": {
+    "name": "team",
+    "exposes": {
+      "./TeamManagement": "./src/components/team/team-management-view.tsx"
+    }
+  },
+  "latestErrorEvent": {
+    "code": "BUILD-001",
+    "message": "Failed to find expose module. #BUILD-001\nargs: {\"exposeModules\":[{\"name\":\"./TeamManagement\",\"module\":null,\"request\":\"./src/components/team/team-management-view.tsx\"}],\"FEDERATION_WEBPACK_PATH\":\"C:\\\\Users\\\\kmjkh\\\\ai-api-usage-monitor\\\\node_modules\\\\.pnpm\\\\webpack@5.97.1\\\\node_modules\\\\webpack\\\\lib\\\\index.js\"}\nView the docs to see how to solve: https://module-federation.io/guide/troubleshooting/build#build-001",
+    "args": {
+      "exposeModules": [
+        {
+          "name": "./TeamManagement",
+          "module": null,
+          "request": "./src/components/team/team-management-view.tsx"
+        }
+      ],
+      "FEDERATION_WEBPACK_PATH": "C:\\Users\\kmjkh\\ai-api-usage-monitor\\node_modules\\.pnpm\\webpack@5.97.1\\node_modules\\webpack\\lib\\index.js"
+    },
+    "timestamp": 1778141047738
+  }
+}
