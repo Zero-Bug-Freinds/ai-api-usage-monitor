@@ -20,7 +20,7 @@ class PolicyRecommendationAgentServiceTest {
 				mock(DailyCumulativeTokenSnapshotService.class),
 				mock(UsagePredictionSignalSnapshotService.class),
 				mock(UsageRecordedTokenRollupService.class),
-				mock(GeminiAssistantService.class)
+				mock(RecommendationGeminiService.class)
 		);
 		PolicyRecommendationRequest request = new PolicyRecommendationRequest(
 				"user@test.com",

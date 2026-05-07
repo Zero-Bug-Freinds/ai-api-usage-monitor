@@ -46,7 +46,7 @@ public class PolicyRecommendationAgentService {
 	private final DailyCumulativeTokenSnapshotService dailyCumulativeTokenSnapshotService;
 	private final UsagePredictionSignalSnapshotService usagePredictionSignalSnapshotService;
 	private final UsageRecordedTokenRollupService usageRecordedTokenRollupService;
-	private final GeminiAssistantService geminiAssistantService;
+	private final RecommendationGeminiService recommendationGeminiService;
 
 	public PolicyRecommendationAgentService(
 			BillingSignalSnapshotService billingSignalSnapshotService,
@@ -54,14 +54,14 @@ public class PolicyRecommendationAgentService {
 			DailyCumulativeTokenSnapshotService dailyCumulativeTokenSnapshotService,
 			UsagePredictionSignalSnapshotService usagePredictionSignalSnapshotService,
 			UsageRecordedTokenRollupService usageRecordedTokenRollupService,
-			GeminiAssistantService geminiAssistantService
+			RecommendationGeminiService recommendationGeminiService
 	) {
 		this.billingSignalSnapshotService = billingSignalSnapshotService;
 		this.externalModelCatalogService = externalModelCatalogService;
 		this.dailyCumulativeTokenSnapshotService = dailyCumulativeTokenSnapshotService;
 		this.usagePredictionSignalSnapshotService = usagePredictionSignalSnapshotService;
 		this.usageRecordedTokenRollupService = usageRecordedTokenRollupService;
-		this.geminiAssistantService = geminiAssistantService;
+		this.recommendationGeminiService = recommendationGeminiService;
 	}
 
 	public PolicyRecommendationResponse recommend(PolicyRecommendationRequest request) {
@@ -516,8 +516,8 @@ public class PolicyRecommendationAgentService {
 						"keyFeature", candidate.keyFeature()
 				))
 				.toList();
-		return geminiAssistantService.inferRecommendation(
-				new GeminiAssistantService.AiRecommendationPromptRequest(
+		return recommendationGeminiService.inferRecommendation(
+				new RecommendationGeminiService.AiRecommendationPromptRequest(
 						request.scopeType().name(),
 						request.scopeId(),
 						request.keyId(),
@@ -531,7 +531,7 @@ public class PolicyRecommendationAgentService {
 						estimatedSavingsPct.toPlainString(),
 						candidatePayload
 				)
-		).map(result -> new GeminiRecommendationOverride(
+			).map(result -> new GeminiRecommendationOverride(
 				result.title(),
 				result.reasonMessage(),
 				result.confidenceLevel(),

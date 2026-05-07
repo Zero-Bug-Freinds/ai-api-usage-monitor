@@ -1,90 +1,17 @@
 "use client"
 
 import { type ChangeEvent, useEffect, useMemo, useState } from "react"
+import {
+  type AnalysisScope,
+  type AvailableKeyContext,
+  type TeamBoardItem,
+  type TeamGroup,
+  resolveTargetKeys,
+} from "./agent-key-shared"
+import type { AnalysisResult } from "./agent-result-shared"
+import { runBudgetAnalysisFlow } from "./analysis-flow"
+import { runRecommendationFlow } from "./recommendation-flow"
 
-type BudgetForecastResponse = {
-  healthStatus: "HEALTHY" | "WARNING" | "CRITICAL" | string
-  healthStatusLabel?: string
-  riskCriteria?: string
-  confidenceLevel?: "HIGH" | "MEDIUM" | "LOW" | string
-  confidenceCriteria?: string
-  predictedRunOutDate: string
-  daysUntilRunOut: number
-  daysUntilBillingCycleEnd: number | null
-  billingDateGapDays: number | null
-  budgetUtilizationPercent: string | number
-  assistantMessage: string
-  recommendedActions: string[]
-  anomalySummary?: string
-  routingRecommendation?: string
-  estimatedRoutingSavingsPercent?: string | number
-}
-
-type AvailableKeyContext = {
-  keyId: number
-  /** 팀 키 분석 시에만 설정 (결제일 저장·요청 구분용) */
-  teamIdForBilling?: number
-  keyLabel: string
-  provider: string
-  monthlyBudgetUsd: number
-  status: string
-  budgetStats?: {
-    currentSpendUsd: number
-    remainingBudgetUsd: number
-    budgetUsagePercent: number
-    isBudgetExceeded: boolean
-  }
-  providerStats: {
-    currentSpendUsd: number
-    averageDailySpendUsd: number
-    averageDailyTokenUsage: number
-    recentDailySpendUsd: number[]
-  }
-}
-
-type TeamBoardItem = {
-  teamId: number
-  teamName?: string
-  teamApiKeyId: number
-  ownerUserId?: string | null
-  visibility?: string | null
-  alias: string
-  provider: string
-  status: string
-  monthlyBudgetUsd?: number
-  budgetStats?: {
-    currentSpendUsd: number
-    remainingBudgetUsd: number
-    budgetUsagePercent: number
-    isBudgetExceeded: boolean
-  }
-  providerStats?: {
-    currentSpendUsd: number
-    averageDailySpendUsd: number
-    averageDailyTokenUsage: number
-    recentDailySpendUsd: number[]
-  }
-}
-
-type AnalysisResult = {
-  keyId: number
-  keyLabel: string
-  provider: string
-  data?: BudgetForecastResponse
-  recommendation?: RecommendationQueryResponse
-  error?: string
-  recommendationError?: string
-  /** 이벤트/데이터가 없어 추정·대체한 항목 (막지 않고 안내용) */
-  forecastGaps?: string[]
-}
-
-type TeamGroup = {
-  teamId: number
-  teamName: string
-  keys: TeamBoardItem[]
-}
-
-type AnalysisScope = "PERSONAL" | "TEAM"
 type AnalysisAction = "ANALYSIS" | "RECOMMENDATION"
 
 type ModelCatalogSnapshot = {
@@ -102,33 +29,6 @@ type ModelCatalogSnapshot = {
   }>
 }
 
-type RecommendationQueryResponse = {
-  keyId: string
-  keyType: "PERSONAL" | "TEAM" | string
-  status: "RECOMMENDATION_AVAILABLE" | "NO_RECOMMENDATION" | string
-  generatedAt: string
-  metricsContext?: {
-    analysisWindowDays: number
-    totalTokensUsed: number
-    inputOutputRatio: string
-    averageLatencyMs?: number | null
-    totalRequests: number
-  } | null
-  recommendationDetails?: {
-    title: string
-    reasonCode: string
-    reasonMessage: string
-    confidenceLevel: "HIGH" | "MEDIUM" | "LOW" | string
-    disclaimer?: string | null
-    estimatedSavingsPct: number | string
-    candidates: Array<{
-      modelName: string
-      expectedCostDiffPct: number | string
-      expectedMonthlyCostUsd: number | string
-      keyFeature: string
-    }>
-  } | null
-}
 
 function parseInputOutputRatio(value: string | null | undefined): { input: number; output: number } | null {
   if (!value) return null
@@ -531,164 +431,33 @@ export default function AgentPage() {
     if (scope === "TEAM" && selectedTeamId == null) {
       return
     }
-    const targetKeys: AvailableKeyContext[] =
-      scope === "PERSONAL"
-        ? keys
-        : selectedTeamKeys.map((item: TeamBoardItem) => ({
-            keyId: item.teamApiKeyId,
-            teamIdForBilling: item.teamId,
-            keyLabel: item.alias,
-            provider: item.provider,
-            monthlyBudgetUsd: item.monthlyBudgetUsd ?? 0,
-            status: item.status,
-            providerStats: item.providerStats ?? {
-              currentSpendUsd: 0,
-              averageDailySpendUsd: 0,
-              averageDailyTokenUsage: 0,
-              recentDailySpendUsd: [],
-            },
-          }))
+    const targetKeys: AvailableKeyContext[] = resolveTargetKeys(scope, keys, selectedTeamKeys)
     if (targetKeys.length === 0) return
 
     setLoading(true)
-    const nextResults: AnalysisResult[] = []
     try {
-      for (let i = 0; i < targetKeys.length; i += 1) {
-        const keyItem = targetKeys[i]
-        setLoadingMessage(
-          action === "ANALYSIS"
-            ? scope === "PERSONAL"
-              ? `개인 API 키 사용량을 분석 중입니다... (${i + 1}/${targetKeys.length})`
-              : `${selectedTeamLabel || `Team ${selectedTeamId}`} 키 사용량을 분석 중입니다... (${i + 1}/${targetKeys.length})`
-            : scope === "PERSONAL"
-              ? `개인 API 키 모델 추천을 분석 중입니다... (${i + 1}/${targetKeys.length})`
-              : `${selectedTeamLabel || `Team ${selectedTeamId}`} 키 모델 추천을 분석 중입니다... (${i + 1}/${targetKeys.length})`,
-        )
-
-        try {
-          if (scope === "PERSONAL" && currentUserId == null) {
-            nextResults.push({
-              keyId: keyItem.keyId,
-              keyLabel: keyItem.keyLabel,
-              provider: keyItem.provider,
-              error:
-                "개인 키 분석에는 사용자 식별이 필요합니다. (헤더/스냅샷에 userId 없음) 팀 키 분석은 팀 선택 후 시도해 주세요.",
+      const nextResults =
+        action === "ANALYSIS"
+          ? await runBudgetAnalysisFlow({
+              scope,
+              targetKeys,
+              currentUserId,
+              selectedTeamId,
+              selectedTeamLabel,
+              billingByLedgerKey,
+              personalLedgerKey: ledgerKeyPersonal,
+              teamLedgerKey: ledgerKeyTeam,
+              resolveForecastInputs,
+              setLoadingMessage,
             })
-            continue
-          }
-          const resolvedTeamId = keyItem.teamIdForBilling ?? selectedTeamId ?? null
-          if (scope === "TEAM" && resolvedTeamId == null) {
-            nextResults.push({
-              keyId: keyItem.keyId,
-              keyLabel: keyItem.keyLabel,
-              provider: keyItem.provider,
-              error: "팀 식별 정보를 확인할 수 없어 팀 키 분석을 진행할 수 없습니다.",
+          : await runRecommendationFlow({
+              scope,
+              targetKeys,
+              currentUserId,
+              selectedTeamId,
+              selectedTeamLabel,
+              setLoadingMessage,
             })
-            continue
-          }
-          const resolvedTeamIdNumber = resolvedTeamId ?? 0
-          const billingLedgerKey =
-            scope === "PERSONAL"
-              ? ledgerKeyPersonal(keyItem.keyId)
-              : ledgerKeyTeam(resolvedTeamIdNumber, keyItem.keyId)
-          const billingCycleIso = (billingByLedgerKey[billingLedgerKey] ?? "").trim()
-
-          if (action === "ANALYSIS") {
-            const forecast = resolveForecastInputs(keyItem.providerStats, keyItem.monthlyBudgetUsd)
-            const response = await fetch("/agent/api/v1/agents/budget-forecast-assistant", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                userId: scope === "PERSONAL" ? String(currentUserId) : String(resolvedTeamId),
-                teamId: scope === "PERSONAL" ? null : resolvedTeamIdNumber,
-                keyId: keyItem.keyId,
-                provider: keyItem.provider,
-                model: keyItem.provider,
-                monthlyBudgetUsd: keyItem.monthlyBudgetUsd,
-                currentSpendUsd: keyItem.providerStats.currentSpendUsd,
-                remainingTokens: forecast.remainingTokens,
-                averageDailyTokenUsage: forecast.averageDailyTokenUsage,
-                averageDailySpendUsd: forecast.averageDailySpendUsd,
-                billingCycleEndDate: billingCycleIso !== "" ? billingCycleIso : null,
-                recentDailySpendUsd: forecast.recentDailySpendUsd,
-                recentDailyTokenUsage7d: forecast.recentDailyTokenUsage7d,
-                modelUsageDistribution7d: forecast.modelUsageDistribution7d,
-                hourlyTokenUsage24h: forecast.hourlyTokenUsage24h,
-              }),
-            })
-
-            if (!response.ok) {
-              const text = await response.text()
-              throw new Error(text || `요청 실패 (${response.status})`)
-            }
-
-            const data = (await response.json()) as BudgetForecastResponse
-            nextResults.push({
-              keyId: keyItem.keyId,
-              keyLabel: keyItem.keyLabel,
-              provider: keyItem.provider,
-              data,
-              forecastGaps: forecast.gaps.length > 0 ? forecast.gaps : undefined,
-            })
-            continue
-          }
-
-          let recommendation: RecommendationQueryResponse | undefined
-          let recommendationError: string | undefined
-          const recommendationScopeType = scope
-          const recommendationScopeId =
-            scope === "PERSONAL" ? String(currentUserId) : String(resolvedTeamIdNumber)
-          try {
-            const analyzeResponse = await fetch("/agent/api/v1/agents/policy-recommendations/analyze", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                scopeType: recommendationScopeType,
-                scopeId: recommendationScopeId,
-                keyId: String(keyItem.keyId),
-                windowDays: 7,
-                triggeredBy: "WEB_DASHBOARD",
-              }),
-            })
-            if (!analyzeResponse.ok) {
-              const text = await analyzeResponse.text()
-              throw new Error(text || `추천 분석 실패 (${analyzeResponse.status})`)
-            }
-
-            const recommendationResponse = await fetch(
-              `/agent/api/v1/agents/policy-recommendations/${keyItem.keyId}?scopeType=${encodeURIComponent(
-                recommendationScopeType,
-              )}&scopeId=${encodeURIComponent(recommendationScopeId)}`,
-              { cache: "no-store" },
-            )
-            if (!recommendationResponse.ok) {
-              const text = await recommendationResponse.text()
-              throw new Error(text || `추천 조회 실패 (${recommendationResponse.status})`)
-            }
-            recommendation = (await recommendationResponse.json()) as RecommendationQueryResponse
-          } catch (recommendationRequestError) {
-            recommendationError =
-              recommendationRequestError instanceof Error
-                ? recommendationRequestError.message
-                : "추천 시스템 호출 실패"
-          }
-          nextResults.push({
-            keyId: keyItem.keyId,
-            keyLabel: keyItem.keyLabel,
-            provider: keyItem.provider,
-            recommendation,
-            recommendationError,
-          })
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "분석 요청 실패"
-          nextResults.push({
-            keyId: keyItem.keyId,
-            keyLabel: keyItem.keyLabel,
-            provider: keyItem.provider,
-            error: message,
-          })
-        }
-      }
 
       setResults((prev: AnalysisResult[]) => {
         const byKeyId = new Map<number, AnalysisResult>()
@@ -1035,116 +804,122 @@ export default function AgentPage() {
                       ))}
                     </ul>
 
-                    {result.recommendationError ? (
-                      <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                        모델 추천 조회에 실패했습니다: {result.recommendationError}
-                      </div>
-                    ) : null}
-
-                    {result.recommendation?.status === "RECOMMENDATION_AVAILABLE" &&
-                    result.recommendation.recommendationDetails ? (
-                      <div className="space-y-2 rounded-md border bg-background p-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="text-sm font-semibold">{result.recommendation.recommendationDetails.title}</p>
-                          <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700">
-                            신뢰도 {result.recommendation.recommendationDetails.confidenceLevel}
-                          </span>
-                        </div>
-                        <p className="text-sm text-muted-foreground">{result.recommendation.recommendationDetails.reasonMessage}</p>
-                        <p className="text-sm">
-                          예상 절감률:{" "}
-                          {typeof result.recommendation.recommendationDetails.estimatedSavingsPct === "number"
-                            ? result.recommendation.recommendationDetails.estimatedSavingsPct.toFixed(2)
-                            : result.recommendation.recommendationDetails.estimatedSavingsPct}
-                          %
-                        </p>
-                        {(() => {
-                          const primaryCandidate = result.recommendation?.recommendationDetails?.candidates?.[0]
-                          const estimatedSavingsUsd = primaryCandidate
-                            ? estimateSavingsUsd(
-                                result.recommendation.recommendationDetails.estimatedSavingsPct,
-                                primaryCandidate.expectedMonthlyCostUsd,
-                              )
-                            : null
-                          return estimatedSavingsUsd != null ? (
-                            <p className="text-sm font-medium text-emerald-700">
-                              예상 절감액(월): ${estimatedSavingsUsd.toFixed(2)}
-                            </p>
-                          ) : null
-                        })()}
-                        {result.recommendation.recommendationDetails.disclaimer ? (
-                          <p className="text-xs text-amber-700">{result.recommendation.recommendationDetails.disclaimer}</p>
-                        ) : null}
-                        {result.recommendation.metricsContext ? (
-                          <div className="space-y-2 rounded-md border border-dashed bg-muted/30 p-2">
-                            <p className="text-xs font-medium text-muted-foreground">추천 근거 지표</p>
-                            <div className="grid gap-2 md:grid-cols-2">
-                              {(() => {
-                                const ratio = parseInputOutputRatio(result.recommendation?.metricsContext?.inputOutputRatio)
-                                const dominance = ratioDominance(ratio)
-                                return (
-                                  <div className="space-y-1 rounded border bg-background px-2 py-1.5">
-                                    <div className="flex items-center justify-between">
-                                      <p className="text-xs font-medium">입출력 비율</p>
-                                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${dominance.className}`}>
-                                        {dominance.label}
-                                      </span>
-                                    </div>
-                                    <p className="text-xs text-muted-foreground">
-                                      {result.recommendation?.metricsContext?.inputOutputRatio ?? "N/A"}
-                                    </p>
-                                    <div className="h-1.5 w-full overflow-hidden rounded bg-muted">
-                                      <div className="h-full bg-blue-500" style={{ width: `${dominance.inputPct}%` }} />
-                                    </div>
-                                    <p className="text-[10px] text-muted-foreground">
-                                      input {dominance.inputPct.toFixed(0)}% / output {dominance.outputPct.toFixed(0)}%
-                                    </p>
-                                  </div>
-                                )
-                              })()}
-                              {(() => {
-                                const rawLatency = result.recommendation?.metricsContext?.averageLatencyMs
-                                const latency = rawLatency == null ? null : Number(rawLatency)
-                                const latencyMeta = latencyStatusNullable(latency)
-                                return (
-                                  <div className="space-y-1 rounded border bg-background px-2 py-1.5">
-                                    <div className="flex items-center justify-between">
-                                      <p className="text-xs font-medium">최근 평균 지연</p>
-                                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${latencyMeta.className}`}>
-                                        {latencyMeta.label}
-                                      </span>
-                                    </div>
-                                    <p className="text-xs text-muted-foreground">
-                                      {latency == null || !Number.isFinite(latency) ? "N/A" : `${latency.toFixed(0)} ms`}
-                                    </p>
-                                    <div className="h-1.5 w-full overflow-hidden rounded bg-muted">
-                                      <div className="h-full bg-amber-500" style={{ width: `${latencyMeta.progress}%` }} />
-                                    </div>
-                                  </div>
-                                )
-                              })()}
-                            </div>
-                          </div>
-                        ) : null}
-                        <ul className="space-y-1 text-sm">
-                          {result.recommendation.recommendationDetails.candidates.map((candidate) => (
-                            <li key={`${result.keyId}-${candidate.modelName}`} className="rounded border px-2 py-1">
-                              <p className="font-medium">{candidate.modelName}</p>
-                              <p className="text-xs text-muted-foreground">{candidate.keyFeature}</p>
-                              <p className="text-xs text-muted-foreground">
-                                예상 월 비용 ${Number(candidate.expectedMonthlyCostUsd).toFixed(2)} / 변화율{" "}
-                                {typeof candidate.expectedCostDiffPct === "number"
-                                  ? candidate.expectedCostDiffPct.toFixed(2)
-                                  : candidate.expectedCostDiffPct}
-                                %
-                              </p>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
                   </>
                 ) : null}
+
+                <div className="space-y-2 rounded-md border border-dashed bg-muted/20 p-3">
+                  <p className="text-xs font-medium text-muted-foreground">모델 추천</p>
+                  {result.recommendationError ? (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                      모델 추천 조회에 실패했습니다: {result.recommendationError}
+                    </div>
+                  ) : null}
+
+                  {result.recommendation?.status === "RECOMMENDATION_AVAILABLE" &&
+                  result.recommendation.recommendationDetails ? (
+                    <div className="space-y-2 rounded-md border bg-background p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-semibold">{result.recommendation.recommendationDetails.title}</p>
+                        <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700">
+                          신뢰도 {result.recommendation.recommendationDetails.confidenceLevel}
+                        </span>
+                      </div>
+                      <p className="text-sm text-muted-foreground">{result.recommendation.recommendationDetails.reasonMessage}</p>
+                      <p className="text-sm">
+                        예상 절감률:{" "}
+                        {typeof result.recommendation.recommendationDetails.estimatedSavingsPct === "number"
+                          ? result.recommendation.recommendationDetails.estimatedSavingsPct.toFixed(2)
+                          : result.recommendation.recommendationDetails.estimatedSavingsPct}
+                        %
+                      </p>
+                      {(() => {
+                        const primaryCandidate = result.recommendation?.recommendationDetails?.candidates?.[0]
+                        const estimatedSavingsUsd = primaryCandidate
+                          ? estimateSavingsUsd(
+                              result.recommendation.recommendationDetails.estimatedSavingsPct,
+                              primaryCandidate.expectedMonthlyCostUsd,
+                            )
+                          : null
+                        return estimatedSavingsUsd != null ? (
+                          <p className="text-sm font-medium text-emerald-700">
+                            예상 절감액(월): ${estimatedSavingsUsd.toFixed(2)}
+                          </p>
+                        ) : null
+                      })()}
+                      {result.recommendation.recommendationDetails.disclaimer ? (
+                        <p className="text-xs text-amber-700">{result.recommendation.recommendationDetails.disclaimer}</p>
+                      ) : null}
+                      {result.recommendation.metricsContext ? (
+                        <div className="space-y-2 rounded-md border border-dashed bg-muted/30 p-2">
+                          <p className="text-xs font-medium text-muted-foreground">추천 근거 지표</p>
+                          <div className="grid gap-2 md:grid-cols-2">
+                            {(() => {
+                              const ratio = parseInputOutputRatio(result.recommendation?.metricsContext?.inputOutputRatio)
+                              const dominance = ratioDominance(ratio)
+                              return (
+                                <div className="space-y-1 rounded border bg-background px-2 py-1.5">
+                                  <div className="flex items-center justify-between">
+                                    <p className="text-xs font-medium">입출력 비율</p>
+                                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${dominance.className}`}>
+                                      {dominance.label}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-muted-foreground">
+                                    {result.recommendation?.metricsContext?.inputOutputRatio ?? "N/A"}
+                                  </p>
+                                  <div className="h-1.5 w-full overflow-hidden rounded bg-muted">
+                                    <div className="h-full bg-blue-500" style={{ width: `${dominance.inputPct}%` }} />
+                                  </div>
+                                  <p className="text-[10px] text-muted-foreground">
+                                    input {dominance.inputPct.toFixed(0)}% / output {dominance.outputPct.toFixed(0)}%
+                                  </p>
+                                </div>
+                              )
+                            })()}
+                            {(() => {
+                              const rawLatency = result.recommendation?.metricsContext?.averageLatencyMs
+                              const latency = rawLatency == null ? null : Number(rawLatency)
+                              const latencyMeta = latencyStatusNullable(latency)
+                              return (
+                                <div className="space-y-1 rounded border bg-background px-2 py-1.5">
+                                  <div className="flex items-center justify-between">
+                                    <p className="text-xs font-medium">최근 평균 지연</p>
+                                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${latencyMeta.className}`}>
+                                      {latencyMeta.label}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-muted-foreground">
+                                    {latency == null || !Number.isFinite(latency) ? "N/A" : `${latency.toFixed(0)} ms`}
+                                  </p>
+                                  <div className="h-1.5 w-full overflow-hidden rounded bg-muted">
+                                    <div className="h-full bg-amber-500" style={{ width: `${latencyMeta.progress}%` }} />
+                                  </div>
+                                </div>
+                              )
+                            })()}
+                          </div>
+                        </div>
+                      ) : null}
+                      <ul className="space-y-1 text-sm">
+                        {result.recommendation.recommendationDetails.candidates.map((candidate) => (
+                          <li key={`${result.keyId}-${candidate.modelName}`} className="rounded border px-2 py-1">
+                            <p className="font-medium">{candidate.modelName}</p>
+                            <p className="text-xs text-muted-foreground">{candidate.keyFeature}</p>
+                            <p className="text-xs text-muted-foreground">
+                              예상 월 비용 ${Number(candidate.expectedMonthlyCostUsd).toFixed(2)} / 변화율{" "}
+                              {typeof candidate.expectedCostDiffPct === "number"
+                                ? candidate.expectedCostDiffPct.toFixed(2)
+                                : candidate.expectedCostDiffPct}
+                              %
+                            </p>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">추천 결과가 없습니다. 상단의 추천 버튼을 눌러주세요.</p>
+                  )}
+                </div>
               </article>
             ))
           : null}
