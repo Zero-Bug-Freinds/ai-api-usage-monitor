@@ -1,15 +1,19 @@
 package com.eevee.usageservice.api;
 
 import com.eevee.usage.events.AiProvider;
+import com.eevee.usageservice.api.dto.bff.TeamApiKeyOptionResponse;
+import com.eevee.usageservice.api.dto.bff.TeamSummaryOptionResponse;
 import com.eevee.usageservice.api.dto.bff.UsageBffDashboardResponse;
 import com.eevee.usageservice.api.dto.bff.UsageDashboardMode;
 import com.eevee.usageservice.security.UsageGatewayTrustFilter;
 import com.eevee.usageservice.service.bff.UsageDashboardContext;
 import com.eevee.usageservice.service.bff.UsageDashboardQuery;
+import com.eevee.usageservice.service.bff.team.TeamBffQueryService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -21,9 +25,14 @@ import java.time.LocalDate;
 @RequestMapping("/api/v1/usage/bff")
 public class UsageBffDashboardController {
     private final UsageDashboardContext dashboardContext;
+    private final TeamBffQueryService teamBffQueryService;
 
-    public UsageBffDashboardController(UsageDashboardContext dashboardContext) {
+    public UsageBffDashboardController(
+            UsageDashboardContext dashboardContext,
+            TeamBffQueryService teamBffQueryService
+    ) {
         this.dashboardContext = dashboardContext;
+        this.teamBffQueryService = teamBffQueryService;
     }
 
     @GetMapping("/dashboard")
@@ -53,6 +62,21 @@ public class UsageBffDashboardController {
                 page,
                 size
         ));
+    }
+
+    @GetMapping("/teams")
+    public TeamSummaryOptionResponse teams(HttpServletRequest request) {
+        return new TeamSummaryOptionResponse(teamBffQueryService.loadTeams(currentUser(request)));
+    }
+
+    @GetMapping("/teams/{teamId}/api-keys")
+    public TeamApiKeyOptionResponse teamApiKeys(
+            HttpServletRequest request,
+            @PathVariable String teamId
+    ) {
+        return new TeamApiKeyOptionResponse(
+                teamBffQueryService.loadTeamApiKeys(currentUser(request), blankToNull(teamId))
+        );
     }
 
     private static UsageDashboardMode resolveMode(String modeRaw, String teamIdRaw, String userIdRaw) {
