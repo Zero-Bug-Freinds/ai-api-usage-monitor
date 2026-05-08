@@ -1,6 +1,6 @@
 # Web(Next.js) ↔ Team Service BFF 계약
 
-버전: 0.8  
+버전: 0.11  
 관련: [web-split-boundary.md](./web-split-boundary.md), [web-identity-bff.md](./web-identity-bff.md) — `/teams` UI 소유·경로: §2.3
 
 ---
@@ -33,7 +33,7 @@
 | `POST /api/team/v1/teams/{teamId}/api-keys/{keyId}/deletion/cancel` | Team BFF `POST ...` → Gateway `POST ...` → Team Service `POST /api/v1/teams/{teamId}/api-keys/{keyId}/deletion/cancel` |
 
 - **팀 콘솔 UI**는 `web-edge`의 **`/teams` → `team-web`** 에서 렌더링한다.
-- Identity `web`는 Next `rewrites()`로 **`/teams/api/*`** 및 **`/api/team/v1/*`** 를 Team BFF(`team-web`)로 넘긴다(브라우저가 identity 오리진으로 BFF를 부를 때 — 삭제 예정 해제용 `POST .../deletion/cancel` 포함).
+- `web-edge` Nginx는 **`/teams/api/*`** 및 **`/api/team/v1/*`** 를 Team BFF(`team-web`)로 라우팅한다(삭제 예정 해제용 `POST .../deletion/cancel` 포함).
 - Team BFF는 `GATEWAY_URL` 환경 변수로 Gateway를 프록시한다.
 - Team BFF는 `IDENTITY_SERVICE_URL`로 세션 확인(`GET /api/auth/session`)을 프록시한다.
 
@@ -164,7 +164,7 @@
     - **`0`**: 삭제 예정 없이 **즉시 DB에서 행을 삭제**(물리 삭제).
     - **`1` 이상**: `deletionRequestedAt`을 현재 시각으로, `permanentDeletionAt`을 그 시각 + `gracePeriodDays`일 후로 두는 **삭제 예정(소프트)**.
   - 권한: **팀장만** 호출 가능.
-  - 유예 종료 후 배치로 행을 지우는 **스케줄러는 별도 구현**일 수 있다(계약만으로 보장하지 않음).
+  - 유예 종료 후 물리 삭제는 `TeamApiKeyPurgeScheduler`가 주기적으로 `purgeExpiredDeletions()`를 실행해 처리한다.
   - 성공: `200`, `message` 예: `팀 API 키 삭제 요청이 처리되었습니다`, `data`에 해당 키 요약(즉시 삭제 직전 스냅샷 또는 삭제 예정 필드 포함)
   - 실패: `400` (대상 없음·유예 일수 범위 밖·이미 삭제 예정 등), `403`, `404`
 
@@ -180,15 +180,22 @@
     - `403` (`success=false`): 팀 멤버가 아닌 사용자의 조회 시도
     - `404` (`success=false`): 대상 팀이 존재하지 않는 경우
 - 레거시 호환: 내부 저장값/경로에 `GEMINI`가 남아 있어도 외부 BFF 계약의 provider 표기는 `GOOGLE`로 통일한다.
+  - 내부 키 조회 API(`GET /internal/team-api-keys/{provider}`)는 `provider=gemini` 별칭을 입력받아 `GOOGLE`로 정규화한다(코드: `TeamInternalApiKeyResolveService`).
+  - 부팅 시 `TeamApiKeyProviderMigrationInitializer`가 `team_api_keys`의 `GEMINI` 값을 `GOOGLE`로 정리한다.
 
 ---
 
 ## 6. 내부 API 및 이벤트 계약
 
-### 6.1 내부 API (notification 등 서비스 간 조회)
+### 6.1 내부 API (notification/billing/agent 등 서비스 간 조회)
 
 - Team Service는 내부 호출용으로 `GET /internal/teams/{id}`를 제공한다.
 - 응답 `data`는 `teamId`, `teamName`, `createdBy`, `createdAt`를 포함한다.
+- 내부 멤버십 검증용으로 `GET /internal/v1/teams/{teamId}/members/{userId}/verify`를 제공한다.
+  - 응답 `data`: `teamId`, `userId`, `isValid`
+  - `userId`는 identity 동기화 후보(`email/userId` 등)까지 확장해 검증한다.
+- 내부 사용자 팀 목록 조회용으로 `GET /internal/v1/users/{userId}/teams`를 제공한다.
+  - 응답 `data`: `TeamSummaryResponse[]` (`id`, `name`, `createdAt`)
 - Billing 연동용으로 `GET /internal/teams/users/{userId}/billing-summaries`를 제공한다.
   - 응답 목록의 각 팀 항목은 `teamId`, `teamAlias`, `monthlyBudgetUsd`, `monthlyBudgetsByKey`, `apiKeys`를 포함한다.
   - `monthlyBudgetUsd`: 팀 API 키 월 예산 합계(USD)
@@ -212,13 +219,13 @@
 
 ---
 
-## 7. Identity `web` `/teams` 화면·데모 순서 (현행 구현)
+## 7. Team `web` `/teams` 화면·데모 순서 (현행 구현)
 
-구현 정본: `services/identity-service/web/src/components/account/teams-view.tsx`, `services/identity-service/web/src/app/teams/[[...path]]/page.tsx`(브라우저 경로 **`/teams`**). 팀 백엔드: `services/team-service/`.
+구현 정본: `services/team-service/web/src/pages/index.tsx`, `services/team-service/web/src/components/team/team-management-view.tsx`(브라우저 경로 **`/teams`**). 팀 백엔드: `services/team-service/`.
 
 ### 7.1 내비게이션
 
-- 좌측 대시보드 셸에서 **`팀`** → 브라우저 경로 **`/teams`** (Identity `web`이 페이지를 소유한다).
+- 좌측 대시보드 셸에서 **`팀`** → 브라우저 경로 **`/teams`** (Team `web`이 페이지를 소유한다).
 - 조직 맥락 뱃지·우측 상단 **「+ 새 팀 추가」** 전용 버튼·중앙 **데이터 테이블** 형태의 팀 그리드는 **본 저장소 UI에 없다** (데모 시나리오 작성 시 혼동하지 말 것).
 
 ### 7.2 팀 만들기
@@ -226,16 +233,17 @@
 1. **`팀 만들기`**를 누르면 같은 카드 영역에 **인라인 폼**이 열린다(별도 중앙 모달 전용 컴포넌트가 아니다).
 2. **팀 이름 (필수)** 입력.
 3. **팀원 초대 (선택)** — 이메일(아이디) 입력란을 여러 개 둘 수 있다. 비우면 생성자만 멤버가 된다.
-4. **`생성`** — `POST /api/team/v1/teams` 본문은 **`{ "name": "…" }` 만** 보낸다. 생성이 성공한 뒤, 초대 이메일이 있으면 **팀별로** `POST /api/team/v1/teams/{id}/members` 를 연속 호출한다.
+4. **`생성`** — `POST /api/team/v1/teams` 본문은 **`{ "name": "…" }` 만** 보낸다. 생성이 성공한 뒤, 초대 이메일/아이디가 있으면 **팀별로** `POST /api/team/v1/teams/{id}/members` 를 연속 호출한다.
 5. **`취소`** — 폼을 닫는다.
 
 **팀 리더 지정 UI는 없다.** Team Service는 팀 생성 요청을 보낸 사용자를 멤버로 넣고 **OWNER** 역할을 부여한다.
 
-### 7.3 팀 목록 표시
+### 7.3 팀 목록 표시 및 팀 전환
 
 - 목록은 **데이터 테이블(컬럼: 리더·인원·생성일 등)** 이 아니라, **접이식(아코디언) 목록**이다.
 - 접힌 행에는 **팀 이름**만 보인다.
 - 행을 눌러 펼치면 팀 `id`, 멤버 수·이메일 목록, 초대 입력, 팀 API Key 등록·목록·수정·삭제 영역이 나온다. 펼친 팀에 대해서만 멤버/API Key 목록 API를 호출한다.
+- 팀 행 선택 시 Team `web`는 `POST /teams/api/auth/token/switch-team` 을 호출해 활성 팀 토큰 전환을 시도한다(실패해도 상세 UI 사용은 가능).
 - `GET /api/team/v1/me/teams` 응답의 팀 요약은 **`id`, `name`** 수준이며, **리더·인원 수·생성일**을 한 줄로 주지 않는다. 검증은 **이름이 목록에 나타나는지**, 펼쳤을 때 **멤버·초대·키** 동작이 보이는지로 맞춘다.
 - 팀원 초대 입력 행은 여러 개 추가할 수 있고, 2개 이상일 때 각 행 우측 `-` 버튼으로 빈 행을 즉시 제거할 수 있다.
 
@@ -245,19 +253,19 @@
 - 같은 화면의 오른쪽 패널은 **Usage 소유 슬롯 예약 영역**으로 두며, Team UI는 해당 영역을 비워 둔다(Team이 Usage 화면을 직접 수정하지 않음).
 - `apps/web` 호스트는 `/teams/[id]/[section]` 경로(`dashboard|members|api-keys`)를 해석해 Team remote를 렌더한다. 현재 Team remote는 내부 탭 없이 아코디언 중심 동작으로 맞춘다.
 
-### 7.4 팀 API Key 삭제 예정·유예·취소 (Identity `/teams`)
+### 7.4 팀 API Key 삭제 예정·유예·취소 (Team `/teams`)
 
-구현: `teams-view.tsx`. 팀장만 **`삭제`/`삭제 취소`/등록 폼**이 보인다(`GET /api/team/v1/teams/{id}/owner`). 서버 기본 유예 **7일**, `gracePeriodDays` 허용 범위 **0~365일**(`0` = 즉시 삭제).
+구현: `team-management-view.tsx`. 팀 API Key **등록/수정/삭제 예약/삭제 취소**는 Team `web`에서 제공하며, 서버 기본 유예 **7일**, `gracePeriodDays` 허용 범위 **0~365일**(`0` = 즉시 삭제)이다.
 
-1. **삭제** — 활성 키 행에서 **`삭제`** → 확인 대화상자 → 브라우저 **`prompt`로 유예 기간(일)** 입력(비우면 7일, **0이면 즉시 삭제**). `DELETE .../api-keys/{keyId}?gracePeriodDays=...` 호출.
+1. **삭제 예약/즉시 삭제** — 활성 키 행에서 **`삭제`** → 모달에서 유예 기간(일) 입력(기본 7일, **0이면 즉시 삭제**) 및 로그 보존 여부 선택 후 `DELETE .../api-keys/{keyId}?gracePeriodDays=...&retainLogs=...` 호출.
 2. **삭제 예정 표시** — 해당 행에 `(삭제 예정)` 안내, **영구 삭제 예정 시각**·유예 일수 표시, **`수정` 비활성**.
 3. **삭제 취소** — **`삭제 취소`** → 확인 후 `POST .../api-keys/{keyId}/deletion/cancel`. 성공 시 다시 활성 키로 표시.
 4. **동일 키 재등록** — 삭제 예정 중인 키와 같은 provider+키 값으로 등록 시 서버 메시지 `삭제 예정키와 중복입니다`.
 
-### 7.5 Team `web` (`services/team-service/web/`)
+### 7.5 Team `web` (`services/team-service/web/`) 보완 설명
 
-- 동일 도메인 로직을 **Team 전용 Next**에서도 볼 수 있다. UI 패턴(팀 만들기·접이식 목록 등)은 `team-management-view.tsx`가 대응한다. 브라우저 진입점으로는 보통 Identity의 **`/teams`** 를 쓴다([web-split-boundary.md](./web-split-boundary.md) §2.3).
-- `team-management-view`는 팀 API Key **목록·삭제 예정 안내(영구 삭제 예정 시각 등)** 를 볼 수 있으나, **삭제 예정 등록·삭제 취소** 전용 버튼은 Identity `/teams`와 다를 수 있다(필요 시 동일 API로 확장 가능).
+- Team `web`은 Next Pages Router + `basePath=/teams`로 동작하며, `pages/api/team/v1/[...path].ts`가 Gateway `/api/team/v1/**`를 프록시한다.
+- Team `web`은 `pages/api/auth/session.ts`로 Identity 세션 확인을 제공하고, `pages/api/auth/token/switch-team.ts`로 활성 팀 토큰 전환을 지원한다.
 - `team-management-view`의 초대 알림 영역은 **만료(`EXPIRED`) 초대만 표시**한다.
   - 수락/거절 버튼은 Team `web`에서 제공하지 않는다(해당 액션은 Notification 흐름 사용).
   - 문구는 `viewerRole` 기준으로 분기한다: `INVITER`는 재초대 안내, `INVITEE`는 만료 안내.

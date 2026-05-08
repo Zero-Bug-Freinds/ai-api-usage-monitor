@@ -22,6 +22,10 @@
   - 입력: `RecommendationAnalyzeRequest`
   - 출력: `OptimizationRecommendationIssuedEvent`
   - 동작: 키/스코프 기준으로 최근 패턴을 분석하고 모델 최적화 추천 결과를 생성·캐시한다.
+- `POST /policy-recommendations/analyze/batch`
+  - 입력: `RecommendationAnalyzeBatchRequest`
+  - 출력: `RecommendationAnalyzeBatchResponse`
+  - 동작: 여러 키 요청을 한 번에 분석해 추천 캐시를 생성한다.
 - `GET /policy-recommendations/{keyId}?scopeType={PERSONAL|TEAM}&scopeId={id}`
   - 출력: `RecommendationQueryResponse`
   - 동작: 캐시된 추천 결과(근거 지표/후보 모델/절감률)를 조회한다.
@@ -32,6 +36,10 @@
   - 스코프: 개인 키(`PERSONAL`)와 팀 키(`TEAM`) 모두 동일 경로/정책을 사용한다.
   - 입력 확장: `recentDailyTokenUsage7d`, `modelUsageDistribution7d`, `hourlyTokenUsage24h`를 함께 전달해 이상 탐지/라우팅 분석을 강화한다.
   - 출력 확장: `anomalySummary`, `routingRecommendation`, `estimatedRoutingSavingsPercent`, `riskCriteria`, `confidenceLevel`, `confidenceCriteria`.
+- `POST /budget-forecast-assistant/batch`
+  - 입력: `BudgetForecastBatchRequest`
+  - 출력: `BudgetForecastBatchResponse`
+  - 동작: 여러 키 예측을 배치로 호출한다(개별 항목 실패/성공 포함).
 - `GET /identity-api-keys`
   - 설명: 전체 개인 API Key 스냅샷 조회
 - `GET /identity-api-keys/{userId}`
@@ -42,6 +50,8 @@
   - 설명: 비용 최종화/예산 임계 이벤트 기반 신호 조회
 - `GET /usage-prediction-signals?teamId={id}`
   - 설명: `usage.prediction.signals` 기반 일평균 지출/토큰 신호 조회
+- `GET /daily-cumulative-tokens?teamId={id}`
+  - 설명: `usage.daily.cumulative.tokens` 기반 일 누적 토큰 스냅샷 조회
 - `GET /debug/events?limit={n}`
   - 설명: 최근 수신 이벤트 디버그 조회
 - `GET /model-catalog`
@@ -88,10 +98,16 @@
   - 백엔드 `budget-forecast-assistant` API 프록시
   - 개인 키 분석과 팀 키 분석 모두 동일하게 프록시하며, 동일한 AI 실패 처리(`AI_INFERENCE_FAILED`)와 응답 계약을 적용한다.
   - 세션 이메일을 파싱해 내부 호출 시 `x-user-email` 헤더로 전달한다.
-  - 내부 호출 타임아웃은 20초로 설정되어 Gemini 응답 지연 시 조기 실패를 줄인다.
+  - 내부 호출 타임아웃은 45초로 설정되어 Gemini 응답 지연 시 조기 실패를 줄인다.
+- `POST /agent/api/v1/agents/budget-forecast-assistant/batch`
+  - 백엔드 `budget-forecast-assistant/batch` API 프록시
+  - 내부 호출 타임아웃은 45초를 사용한다.
 - `POST /agent/api/v1/agents/policy-recommendations/analyze`
   - 백엔드 `policy-recommendations/analyze` API 프록시
   - 개인/팀 키 분석 실행 시 추천 캐시를 생성한다.
+- `POST /agent/api/v1/agents/policy-recommendations/analyze/batch`
+  - 백엔드 `policy-recommendations/analyze/batch` API 프록시
+  - 여러 키 추천 분석을 일괄 수행한다.
 - `GET /agent/api/v1/agents/policy-recommendations/{keyId}?scopeType=...&scopeId=...`
   - 백엔드 추천 조회 API 프록시
   - UI 카드에 추천 신뢰도/절감률/근거 지표를 렌더링할 때 사용한다.
@@ -146,7 +162,13 @@
 
 ## 6. 운영상 주의점
 
+- Provider 표기 정합성:
+  - Identity/Team 경계의 외부 API Key provider canonical 값은 `GOOGLE`/`OPENAI`/`ANTHROPIC`를 기준으로 본다.
+  - Team 내부 키 조회 경로는 `gemini` 별칭을 `GOOGLE`로 정규화할 수 있으므로, Agent 쪽 집계/표시는 대문자 canonical provider 기준으로 처리한다.
+  - 레거시 `GEMINI` 이벤트/스냅샷이 유입되더라도 운영 표시·집계 키는 `GOOGLE`로 수렴시키는 것을 권장한다.
+
 - `budget-forecast-assistant`는 AI 의존 경로다. Gemini API key/모델/네트워크 이슈 시 fallback 없이 `503(AI_INFERENCE_FAILED)`가 발생한다.
+- 추천 생성 경로(`policy-recommendations/analyze*`)도 AI 의존이며, 실패 시 `503(AI_RECOMMENDATION_INFERENCE_FAILED)`가 발생할 수 있다.
 - `GeminiAssistantService`는 필수 필드 누락을 보정하지 않는다. `healthStatus`, `assistantMessage`, `recommendedActions`, `anomalySummary`, `routingRecommendation`, `estimatedRoutingSavingsPercent` 중 하나라도 비정상이면 실패 처리된다.
 - **Billing 비용 신호(`BillingSignalSnapshotService`)**: 메모리 맵에 더해 **Redis Hash**(`ai-agent:billing-signals`)에 직렬화 저장한다. 재시작 후에도 Redis가 살아 있으면 스냅샷이 복구된다. Redis가 없으면 기존처럼 메모리만 사용한다.
 - **보정 잡(`BillingSignalReconciliationService`)**: 애플리케이션 기동 후 및 고정 지연마다, Identity 키 스냅샷에 있는 키에 대해 `billing-service`의 `GET /api/v1/expenditure/summary`를 호출해 비용을 보강한다(기간: **Asia/Seoul** 이번 달 1일 ~ 오늘). 이벤트 유입이 없거나 재시작 직후 `billing-signals`가 비는 구간을 줄인다.
@@ -180,7 +202,7 @@
 - 개인 API 키 목록 UI는 alias 중심으로 단순화했고, `available-context`의 불필요한 보조 필드(note/디버그 파생 값)를 제거했다.
 - `available-context`는 개인 키 스냅샷이 비어 있을 때 Identity 내부 API 조회로 보완하도록 확장했다.
 - Gemini 기본 모델/환경 기본값을 `gemini-2.5-flash`로 상향했다.
-- `budget-forecast-assistant` BFF에 내부 호출 타임아웃 분리(오리진 probe 3초, 예측 호출 20초)를 반영했다.
+- `budget-forecast-assistant` BFF에 내부 호출 타임아웃 분리(오리진 probe 3초, 예측 호출 45초)를 반영했다.
 - BFF(`available-context`, `budget-forecast-assistant`)에서 로그인 세션 이메일을 파싱해 `x-user-email` 헤더를 내부 백엔드 호출에 전달하도록 변경했다.
 - Agent UI 분석 액션을 개인 키/팀 키 버튼으로 분리했다.
 - API Key별 "다음 결제일" 입력값을 브라우저 `localStorage`에 저장/복원하도록 정리했다.

@@ -84,7 +84,7 @@
 
 ### 3.3 Team Web(BFF/화면)
 
-- `services/team-service/web/src/app/api/auth/token/switch-team/route.ts`
+- `services/team-service/web/src/pages/api/auth/token/switch-team.ts`
 - `services/team-service/web/src/components/team/team-management-view.tsx`
 
 ### 3.4 계약 문서
