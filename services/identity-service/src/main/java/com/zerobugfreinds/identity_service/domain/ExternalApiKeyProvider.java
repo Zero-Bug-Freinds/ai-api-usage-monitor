@@ -4,7 +4,6 @@ package com.zerobugfreinds.identity_service.domain;
  * 사용자가 등록하는 외부 AI API 제공자.
  */
 public enum ExternalApiKeyProvider {
-	GEMINI,
 	GOOGLE,
 	OPENAI,
 	ANTHROPIC,
@@ -21,8 +20,7 @@ public enum ExternalApiKeyProvider {
 		return switch (normalized) {
 			case "openai" -> OPENAI;
 			case "anthropic" -> ANTHROPIC;
-			case "google" -> GOOGLE;
-			case "gemini" -> GEMINI;
+			case "google", "gemini" -> GOOGLE;
 			case "meta" -> META;
 			case "mistral" -> MISTRAL;
 			case "cohere" -> COHERE;

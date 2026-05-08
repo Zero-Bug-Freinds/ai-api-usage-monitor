@@ -31,7 +31,7 @@ type TeamSummaryLike = {
   createdAt?: string
 }
 
-type ExternalKeyProvider = "GEMINI" | "OPENAI" | "ANTHROPIC"
+type ExternalKeyProvider = "GOOGLE" | "OPENAI" | "ANTHROPIC"
 
 type TeamApiKeySummary = {
   id: number
@@ -126,7 +126,7 @@ function parseTeamApiKeyDeletionGraceInput(raw: string):
 }
 
 const TEAM_WEB_BASE_PATH = "/teams"
-const EXTERNAL_KEY_PROVIDER_OPTIONS: ExternalKeyProvider[] = ["GEMINI", "OPENAI", "ANTHROPIC"]
+const EXTERNAL_KEY_PROVIDER_OPTIONS: ExternalKeyProvider[] = ["GOOGLE", "OPENAI", "ANTHROPIC"]
 const DISMISSED_EXPIRED_INVITATION_STORAGE_KEY = "team.dismissedExpiredInvitationNoticeIds"
 
 type InviteeFieldRow = { id: string; value: string }
@@ -944,8 +944,8 @@ export function TeamManagementView() {
           </div>
         </div>
       ) : null}
-      <aside className="h-full w-full min-w-0 max-w-full shrink-0 border-r border-border bg-muted/20">
-        <div className="flex h-full min-h-0 min-w-0 flex-col">
+      <aside className="w-full min-w-0 max-w-full shrink-0 border-r border-border bg-muted/20">
+        <div className="flex min-w-0 flex-col">
           <div className="sticky top-0 z-10 border-b border-border bg-muted/20 px-4 py-4 backdrop-blur-sm">
             <div className="flex items-center justify-between gap-2">
               <h2 className="text-base font-semibold text-foreground">팀 목록</h2>
@@ -1049,7 +1049,7 @@ export function TeamManagementView() {
             ) : null}
           </div>
 
-          <div className="min-h-0 min-w-0 flex-1 p-3">
+          <div className="min-w-0 p-3">
             {message ? (
               <div
                 className={`mb-3 rounded-md border px-3 py-2 text-xs ${

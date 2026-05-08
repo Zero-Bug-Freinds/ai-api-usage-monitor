@@ -1,7 +1,7 @@
 import { z } from "zod"
 
-export const externalKeyProviderSchema = z.enum(["GEMINI", "OPENAI", "ANTHROPIC"], {
-  message: "provider는 GEMINI/OPENAI/ANTHROPIC 중 하나여야 합니다",
+export const externalKeyProviderSchema = z.enum(["GOOGLE", "OPENAI", "ANTHROPIC"], {
+  message: "provider는 GOOGLE/OPENAI/ANTHROPIC 중 하나여야 합니다",
 })
 
 export const createExternalKeyRequestSchema = z.object({
