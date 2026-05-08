@@ -8,9 +8,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ApiKeyClientProviderLookupTest {
 
     @Test
-    void googleLookupAcceptsGoogleAndGeminiProviderSegments() {
+    void googleLookupUsesCanonicalGoogleSegmentOnly() {
         assertThat(ApiKeyClient.providerSegmentsForLookup(AiProvider.GOOGLE))
-                .containsExactly("google", "gemini");
+                .containsExactly("google");
     }
 
     @Test
