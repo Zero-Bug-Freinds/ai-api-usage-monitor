@@ -71,7 +71,7 @@ jobs:
             web_edge:
               - 'docker/web-edge/**'
               - 'apps/web/**'
-              - 'services/team-service/web-mfe/**'
+              - 'services/team-service/web/**'
               - 'services/usage-service/web-mfe/**'
               - 'docker-compose.yml'
               - '.github/workflows/**'
@@ -113,7 +113,7 @@ jobs:
               - 'packages/team-workspace-cache/**'
             web_mfe:
               - 'services/usage-service/web-mfe/**'
-              - 'services/team-service/web-mfe/**'
+              - 'services/team-service/web/**'
             web_shared:
               - 'packages/ui/**'
               - 'packages/shell/**'
@@ -292,7 +292,7 @@ jobs:
             --add-host identity-web:127.0.0.1 \
             --add-host usage-web:127.0.0.1 \
             --add-host web-host:127.0.0.1 \
-            --add-host team-web-mfe:127.0.0.1 \
+            --add-host team-web:127.0.0.1 \
             --add-host usage-web-mfe:127.0.0.1 \
             --add-host billing-web:127.0.0.1 \
             --add-host notification-web:127.0.0.1 \
@@ -733,16 +733,16 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Verify MF plugin settings (usage/team remotes)
         run: |
-          node -e "const fs=require('node:fs');const checks=[['services/usage-service/web-mfe/next.config.ts',['NextFederationPlugin','name: \"usage\"','filename: \"static/chunks/remoteEntry.js\"']],['services/team-service/web-mfe/next.config.ts',['NextFederationPlugin','name: \"team\"','filename: \"static/chunks/remoteEntry.js\"']]];for(const [p,needles] of checks){const c=fs.readFileSync(p,'utf8');for(const n of needles){if(!c.includes(n)){throw new Error('missing '+n+' in '+p)}}}"
+          node -e "const fs=require('node:fs');const checks=[['services/usage-service/web-mfe/next.config.ts',['NextFederationPlugin','name: \"usage\"','filename: \"static/chunks/remoteEntry.js\"']],['services/team-service/web/next.config.ts',['NextFederationPlugin','name: \"team\"','filename: \"static/chunks/remoteEntry.js\"']]];for(const [p,needles] of checks){const c=fs.readFileSync(p,'utf8');for(const n of needles){if(!c.includes(n)){throw new Error('missing '+n+' in '+p)}}}"
       # ESLint: omit --max-warnings so only errors fail the step; warnings do not stop CI
       - name: Lint / typecheck / build (web-mfe)
         run: |
           pnpm --filter usage-web-mfe run lint
-          pnpm --filter team-web-mfe run lint
+          pnpm --filter team-web run lint
           pnpm --filter usage-web-mfe exec tsc --noEmit
-          pnpm --filter team-web-mfe exec tsc --noEmit
+          pnpm --filter team-web exec tsc --noEmit
           pnpm --filter usage-web-mfe run build
-          pnpm --filter team-web-mfe run build
+          pnpm --filter team-web run build
       - name: Docker image (usage-web-mfe, standalone)
         id: docker_usage_web_mfe
         uses: docker/build-push-action@v6
@@ -763,25 +763,25 @@ jobs:
           echo "- Digest: \`${{ steps.docker_usage_web_mfe.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Cache scope: \`usage-web-mfe\` (type=gha)" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-      - name: Docker image (team-web-mfe, standalone)
+      - name: Docker image (team-web, standalone)
         id: docker_team_web_mfe
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: services/team-service/web-mfe/Dockerfile
-          tags: team-web-mfe:ci
+          file: services/team-service/web/Dockerfile
+          tags: team-web:ci
           load: true
           push: false
-          cache-from: type=gha,scope=team-web-mfe
+          cache-from: type=gha,scope=team-web
           # NOTE: 무료 티어(10GB)에서 캐시가 커지면 mode=min으로 유지하는 편이 안정적이다.
-          cache-to: type=gha,mode=min,scope=team-web-mfe
+          cache-to: type=gha,mode=min,scope=team-web
       - name: Team-web-mfe image summary
         if: always()
         run: |
-          echo "## Docker image build summary (team-web-mfe)" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Tag: \`team-web-mfe:ci\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Docker image build summary (team-web)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Tag: \`team-web:ci\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Digest: \`${{ steps.docker_team_web_mfe.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Cache scope: \`team-web-mfe\` (type=gha)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Cache scope: \`team-web\` (type=gha)" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
   # Single required check for branch protection.

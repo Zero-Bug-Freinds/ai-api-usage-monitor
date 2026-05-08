@@ -19,7 +19,7 @@
 | Usage 운영·BFF | `services/usage-service/web/` | App Router | `basePath=/dashboard`, Usage BFF |
 | Usage MF remote | `services/usage-service/web-mfe/` | Pages Router | `NextFederationPlugin` `exposes` 만 |
 | Team 운영·BFF | `services/team-service/web/` | App Router | `basePath=/teams` |
-| Team MF remote | `services/team-service/web-mfe/` | Pages Router | 동일 |
+| Team MF remote | `services/team-service/web/` | Pages Router | 동일 |
 | MF 호스트 | `apps/web/` | App Router + webpack MF | `remotes` → 위 remoteEntry URL |
 
 Identity **`web/`** 에는 MF 플러그인을 두지 않고, 랜딩·인증·계정 BFF 역할만 유지하는 것을 권장한다.
@@ -44,7 +44,7 @@ Identity **`web/`** 에는 MF 플러그인을 두지 않고, 랜딩·인증·계
 
 - 호스트: `pnpm --filter web-host dev`(기본 포트 `3100` 등 `package.json` 정본).
 - Usage remote: `pnpm --filter usage-web-mfe dev` — 포트는 `usage-service/web-mfe/package.json`의 `dev` 스크립트 정본.
-- Team remote: `pnpm --filter team-web-mfe dev`.
+- Team remote: `pnpm --filter team-web dev`.
 - 환경 변수: `NEXT_PUBLIC_MFE_USAGE_REMOTE_URL`, `NEXT_PUBLIC_MFE_TEAM_REMOTE_URL` 등(호스트 `next.config` 기본값과 맞출 것).
 
 ---

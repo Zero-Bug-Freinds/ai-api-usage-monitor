@@ -17,7 +17,6 @@ COPY services/usage-service/web/package.json ./services/usage-service/web/
 COPY services/usage-service/web-mfe/package.json ./services/usage-service/web-mfe/
 COPY services/billing-service/web/package.json ./services/billing-service/web/
 COPY services/team-service/web/package.json ./services/team-service/web/
-COPY services/team-service/web-mfe/package.json ./services/team-service/web-mfe/
 COPY services/notification-service/web/package.json ./services/notification-service/web/
 
 RUN pnpm install --frozen-lockfile
