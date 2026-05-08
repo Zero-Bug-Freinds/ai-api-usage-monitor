@@ -51,6 +51,8 @@ PowerShell:
 ```bash
 curl "http://localhost:8097/api/v1/agents/debug/events?limit=50"
 curl "http://localhost:8097/api/v1/agents/billing-signals"
+curl "http://localhost:8097/api/v1/agents/usage-prediction-signals"
+curl "http://localhost:8097/api/v1/agents/daily-cumulative-tokens"
 curl "http://localhost:3005/agent/api/v1/agents/available-context" -H "x-user-id: 1"
 ```
 
@@ -59,6 +61,8 @@ curl "http://localhost:3005/agent/api/v1/agents/available-context" -H "x-user-id
 정상 기준:
 - `debug/events`: `UsageCostFinalizedEvent`, `DailyCumulativeTokensUpdatedEvent` 존재
 - `billing-signals`: 대상 키의 `latestEstimatedCostUsd` 0 초과
+- `usage-prediction-signals`: 최근 7일 지표(`averageDailySpendUsd7d`, `averageDailyTokenUsage7d`) 존재
+- `daily-cumulative-tokens`: 대상 키/스코프의 일 누적 토큰 스냅샷 존재
 - `available-context`: `budgetStats.currentSpendUsd`, `budgetStats.budgetUsagePercent` 갱신
 
 ## 3-1) 예산 예측(개인/팀) AI 응답 계약 점검
@@ -119,6 +123,32 @@ curl -X POST "http://localhost:8097/api/v1/agents/budget-forecast-assistant" \
 - 성공 시 응답에 `anomalySummary`, `routingRecommendation`, `estimatedRoutingSavingsPercent`가 포함된다.
 - 실패 시 `503` + `{"code":"AI_INFERENCE_FAILED", ...}`가 반환된다.
 - 개인/팀 모두 같은 오류 정책(무조건 AI 호출, fallback 없음)을 따른다.
+
+배치 검증(선택):
+
+```bash
+curl -X POST "http://localhost:8097/api/v1/agents/budget-forecast-assistant/batch" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "requests":[
+      {
+        "userId":"1",
+        "teamId":null,
+        "keyId":1001,
+        "monthlyBudgetUsd":100,
+        "currentSpendUsd":25,
+        "remainingTokens":100000,
+        "averageDailyTokenUsage":12000,
+        "averageDailySpendUsd":3.2,
+        "billingCycleEndDate":"2026-05-31",
+        "recentDailySpendUsd":[2.8,3.0,3.1,3.4,3.2,3.5,3.6],
+        "recentDailyTokenUsage7d":[11000,11800,12100,12900,12400,13200,13600],
+        "modelUsageDistribution7d":[{"model":"gemini-2.5-flash","percentage":70}],
+        "hourlyTokenUsage24h":[120,90,80,70,60,55,65,95,160,220,280,320,300,290,270,260,240,210,180,150,130,115,100,90]
+      }
+    ]
+  }'
+```
 
 ## 4) 자주 헷갈리는 포인트
 
