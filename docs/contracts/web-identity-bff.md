@@ -1,6 +1,6 @@
 # Web(Next.js) ↔ Identity 인증 BFF 계약
 
-버전: 1.23  
+버전: 1.24  
 관련: [docs/architecture.md](../architecture.md) §1.3, §3.3, §10.2, §13, [Identity 인증 API 계약](../identity-auth-api-contract.md), [Web·Gateway Usage BFF](./web-gateway-bff.md)(Usage BFF·`basePath` 호출 맵), [Web·Team BFF](./web-team-bff.md), [저장소 구조](../repository-structure.md) §6, [웹 경계](./web-split-boundary.md)(§2.4 로컬 `web-edge` Nginx)
 
 **소스 트리:** BFF·화면의 **정본**은 `services/identity-service/web/` 이다. **공용 UI(Shadcn 래퍼·`cn`)** 는 루트 pnpm workspace **`@ai-usage/ui`**(`packages/ui`)를 참조한다([web-split-boundary.md §1.1](./web-split-boundary.md)). Identity vs Usage 라우트·미들웨어 매처는 [web-split-boundary.md](./web-split-boundary.md) §2·§3.
@@ -96,7 +96,7 @@
 ### 2.5 `DELETE /api/auth/external-keys/{id}` 동작 (삭제 예약)
 
 1. 브라우저 → BFF: `DELETE /api/auth/external-keys/{id}`  
-   - 선택 **쿼리** `gracePeriodDays`(정수): 생략 시 Identity 기본 **7일**, 허용 범위는 Identity 구현(현재 **1~365일**). 잘못된 값은 업스트림이 `400`으로 거절할 수 있다.
+   - 선택 **쿼리** `gracePeriodDays`(정수): 생략 시 Identity 기본 **7일**, 허용 범위는 Identity 구현(현재 **0~365일**). `0`은 즉시 삭제이며, 잘못된 값은 업스트림이 `400`으로 거절할 수 있다.
 2. **`access_token` 쿠키가 없거나 값이 비어 있으면** BFF는 Identity를 호출하지 않고 `401`로 응답한다.
 3. BFF → Gateway: 브라우저 요청 URL의 **쿼리 문자열을 그대로 이어 붙여** `DELETE {GATEWAY_URL|WEB_GATEWAY_URL}/api/identity/auth/external-keys/{id}{?gracePeriodDays=…&retainLogs=…}` 로 프록시한다(구현: `services/identity-service/web/src/app/api/auth/external-keys/[id]/route.ts`).
 4. 성공 시 Identity 응답(`deletionRequestedAt`, `permanentDeletionAt`, `deletionGraceDays` 등)을 그대로 전달한다. 유예 종료 후 물리 삭제는 스케줄러가 담당한다([identity-auth-api-contract §10.1](../identity-auth-api-contract.md)).

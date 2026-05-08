@@ -1,6 +1,6 @@
 # Web(Next.js) ↔ Team Service BFF 계약
 
-버전: 0.9  
+버전: 0.11  
 관련: [web-split-boundary.md](./web-split-boundary.md), [web-identity-bff.md](./web-identity-bff.md) — `/teams` UI 소유·경로: §2.3
 
 ---
@@ -164,7 +164,7 @@
     - **`0`**: 삭제 예정 없이 **즉시 DB에서 행을 삭제**(물리 삭제).
     - **`1` 이상**: `deletionRequestedAt`을 현재 시각으로, `permanentDeletionAt`을 그 시각 + `gracePeriodDays`일 후로 두는 **삭제 예정(소프트)**.
   - 권한: **팀장만** 호출 가능.
-  - 유예 종료 후 배치로 행을 지우는 **스케줄러는 별도 구현**일 수 있다(계약만으로 보장하지 않음).
+  - 유예 종료 후 물리 삭제는 `TeamApiKeyPurgeScheduler`가 주기적으로 `purgeExpiredDeletions()`를 실행해 처리한다.
   - 성공: `200`, `message` 예: `팀 API 키 삭제 요청이 처리되었습니다`, `data`에 해당 키 요약(즉시 삭제 직전 스냅샷 또는 삭제 예정 필드 포함)
   - 실패: `400` (대상 없음·유예 일수 범위 밖·이미 삭제 예정 등), `403`, `404`
 
@@ -180,6 +180,8 @@
     - `403` (`success=false`): 팀 멤버가 아닌 사용자의 조회 시도
     - `404` (`success=false`): 대상 팀이 존재하지 않는 경우
 - 레거시 호환: 내부 저장값/경로에 `GEMINI`가 남아 있어도 외부 BFF 계약의 provider 표기는 `GOOGLE`로 통일한다.
+  - 내부 키 조회 API(`GET /internal/team-api-keys/{provider}`)는 `provider=gemini` 별칭을 입력받아 `GOOGLE`로 정규화한다(코드: `TeamInternalApiKeyResolveService`).
+  - 부팅 시 `TeamApiKeyProviderMigrationInitializer`가 `team_api_keys`의 `GEMINI` 값을 `GOOGLE`로 정리한다.
 
 ---
 

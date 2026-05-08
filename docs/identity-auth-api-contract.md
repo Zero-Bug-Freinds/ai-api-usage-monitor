@@ -1,6 +1,6 @@
 # Identity 인증 API 계약 (백엔드)
 
-버전: 1.7  
+버전: 1.8  
 관련: [architecture.md](./architecture.md) §1.3, [contracts/web-identity-bff.md](./contracts/web-identity-bff.md)
 
 ---
@@ -47,6 +47,12 @@
 | `POST` | `/api/auth/logout`  | 불필요 | 로그아웃 신호 응답(BFF 쿠키 삭제 유도) |
 
 레거시 호환: 과거 `GEMINI` 값으로 저장된 항목이 있더라도 외부 API 응답의 canonical provider 표기는 `GOOGLE`로 유지한다.
+클라이언트 입력 `provider` 허용값은 계속 `GOOGLE`, `OPENAI`, `ANTHROPIC` 기준이며, `GEMINI`는 레거시 DB 정리 목적의 내부 호환 범위로만 취급한다.
+
+부팅 시 마이그레이션(코드 기준 `ExternalApiKeyProviderMigrationInitializer`):
+- DB 제약조건 `external_api_keys_provider_check`를 재생성해 `GEMINI`, `GOOGLE`, `OPENAI`, `ANTHROPIC`를 임시 허용한다.
+- 이어서 `provider='GEMINI'` 행을 `provider='GOOGLE'`로 일괄 업데이트한다.
+- 목적은 기존 데이터가 있는 환경에서도 서비스 부팅 실패 없이 `GOOGLE` 표기로 수렴시키는 것이다.
 
 
 ---

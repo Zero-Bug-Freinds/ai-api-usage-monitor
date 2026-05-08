@@ -50,6 +50,8 @@
   - 설명: 비용 최종화/예산 임계 이벤트 기반 신호 조회
 - `GET /usage-prediction-signals?teamId={id}`
   - 설명: `usage.prediction.signals` 기반 일평균 지출/토큰 신호 조회
+- `GET /daily-cumulative-tokens?teamId={id}`
+  - 설명: `usage.daily.cumulative.tokens` 기반 일 누적 토큰 스냅샷 조회
 - `GET /debug/events?limit={n}`
   - 설명: 최근 수신 이벤트 디버그 조회
 - `GET /model-catalog`
@@ -159,6 +161,11 @@
   - `GATEWAY_SHARED_SECRET` (billing 내부 호출 시 `X-Gateway-Auth`)
 
 ## 6. 운영상 주의점
+
+- Provider 표기 정합성:
+  - Identity/Team 경계의 외부 API Key provider canonical 값은 `GOOGLE`/`OPENAI`/`ANTHROPIC`를 기준으로 본다.
+  - Team 내부 키 조회 경로는 `gemini` 별칭을 `GOOGLE`로 정규화할 수 있으므로, Agent 쪽 집계/표시는 대문자 canonical provider 기준으로 처리한다.
+  - 레거시 `GEMINI` 이벤트/스냅샷이 유입되더라도 운영 표시·집계 키는 `GOOGLE`로 수렴시키는 것을 권장한다.
 
 - `budget-forecast-assistant`는 AI 의존 경로다. Gemini API key/모델/네트워크 이슈 시 fallback 없이 `503(AI_INFERENCE_FAILED)`가 발생한다.
 - 추천 생성 경로(`policy-recommendations/analyze*`)도 AI 의존이며, 실패 시 `503(AI_RECOMMENDATION_INFERENCE_FAILED)`가 발생할 수 있다.

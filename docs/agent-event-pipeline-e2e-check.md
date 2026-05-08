@@ -164,4 +164,6 @@ curl -X POST "http://localhost:8097/api/v1/agents/budget-forecast-assistant/batc
 - **Billing 지출 % vs Agent 키 카드 %**
   - Billing **상단** 개인 배너는 **모든 키 지출 합 / 사용자 단위 월 예산**입니다.
   - Billing에서 **특정 키·프로바이더**를 고른 뒤의 요약 %와 Agent 키 카드는 둘 다 **`expenditure/summary` 키 단위**에 맞추는 것이 목표입니다. 상단 %와 키 카드 %를 직접 비교하면 어긋날 수 있습니다.
+- **Provider 표기(레거시 호환)**
+  - Identity/Team 경계에서 레거시 `GEMINI`가 남아 있어도 운영 표기·조회 기준은 `GOOGLE` canonical 값으로 맞춘다.
 - **Gateway JWT 모드**에서 Proxy 실트래픽·일부 스크립트는 `Authorization: Bearer`가 필요합니다. `scripts/verify-expenditure-chain.ps1` 주석의 `EXPENDITURE_VERIFY_GATEWAY_JWT` 등을 참고합니다.
