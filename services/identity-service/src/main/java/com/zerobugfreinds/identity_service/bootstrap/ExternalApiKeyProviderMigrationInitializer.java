@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -35,30 +36,10 @@ public class ExternalApiKeyProviderMigrationInitializer {
 			return;
 		}
 
-		jdbcTemplate.execute(
-				"""
-				do $$
-				begin
-				  if exists (
-				    select 1
-				    from pg_constraint c
-				    join pg_class t on c.conrelid = t.oid
-				    where t.relname = 'external_api_keys'
-				      and c.conname = 'external_api_keys_provider_check'
-				  ) then
-				    alter table external_api_keys
-				      drop constraint external_api_keys_provider_check;
-				  end if;
-				end $$;
-				"""
-		);
-		jdbcTemplate.execute(
-				"""
-				alter table external_api_keys
-				add constraint external_api_keys_provider_check
-				check (provider in ('GEMINI', 'GOOGLE', 'OPENAI', 'ANTHROPIC'))
-				"""
-		);
+		boolean postgres = isPostgres();
+		if (postgres) {
+			dropProviderCheckConstraint();
+		}
 
 		int updated = jdbcTemplate.update(
 				"""
@@ -67,6 +48,34 @@ public class ExternalApiKeyProviderMigrationInitializer {
 				where cast(provider as varchar) = 'GEMINI'
 				"""
 		);
+		if (postgres) {
+			addProviderCheckConstraint();
+		}
 		log.info("external_api_keys provider migration completed updatedRows={}", updated);
+	}
+
+	private boolean isPostgres() {
+		return Boolean.TRUE.equals(jdbcTemplate.execute((ConnectionCallback<Boolean>) connection ->
+				connection.getMetaData().getDatabaseProductName().toLowerCase().contains("postgresql")
+		));
+	}
+
+	private void dropProviderCheckConstraint() {
+		jdbcTemplate.execute(
+				"""
+				alter table external_api_keys
+				drop constraint if exists external_api_keys_provider_check
+				"""
+		);
+	}
+
+	private void addProviderCheckConstraint() {
+		jdbcTemplate.execute(
+				"""
+				alter table external_api_keys
+				add constraint external_api_keys_provider_check
+				check (provider in ('GOOGLE', 'OPENAI', 'ANTHROPIC', 'META', 'MISTRAL', 'COHERE', 'GROK'))
+				"""
+		);
 	}
 }
