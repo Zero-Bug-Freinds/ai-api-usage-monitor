@@ -137,7 +137,7 @@
 | 필드 | 설명 |
 |---|---|
 | `id` | 키 행 ID |
-| `provider` | `OPENAI` / `GEMINI` / `CLAUDE` |
+| `provider` | `OPENAI` / `GOOGLE` / `ANTHROPIC` |
 | `alias` | 별칭 |
 | `monthlyBudgetUsd` | 월 예산(USD), 숫자 |
 | `createdAt` | 생성 시각(ISO-8601) |
@@ -146,7 +146,7 @@
 | `deletionGraceDays` | 삭제 요청 시 선택한 유예 기간(일). 생략 시 서버 기본은 7일. 삭제 예정이 아니면 생략. |
 
 - `POST /api/team/v1/teams/{id}/api-keys`
-  - 요청 본문: `provider` (`OPENAI`/`GEMINI`/`CLAUDE`), `alias`, `externalKey`, `monthlyBudgetUsd` (0 이상, USD 월 예산 한도 — identity-service 외부 키와 동일 개념)
+  - 요청 본문: `provider` (`OPENAI`/`GOOGLE`/`ANTHROPIC`), `alias`, `externalKey`, `monthlyBudgetUsd` (0 이상, USD 월 예산 한도 — identity-service 외부 키와 동일 개념)
   - 성공: `201`, `data`에 등록된 키 요약(위 표의 활성 키에 해당하는 필드)
   - 실패:
     - `400` (`success=false`): 필수값 누락, alias 중복, 동일 provider+키 값(해시)이 **이미 활성**인 경우 `이미 등록된 API Key입니다`, 동일 해시가 **삭제 예정** 행에 있으면 `삭제 예정키와 중복입니다`
@@ -179,6 +179,7 @@
   - 실패:
     - `403` (`success=false`): 팀 멤버가 아닌 사용자의 조회 시도
     - `404` (`success=false`): 대상 팀이 존재하지 않는 경우
+- 레거시 호환: 내부 저장값/경로에 `GEMINI`가 남아 있어도 외부 BFF 계약의 provider 표기는 `GOOGLE`로 통일한다.
 
 ---
 

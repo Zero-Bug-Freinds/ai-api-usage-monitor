@@ -46,6 +46,8 @@
 | `POST` | `/api/auth/external-keys/{id}/deletion-cancel` | 필요  | 외부 AI API 키 삭제 예약 취소 |
 | `POST` | `/api/auth/logout`  | 불필요 | 로그아웃 신호 응답(BFF 쿠키 삭제 유도) |
 
+레거시 호환: 과거 `GEMINI` 값으로 저장된 항목이 있더라도 외부 API 응답의 canonical provider 표기는 `GOOGLE`로 유지한다.
+
 
 ---
 
@@ -145,7 +147,7 @@
   "data": [
     {
       "id": 1,
-      "provider": "GEMINI",
+      "provider": "GOOGLE",
       "alias": "데모용 제미나이 키",
       "monthlyBudgetUsd": 20.5,
       "createdAt": "2026-03-29T08:05:19.296098200Z"
@@ -195,16 +197,16 @@
 
 | 필드 | 타입 | 필수 | 제약 | 예시 값 |
 | --- | --- | --- | --- | --- |
-| `provider` | string (enum) | 예 | `GEMINI`, `OPENAI`, `ANTHROPIC` 중 하나 | `"GEMINI"` |
+| `provider` | string (enum) | 예 | `GOOGLE`, `OPENAI`, `ANTHROPIC` 중 하나 | `"GOOGLE"` |
 | `externalKey` | string | 예 | 공백만 불가, 최대 4096자 | 제3자가 발급한 비밀 키 |
-| `alias` | string | 예 | 공백만 불가, 최대 100자 | `"데모용 Gemini"` |
+| `alias` | string | 예 | 공백만 불가, 최대 100자 | `"데모용 Google"` |
 | `monthlyBudgetUsd` | number | 예 | 0 이상, 소수점 둘째 자리까지 | `20.5` |
 
 요청 본문 예시:
 
 | 항목 | 예시 JSON |
 | --- | --- |
-| Body | `{"provider":"GEMINI","externalKey":"<비밀키>","alias":"데모용 Gemini","monthlyBudgetUsd":20.5}` |
+| Body | `{"provider":"GOOGLE","externalKey":"<비밀키>","alias":"데모용 Google","monthlyBudgetUsd":20.5}` |
 
 ### 7.2 성공 응답 (`201 Created`)
 
@@ -222,7 +224,7 @@
 | `success` | boolean | `true` | 처리 성공 여부 |
 | `message` | string | `"외부 API 키가 등록되었습니다"` | 사용자에게 보일 메시지 |
 | `data.id` | number | `1` | 등록 레코드 ID |
-| `data.provider` | string | `"GEMINI"` | 제공자 |
+| `data.provider` | string | `"GOOGLE"` | 제공자 |
 | `data.alias` | string | `"데모용 제미나이 키"` | 별칭 |
 | `data.monthlyBudgetUsd` | number | `20.5` | 월 예산(USD) |
 | `data.createdAt` | string | `"2026-03-29T08:05:19.296098200Z"` | 등록 시각(ISO-8601 UTC, 나노초 포함 가능) |
@@ -235,7 +237,7 @@
   "message": "외부 API 키가 등록되었습니다",
   "data": {
     "id": 1,
-    "provider": "GEMINI",
+    "provider": "GOOGLE",
     "alias": "데모용 제미나이 키",
     "monthlyBudgetUsd": 20.5,
     "createdAt": "2026-03-29T08:05:19.296098200Z"
@@ -251,7 +253,7 @@
 | `externalKey` 누락 | `400` | `{"success":false,"message":"externalKey는 필수입니다","data":null}` |
 | `alias` 누락 | `400` | `{"success":false,"message":"alias는 필수입니다","data":null}` |
 | `monthlyBudgetUsd` 누락 | `400` | `{"success":false,"message":"monthlyBudgetUsd는 필수입니다","data":null}` |
-| `provider` 값 불가 | `400` | `{"success":false,"message":"provider 값이 올바르지 않습니다. 허용: GEMINI, OPENAI, ANTHROPIC","data":null}` (또는 본문 형식 오류 메시지) |
+| `provider` 값 불가 | `400` | `{"success":false,"message":"provider 값이 올바르지 않습니다. 허용: GOOGLE, OPENAI, ANTHROPIC","data":null}` (또는 본문 형식 오류 메시지) |
 | 동일 provider·동일 키 재등록(활성 행 존재) | `409` | `{"success":false,"message":"이미 등록된 API 키입니다","data":null}` |
 | 동일 provider·동일 키, 삭제 예정 행과만 충돌 | `409` | `{"success":false,"message":"삭제예정키와 중복된 키","data":null}` |
 
@@ -292,7 +294,7 @@
 
 | 필드 | 타입 | 필수 | 제약 | 예시 값 |
 | --- | --- | --- | --- | --- |
-| `provider` | string (enum) | 조건부 | `GEMINI`, `OPENAI`, `ANTHROPIC` 중 하나 (`externalKey`를 함께 보낼 때 필수) | `"GEMINI"` |
+| `provider` | string (enum) | 조건부 | `GOOGLE`, `OPENAI`, `ANTHROPIC` 중 하나 (`externalKey`를 함께 보낼 때 필수) | `"GOOGLE"` |
 | `externalKey` | string | 아니오 | 공백만 불가, 최대 4096자 (`provider`와 함께 보낼 때 키 교체) | 제3자가 발급한 비밀 키 |
 | `alias` | string | 예 | 공백만 불가, 최대 100자 | `"데모용 Gemini (수정)"` |
 | `monthlyBudgetUsd` | number | 예 | 0 이상, 소수점 둘째 자리까지 | `35.0` |
@@ -312,7 +314,7 @@
   "message": "외부 API 키가 수정되었습니다",
   "data": {
     "id": 1,
-    "provider": "GEMINI",
+    "provider": "GOOGLE",
     "alias": "데모용 Gemini (수정)",
     "monthlyBudgetUsd": 35.0,
     "createdAt": "2026-03-29T08:05:19.296098200Z"
@@ -362,7 +364,7 @@
 
 | 상황 | 상태 코드 | 예시 JSON |
 | --- | --- | --- |
-| 삭제 예약 성공 | `200` | `{"success":true,"message":"삭제가 예약되었습니다. 일주일 이내에 취소할 수 있으며, 이후에는 키가 영구 삭제됩니다.","data":{"id":1,"provider":"GEMINI","alias":"데모 키","createdAt":"...","monthlyBudgetUsd":10,"deletionRequestedAt":"...","permanentDeletionAt":"...","deletionGraceDays":7}}` |
+| 삭제 예약 성공 | `200` | `{"success":true,"message":"삭제가 예약되었습니다. 일주일 이내에 취소할 수 있으며, 이후에는 키가 영구 삭제됩니다.","data":{"id":1,"provider":"GOOGLE","alias":"데모 키","createdAt":"...","monthlyBudgetUsd":10,"deletionRequestedAt":"...","permanentDeletionAt":"...","deletionGraceDays":7}}` |
 | `gracePeriodDays` 범위 밖 | `400` | `{"success":false,"message":"유예 기간은 1일 이상 365일 이하로 설정할 수 있습니다","data":null}` |
 | 대상 키 없음 | `404` | `{"success":false,"message":"등록된 API 키를 찾을 수 없습니다","data":null}` |
 | 이미 삭제 예정 | `409` | `{"success":false,"message":"이미 삭제 예정인 키입니다","data":null}` |
@@ -371,7 +373,7 @@
 
 | 상황 | 상태 코드 | 예시 JSON |
 | --- | --- | --- |
-| 삭제 취소 성공 | `200` | `{"success":true,"message":"삭제 예약이 취소되었습니다","data":{"id":1,"provider":"GEMINI","alias":"데모 키","createdAt":"...","monthlyBudgetUsd":10,"deletionRequestedAt":null,"permanentDeletionAt":null,"deletionGraceDays":null}}` |
+| 삭제 취소 성공 | `200` | `{"success":true,"message":"삭제 예약이 취소되었습니다","data":{"id":1,"provider":"GOOGLE","alias":"데모 키","createdAt":"...","monthlyBudgetUsd":10,"deletionRequestedAt":null,"permanentDeletionAt":null,"deletionGraceDays":null}}` |
 | 대상 키 없음 | `404` | `{"success":false,"message":"등록된 API 키를 찾을 수 없습니다","data":null}` |
 | 삭제 예정 상태 아님 | `409` | `{"success":false,"message":"삭제 예정 상태가 아닙니다","data":null}` |
 
@@ -422,6 +424,6 @@
   "keyId": 123,
   "alias": "플랫폼팀 제미나이",
   "userId": 456,
-  "provider": "GEMINI",
+  "provider": "GOOGLE",
   "status": "ACTIVE"
 }
