@@ -13,6 +13,8 @@ public record TeamApiKeyStatusChangedEvent(
         Instant occurredAt,
         @JsonProperty("teamApiKeyId")
         Long teamApiKeyId,
+        @JsonProperty("teamId")
+        Long teamId,
         @JsonProperty("ownerUserId")
         String ownerUserId,
         @JsonProperty("provider")

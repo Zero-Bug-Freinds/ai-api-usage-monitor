@@ -53,6 +53,7 @@ public class ApiKeyMetadataSyncService {
         String alias = StringUtils.hasText(event.alias()) ? event.alias().trim() : entity.getAlias();
         entity.apply(
                 userId,
+                entity.getTeamId(),
                 event.provider(),
                 alias,
                 mapStatus(event.status()),
@@ -63,33 +64,34 @@ public class ApiKeyMetadataSyncService {
 
     @Transactional
     public void upsertFromTeamRegistered(TeamApiKeyRegisteredEvent event) {
-        upsertTeamMetadata(event.apiKeyId(), event.actorUserId(), event.provider(), event.alias(), ApiKeyStatus.ACTIVE, event.occurredAt());
+        upsertTeamMetadata(event.apiKeyId(), event.teamId(), event.actorUserId(), event.provider(), event.alias(), ApiKeyStatus.ACTIVE, event.occurredAt());
     }
 
     @Transactional
     public void upsertFromTeamUpdated(TeamApiKeyUpdatedEvent event) {
-        upsertTeamMetadata(event.apiKeyId(), event.actorUserId(), event.provider(), event.alias(), ApiKeyStatus.ACTIVE, event.occurredAt());
+        upsertTeamMetadata(event.apiKeyId(), event.teamId(), event.actorUserId(), event.provider(), event.alias(), ApiKeyStatus.ACTIVE, event.occurredAt());
     }
 
     @Transactional
     public void handleTeamDeleted(TeamApiKeyDeletedEvent event) {
-        upsertTeamMetadata(event.apiKeyId(), event.actorUserId(), event.provider(), event.alias(), ApiKeyStatus.DELETED, event.occurredAt());
+        upsertTeamMetadata(event.apiKeyId(), event.teamId(), event.actorUserId(), event.provider(), event.alias(), ApiKeyStatus.DELETED, event.occurredAt());
     }
 
     @Transactional
     public void handleTeamDeletionScheduled(TeamApiKeyDeletionScheduledEvent event) {
-        upsertTeamMetadata(event.apiKeyId(), event.actorUserId(), event.provider(), event.alias(), ApiKeyStatus.DELETION_REQUESTED, event.occurredAt());
+        upsertTeamMetadata(event.apiKeyId(), event.teamId(), event.actorUserId(), event.provider(), event.alias(), ApiKeyStatus.DELETION_REQUESTED, event.occurredAt());
     }
 
     @Transactional
     public void handleTeamDeletionCancelled(TeamApiKeyDeletionCancelledEvent event) {
-        upsertTeamMetadata(event.apiKeyId(), event.actorUserId(), event.provider(), event.alias(), ApiKeyStatus.ACTIVE, event.occurredAt());
+        upsertTeamMetadata(event.apiKeyId(), event.teamId(), event.actorUserId(), event.provider(), event.alias(), ApiKeyStatus.ACTIVE, event.occurredAt());
     }
 
     @Transactional
     public void upsertFromTeamStatusChanged(TeamApiKeyStatusChangedEvent event) {
         upsertTeamMetadata(
                 event.teamApiKeyId(),
+                event.teamId(),
                 event.ownerUserId(),
                 event.provider(),
                 event.alias(),
@@ -132,6 +134,7 @@ public class ApiKeyMetadataSyncService {
 
         entity.apply(
                 userId,
+                entity.getTeamId(),
                 provider,
                 alias,
                 ApiKeyStatus.DELETED,
@@ -161,6 +164,7 @@ public class ApiKeyMetadataSyncService {
 
     private void upsertTeamMetadata(
             Long keyIdRaw,
+            Long teamIdRaw,
             String ownerUserId,
             String provider,
             String alias,
@@ -183,10 +187,14 @@ public class ApiKeyMetadataSyncService {
         }
 
         ApiKeyMetadataEntity target = entity != null ? entity : ApiKeyMetadataEntity.create(keyId, resolvedUserId);
+        String resolvedTeamId = teamIdRaw != null
+                ? String.valueOf(teamIdRaw)
+                : target.getTeamId();
         String resolvedAlias = StringUtils.hasText(alias) ? alias.trim() : target.getAlias();
         String resolvedProvider = StringUtils.hasText(provider) ? provider.trim() : target.getProvider();
         target.apply(
                 resolvedUserId,
+                resolvedTeamId,
                 resolvedProvider,
                 resolvedAlias,
                 status,
