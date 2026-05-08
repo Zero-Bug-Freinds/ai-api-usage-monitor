@@ -20,7 +20,7 @@ public enum ExternalApiKeyProvider {
 		return switch (normalized) {
 			case "openai" -> OPENAI;
 			case "anthropic" -> ANTHROPIC;
-			case "google", "gemini" -> GOOGLE;
+			case "google" -> GOOGLE;
 			case "meta" -> META;
 			case "mistral" -> MISTRAL;
 			case "cohere" -> COHERE;

@@ -39,7 +39,7 @@ public class ExternalApiKeyProviderMigrationInitializer {
 				"""
 				update external_api_keys
 				set provider = 'GOOGLE'
-				where provider = 'GEMINI'
+				where cast(provider as varchar) = 'GEMINI'
 				"""
 		);
 		log.info("external_api_keys provider migration completed updatedRows={}", updated);
