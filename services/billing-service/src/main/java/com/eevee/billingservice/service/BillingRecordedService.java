@@ -34,18 +34,22 @@ public class BillingRecordedService {
     private final BillingProcessedEventRepository processedEventRepository;
     private final ProviderModelPriceRepository priceRepository;
     private final BillingAggregationJdbc aggregationJdbc;
+    private final TeamApiKeyAggregationJdbc teamApiKeyAggregationJdbc;
     private final UsageCostFinalizedEventPublisher costFinalizedPublisher;
     private final BudgetThresholdEventPublisher budgetThresholdPublisher;
     private final BillingProcessedEventLifecycle processedEventLifecycle;
     private final BillingRabbitProperties rabbitProperties;
     private final IdentityBudgetClient identityBudgetClient;
+    private final TeamBudgetThresholdEventPublisher teamBudgetThresholdEventPublisher;
 
     public BillingRecordedService(
             BillingProcessedEventRepository processedEventRepository,
             ProviderModelPriceRepository priceRepository,
             BillingAggregationJdbc aggregationJdbc,
+            TeamApiKeyAggregationJdbc teamApiKeyAggregationJdbc,
             UsageCostFinalizedEventPublisher costFinalizedPublisher,
             BudgetThresholdEventPublisher budgetThresholdPublisher,
+            TeamBudgetThresholdEventPublisher teamBudgetThresholdEventPublisher,
             BillingProcessedEventLifecycle processedEventLifecycle,
             BillingRabbitProperties rabbitProperties,
             IdentityBudgetClient identityBudgetClient
@@ -53,8 +57,10 @@ public class BillingRecordedService {
         this.processedEventRepository = processedEventRepository;
         this.priceRepository = priceRepository;
         this.aggregationJdbc = aggregationJdbc;
+        this.teamApiKeyAggregationJdbc = teamApiKeyAggregationJdbc;
         this.costFinalizedPublisher = costFinalizedPublisher;
         this.budgetThresholdPublisher = budgetThresholdPublisher;
+        this.teamBudgetThresholdEventPublisher = teamBudgetThresholdEventPublisher;
         this.processedEventLifecycle = processedEventLifecycle;
         this.rabbitProperties = rabbitProperties;
         this.identityBudgetClient = identityBudgetClient;
@@ -120,6 +126,49 @@ public class BillingRecordedService {
                     monthlyBudgetUsd
             ));
         }
+
+        // Team API key spend aggregation + team budget threshold events ("registered team keys only").
+        maybeProcessTeamKeyBudgetThreshold(event, bc);
+    }
+
+    private void maybeProcessTeamKeyBudgetThreshold(UsageRecordedEvent event, BillableComputation bc) {
+        if (!"team".equalsIgnoreCase(event.apiKeySource())) {
+            return;
+        }
+        String teamIdRaw = bc.teamId();
+        String teamApiKeyIdRaw = event.teamApiKeyId();
+        if (teamIdRaw == null || teamIdRaw.isBlank() || teamApiKeyIdRaw == null || teamApiKeyIdRaw.isBlank()) {
+            return;
+        }
+        long teamId;
+        long teamApiKeyId;
+        try {
+            teamId = Long.parseLong(teamIdRaw.trim());
+            teamApiKeyId = Long.parseLong(teamApiKeyIdRaw.trim());
+        } catch (NumberFormatException ignored) {
+            return;
+        }
+
+        BigDecimal teamMonthlyBefore = teamApiKeyAggregationJdbc.sumMonthlyCostUsdForTeam(bc.monthStart(), teamId);
+        teamApiKeyAggregationJdbc.upsertMonthly(bc.monthStart(), teamApiKeyId, bc.cost());
+        BigDecimal teamMonthlyAfter = teamApiKeyAggregationJdbc.sumMonthlyCostUsdForTeam(bc.monthStart(), teamId);
+        BigDecimal teamMonthlyBudgetUsd = teamApiKeyAggregationJdbc.sumMonthlyBudgetUsdForTeam(teamId);
+
+        boolean budgetPositive = teamMonthlyBudgetUsd != null && teamMonthlyBudgetUsd.compareTo(BigDecimal.ZERO) > 0;
+        if (!budgetPositive) {
+            return;
+        }
+        if (!rabbitProperties.getTeamBudgetOut().isEnabled()) {
+            return;
+        }
+        scheduleAfterCommit(() -> teamBudgetThresholdEventPublisher.publishIfCrossed(
+                bc.userId(),
+                teamId,
+                bc.monthStart(),
+                teamMonthlyBefore,
+                teamMonthlyAfter,
+                teamMonthlyBudgetUsd
+        ));
     }
 
     private void handleAlreadyProcessed(UsageRecordedEvent event, BillingProcessedEventEntity row) {

@@ -11,7 +11,7 @@ import type {
   ExpenditureSummary,
   MonthlyBudgetStatus,
   MonthlyPoint,
-  TeamMonthRollup,
+  TeamApiKeyMonthSpendResponse,
 } from "@/lib/expenditure/types";
 
 type IdentityExternalKeyProvider = "GEMINI" | "OPENAI" | "ANTHROPIC";
@@ -71,37 +71,9 @@ function parseRegisteredExternalKeys(json: unknown): RegisteredExternalKey[] {
   return out;
 }
 
-async function fetchJsonPost<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(path, {
-    method: "POST",
-    credentials: "include",
-    cache: "no-store",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `HTTP ${res.status}`);
-  }
-  return (await res.json()) as T;
-}
-
-async function fetchTeamMemberUserIds(teamId: string): Promise<string[]> {
-  const res = await fetch(`/api/team/v1/teams/${encodeURIComponent(teamId)}/members`, {
-    method: "GET",
-    credentials: "include",
-    headers: { Accept: "application/json" },
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(text || `팀 멤버 조회 실패 (HTTP ${res.status})`);
-  }
-  const json: unknown = await res.json();
-  if (typeof json !== "object" || json === null) return [];
-  const rec = json as Record<string, unknown>;
-  if (rec.success !== true || !Array.isArray(rec.data)) return [];
-  return rec.data.filter((x): x is string => typeof x === "string");
+async function fetchTeamApiKeyMonthSpend(teamId: string, monthStartDate: string): Promise<TeamApiKeyMonthSpendResponse> {
+  const q = new URLSearchParams({ teamId, monthStartDate });
+  return await fetchJson<TeamApiKeyMonthSpendResponse>(expenditureApiPath(`/api/expenditure/team-api-keys/month-spend?${q.toString()}`));
 }
 
 type MyTeam = { id: string; name: string };
@@ -146,7 +118,7 @@ export function ExpenditureDashboard() {
 
   const [teams, setTeams] = useState<MyTeam[]>([]);
   const [selectedTeamId, setSelectedTeamId] = useState("");
-  const [teamRollup, setTeamRollup] = useState<TeamMonthRollup | null>(null);
+  const [teamSpend, setTeamSpend] = useState<TeamApiKeyMonthSpendResponse | null>(null);
   const [teamLoading, setTeamLoading] = useState(false);
   const [teamsLoading, setTeamsLoading] = useState(false);
   const [teamMonth, setTeamMonth] = useState<string>(() => currentMonthStartKst().slice(0, 7));
@@ -324,7 +296,7 @@ export function ExpenditureDashboard() {
     void loadTeams();
   }, [loadTeams, viewMode]);
 
-  const loadTeamRollup = useCallback(async () => {
+  const loadTeamSpend = useCallback(async () => {
     const tid = selectedTeamId.trim();
     if (!tid) {
       setError("팀을 선택하세요.");
@@ -333,27 +305,11 @@ export function ExpenditureDashboard() {
     setTeamLoading(true);
     setError(null);
     try {
-      const userIds = await fetchTeamMemberUserIds(tid);
-      if (userIds.length === 0) {
-        setTeamRollup(null);
-        setError("팀에 멤버가 없습니다.");
-        return;
-      }
       const monthStart = `${teamMonth}-01`;
-      const raw = await fetchJsonPost<{
-        totalCostUsd: number;
-        byUser: { userId: string; costUsd: number }[];
-      }>(expenditureApiPath("/api/expenditure/team/month-rollup"), {
-        teamId: tid,
-        userIds,
-        monthStartDate: monthStart,
-      });
-      setTeamRollup({
-        totalCostUsd: Number(raw.totalCostUsd),
-        byUser: raw.byUser.map((r) => ({ userId: r.userId, costUsd: Number(r.costUsd) })),
-      });
+      const res = await fetchTeamApiKeyMonthSpend(tid, monthStart);
+      setTeamSpend(res);
     } catch (e: unknown) {
-      setTeamRollup(null);
+      setTeamSpend(null);
       setError(
         e instanceof Error
           ? e.message
@@ -407,14 +363,33 @@ export function ExpenditureDashboard() {
     [monthly]
   );
 
-  const teamMemberChart = useMemo(
+  const teamKeyChart = useMemo(
     () =>
-      (teamRollup?.byUser ?? []).map((r) => ({
-        user: r.userId.length > 10 ? `${r.userId.slice(0, 8)}…` : r.userId,
-        usd: Number(r.costUsd),
-      })),
-    [teamRollup]
+      (teamSpend?.keys ?? [])
+        .filter((k) => Number(k.monthSpendUsd) > 0)
+        .map((k) => ({
+          key: k.alias.length > 16 ? `${k.alias.slice(0, 14)}…` : k.alias,
+          usd: Number(k.monthSpendUsd),
+        })),
+    [teamSpend]
   );
+
+  const teamBudgetUi = useMemo(() => {
+    const total = teamSpend?.teamMonthSpendUsd ?? null;
+    const budget = teamSpend?.teamMonthlyBudgetUsd ?? null;
+    if (total == null) return null;
+    if (budget == null || budget <= 0) {
+      return {
+        totalCostUsd: total,
+        monthlyBudgetUsd: null as number | null,
+        remainingUsd: null as number | null,
+        pct: null as number | null,
+      };
+    }
+    const remaining = Math.max(0, budget - total);
+    const pct = Math.min(100, (total / budget) * 100);
+    return { totalCostUsd: total, monthlyBudgetUsd: budget, remainingUsd: remaining, pct };
+  }, [teamSpend]);
 
   return (
     <div className="space-y-8">
@@ -528,9 +503,9 @@ export function ExpenditureDashboard() {
 
       {viewMode === "team" ? (
         <section className="space-y-4 rounded-xl border border-border bg-card p-4 shadow-sm">
-          <h2 className="text-sm font-medium">팀 당월 누적 (billing 집계)</h2>
+          <h2 className="text-sm font-medium">팀 당월 누적 (팀 등록 키 기준)</h2>
           <p className="text-xs text-muted-foreground">
-            팀 서비스에서 멤버 목록을 불러온 뒤, 해당 사용자들의 월별 지출을 합산합니다. 팀 API는 단일 오리진(identity 경유)에서만 호출됩니다.
+            팀 서비스에 등록된 팀 API 키(teamApiKeyId)가 있는 요청만 집계합니다. 집계 월 경계는 KST(Asia/Seoul) 기준입니다.
           </p>
           <div className="flex flex-wrap items-end gap-2">
             <label className="flex flex-col gap-1 text-sm">
@@ -540,7 +515,7 @@ export function ExpenditureDashboard() {
                 value={selectedTeamId}
                 onChange={(e) => {
                   setSelectedTeamId(e.target.value);
-                  setTeamRollup(null);
+                  setTeamSpend(null);
                 }}
                 disabled={teamsLoading || teams.length === 0}
               >
@@ -565,7 +540,7 @@ export function ExpenditureDashboard() {
                 value={teamMonth}
                 onChange={(e) => {
                   setTeamMonth(e.target.value);
-                  setTeamRollup(null);
+                  setTeamSpend(null);
                 }}
               />
             </label>
@@ -581,23 +556,34 @@ export function ExpenditureDashboard() {
               type="button"
               className="h-9 rounded-md bg-primary px-3 text-sm text-primary-foreground disabled:opacity-50"
               disabled={teamLoading || teamsLoading || !selectedTeamId}
-              onClick={() => void loadTeamRollup()}
+              onClick={() => void loadTeamSpend()}
             >
               {teamLoading ? "불러오는 중…" : "집계"}
             </button>
           </div>
           <p className="text-xs text-muted-foreground">집계 월 시작일: {teamMonth}-01 (KST 기준 월)</p>
-          {teamRollup ? (
-            <div className="space-y-3">
-              <p className="text-lg font-semibold tabular-nums">
-                팀 당월 합계: {formatUsd(teamRollup.totalCostUsd)} USD
-              </p>
-              {teamMemberChart.length > 0 ? (
+          {teamSpend ? (
+            <div className="space-y-4">
+              {teamBudgetUi ? (
+                <div className="space-y-1">
+                  <p className="text-lg font-semibold tabular-nums">팀 당월 합계: {formatUsd(teamBudgetUi.totalCostUsd)} USD</p>
+                  {teamBudgetUi.monthlyBudgetUsd != null ? (
+                    <p className="text-xs text-muted-foreground">
+                      팀 예산 {formatUsd(teamBudgetUi.monthlyBudgetUsd)} / 잔여 {formatUsd(teamBudgetUi.remainingUsd ?? 0)} / 진행률{" "}
+                      {(teamBudgetUi.pct ?? 0).toFixed(1)}%
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">팀 예산: 등록된 팀 키 예산 합이 없으면 표시되지 않습니다.</p>
+                  )}
+                </div>
+              ) : null}
+
+              {teamKeyChart.length > 0 ? (
                 <div className="h-72 w-full rounded-xl border border-border bg-card p-2">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={teamMemberChart}>
+                    <BarChart data={teamKeyChart}>
                       <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                      <XAxis dataKey="user" tick={{ fontSize: 10 }} interval={0} angle={-25} textAnchor="end" height={64} />
+                      <XAxis dataKey="key" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={56} />
                       <YAxis tick={{ fontSize: 11 }} width={56} />
                       <Tooltip formatter={formatUsdTooltip} />
                       <Bar dataKey="usd" fill="var(--color-chart-3)" radius={[4, 4, 0, 0]} />
@@ -607,6 +593,38 @@ export function ExpenditureDashboard() {
               ) : (
                 <p className="text-sm text-muted-foreground">이번 달 집계된 비용이 없습니다.</p>
               )}
+
+              <div className="overflow-auto rounded-lg border border-border">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/40 text-xs text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium">Provider</th>
+                      <th className="px-3 py-2 text-left font-medium">Alias</th>
+                      <th className="px-3 py-2 text-left font-medium">Status</th>
+                      <th className="px-3 py-2 text-right font-medium">월 예산 (USD)</th>
+                      <th className="px-3 py-2 text-right font-medium">당월 지출 (USD)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {teamSpend.keys.map((k) => (
+                      <tr key={k.teamApiKeyId} className="border-t border-border">
+                        <td className="px-3 py-2">{k.provider}</td>
+                        <td className="px-3 py-2">{k.alias}</td>
+                        <td className="px-3 py-2">{k.status}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{formatUsd(Number(k.monthlyBudgetUsd))}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{formatUsd(Number(k.monthSpendUsd))}</td>
+                      </tr>
+                    ))}
+                    {teamSpend.keys.length === 0 ? (
+                      <tr>
+                        <td className="px-3 py-3 text-muted-foreground" colSpan={5}>
+                          등록된 팀 API 키가 없습니다.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
             </div>
           ) : null}
         </section>
