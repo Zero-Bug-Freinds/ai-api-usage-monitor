@@ -199,6 +199,11 @@ public class TeamService {
 	}
 
 	@Transactional(readOnly = true)
+	public List<TeamSummaryResponse> getUserTeamsInternal(String userId) {
+		return getMyTeams(userId);
+	}
+
+	@Transactional(readOnly = true)
 	public List<InternalBillingTeamSummaryResponse> getBillingTeamSummariesInternal(String userId) {
 		if (!StringUtils.hasText(userId)) {
 			throw new IllegalArgumentException("userId는 필수입니다");
