@@ -1,6 +1,8 @@
 package com.zerobugfreinds.ai_agent_service.controller;
 
 import com.zerobugfreinds.ai_agent_service.dto.BudgetForecastRequest;
+import com.zerobugfreinds.ai_agent_service.dto.BudgetForecastBatchRequest;
+import com.zerobugfreinds.ai_agent_service.dto.BudgetForecastBatchResponse;
 import com.zerobugfreinds.ai_agent_service.dto.BudgetForecastResponse;
 import com.zerobugfreinds.ai_agent_service.service.BudgetForecastService;
 import jakarta.validation.Valid;
@@ -23,5 +25,10 @@ public class BudgetAgentController {
 	@PostMapping
 	public ResponseEntity<BudgetForecastResponse> forecast(@Valid @RequestBody BudgetForecastRequest request) {
 		return ResponseEntity.ok(budgetForecastService.forecast(request));
+	}
+
+	@PostMapping("/batch")
+	public ResponseEntity<BudgetForecastBatchResponse> forecastBatch(@Valid @RequestBody BudgetForecastBatchRequest request) {
+		return ResponseEntity.ok(budgetForecastService.forecastBatch(request));
 	}
 }

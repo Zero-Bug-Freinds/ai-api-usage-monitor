@@ -382,14 +382,14 @@
 - **로컬**: 루트 `docker-compose.yml`은 인프라·일부 앱(예: proxy·gateway)을 포함할 수 있으며, **웹 컨테이너는 `profile: web`(`identity-web`, `usage-web`, `web-edge`) 등으로 선택 기동**해 호스트 개발과 병행할 수 있다. 호스트에서 Next를 직접 띄울 때는 저장소 루트 **`pnpm install`** 후 **`pnpm --filter identity-web dev`** / **`pnpm --filter usage-web dev`** 등(`packages/ui` workspace 포함 — `README.md`, `docs/repository-structure.md` §6).
 - 동일 `profile: web` 선택 시 루트 `docker-compose.yml`에는 위에 더해 `team-web-mfe`, `team-service` 컨테이너가 포함될 수 있고, 팀 도메인 전용 DB는 `postgres-team` 등 별도 PostgreSQL 컨테이너로 둘 수 있다(`docs/repository-structure.md` §2 참고).
 - **Compose 환경변수:** `docker compose`는 루트 **`.env`**만 자동 로드한다. `GATEWAY_SHARED_SECRET`처럼 compose 파일에서 `${VAR:-}` 형태로 넘기는 값은, `.env`에 **빈 할당(`VAR=`)만** 있으면 컨테이너에 빈 문자열이 들어가 **Spring `application.yml`의 기본값이 적용되지 않을 수 있다**(게이트웨이 기동 실패 등). **비어 있지 않은 값**으로 맞추거나 변수 줄을 제거하고, 게이트웨이·Proxy·usage-service의 공유 비밀은 [`docs/contracts/gateway-proxy.md`](contracts/gateway-proxy.md) §5와 동일하게 유지한다.
-- **`billing-web`:** 팀 지출 롤업 BFF가 서버에서 팀 멤버 API를 호출할 때, 컨테이너 간 DNS로 **`identity-web:3000`** 에 붙도록 루트 `docker-compose.yml`에 **`BILLING_TEAM_BFF_BASE_URL`** 기본값과 **`depends_on: identity-web`** 을 둔다. 호스트에서만 Identity Next를 띄우는 등 예외는 루트 `.env`의 동일 변수로 덮어쓴다(예시·설명: 루트 `.env.example`, [billing-service-overview-20260412.md](billing-service-overview-20260412.md) §4.10, [web-split-boundary.md](contracts/web-split-boundary.md) §2.7).
+- **`billing-web`:** 팀 지출 롤업 BFF가 서버에서 팀 멤버 API를 호출할 때, 컨테이너 간 DNS로 **`web-edge`** 에 붙도록 루트 `docker-compose.yml`에 **`BILLING_TEAM_BFF_BASE_URL`** 기본값을 둔다. `web-edge`는 `/api/team/v1/**`를 Team `web` BFF로 넘긴다(예시·설명: 루트 `.env.example`, [billing-service-overview-20260412.md](billing-service-overview-20260412.md) §4.10, [web-split-boundary.md](contracts/web-split-boundary.md) §2.7).
 
 ### 10.2 단일 도메인·엣지 라우팅(브라우저 URL 하나)
 
 운영·로컬 통합 진입점에서 **호스트명은 하나**로 두고, **경로 prefix**로 트래픽을 나누는 것을 권장한다.
 
 - **엣지:** Nginx·Traefik 등 **리버스 프록시** 한 계층에서 `location`(또는 동등 규칙)으로 upstream을 고정한다.
-- **로컬 Compose(`profile: web`):** **`web-edge`** 서비스(이미지 `nginx`, 설정 **`docker/web-edge/nginx.conf.template`**)가 기본 **`${WEB_EDGE_PORT:-8888}:80`** 으로 호스트에 노출된다. 현재 저장소 규칙(정본은 설정 파일): `/dashboard`, `/billing`, `/teams`, `/notifications` 는 각각 해당 `web` 서비스로 프록시하고, `/api/v1`·`/api/v1/*` 는 **API Gateway**로 프록시한다(스트리밍 대비 **`proxy_buffering off`**·긴 read timeout). 그 외 경로는 기본적으로 **identity `web`** 으로 전달한다. (운영 엣지는 팀이 동일한 의미로 맞춘다.)
+- **로컬 Compose(`profile: web`):** **`web-edge`** 서비스(이미지 `nginx`, 설정 **`docker/web-edge/nginx.conf.template`**)가 기본 **`${WEB_EDGE_PORT:-8888}:80`** 으로 호스트에 노출된다. 현재 저장소 규칙(정본은 설정 파일): `/dashboard`, `/billing`, `/teams`, `/notifications`, `/agent` 는 각각 해당 `web` 서비스로 프록시하고, Identity 소유 경로(`/`, `/login`, `/settings`, `/api/auth/*`, `/api/identity/*` 등)만 **identity `web`** 으로 보낸다. `/api/team/v1/*`는 Team `web` BFF, `/api/v1`·`/api/v1/*` 는 **API Gateway**로 프록시한다(스트리밍 대비 **`proxy_buffering off`**·긴 read timeout). 그 외 미정의 경로는 **404** 로 닫는다. (운영 엣지는 팀이 동일한 의미로 맞춘다.)
 - **Usage Next `basePath`:** 단일 도메인에서 `/_next` 등 충돌을 피하기 위해 Usage 쪽 기본값은 **`/dashboard`**(`NEXT_PUBLIC_BASE_PATH`, Compose 빌드 args). 브라우저의 Usage BFF는 **`/dashboard/api/usage/...`** 형태가 된다(`docs/contracts/web-split-boundary.md`, `web-gateway-bff.md`).
 - Team `web`은 단일 도메인에서 **`/teams`** 접두를 **`basePath`** 로 쓸 수 있다(구현: `services/team-service/web`).
 - **쿠키·세션:** 동일 **`Site`/도메인**에서 경로만 나뉘면 `httpOnly` 세션 쿠키는 대부분 유지 가능하지만, **`Path`·`SameSite`** 는 분리 후 반드시 재검증한다(BFF 계약: `docs/contracts/web-identity-bff.md`).
@@ -467,11 +467,11 @@
 
 ### 13.1 담당·연동
 
-- **Identity 계열**: `services/identity-service` + `services/identity-service/web/` — 랜딩·인증·조직/팀 설정 UI, `/api/auth/**`·`/api/identity/**` BFF 등. 계약: `docs/contracts/web-identity-bff.md`.
+- **Identity 계열**: `services/identity-service` + `services/identity-service/web/` — 랜딩·인증·계정 설정 UI, `/api/auth/**`·`/api/identity/**` BFF 등. 계약: `docs/contracts/web-identity-bff.md`.
 - **Usage·대시보드 계열**: `services/usage-service` + `services/usage-service/web/` — 사용량 대시보드, `/api/usage/**` BFF → 게이트웨이. 계약: `docs/contracts/web-gateway-bff.md`, `docs/contracts/gateway-proxy.md`.
-- **Team 계열**: `services/team-service` + `services/team-service/web/` — 팀 도메인 REST·Team BFF. 팀 API Key·월 예산(USD)은 **Identity `web`의 `/teams`** 에서도 계정 설정의 개인 외부 키와 유사한 UX로 제공할 수 있으며, 동일 API는 **team `web`**(`basePath=/teams`)에서도 사용 가능하다. 브라우저 → `/api/team/v1/**` → Team BFF → `team-service`. 계약: `docs/contracts/web-team-bff.md`.
+- **Team 계열**: `services/team-service` + `services/team-service/web/` — 팀 도메인 REST·Team BFF. 팀 API Key·월 예산(USD)은 Team Main Shell(`/teams`)에서 제공하며, 브라우저 → `web-edge` → `/teams/api/**` 또는 `/api/team/v1/**` → Team BFF → `team-service` 흐름을 따른다. 계약: `docs/contracts/web-team-bff.md`.
 - **Notification 계열**: `services/notification-service` + `services/notification-service/web/` — 인앱 알림 UI(`/notifications/*`) + Notification BFF(`/notifications/api/notification/*`) → notification-service(Nest) 내부 호출. 계약: `docs/contracts/web-notification-bff.md`.
-- **`/teams` 진입 방식:** **단일 도메인 `web-edge`** 를 쓰면 `/teams/*` 를 **team `web`** 으로 넘길 수 있다. **Identity `web`만** 띄울 때는 `/teams` 페이지에서 팀·키·예산을 다루고 Next rewrite로 `/api/team/v1/**` 를 team `web` BFF(및 `team-service`)로 넘긴다.
+- **`/teams` 진입 방식:** **단일 도메인 `web-edge`** 가 `/teams/*` UI는 `apps/web` web-host로, `/teams/api/*`와 `/api/team/v1/*`는 Team `web` BFF로 넘긴다. Identity `web`은 팀 콘솔 프록시를 담당하지 않는다.
 - **웹 경계**: `docs/contracts/web-split-boundary.md` — 경로·BFF·미들웨어 변경 시 **본 문서·계약 문서**를 코드와 같이 갱신한다.
 - **Proxy·API Gateway**: 공개 AI·Usage HTTP 진입·신뢰 헤더 — 게이트웨이·프록시 구현 팀과 **HTTP 계약**만 맞춘다.
 
@@ -481,12 +481,12 @@
 - **시각화**: §12 등이 노출하는 **집계·조회 API** 응답을 차트·테이블로 표현한다.
 - **보안**: 공급사 API Key·내부 토큰을 **브라우저 번들에 넣지 않는다**(§8). 플랫폼 JWT는 BFF·`httpOnly` 쿠키 패턴을 유지한다.
 
-### 13.3 브라우저 통합·Module Federation (`rewrites` · `web-mfe`)
+### 13.3 브라우저 통합·Module Federation (`web-edge` · `web-mfe`)
 
-- **Identity `web`을 통한 앱 간 연결(고속도로):** `services/identity-service/web/next.config.ts`의 **`async rewrites()`** 는 브라우저 요청 경로를 **내부 오리진**(Compose·로컬에서 `USAGE_WEB_INTERNAL_ORIGIN`, `TEAM_WEB_INTERNAL_ORIGIN` 등)의 **Usage·Team·Billing·Notification `web`** 으로 넘긴다. 단일 호스트·단일 오리진 UX를 유지하면서 서비스별 Next 앱을 나란히 두는 **정본 라우팅 계층**이며, 운영·로컬에서 Nginx **`web-edge`**(§10.2)와 함께 “어떤 URL이 어느 컨테이너로 가는지”를 정의한다.
+- **`web-edge`를 통한 앱 간 연결:** `docker/web-edge/nginx.conf.template`가 브라우저 요청 경로를 **Usage·Team·Billing·Notification·Agent `web`** 으로 넘긴다. 단일 호스트·단일 오리진 UX를 유지하면서 서비스별 Next 앱을 나란히 두는 **정본 라우팅 계층**이며, Identity `web`의 `next.config.ts`는 앱 간 프록시를 담당하지 않는다.
 - **`usage-service`·`team-service`의 디렉터리 분리:** 각각 **`web/`**(App Router·BFF·운영 UI)과 **`web-mfe/`**(Pages Router·**Module Federation** remote 전용)로 나뉜다. **`web-mfe`** 는 원격 엔트리(`exposes`)만 노출하고, 호스트는 **`apps/web`(web-host)** 등에서 `remotes`로 붙인다. 상세·작업 절차는 **`docs/mfe-pages-only-remote-split-guidance-20260414.md`**.
 - **공통 UI:** 사이드바·헤더·콘솔 네비는 **`packages/shell`** · **`packages/ui`** 를 사용한다(`docs/repository-structure.md` §6).
-- **라우트 변경 시:** 새 **최상위 브라우저 접두**를 도입하거나 BFF 경로를 바꿀 때는 **Identity `rewrites`**(및 필요 시 **`docker/web-edge/nginx.conf.template`**)를 함께 갱신한다(`docs/contracts/web-split-boundary.md`, `docs/howto-add-console-sidebar-route.md`).
+- **라우트 변경 시:** 새 **최상위 브라우저 접두**를 도입하거나 BFF 경로를 바꿀 때는 **`docker/web-edge/nginx.conf.template`** 와 계약 문서를 함께 갱신한다(`docs/contracts/web-split-boundary.md`, `docs/howto-add-console-sidebar-route.md`).
 
 ```mermaid
 flowchart LR
@@ -497,7 +497,7 @@ flowchart LR
     N["경로 prefix 분기"]
   end
   subgraph Identity["Identity web :3000"]
-    RW["next.config rewrites"]
+    IW["landing/auth/settings"]
   end
   subgraph Domains["도메인별 Next web"]
     UW["usage web\n/dashboard · BFF"]
@@ -513,12 +513,11 @@ flowchart LR
     H --> TR
   end
   U --> N
-  N --> RW
-  U --> RW
-  RW --> UW
-  RW --> TW
-  RW --> BW
-  RW --> NW
+  N --> IW
+  N --> UW
+  N --> TW
+  N --> BW
+  N --> NW
 ```
 
 ---

@@ -28,7 +28,7 @@ Canonical rules: **`docs/repository-structure.md`**.
 
 - Use a **single repo**; place domain-owned Next apps under **`services/<svc>/web/`**. **`apps/web/`**(`web-host`)은 **Module Federation 호스트** 등 통합 진입용으로 쓸 수 있다. 신규 BFF·App Router 페이지는 각 도메인 **`web/`** 에 둔다(`docs/contracts/web-split-boundary.md`).
 - **Module Federation remote:** `usage-service`·`team-service`만 **`services/<svc>/web-mfe/`**(Pages Router)를 둔다. Remote 엔트리·`NextFederationPlugin`은 **`web-mfe`** 에만 넣고, 동일 도메인 **`web/`** 의 화면·BFF와 컴포넌트를 공유할 때는 **`@web/*` → `../web/src/*`** 별칭으로 중복 구현을 피한다(`tsconfig.json` `paths` — 정본은 각 `web-mfe/tsconfig.json`).
-- **브라우저 경로 통합:** 다른 서비스 `web`으로 프록시하는 **정본은 `services/identity-service/web/next.config.ts`의 `rewrites()`** 이다. 새 최상위 공개 접두를 추가할 때는 **반드시 여기와** `docs/contracts/web-split-boundary.md`를 갱신한다.
+- **브라우저 경로 통합:** 다른 서비스 `web`으로 프록시하는 **정본은 `docker/web-edge/nginx.conf.template`** 이다. `services/identity-service/web/next.config.ts`는 앱 간 프록시를 담당하지 않는다. 새 최상위 공개 접두를 추가할 때는 **반드시 web-edge 설정과** `docs/contracts/web-split-boundary.md`를 갱신한다.
 - **Shared UI:** **`packages/ui`** (`@ai-usage/ui`) — Shadcn/Radix 래퍼·`cn` only; **`packages/shell`** (`@ai-usage/shell`) — 콘솔 사이드바·헤더·공개 경로 네비; install from repo root **`pnpm install`** (`pnpm-workspace.yaml`). Do not put domain logic in `packages/ui` / `packages/shell`.
 - Put **`libs/`** only for thin shared code (**API contracts, types, small utilities**) — not other services’ domain logic copied into the FE tree.
 - After the real frontend path exists, update **`globs`** in this file if Cursor should match a different directory.

@@ -1,6 +1,8 @@
 package com.zerobugfreinds.ai_agent_service.service;
 
 import com.zerobugfreinds.ai_agent_service.dto.AiBudgetForecastResult;
+import com.zerobugfreinds.ai_agent_service.dto.BudgetForecastBatchRequest;
+import com.zerobugfreinds.ai_agent_service.dto.BudgetForecastBatchResponse;
 import com.zerobugfreinds.ai_agent_service.dto.BudgetForecastRequest;
 import com.zerobugfreinds.ai_agent_service.dto.BudgetForecastResponse;
 import org.springframework.stereotype.Service;
@@ -10,7 +12,10 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 @Service
@@ -18,13 +23,16 @@ public class BudgetForecastService {
 
 	private final GeminiAssistantService geminiAssistantService;
 	private final UsageRecordedTokenRollupService usageRecordedTokenRollupService;
+	private final UsagePredictionSignalSnapshotService usagePredictionSignalSnapshotService;
 
 	public BudgetForecastService(
 			GeminiAssistantService geminiAssistantService,
-			UsageRecordedTokenRollupService usageRecordedTokenRollupService
+			UsageRecordedTokenRollupService usageRecordedTokenRollupService,
+			UsagePredictionSignalSnapshotService usagePredictionSignalSnapshotService
 	) {
 		this.geminiAssistantService = geminiAssistantService;
 		this.usageRecordedTokenRollupService = usageRecordedTokenRollupService;
+		this.usagePredictionSignalSnapshotService = usagePredictionSignalSnapshotService;
 	}
 
 	public BudgetForecastResponse forecast(BudgetForecastRequest request) {
@@ -34,7 +42,38 @@ public class BudgetForecastService {
 		if (ai.isEmpty()) {
 			throw new IllegalStateException("AI_INFERENCE_FAILED");
 		}
-		AiBudgetForecastResult result = ai.get();
+		return buildForecastResponse(normalizedRequest, context.rollupApplied(), ai.get());
+	}
+
+	public BudgetForecastBatchResponse forecastBatch(BudgetForecastBatchRequest request) {
+		List<NormalizedRequestContext> contexts = request.requests().stream()
+				.map(this::normalizeByUsageRollup)
+				.toList();
+		List<BudgetForecastRequest> normalizedRequests = contexts.stream()
+				.map(NormalizedRequestContext::request)
+				.toList();
+		Map<Long, AiBudgetForecastResult> aiByKeyId = geminiAssistantService.inferForecasts(normalizedRequests);
+		List<BudgetForecastBatchResponse.Item> results = new ArrayList<>();
+		for (int i = 0; i < contexts.size(); i++) {
+			BudgetForecastRequest normalizedRequest = contexts.get(i).request();
+			if (normalizedRequest.keyId() == null) {
+				continue;
+			}
+			AiBudgetForecastResult aiResult = aiByKeyId.get(normalizedRequest.keyId());
+			if (aiResult == null) {
+				continue;
+			}
+			BudgetForecastResponse response = buildForecastResponse(normalizedRequest, contexts.get(i).rollupApplied(), aiResult);
+			results.add(new BudgetForecastBatchResponse.Item(normalizedRequest.keyId(), response));
+		}
+		return new BudgetForecastBatchResponse(List.copyOf(results));
+	}
+
+	private static BudgetForecastResponse buildForecastResponse(
+			BudgetForecastRequest normalizedRequest,
+			boolean rollupApplied,
+			AiBudgetForecastResult result
+	) {
 		Long daysUntilBillingCycleEnd = null;
 		Long billingDateGapDays = null;
 		if (normalizedRequest.billingCycleEndDate() != null) {
@@ -46,7 +85,7 @@ public class BudgetForecastService {
 		}
 		String healthStatusLabel = toHealthStatusLabel(result.healthStatus());
 		String riskCriteria = buildRiskCriteria(result.budgetUtilizationPercent(), billingDateGapDays);
-		ConfidenceAssessment confidenceAssessment = assessConfidence(normalizedRequest, context.rollupApplied());
+		ConfidenceAssessment confidenceAssessment = assessConfidence(normalizedRequest, rollupApplied);
 
 		return new BudgetForecastResponse(
 				result.healthStatus(),
@@ -71,6 +110,10 @@ public class BudgetForecastService {
 		if (request.keyId() == null) {
 			return new NormalizedRequestContext(request, false);
 		}
+		UsagePredictionSignalSnapshotService.UsagePredictionSignalSnapshot usagePredictionSnapshot =
+				resolveUsagePredictionSnapshot(request);
+		BigDecimal normalizedAverageDailySpendUsd = resolveAverageDailySpendUsd(request, usagePredictionSnapshot);
+		List<BigDecimal> normalizedRecentDailySpendUsd = resolveRecentDailySpendUsd(request, usagePredictionSnapshot);
 		boolean isTeamScope = request.teamId() != null && !request.teamId().isBlank();
 		String scopeType = isTeamScope ? "TEAM" : "PERSONAL";
 		String scopeId = isTeamScope ? request.teamId().trim() : request.userId().trim();
@@ -82,7 +125,25 @@ public class BudgetForecastService {
 				);
 		long observedSevenDayTokens = summary.totalInputTokens() + summary.totalOutputTokens();
 		if (observedSevenDayTokens <= 0) {
-			return new NormalizedRequestContext(request, false);
+			if (usagePredictionSnapshot == null) {
+				return new NormalizedRequestContext(request, false);
+			}
+			BudgetForecastRequest normalizedWithoutRollup = new BudgetForecastRequest(
+					request.userId(),
+					request.teamId(),
+					request.keyId(),
+					request.monthlyBudgetUsd(),
+					request.currentSpendUsd(),
+					request.remainingTokens(),
+					request.averageDailyTokenUsage(),
+					normalizedAverageDailySpendUsd,
+					request.billingCycleEndDate(),
+					normalizedRecentDailySpendUsd,
+					buildRecentDailyTokenUsage7d(summary, request),
+					normalizeModelUsageDistribution(request.modelUsageDistribution7d()),
+					normalizeHourlyTokenUsage24h(request.hourlyTokenUsage24h())
+			);
+			return new NormalizedRequestContext(normalizedWithoutRollup, false);
 		}
 		BigDecimal observedAverageDailyTokenUsage = BigDecimal.valueOf(observedSevenDayTokens)
 				.divide(BigDecimal.valueOf(7), 4, RoundingMode.HALF_UP)
@@ -95,14 +156,54 @@ public class BudgetForecastService {
 				request.currentSpendUsd(),
 				request.remainingTokens(),
 				observedAverageDailyTokenUsage,
-				request.averageDailySpendUsd(),
+				normalizedAverageDailySpendUsd,
 				request.billingCycleEndDate(),
-				normalizeRecentDailySpend(request.recentDailySpendUsd()),
+				normalizedRecentDailySpendUsd,
 				buildRecentDailyTokenUsage7d(summary, request),
 				normalizeModelUsageDistribution(request.modelUsageDistribution7d()),
 				normalizeHourlyTokenUsage24h(request.hourlyTokenUsage24h())
 		);
 		return new NormalizedRequestContext(normalized, true);
+	}
+
+	private UsagePredictionSignalSnapshotService.UsagePredictionSignalSnapshot resolveUsagePredictionSnapshot(BudgetForecastRequest request) {
+		String scopeId = request.teamId() != null && !request.teamId().isBlank()
+				? request.teamId().trim()
+				: request.userId().trim();
+		boolean teamScope = request.teamId() != null && !request.teamId().isBlank();
+		return usagePredictionSignalSnapshotService.findAll().stream()
+				.filter(snapshot -> teamScope
+						? Objects.equals(scopeId, normalizeId(snapshot.teamId()))
+						: Objects.equals(scopeId, normalizeId(snapshot.userId())))
+				.max(Comparator.comparing(
+						UsagePredictionSignalSnapshotService.UsagePredictionSignalSnapshot::publishedAt,
+						Comparator.nullsLast(Comparator.naturalOrder())
+				))
+				.orElse(null);
+	}
+
+	private static BigDecimal resolveAverageDailySpendUsd(
+			BudgetForecastRequest request,
+			UsagePredictionSignalSnapshotService.UsagePredictionSignalSnapshot snapshot
+	) {
+		if (snapshot != null && snapshot.averageDailySpendUsd7d() != null && snapshot.averageDailySpendUsd7d().signum() > 0) {
+			return snapshot.averageDailySpendUsd7d();
+		}
+		return request.averageDailySpendUsd();
+	}
+
+	private static List<BigDecimal> resolveRecentDailySpendUsd(
+			BudgetForecastRequest request,
+			UsagePredictionSignalSnapshotService.UsagePredictionSignalSnapshot snapshot
+	) {
+		if (snapshot != null && snapshot.recentDailySpendUsd() != null && !snapshot.recentDailySpendUsd().isEmpty()) {
+			return normalizeRecentDailySpend(snapshot.recentDailySpendUsd());
+		}
+		return normalizeRecentDailySpend(request.recentDailySpendUsd());
+	}
+
+	private static String normalizeId(String value) {
+		return value == null ? "" : value.trim();
 	}
 
 	private static List<BigDecimal> normalizeRecentDailySpend(List<BigDecimal> values) {

@@ -6,17 +6,16 @@ export type ConsoleNavId =
   | "billingHome"
   | "notifications"
   | "settings"
-  | "organizations"
   | "teams"
   | "assistant"
   | "identityLanding"
 
-export type RouteOwner = "usage" | "billing" | "identity" | "notification" | "team"
+export type RouteOwner = "usage" | "billing" | "identity" | "notification" | "team" | "agent"
 
 export type ConsoleNavMeta = {
   label: string
   owner: RouteOwner
-  /** Browser path at the identity edge (single host, no basePath on identity app). */
+  /** Browser path at web-edge (single host, no app-specific basePath prefixing here). */
   publicPath: string
 }
 
@@ -26,9 +25,8 @@ export const CONSOLE_NAV: Record<ConsoleNavId, ConsoleNavMeta> = {
   billingHome: { label: "지출", owner: "billing", publicPath: "/billing" },
   notifications: { label: "알림", owner: "notification", publicPath: "/notifications" },
   settings: { label: "설정", owner: "identity", publicPath: "/settings" },
-  organizations: { label: "조직", owner: "identity", publicPath: "/organizations" },
   teams: { label: "팀", owner: "team", publicPath: "/teams" },
-  assistant: { label: "비서", owner: "identity", publicPath: "/agent" },
+  assistant: { label: "비서", owner: "agent", publicPath: "/agent" },
   identityLanding: { label: "홈으로", owner: "identity", publicPath: "/" },
 }
 
@@ -39,7 +37,6 @@ export const CONSOLE_MAIN_NAV_ORDER: ConsoleNavId[] = [
   "billingHome",
   "notifications",
   "settings",
-  "organizations",
   "teams",
   "assistant",
 ]
@@ -83,16 +80,16 @@ export function anchorHrefForPublicPath(publicPath: string): string {
 }
 
 /**
- * Cross-app sidebar links: on the identity host, paths like `/dashboard` are rewritten to other apps.
+ * Cross-app sidebar links: paths like `/dashboard` are routed by web-edge to other apps.
  * When this app is served on its own port (e.g. agent-web :3005), relative paths would 404 — prefix
- * {@link identityWebOrigin} when it is set and the shell is not already the identity app.
+ * {@link webEdgeOrigin} when it is set and the shell is not already on the edge origin.
  */
 function consoleCrossAppHref(profile: ConsoleProfile, publicPath: string): string {
   const path = anchorHrefForPublicPath(publicPath)
   if (profile === "identity") {
     return path
   }
-  const origin = identityWebOrigin()
+  const origin = webEdgeOrigin()
   if (!origin) {
     return path
   }
@@ -193,25 +190,49 @@ export function usageDashboardHref(): string {
 }
 
 /**
- * Legacy compatibility helper.
- * Returns identity web origin when explicitly configured; otherwise empty string
- * so callers can safely build same-origin relative paths.
+ * Public web-edge origin for cross-app links. The legacy identity-origin env is still read
+ * as a fallback for older service env files, but new code should use NEXT_PUBLIC_WEB_EDGE_ORIGIN.
  */
+export function webEdgeOrigin(): string {
+  return (
+    process.env.NEXT_PUBLIC_WEB_EDGE_ORIGIN ??
+    process.env.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN ??
+    ""
+  ).replace(/\/$/, "")
+}
+
+/** @deprecated Use webEdgeOrigin. */
 export function identityWebOrigin(): string {
-  return (process.env.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN ?? "").replace(/\/$/, "")
+  return webEdgeOrigin()
+}
+
+export function webEdgeHref(path: string): string {
+  const normalized = normalizePath(path)
+  const origin = webEdgeOrigin()
+  return origin ? `${origin}${normalized}` : normalized
+}
+
+export function resolveWebEdgeLogoutPathsFromEnv(): {
+  logoutApiPath: string
+  logoutRedirectPath: string
+} {
+  return {
+    logoutApiPath: webEdgeHref("/api/auth/logout"),
+    logoutRedirectPath: webEdgeHref("/login"),
+  }
 }
 
 const NOTIFICATION_UNREAD_COUNT_PATH = "/notifications/api/notification/in-app-notifications/unread-count"
 
 /**
- * Unread-count BFF lives under the notification app (or identity rewrites). On standalone
- * micro-apps (e.g. agent-web), same-origin `/notifications/...` would 404 — use identity origin when set.
+ * Unread-count BFF lives under the notification app (via web-edge). On standalone
+ * micro-apps (e.g. agent-web), same-origin `/notifications/...` would 404 — use web-edge origin when set.
  */
 export function notificationUnreadCountFetchUrl(profile: ConsoleProfile): string {
   if (profile === "notification") {
     return NOTIFICATION_UNREAD_COUNT_PATH
   }
-  const origin = identityWebOrigin()
+  const origin = webEdgeOrigin()
   if (!origin) {
     return NOTIFICATION_UNREAD_COUNT_PATH
   }
@@ -273,7 +294,7 @@ export function isConsoleNavActive(profile: ConsoleProfile, pathname: string, id
 
   if (profile === "agent") {
     if (id === "teams") return p === "/teams" || p.startsWith("/teams/")
-    if (id === "assistant") return p === "/agent" || p.startsWith("/agent/")
+    if (id === "assistant") return p === "/" || p === "/agent" || p.startsWith("/agent/")
     return false
   }
 

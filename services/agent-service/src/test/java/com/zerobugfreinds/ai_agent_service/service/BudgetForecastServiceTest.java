@@ -21,15 +21,22 @@ class BudgetForecastServiceTest {
 
 	private GeminiAssistantService geminiAssistantService;
 	private UsageRecordedTokenRollupService usageRecordedTokenRollupService;
+	private UsagePredictionSignalSnapshotService usagePredictionSignalSnapshotService;
 	private BudgetForecastService budgetForecastService;
 
 	@BeforeEach
 	void setUp() {
 		geminiAssistantService = Mockito.mock(GeminiAssistantService.class);
 		usageRecordedTokenRollupService = Mockito.mock(UsageRecordedTokenRollupService.class);
+		usagePredictionSignalSnapshotService = Mockito.mock(UsagePredictionSignalSnapshotService.class);
 		when(usageRecordedTokenRollupService.summarizeLastSevenDays(any(), any(), any()))
-				.thenReturn(new UsageRecordedTokenRollupService.SevenDayTokenSummary(0L, 0L, 0L));
-		budgetForecastService = new BudgetForecastService(geminiAssistantService, usageRecordedTokenRollupService);
+				.thenReturn(new UsageRecordedTokenRollupService.SevenDayTokenSummary(0L, 0L, 0L, null));
+		when(usagePredictionSignalSnapshotService.findAll()).thenReturn(List.of());
+		budgetForecastService = new BudgetForecastService(
+				geminiAssistantService,
+				usageRecordedTokenRollupService,
+				usagePredictionSignalSnapshotService
+		);
 	}
 
 	@Test

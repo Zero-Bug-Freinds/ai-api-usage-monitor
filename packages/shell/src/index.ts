@@ -7,13 +7,16 @@ export type {
 export { CONSOLE_MAIN_NAV_ORDER, CONSOLE_NAV } from "./console-nav"
 export {
   anchorHrefForPublicPath,
+  webEdgeOrigin,
   identityWebOrigin,
   isConsoleNavActive,
   notificationUnreadCountFetchUrl,
   ownsNavItemForSpaLink,
   resolveConsoleNavLink,
+  resolveWebEdgeLogoutPathsFromEnv,
   usageDashboardHref,
   usageEntryPublicPath,
+  webEdgeHref,
   type ConsoleNavLinkSpec,
 } from "./console-nav"
 export { ConsoleSidebar } from "./console-sidebar-app"

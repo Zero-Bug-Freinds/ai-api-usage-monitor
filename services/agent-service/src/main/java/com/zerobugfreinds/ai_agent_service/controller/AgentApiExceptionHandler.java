@@ -21,6 +21,14 @@ public class AgentApiExceptionHandler {
 							Instant.now()
 					));
 		}
+		if ("AI_RECOMMENDATION_INFERENCE_FAILED".equals(ex.getMessage())) {
+			return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+					.body(new ApiErrorResponse(
+							"AI_RECOMMENDATION_INFERENCE_FAILED",
+							"AI 추천 생성에 실패했습니다. Gemini API 키/모델 설정과 네트워크 상태를 확인한 뒤 다시 시도하세요.",
+							Instant.now()
+					));
+		}
 		throw ex;
 	}
 }

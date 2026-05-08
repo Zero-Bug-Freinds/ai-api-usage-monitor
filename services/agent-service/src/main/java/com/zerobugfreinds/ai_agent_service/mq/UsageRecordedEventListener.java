@@ -70,7 +70,8 @@ public class UsageRecordedEventListener {
 					scopeId,
 					event.occurredAt(),
 					tokenUsage.promptTokens(),
-					tokenUsage.completionTokens()
+					tokenUsage.completionTokens(),
+					event.latencyMs()
 			);
 		} catch (Exception ex) {
 			log.error("Failed to handle UsageRecordedEvent", ex);

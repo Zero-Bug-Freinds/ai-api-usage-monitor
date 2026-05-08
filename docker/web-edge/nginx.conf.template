@@ -2,7 +2,8 @@
 # Usage Next basePath=/dashboard, Billing basePath=/billing, Team basePath=/teams,
 # Notification basePath=/notifications, Agent basePath=/agent.
 # Team UI: /teams (and /teams/* except /teams/api/* BFF) proxies to web_host.
-# /teams/api/* -> team_bff (team-web-mfe BFF). /api/v1/* -> api-gateway; default location / -> identity_web.
+# /teams/api/* and /api/team/v1/* -> team_bff (team-web-mfe BFF). /api/v1/* -> api-gateway.
+# Identity receives only its owned routes; unknown routes return 404.
 #
 # Deployment note:
 # - In production, inject GATEWAY_SHARED_SECRET from an external Secret Manager
@@ -79,6 +80,8 @@ http {
     "127.0.0.1:8888" 1;
     "localhost" 1;
     "127.0.0.1" 1;
+    "web-edge" 1;
+    "web-edge:80" 1;
   }
 
   server {
@@ -96,6 +99,72 @@ http {
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header X-Forwarded-Host $http_host;
     proxy_set_header X-Forwarded-Port $server_port;
+
+    location = / {
+      proxy_pass http://identity_web;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection $connection_upgrade;
+    }
+
+    location = /login {
+      proxy_pass http://identity_web;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection $connection_upgrade;
+    }
+
+    location = /signup {
+      proxy_pass http://identity_web;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection $connection_upgrade;
+    }
+
+    location = /forgot-password {
+      proxy_pass http://identity_web;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection $connection_upgrade;
+    }
+
+    location = /reset-password {
+      proxy_pass http://identity_web;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection $connection_upgrade;
+    }
+
+    location = /settings {
+      proxy_pass http://identity_web;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection $connection_upgrade;
+    }
+
+    location ^~ /settings/ {
+      proxy_pass http://identity_web;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection $connection_upgrade;
+    }
+
+    location ^~ /api/auth/ {
+      proxy_pass http://identity_web;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection $connection_upgrade;
+    }
+
+    location ^~ /api/identity/ {
+      proxy_pass http://identity_web;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection $connection_upgrade;
+    }
+
+    location ^~ /_next/ {
+      proxy_pass http://identity_web;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection $connection_upgrade;
+    }
+
+    location = /favicon.ico {
+      proxy_pass http://identity_web;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection $connection_upgrade;
+    }
 
     location = /dashboard {
       proxy_pass http://usage_web/dashboard;
@@ -143,6 +212,18 @@ http {
     # `/teams/api`만 오면 `^~ /teams/`에 잡혀 web-host로 갈 수 있으므로 BFF 접두로 정규화
     location = /teams/api {
       return 308 /teams/api/;
+    }
+
+    location = /api/team/v1 {
+      proxy_pass http://team_bff/api/team/v1;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection $connection_upgrade;
+    }
+
+    location ^~ /api/team/v1/ {
+      proxy_pass http://team_bff/api/team/v1/;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection $connection_upgrade;
     }
 
     location ^~ /mfe/team/ {
@@ -265,9 +346,7 @@ http {
     }
 
     location / {
-      proxy_pass http://identity_web;
-      proxy_set_header Upgrade $http_upgrade;
-      proxy_set_header Connection $connection_upgrade;
+      return 404;
     }
   }
 }

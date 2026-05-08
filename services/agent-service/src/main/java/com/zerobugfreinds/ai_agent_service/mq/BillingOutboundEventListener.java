@@ -44,7 +44,7 @@ public class BillingOutboundEventListener {
 			Map<String, String> headers = toStringHeaders(message);
 			// 리스너에서 한 줄 추가 예시: eventDebugService.record(eventType, headers, body);
 			eventDebugService.record("UsageCostFinalizedEvent", headers, body);
-			String apiKeyId = headerAsString(message, "apiKeyId");
+			String apiKeyId = resolveApiKeyId(message);
 			String userId = headerAsString(message, "userId");
 			String teamId = headerAsString(message, "teamId");
 			String subjectType = headerAsString(message, "subjectType");
@@ -63,7 +63,7 @@ public class BillingOutboundEventListener {
 			BillingCostCorrectedEvent event = objectMapper.readValue(body, BillingCostCorrectedEvent.class);
 			Map<String, String> headers = toStringHeaders(message);
 			eventDebugService.record("BillingCostCorrectedEvent", headers, body);
-			String apiKeyId = event.apiKeyId() != null ? event.apiKeyId() : headerAsString(message, "apiKeyId");
+			String apiKeyId = event.apiKeyId() != null ? event.apiKeyId() : resolveApiKeyId(message);
 			String userId = event.userId() != null ? event.userId() : headerAsString(message, "userId");
 			String teamId = headerAsString(message, "teamId");
 			String subjectType = headerAsString(message, "subjectType");
@@ -77,6 +77,18 @@ public class BillingOutboundEventListener {
 	private static String headerAsString(Message message, String key) {
 		Object value = message.getMessageProperties().getHeaders().get(key);
 		return value != null ? String.valueOf(value) : null;
+	}
+
+	private static String resolveApiKeyId(Message message) {
+		String apiKeyId = headerAsString(message, "apiKeyId");
+		if (apiKeyId != null && !apiKeyId.isBlank()) {
+			return apiKeyId;
+		}
+		String teamApiKeyId = headerAsString(message, "teamApiKeyId");
+		if (teamApiKeyId != null && !teamApiKeyId.isBlank()) {
+			return teamApiKeyId;
+		}
+		return null;
 	}
 
 	private static Map<String, String> toStringHeaders(Message message) {
