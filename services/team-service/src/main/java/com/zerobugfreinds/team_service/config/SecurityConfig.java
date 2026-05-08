@@ -34,6 +34,7 @@ public class SecurityConfig {
 						.requestMatchers("/internal/api-keys/**").permitAll()
 						.requestMatchers("/internal/teams/**").permitAll()
 						.requestMatchers("/internal/v1/teams/**").permitAll()
+						.requestMatchers("/internal/v1/users/**").permitAll()
 						.requestMatchers("/internal/v1/team-invitations/**").permitAll()
 						.requestMatchers("/internal/admin/**").permitAll()
 						.requestMatchers("/error").permitAll()

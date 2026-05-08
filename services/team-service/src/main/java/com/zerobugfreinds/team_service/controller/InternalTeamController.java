@@ -6,6 +6,7 @@ import com.zerobugfreinds.team_service.dto.InternalTeamInvitationDecisionRequest
 import com.zerobugfreinds.team_service.dto.InternalTeamMembershipVerifyResponse;
 import com.zerobugfreinds.team_service.dto.InternalTeamDetailResponse;
 import com.zerobugfreinds.team_service.dto.TeamInvitationActionResponse;
+import com.zerobugfreinds.team_service.dto.TeamSummaryResponse;
 import com.zerobugfreinds.team_service.service.TeamService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -55,6 +56,14 @@ public class InternalTeamController {
 	) {
 		InternalTeamMembershipVerifyResponse response = teamService.verifyTeamMembershipInternal(teamId, userId);
 		return ResponseEntity.ok(ApiResponse.ok("팀 멤버십 검증에 성공했습니다", response));
+	}
+
+	@GetMapping("/v1/users/{userId}/teams")
+	public ResponseEntity<ApiResponse<List<TeamSummaryResponse>>> getUserTeams(
+			@PathVariable("userId") String userId
+	) {
+		List<TeamSummaryResponse> teams = teamService.getUserTeamsInternal(userId);
+		return ResponseEntity.ok(ApiResponse.ok("사용자 팀 목록 조회에 성공했습니다", teams));
 	}
 
 	@PostMapping("/v1/team-invitations/{invitationId}/decision")

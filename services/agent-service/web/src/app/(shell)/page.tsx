@@ -459,48 +459,8 @@ export default function AgentPage() {
               setLoadingMessage,
             })
 
-      setResults((prev: AnalysisResult[]) => {
-        const byKeyId = new Map<number, AnalysisResult>()
-        for (const item of prev) {
-          byKeyId.set(item.keyId, item)
-        }
-        for (const item of nextResults) {
-          const current = byKeyId.get(item.keyId)
-          if (!current) {
-            byKeyId.set(item.keyId, item)
-            continue
-          }
-          const mergedData = item.data ?? current.data
-          const mergedRecommendation =
-            action === "ANALYSIS"
-              ? undefined
-              : item.recommendation !== undefined
-                ? item.recommendation
-                : current.recommendation
-          const mergedRecommendationError =
-            action === "ANALYSIS"
-              ? undefined
-              : item.recommendationError !== undefined
-                ? item.recommendationError
-                : current.recommendationError
-          const mergedAnalysisError =
-            action === "ANALYSIS"
-              ? item.error !== undefined
-                ? item.error
-                : undefined
-              : current.error
-          byKeyId.set(item.keyId, {
-            ...current,
-            ...item,
-            data: mergedData,
-            recommendation: mergedRecommendation,
-            forecastGaps: item.forecastGaps ?? current.forecastGaps,
-            error: mergedAnalysisError,
-            recommendationError: mergedRecommendationError,
-          })
-        }
-        return Array.from(byKeyId.values())
-      })
+      // 버튼을 누를 때마다 해당 요청 결과만 화면에 표시한다 (이전 결과는 보관하지 않음).
+      setResults(nextResults)
     } finally {
       setLoadingAction(null)
       setLoadingMessage("")
