@@ -17,7 +17,7 @@ function envGatewayBaseUrl(): string | null {
   if (configured) return configured;
   if (process.env.NODE_ENV === "development") {
     console.warn(
-      "[team-web-mfe] GATEWAY_URL/WEB_GATEWAY_URL is not set; using http://127.0.0.1:8888. " +
+      "[team-web] GATEWAY_URL/WEB_GATEWAY_URL is not set; using http://127.0.0.1:8888. " +
         "Set GATEWAY_URL or WEB_GATEWAY_URL in .env.local when gateway uses a different address.",
     );
     return "http://127.0.0.1:8888";

@@ -1,6 +1,8 @@
 package com.zerobugfreinds.ai_agent_service.controller;
 
 import com.zerobugfreinds.ai_agent_service.dto.OptimizationRecommendationIssuedEvent;
+import com.zerobugfreinds.ai_agent_service.dto.RecommendationAnalyzeBatchRequest;
+import com.zerobugfreinds.ai_agent_service.dto.RecommendationAnalyzeBatchResponse;
 import com.zerobugfreinds.ai_agent_service.dto.PolicyRecommendationRequest;
 import com.zerobugfreinds.ai_agent_service.dto.PolicyRecommendationResponse;
 import com.zerobugfreinds.ai_agent_service.dto.RecommendationAnalyzeRequest;
@@ -16,6 +18,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/agents/policy-recommendations")
@@ -40,6 +44,20 @@ public class AiPolicyAgentController {
 			@Valid @RequestBody RecommendationAnalyzeRequest request
 	) {
 		OptimizationRecommendationIssuedEvent response = policyRecommendationAgentService.analyzeAndStore(request);
+		return ResponseEntity.ok(response);
+	}
+
+	@PostMapping("/analyze/batch")
+	public ResponseEntity<RecommendationAnalyzeBatchResponse> analyzeBatch(
+			@Valid @RequestBody RecommendationAnalyzeBatchRequest request
+	) {
+		Map<String, RecommendationQueryResponse> byKeyId =
+				policyRecommendationAgentService.analyzeAndStoreBatch(request.requests());
+		RecommendationAnalyzeBatchResponse response = new RecommendationAnalyzeBatchResponse(
+				request.requests().stream()
+						.map(item -> new RecommendationAnalyzeBatchResponse.Item(item.keyId(), byKeyId.get(item.keyId())))
+						.toList()
+		);
 		return ResponseEntity.ok(response);
 	}
 

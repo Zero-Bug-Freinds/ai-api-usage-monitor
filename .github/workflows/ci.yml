@@ -69,6 +69,7 @@ jobs:
             web_edge:
               - 'docker/web-edge/**'
               - 'apps/web/**'
+              - 'services/team-service/web/**'
               - 'docker-compose.yml'
               - '.github/workflows/**'
             api_gateway:
@@ -281,6 +282,7 @@ jobs:
           docker run --rm \
             --add-host identity-web:127.0.0.1 \
             --add-host usage-web:127.0.0.1 \
+            --add-host team-web:127.0.0.1 \
             --add-host billing-web:127.0.0.1 \
             --add-host notification-web:127.0.0.1 \
             --add-host agent-web:127.0.0.1 \

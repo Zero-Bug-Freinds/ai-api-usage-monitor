@@ -14,7 +14,7 @@
 
 ## 2. 엔드포인트 계약
 
-| 브라우저 경로 (Identity `web` 기준) | Upstream |
+| 브라우저 경로 (`web-edge` 기준) | Upstream |
 |---|---|
 | `GET /api/team/v1/me/teams` | Team BFF `GET /api/team/v1/me/teams` → Gateway `GET /api/team/v1/me/teams` → Team Service `GET /api/v1/me/teams` |
 | `POST /api/team/v1/teams` | Team BFF `POST /api/team/v1/teams` → Gateway `POST /api/team/v1/teams` → Team Service `POST /api/v1/teams` |
@@ -218,7 +218,6 @@
 ### 7.1 내비게이션
 
 - 좌측 대시보드 셸에서 **`팀`** → 브라우저 경로 **`/teams`** (Identity `web`이 페이지를 소유한다).
-- **`조직`** (`/organizations`)과는 **별도** 상위 메뉴이며, **「조직 설정 > 팀 관리」** 같은 중첩 메뉴는 없다.
 - 조직 맥락 뱃지·우측 상단 **「+ 새 팀 추가」** 전용 버튼·중앙 **데이터 테이블** 형태의 팀 그리드는 **본 저장소 UI에 없다** (데모 시나리오 작성 시 혼동하지 말 것).
 
 ### 7.2 팀 만들기

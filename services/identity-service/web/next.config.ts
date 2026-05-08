@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import path from "path";
+<<<<<<< HEAD
 
 function usageOrigin(): string {
   return (
@@ -42,62 +43,14 @@ function agentOrigin(): string {
   ).replace(/\/+$/, "");
 }
 
+=======
+>>>>>>> origin/develop
 const nextConfig: NextConfig = {
   /* Docker(패턴 B): 루트 컨텍스트 빌드, `packages/ui` 트랜스파일 */
   output: "standalone",
   /* 모노레포: standalone 루트에 server.js (Dockerfile CMD node server.js) */
   outputFileTracingRoot: path.join(__dirname, "../../.."),
   transpilePackages: ["@ai-usage/ui", "@ai-usage/shell"],
-  async rewrites() {
-    const origin = usageOrigin();
-    const team = teamOrigin();
-    const billing = billingOrigin();
-    const notification = notificationOrigin();
-    const agent = agentOrigin();
-    return [
-      {
-        source: "/dashboard",
-        destination: `${origin}/dashboard`,
-      },
-      {
-        source: "/dashboard/:path*",
-        destination: `${origin}/dashboard/:path*`,
-      },
-      {
-        source: "/billing",
-        destination: `${billing}/billing`,
-      },
-      {
-        source: "/billing/:path*",
-        destination: `${billing}/billing/:path*`,
-      },
-      {
-        source: "/notifications",
-        destination: `${notification}/notifications`,
-      },
-      {
-        source: "/notifications/:path*",
-        destination: `${notification}/notifications/:path*`,
-      },
-      {
-        source: "/teams/api/:path*",
-        destination: `${team}/api/:path*`,
-      },
-      /* Team console HTML/static: use web-edge (8888) → web-host directly; avoid duplicate proxy via identity. */
-      {
-        source: "/agent",
-        destination: `${agent}/agent`,
-      },
-      {
-        source: "/agent/:path*",
-        destination: `${agent}/agent/:path*`,
-      },
-      {
-        source: "/api/team/v1/:path*",
-        destination: `${team}/api/team/v1/:path*`,
-      },
-    ];
-  },
 };
 
 export default nextConfig;

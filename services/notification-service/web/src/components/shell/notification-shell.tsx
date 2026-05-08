@@ -10,7 +10,7 @@ import { InAppNotificationToastListener } from "@/components/toast/in-app-notifi
 export function NotificationShell({ children }: { children: ReactNode }) {
   return (
     <ToastProvider>
-      <ConsoleShell profile="notification" logoutApiPath="/api/auth/logout" logoutRedirectPath="/">
+      <ConsoleShell profile="notification">
         <InAppNotificationToastListener />
         {children}
       </ConsoleShell>

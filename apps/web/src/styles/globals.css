@@ -1,7 +1,8 @@
 @import "tailwindcss";
 @source "../../../../packages/ui/src/**/*.{ts,tsx}";
 @source "../../../../packages/shell/src/**/*.{ts,tsx}";
-/* web-host 로컬 페이지·컴포넌트 유틸 누락 방지(Task37-20) */
+@source "../../../../services/team-service/web/src/**/*.{ts,tsx}";
+
 @source "../**/*.{ts,tsx}";
 @import "@ai-usage/ui/styles/design-system.css";
 

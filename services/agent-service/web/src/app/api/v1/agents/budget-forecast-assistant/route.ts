@@ -112,10 +112,22 @@ export async function POST(request: NextRequest) {
       status: response.status,
       headers: { "content-type": contentType },
     })
+<<<<<<< HEAD
   } catch {
     return NextResponse.json(
       {
         message: "budget forecast backend 호출에 실패했습니다.",
+=======
+  } catch (error) {
+    const detail =
+      error instanceof Error && error.message.trim().length > 0
+        ? error.message
+        : "unknown fetch error"
+    return NextResponse.json(
+      {
+        message: "budget forecast backend 호출에 실패했습니다.",
+        detail,
+>>>>>>> origin/develop
       },
       { status: 502 },
     )

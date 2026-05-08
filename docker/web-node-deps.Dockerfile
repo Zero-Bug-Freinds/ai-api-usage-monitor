@@ -15,7 +15,11 @@ COPY services/identity-service/web/package.json ./services/identity-service/web/
 COPY services/agent-service/web/package.json ./services/agent-service/web/
 COPY services/usage-service/web/package.json ./services/usage-service/web/
 COPY services/billing-service/web/package.json ./services/billing-service/web/
+<<<<<<< HEAD
 COPY services/team-service/web-mfe/package.json ./services/team-service/web-mfe/
+=======
+COPY services/team-service/web/package.json ./services/team-service/web/
+>>>>>>> origin/develop
 COPY services/notification-service/web/package.json ./services/notification-service/web/
 
 RUN pnpm install --frozen-lockfile

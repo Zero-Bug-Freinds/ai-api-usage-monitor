@@ -1,6 +1,15 @@
 # `@ai-usage/shell`
 
-Shared console layout: sidebar, `ConsoleShell`, `ConsoleLayoutOverride`.
+Shared console layout: sidebar, navigation UI, logout wiring, `ConsoleShell`, `ConsoleLayoutOverride`.
+
+## Navigation UI
+
+`packages/shell/src/console-sidebar.tsx` owns the console navigation UI. Service apps should render
+`<ConsoleShell profile="...">` or `ConsoleSidebarPages` and avoid rebuilding nav labels, icons,
+active-state rules, or logout URLs locally.
+
+Cross-app navigation uses `NEXT_PUBLIC_WEB_EDGE_ORIGIN` first, with the legacy
+`NEXT_PUBLIC_IDENTITY_WEB_ORIGIN` read only as a fallback for older env files.
 
 ## In-app notification toasts (`ConsoleShell`)
 
@@ -8,15 +17,14 @@ Shared console layout: sidebar, `ConsoleShell`, `ConsoleLayoutOverride`.
 
 ### Coverage (what is in / out of scope)
 
-- **In scope:** Any app that renders **`ConsoleShell`** (usage, billing, team, identity shell layouts, etc.).
+- **In scope:** Any app that renders **`ConsoleShell`** (usage, billing, team, identity, agent shell layouts, etc.).
 - **Out of this change:** Layouts that use **`ConsoleLayoutOverride`** only and never mount `ConsoleShell`, for example:
   - Module Federation host: `apps/web/src/components/host-shell-layout.tsx`
-  - Agent: `services/agent-service/web/src/components/agent/agent-shell.tsx`
 - **Follow-up for “global” parity:** Export a small client root (e.g. provider + listener bundle) from this package and mount it once in those shells; that is a separate wiring task.
 
 ### Poll URL (same-origin)
 
-The listener calls a fixed browser path (identity edge / web-edge):
+The listener calls a fixed browser path at web-edge:
 
 `/notifications/api/notification/in-app-notifications?limit=10`
 
@@ -26,7 +34,7 @@ Optional: `NEXT_PUBLIC_NOTIFICATION_POLL_MS` (default 10s, minimum 2s).
 
 ### Manual verification
 
-Use the **integrated** identity or web-edge origin (rewrites to notification web), not a single-service dev port without `/notifications`.
+Use the **integrated** web-edge origin, not a single-service dev port without `/notifications`.
 
 1. Open a `ConsoleShell` page (e.g. `/dashboard`, `/billing`, `/teams`) and stay logged in.
 2. Create an in-app notification (team flow or API) so a new unread item appears.

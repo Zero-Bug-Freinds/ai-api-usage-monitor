@@ -5,7 +5,6 @@ import type { ReactNode } from "react"
 import Link from "next/link"
 import {
   Bell,
-  Building2,
   ChevronLeft,
   ChevronRight,
   LayoutDashboard,
@@ -20,7 +19,12 @@ import { Button, cn } from "@ai-usage/ui"
 import { ConsoleInternalNavLink } from "./console-internal-nav-link"
 import type { ConsoleNavId, ConsoleProfile } from "./console-nav"
 import { CONSOLE_MAIN_NAV_ORDER, CONSOLE_NAV } from "./console-nav"
-import { isConsoleNavActive, notificationUnreadCountFetchUrl, resolveConsoleNavLink } from "./console-nav"
+import {
+  isConsoleNavActive,
+  notificationUnreadCountFetchUrl,
+  resolveConsoleNavLink,
+  resolveWebEdgeLogoutPathsFromEnv,
+} from "./console-nav"
 
 type TeamSidebarItem = {
   id: string
@@ -40,7 +44,6 @@ const ICONS: Record<ConsoleNavId, ReactNode> = {
   billingHome: <Wallet className="size-[1.125rem] shrink-0" aria-hidden />,
   notifications: <Bell className="size-[1.125rem] shrink-0" aria-hidden />,
   settings: <Settings className="size-[1.125rem] shrink-0" aria-hidden />,
-  organizations: <Building2 className="size-[1.125rem] shrink-0" aria-hidden />,
   teams: <UsersRound className="size-[1.125rem] shrink-0" aria-hidden />,
   assistant: <MessageCircle className="size-[1.125rem] shrink-0" aria-hidden />,
   identityLanding: <ChevronLeft className="size-[1.125rem] shrink-0" aria-hidden />,
@@ -126,8 +129,8 @@ export function ConsoleSidebarInner({
   pathname,
   profile,
   teams = [],
-  logoutApiPath = "/api/auth/logout",
-  logoutRedirectPath = "/",
+  logoutApiPath,
+  logoutRedirectPath,
   buildTeamSubmenuHref,
   teamExpandedTeamId,
   teamSubmenuActive,
@@ -137,6 +140,9 @@ export function ConsoleSidebarInner({
   const [logoutPending, setLogoutPending] = React.useState(false)
   const [expandedTeamId, setExpandedTeamId] = React.useState<string | null>(null)
   const [unreadCount, setUnreadCount] = React.useState<number | null>(null)
+  const defaultLogoutPaths = resolveWebEdgeLogoutPathsFromEnv()
+  const resolvedLogoutApiPath = logoutApiPath ?? defaultLogoutPaths.logoutApiPath
+  const resolvedLogoutRedirectPath = logoutRedirectPath ?? defaultLogoutPaths.logoutRedirectPath
 
   React.useEffect(() => {
     if (teamExpandedTeamId != null && teamExpandedTeamId !== "") {
@@ -214,7 +220,7 @@ export function ConsoleSidebarInner({
       // 이벤트 발행 실패 시에도 로그아웃 흐름은 계속 진행한다.
     }
     try {
-      await fetch(logoutApiPath, {
+      await fetch(resolvedLogoutApiPath, {
         method: "POST",
         credentials: "include",
       })
@@ -231,7 +237,7 @@ export function ConsoleSidebarInner({
     } catch {
       // Storage 접근 오류가 있어도 로그아웃 리다이렉트는 진행한다.
     }
-    window.location.assign(logoutRedirectPath)
+    window.location.assign(resolvedLogoutRedirectPath)
   }
 
   return (
