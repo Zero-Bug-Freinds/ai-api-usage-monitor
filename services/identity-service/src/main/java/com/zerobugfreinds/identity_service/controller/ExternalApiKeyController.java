@@ -1,6 +1,7 @@
 package com.zerobugfreinds.identity_service.controller;
 
 import com.zerobugfreinds.identity_service.common.ApiResponse;
+import com.zerobugfreinds.identity_service.domain.ExternalApiKeyProvider;
 import com.zerobugfreinds.identity_service.dto.ExternalApiKeyRegisterRequest;
 import com.zerobugfreinds.identity_service.dto.ExternalApiKeyRegisterResponse;
 import com.zerobugfreinds.identity_service.dto.ExternalApiKeyUpdateRequest;
@@ -119,7 +120,7 @@ public class ExternalApiKeyController {
 	private static ExternalApiKeyRegisterResponse toResponse(ExternalApiKeyEntity key) {
 		return new ExternalApiKeyRegisterResponse(
 				key.getId(),
-				key.getProvider().name(),
+				normalizeProviderName(key.getProvider()),
 				key.getKeyAlias(),
 				key.getCreatedAt(),
 				key.getMonthlyBudgetUsd(),
@@ -127,5 +128,9 @@ public class ExternalApiKeyController {
 				key.getPermanentDeletionAt(),
 				key.getDeletionGraceDays()
 		);
+	}
+
+	private static String normalizeProviderName(ExternalApiKeyProvider provider) {
+		return provider.name();
 	}
 }

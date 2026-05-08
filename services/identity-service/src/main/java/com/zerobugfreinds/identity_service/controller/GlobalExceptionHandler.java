@@ -130,7 +130,7 @@ public class GlobalExceptionHandler {
 	public ApiResponse<Void> handleHttpMessageNotReadable(HttpMessageNotReadableException ex) {
 		String detail = ex.getMostSpecificCause().getMessage();
 		if (detail != null && detail.contains("ExternalApiKeyProvider")) {
-			return ApiResponse.fail("provider 값이 올바르지 않습니다. 허용: GEMINI, OPENAI, ANTHROPIC");
+			return ApiResponse.fail("provider 값이 올바르지 않습니다. 허용: GOOGLE, OPENAI, ANTHROPIC");
 		}
 		return ApiResponse.fail("요청 본문 형식이 올바르지 않습니다");
 	}

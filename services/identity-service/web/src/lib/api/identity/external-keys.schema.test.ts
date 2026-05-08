@@ -16,9 +16,9 @@ describe("createExternalKeyRequestSchema", () => {
 
   it("rejects empty externalKey", () => {
     const parsed = createExternalKeyRequestSchema.safeParse({
-      provider: "GEMINI",
+      provider: "GOOGLE",
       externalKey: "   ",
-      alias: "Gemini 키 1",
+      alias: "Google 키 1",
       monthlyBudgetUsd: 10,
     })
 
