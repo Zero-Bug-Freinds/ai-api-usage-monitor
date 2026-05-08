@@ -1,6 +1,6 @@
 # Identity 인증 API 계약 (백엔드)
 
-버전: 1.6  
+버전: 1.8  
 관련: [architecture.md](./architecture.md) §1.3, [contracts/web-identity-bff.md](./contracts/web-identity-bff.md)
 
 ---
@@ -42,11 +42,17 @@
 | `GET`  | `/api/auth/external-keys` | 필요  | 내 외부 AI API 키 목록 조회 (`id`, `provider`, `alias`, `monthlyBudgetUsd`, `createdAt`, 삭제 예정 시 `deletionRequestedAt`·`permanentDeletionAt`·`deletionGraceDays` 등) |
 | `POST` | `/api/auth/external-keys` | 필요  | 외부 AI API 키 등록 (`provider`, `externalKey`, `alias`, `monthlyBudgetUsd`) |
 | `PUT`  | `/api/auth/external-keys/{id}` | 필요  | 외부 AI API 키 수정 (`alias`, `monthlyBudgetUsd` 필수, `externalKey`는 선택) |
-| `DELETE` | `/api/auth/external-keys/{id}` | 필요  | 외부 AI API 키 삭제 예약(선택 쿼리 `gracePeriodDays`, 기본 7일·범위 1~365일) |
+| `DELETE` | `/api/auth/external-keys/{id}` | 필요  | 외부 AI API 키 삭제 예약/즉시 삭제(선택 쿼리 `gracePeriodDays`, `retainLogs`; 기본 7일·범위 0~365일, `0`은 즉시 삭제) |
 | `POST` | `/api/auth/external-keys/{id}/deletion-cancel` | 필요  | 외부 AI API 키 삭제 예약 취소 |
 | `POST` | `/api/auth/logout`  | 불필요 | 로그아웃 신호 응답(BFF 쿠키 삭제 유도) |
 
 레거시 호환: 과거 `GEMINI` 값으로 저장된 항목이 있더라도 외부 API 응답의 canonical provider 표기는 `GOOGLE`로 유지한다.
+클라이언트 입력 `provider` 허용값은 계속 `GOOGLE`, `OPENAI`, `ANTHROPIC` 기준이며, `GEMINI`는 레거시 DB 정리 목적의 내부 호환 범위로만 취급한다.
+
+부팅 시 마이그레이션(코드 기준 `ExternalApiKeyProviderMigrationInitializer`):
+- DB 제약조건 `external_api_keys_provider_check`를 재생성해 `GEMINI`, `GOOGLE`, `OPENAI`, `ANTHROPIC`를 임시 허용한다.
+- 이어서 `provider='GEMINI'` 행을 `provider='GOOGLE'`로 일괄 업데이트한다.
+- 목적은 기존 데이터가 있는 환경에서도 서비스 부팅 실패 없이 `GOOGLE` 표기로 수렴시키는 것이다.
 
 
 ---
@@ -83,7 +89,7 @@
 ```
 
 - `tokenType`은 반드시 `Bearer`를 반환한다.
-- 계약 위반(`tokenType != Bearer`)은 서버에서 `502 Bad Gateway`로 처리한다.
+- BFF(`web-identity-bff`)는 `tokenType != Bearer`를 업스트림 계약 위반으로 보고 `502`로 처리한다.
 
 ### 4.2 캐시 정책
 
@@ -296,7 +302,7 @@
 | --- | --- | --- | --- | --- |
 | `provider` | string (enum) | 조건부 | `GOOGLE`, `OPENAI`, `ANTHROPIC` 중 하나 (`externalKey`를 함께 보낼 때 필수) | `"GOOGLE"` |
 | `externalKey` | string | 아니오 | 공백만 불가, 최대 4096자 (`provider`와 함께 보낼 때 키 교체) | 제3자가 발급한 비밀 키 |
-| `alias` | string | 예 | 공백만 불가, 최대 100자 | `"데모용 Gemini (수정)"` |
+| `alias` | string | 예 | 공백만 불가, 최대 100자 | `"데모용 Google (수정)"` |
 | `monthlyBudgetUsd` | number | 예 | 0 이상, 소수점 둘째 자리까지 | `35.0` |
 
 ### 9.2 성공 응답 (`200 OK`)
@@ -315,7 +321,7 @@
   "data": {
     "id": 1,
     "provider": "GOOGLE",
-    "alias": "데모용 Gemini (수정)",
+    "alias": "데모용 Google (수정)",
     "monthlyBudgetUsd": 35.0,
     "createdAt": "2026-03-29T08:05:19.296098200Z"
   }
@@ -353,19 +359,20 @@
 
 ## 10.1 외부 API 키 삭제 예약/취소 계약
 
-삭제는 즉시 물리 삭제가 아니라 **유예 기간(soft delete)** 후 물리 삭제로 처리한다. **기본 유예는 7일**이며, 요청 시 **쿼리 `gracePeriodDays`** 로 **1~365일** 범위에서 바꿀 수 있다(생략 시 7일). 유예 중에는 삭제 취소가 가능하며, 유예 종료 후 스케줄러가 물리 삭제한다.
+삭제는 `gracePeriodDays`에 따라 **즉시 물리 삭제** 또는 **유예 기간(soft delete) 후 물리 삭제**로 처리한다. 기본 유예는 7일이며, `gracePeriodDays`는 **0~365일** 범위(생략 시 7일)다. `0`이면 즉시 물리 삭제, 1 이상이면 유예 삭제가 적용된다. 유예 중에는 삭제 취소가 가능하며, 유예 종료 후 스케줄러가 물리 삭제한다.
 
 ### 삭제 예약: `DELETE /api/auth/external-keys/{id}`
 
 | 항목 | 설명 |
 | --- | --- |
-| 쿼리 | 선택 `gracePeriodDays`(정수). 생략 시 기본 7일. 범위 위반 시 `400`. |
-| 동작 | `deletionRequestedAt`·`permanentDeletionAt`·`deletionGraceDays` 설정 |
+| 쿼리 | 선택 `gracePeriodDays`(정수), `retainLogs`(boolean, 기본 `true`). 생략 시 `gracePeriodDays=7`. 범위 위반 시 `400`. |
+| 동작 | `gracePeriodDays=0`이면 즉시 물리 삭제, `1~365`면 `deletionRequestedAt`·`permanentDeletionAt`·`deletionGraceDays` 설정 |
 
 | 상황 | 상태 코드 | 예시 JSON |
 | --- | --- | --- |
-| 삭제 예약 성공 | `200` | `{"success":true,"message":"삭제가 예약되었습니다. 일주일 이내에 취소할 수 있으며, 이후에는 키가 영구 삭제됩니다.","data":{"id":1,"provider":"GOOGLE","alias":"데모 키","createdAt":"...","monthlyBudgetUsd":10,"deletionRequestedAt":"...","permanentDeletionAt":"...","deletionGraceDays":7}}` |
-| `gracePeriodDays` 범위 밖 | `400` | `{"success":false,"message":"유예 기간은 1일 이상 365일 이하로 설정할 수 있습니다","data":null}` |
+| 삭제 예약 성공(`gracePeriodDays>=1`) | `200` | `{"success":true,"message":"삭제가 예약되었습니다. 유예 기간 안에 취소할 수 있으며, 종료 후에는 키가 영구 삭제됩니다.","data":{"id":1,"provider":"GOOGLE","alias":"데모 키","createdAt":"...","monthlyBudgetUsd":10,"deletionRequestedAt":"...","permanentDeletionAt":"...","deletionGraceDays":7}}` |
+| 즉시 삭제 성공(`gracePeriodDays=0`) | `200` | `{"success":true,"message":"API 키가 즉시 영구 삭제되었습니다.","data":{"id":1,"provider":"GOOGLE","alias":"데모 키","createdAt":"...","monthlyBudgetUsd":10}}` |
+| `gracePeriodDays` 범위 밖 | `400` | `{"success":false,"message":"유예 기간은 0일 이상 365일 이하로 설정할 수 있습니다","data":null}` |
 | 대상 키 없음 | `404` | `{"success":false,"message":"등록된 API 키를 찾을 수 없습니다","data":null}` |
 | 이미 삭제 예정 | `409` | `{"success":false,"message":"이미 삭제 예정인 키입니다","data":null}` |
 
@@ -384,7 +391,7 @@
 
 | 상황        | 상태 코드 | 설명                           |
 | --------- | ----- | ---------------------------- |
-| 입력 검증 실패  | `400` | 필드 유효성/정책 위반 (`provider`·`externalKey`·`alias` 등), 삭제 예약 시 `gracePeriodDays` 범위(1~365) 위반 등 |
+| 입력 검증 실패  | `400` | 필드 유효성/정책 위반 (`provider`·`externalKey`·`alias` 등), 삭제 예약 시 `gracePeriodDays` 범위(0~365) 위반 등 |
 | 로그인 인증 실패 | `401` | 이메일/비밀번호 불일치                 |
 | 보호 API 미인증 | `401` | 액세스 토큰 없음/무효 (`GET/POST/PUT/DELETE /api/auth/external-keys` 등) |
 | 외부 API 키 별칭 중복 | `409` | 동일 사용자 기준 별칭 재사용              |
@@ -406,17 +413,17 @@
 
 ## 13. 비동기 이벤트 발행 (Message Queue)
 
-외부 API 키의 상태가 변경(생성, 수정, 삭제 예약, 취소 등)될 때마다 타 서비스(Usage 등)와의 상태 동기화를 위해 RabbitMQ로 이벤트를 발행한다.
-(주의: 과금/결제 분리를 위해 `monthlyBudgetUsd`는 이벤트 페이로드에서 제외된다.)
+외부 API 키의 상태가 변경(생성, 수정, 삭제 예약, 취소, 물리 삭제)될 때마다 타 서비스(Usage 등)와의 동기화를 위해 RabbitMQ로 이벤트를 발행한다.
 
 - **Exchange:** `identity.events` (기본값)
 - **Routing Key:** `identity.external-api-key.status-changed`
-- **발행 시점 (트랜잭션 커밋 후 AFTER_COMMIT 보장):**
+- **발행 이벤트 유형 (트랜잭션 커밋 후 AFTER_COMMIT 보장):**
   - 신규 등록 성공 → `ACTIVE`
   - 수정 성공(별칭 변경 포함) → `ACTIVE`
   - 삭제 요청 성공(유예 시작) → `DELETION_REQUESTED`
   - 삭제 예약 취소 성공 → `ACTIVE`
   - 유예 만료로 인한 물리 삭제 시 → `DELETED`
+  - 월 예산 변경/상태 전이에 따른 예산 동기화 이벤트(`ExternalApiKeyBudgetChangedEvent`)도 함께 발행
 
 **Event Payload (JSON):**
 ```json
