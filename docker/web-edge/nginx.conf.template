@@ -2,7 +2,7 @@
 # Usage Next basePath=/dashboard, Billing basePath=/billing, Team basePath=/teams,
 # Notification basePath=/notifications, Agent basePath=/agent.
 # Team UI: /teams (and /teams/* except /teams/api/* BFF) proxies to web_host.
-# /teams/api/* and /api/team/v1/* -> team_bff (team-web-mfe BFF). /api/v1/* -> api-gateway.
+# /teams/api/* and /api/team/v1/* -> team_bff (team-web BFF). /api/v1/* -> api-gateway.
 # Identity receives only its owned routes; unknown routes return 404.
 #
 # Deployment note:
@@ -37,7 +37,7 @@ http {
   }
 
   upstream team_bff {
-    server team-web-mfe:3000;
+    server team-web:3000;
   }
 
   upstream web_host {
@@ -45,7 +45,7 @@ http {
   }
 
   upstream team_mfe {
-    server team-web-mfe:3000;
+    server team-web:3000;
   }
 
   upstream usage_mfe {

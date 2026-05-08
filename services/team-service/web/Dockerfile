@@ -8,7 +8,7 @@ RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY packages/ui/package.json ./packages/ui/
 COPY packages/shell/package.json ./packages/shell/
-COPY services/team-service/web-mfe/package.json ./services/team-service/web-mfe/
+COPY services/team-service/web/package.json ./services/team-service/web/
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm config set store-dir /pnpm/store && \
     pnpm install --frozen-lockfile
@@ -27,18 +27,18 @@ COPY --from=deps /repo/packages/ui/package.json ./packages/ui/package.json
 COPY --from=deps /repo/packages/ui/node_modules ./packages/ui/node_modules
 COPY --from=deps /repo/packages/shell/package.json ./packages/shell/package.json
 COPY --from=deps /repo/packages/shell/node_modules ./packages/shell/node_modules
-COPY --from=deps /repo/services/team-service/web-mfe/package.json ./services/team-service/web-mfe/package.json
-COPY --from=deps /repo/services/team-service/web-mfe/node_modules ./services/team-service/web-mfe/node_modules
+COPY --from=deps /repo/services/team-service/web/package.json ./services/team-service/web/package.json
+COPY --from=deps /repo/services/team-service/web/node_modules ./services/team-service/web/node_modules
 
 COPY packages/ui ./packages/ui
 COPY packages/shell ./packages/shell
-COPY services/team-service/web-mfe ./services/team-service/web-mfe
+COPY services/team-service/web ./services/team-service/web
 
-WORKDIR /repo/services/team-service/web-mfe
+WORKDIR /repo/services/team-service/web
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NEXT_PRIVATE_LOCAL_WEBPACK=true
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    --mount=type=cache,target=/repo/services/team-service/web-mfe/.next/cache \
+    --mount=type=cache,target=/repo/services/team-service/web/.next/cache \
     pnpm config set store-dir /pnpm/store && \
     pnpm install --frozen-lockfile && \
     pnpm run build:standalone
@@ -48,11 +48,11 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 
-COPY --from=builder --chown=nextjs:nodejs /repo/services/team-service/web-mfe/.next/standalone /app
-COPY --from=builder --chown=nextjs:nodejs /repo/services/team-service/web-mfe/.next/static /app/services/team-service/web-mfe/.next/static
+COPY --from=builder --chown=nextjs:nodejs /repo/services/team-service/web/.next/standalone /app
+COPY --from=builder --chown=nextjs:nodejs /repo/services/team-service/web/.next/static /app/services/team-service/web/.next/static
 
 USER nextjs
-WORKDIR /app/services/team-service/web-mfe
+WORKDIR /app/services/team-service/web
 EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
