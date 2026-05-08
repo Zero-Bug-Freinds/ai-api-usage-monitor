@@ -310,6 +310,7 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: docker
       PROXY_KEY_SERVICE_BASE_URL: ${PROXY_KEY_SERVICE_BASE_URL:-http://identity-service:8080}
+      PROXY_TEAM_KEY_SERVICE_BASE_URL: ${PROXY_TEAM_KEY_SERVICE_BASE_URL:-http://team-service:8093}
       PROXY_OPENAI_TEST_API_KEY: ${PROXY_OPENAI_TEST_API_KEY:-}
       PROXY_GOOGLE_TEST_API_KEY: ${PROXY_GOOGLE_TEST_API_KEY:-}
       PROXY_MOCK_KEY_FALLBACK: ${PROXY_MOCK_KEY_FALLBACK:-}
@@ -332,6 +333,9 @@ services:
         condition: service_started
       billing-service:
         condition: service_started
+      team-service:
+        condition: service_started
+        required: false
     environment:
       GATEWAY_PROXY_URI: http://proxy-service:8081
       GATEWAY_IDENTITY_URI: ${GATEWAY_IDENTITY_URI:-http://identity-service:8080}
@@ -417,20 +421,6 @@ services:
     ports:
       - "${USAGE_WEB_PORT:-3001}:3000"
 
-  usage-web-mfe:
-    profiles:
-      - web
-    restart: unless-stopped
-    build:
-      context: .
-      dockerfile: services/usage-service/web-mfe/Dockerfile
-      args:
-        WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
-    depends_on:
-      - usage-web
-    expose:
-      - "3000"
-
   # billing-web 은 usage-web 과 동일 DashboardShell; 빌드 시 NEXT_PUBLIC_IDENTITY_WEB_ORIGIN 등은 루트 .env 와 맞출 것.
   billing-web:
     profiles:
@@ -514,31 +504,6 @@ services:
     ports:
       - "${TEAM_SERVICE_HOST_PORT:-8093}:8093"
 
-  web-host:
-    profiles:
-      - web
-    restart: unless-stopped
-    build:
-      context: .
-      dockerfile: apps/web/Dockerfile
-      args:
-        WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
-        NEXT_PUBLIC_MFE_TEAM_REMOTE_URL: ${NEXT_PUBLIC_MFE_TEAM_REMOTE_URL:-http://localhost:8888/mfe/team}
-        NEXT_PUBLIC_MFE_USAGE_REMOTE_URL: ${NEXT_PUBLIC_MFE_USAGE_REMOTE_URL:-http://localhost:8888/mfe/usage}
-    depends_on:
-      - team-service
-    environment:
-      NEXT_TELEMETRY_DISABLED: "1"
-      NEXT_PRIVATE_LOCAL_WEBPACK: "true"
-      NEXT_PUBLIC_WEB_EDGE_ORIGIN: ${NEXT_PUBLIC_WEB_EDGE_ORIGIN:-http://localhost:${WEB_EDGE_PORT:-8888}}
-      NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${WEB_EDGE_PORT:-8888}}
-      NEXT_PUBLIC_MFE_TEAM_REMOTE_URL: ${NEXT_PUBLIC_MFE_TEAM_REMOTE_URL:-http://localhost:8888/mfe/team}
-      NEXT_PUBLIC_MFE_USAGE_REMOTE_URL: ${NEXT_PUBLIC_MFE_USAGE_REMOTE_URL:-http://localhost:8888/mfe/usage}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    ports:
-      - "${WEB_HOST_PORT:-3002}:3000"
-
   team-web:
     profiles:
       - web
@@ -571,9 +536,7 @@ services:
       - identity-web
       - usage-web
       - billing-web
-      - web-host
       - team-web
-      - usage-web-mfe
       - notification-web
       - agent-web
       - api-gateway-service

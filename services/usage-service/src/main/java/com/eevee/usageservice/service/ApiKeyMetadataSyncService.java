@@ -5,6 +5,13 @@ import com.eevee.usageservice.domain.ApiKeyStatus;
 import com.eevee.usageservice.mq.ExternalApiKeyDeletedEvent;
 import com.eevee.usageservice.mq.ExternalApiKeyStatus;
 import com.eevee.usageservice.mq.ExternalApiKeyStatusChangedEvent;
+import com.eevee.usageservice.mq.TeamApiKeyDeletedEvent;
+import com.eevee.usageservice.mq.TeamApiKeyDeletionCancelledEvent;
+import com.eevee.usageservice.mq.TeamApiKeyDeletionScheduledEvent;
+import com.eevee.usageservice.mq.TeamApiKeyRegisteredEvent;
+import com.eevee.usageservice.mq.TeamApiKeyStatus;
+import com.eevee.usageservice.mq.TeamApiKeyStatusChangedEvent;
+import com.eevee.usageservice.mq.TeamApiKeyUpdatedEvent;
 import com.eevee.usageservice.repository.ApiKeyMetadataRepository;
 import com.eevee.usageservice.repository.UsageRecordedLogRepository;
 import org.slf4j.Logger;
@@ -52,6 +59,43 @@ public class ApiKeyMetadataSyncService {
                 updatedAt
         );
         apiKeyMetadataRepository.save(entity);
+    }
+
+    @Transactional
+    public void upsertFromTeamRegistered(TeamApiKeyRegisteredEvent event) {
+        upsertTeamMetadata(event.apiKeyId(), event.actorUserId(), event.provider(), event.alias(), ApiKeyStatus.ACTIVE, event.occurredAt());
+    }
+
+    @Transactional
+    public void upsertFromTeamUpdated(TeamApiKeyUpdatedEvent event) {
+        upsertTeamMetadata(event.apiKeyId(), event.actorUserId(), event.provider(), event.alias(), ApiKeyStatus.ACTIVE, event.occurredAt());
+    }
+
+    @Transactional
+    public void handleTeamDeleted(TeamApiKeyDeletedEvent event) {
+        upsertTeamMetadata(event.apiKeyId(), event.actorUserId(), event.provider(), event.alias(), ApiKeyStatus.DELETED, event.occurredAt());
+    }
+
+    @Transactional
+    public void handleTeamDeletionScheduled(TeamApiKeyDeletionScheduledEvent event) {
+        upsertTeamMetadata(event.apiKeyId(), event.actorUserId(), event.provider(), event.alias(), ApiKeyStatus.DELETION_REQUESTED, event.occurredAt());
+    }
+
+    @Transactional
+    public void handleTeamDeletionCancelled(TeamApiKeyDeletionCancelledEvent event) {
+        upsertTeamMetadata(event.apiKeyId(), event.actorUserId(), event.provider(), event.alias(), ApiKeyStatus.ACTIVE, event.occurredAt());
+    }
+
+    @Transactional
+    public void upsertFromTeamStatusChanged(TeamApiKeyStatusChangedEvent event) {
+        upsertTeamMetadata(
+                event.teamApiKeyId(),
+                event.ownerUserId(),
+                event.provider(),
+                event.alias(),
+                mapTeamStatus(event.status()),
+                event.occurredAt()
+        );
     }
 
     /**
@@ -102,5 +146,52 @@ public class ApiKeyMetadataSyncService {
             case DELETION_REQUESTED -> ApiKeyStatus.DELETION_REQUESTED;
             case DELETED -> ApiKeyStatus.DELETED;
         };
+    }
+
+    private static ApiKeyStatus mapTeamStatus(TeamApiKeyStatus status) {
+        if (status == null) {
+            return ApiKeyStatus.ACTIVE;
+        }
+        return switch (status) {
+            case ACTIVE -> ApiKeyStatus.ACTIVE;
+            case DELETION_REQUESTED -> ApiKeyStatus.DELETION_REQUESTED;
+            case DELETED -> ApiKeyStatus.DELETED;
+        };
+    }
+
+    private void upsertTeamMetadata(
+            Long keyIdRaw,
+            String ownerUserId,
+            String provider,
+            String alias,
+            ApiKeyStatus status,
+            Instant occurredAt
+    ) {
+        if (keyIdRaw == null) {
+            throw new IllegalArgumentException("team api key id is required");
+        }
+        String keyId = String.valueOf(keyIdRaw);
+        Instant updatedAt = occurredAt != null ? occurredAt : Instant.now();
+        ApiKeyMetadataEntity entity = apiKeyMetadataRepository.findById(keyId).orElse(null);
+
+        String resolvedUserId = StringUtils.hasText(ownerUserId)
+                ? ownerUserId.trim()
+                : (entity != null ? entity.getUserId() : null);
+        if (!StringUtils.hasText(resolvedUserId)) {
+            log.warn("Skipping team API key metadata upsert due to missing owner userId keyId={}", keyId);
+            return;
+        }
+
+        ApiKeyMetadataEntity target = entity != null ? entity : ApiKeyMetadataEntity.create(keyId, resolvedUserId);
+        String resolvedAlias = StringUtils.hasText(alias) ? alias.trim() : target.getAlias();
+        String resolvedProvider = StringUtils.hasText(provider) ? provider.trim() : target.getProvider();
+        target.apply(
+                resolvedUserId,
+                resolvedProvider,
+                resolvedAlias,
+                status,
+                updatedAt
+        );
+        apiKeyMetadataRepository.save(target);
     }
 }

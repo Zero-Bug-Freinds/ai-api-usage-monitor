@@ -58,8 +58,6 @@ jobs:
       billing: ${{ steps.filter.outputs.billing }}
       team: ${{ steps.filter.outputs.team }}
       notification: ${{ steps.filter.outputs.notification }}
-      web_host: ${{ steps.filter.outputs.web_host }}
-      web_mfe: ${{ steps.filter.outputs.web_mfe }}
       web_shared: ${{ steps.filter.outputs.web_shared }}
       workflows: ${{ steps.filter.outputs.workflows }}
     steps:
@@ -72,7 +70,6 @@ jobs:
               - 'docker/web-edge/**'
               - 'apps/web/**'
               - 'services/team-service/web/**'
-              - 'services/usage-service/web-mfe/**'
               - 'docker-compose.yml'
               - '.github/workflows/**'
             api_gateway:
@@ -108,12 +105,6 @@ jobs:
               - 'docker/backend-node-deps.Dockerfile'
               - 'docker-compose.yml'
               - '.github/workflows/**'
-            web_host:
-              - 'apps/web/**'
-              - 'packages/team-workspace-cache/**'
-            web_mfe:
-              - 'services/usage-service/web-mfe/**'
-              - 'services/team-service/web/**'
             web_shared:
               - 'packages/ui/**'
               - 'packages/shell/**'
@@ -291,9 +282,7 @@ jobs:
           docker run --rm \
             --add-host identity-web:127.0.0.1 \
             --add-host usage-web:127.0.0.1 \
-            --add-host web-host:127.0.0.1 \
             --add-host team-web:127.0.0.1 \
-            --add-host usage-web-mfe:127.0.0.1 \
             --add-host billing-web:127.0.0.1 \
             --add-host notification-web:127.0.0.1 \
             --add-host agent-web:127.0.0.1 \
@@ -627,163 +616,6 @@ jobs:
           echo "- Cache scope: \`notification-web\` (type=gha)" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
-  web-host:
-    name: Build web-host (apps/web)
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: write
-    needs:
-      - changes
-    # web-host job 임시 비활성화(CI 오류 회피). 다시 켤 때 아래 if를 사용한다.
-    # if: >-
-    #   needs.changes.outputs.web_host == 'true'
-    #   || needs.changes.outputs.web_shared == 'true'
-    #   || needs.changes.outputs.workflows == 'true'
-    #   || needs.changes.outputs.web_mfe == 'true'
-    if: false
-    env:
-      NEXT_PRIVATE_LOCAL_WEBPACK: "true"
-      NEXT_PUBLIC_MFE_TEAM_REMOTE_URL: "http://localhost:8888/mfe/team"
-      NEXT_PUBLIC_MFE_USAGE_REMOTE_URL: "http://localhost:8888/mfe/usage"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-      - name: Reset pnpm store metadata
-        run: pnpm store prune
-      - name: Install workspace
-        run: pnpm install --frozen-lockfile
-      # ESLint: omit --max-warnings so only errors fail the step; warnings do not stop CI
-      - name: Lint / test / build (web-host)
-        run: |
-          pnpm --filter web-host run lint
-          pnpm --filter web-host run test
-          pnpm run build:web-host
-      - name: Verify host remotes configuration
-        run: |
-          node -e "const fs=require('node:fs');const p='apps/web/next.config.mjs';const c=fs.readFileSync(p,'utf8');for(const x of ['NextFederationPlugin','team@','usage@','remoteEntry.js','team/TeamManagement','usage/TeamUsageDashboard']){if(!c.includes(x)){throw new Error('missing '+x+' in '+p)}}"
-      - uses: docker/setup-buildx-action@v3
-      - name: Docker image (web-node-deps base)
-        id: docker_web_node_deps
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: docker/web-node-deps.Dockerfile
-          tags: web-node-deps:ci
-          load: true
-          push: false
-          cache-from: type=gha,scope=web-node-deps-ci
-          cache-to: type=gha,mode=min,scope=web-node-deps-ci
-      - name: Docker image (web-host, standalone)
-        id: docker_web_host
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: apps/web/Dockerfile
-          # 로컬 태그 web-node-deps:ci는 Buildx 기본 빌더에서 FROM으로 쓰면 허브 pull로 해석된다.
-          # BuildKit 추가 컨텍스트로 엔진 이미지 스토어의 동일 태그를 주입한다(apps/web Dockerfile의 WEB_NODE_DEPS_IMAGE=ci-deps와 대응).
-          build-contexts: |
-            ci-deps=docker-image://web-node-deps:ci
-          build-args: |
-            WEB_NODE_DEPS_IMAGE=ci-deps
-            NEXT_PUBLIC_MFE_TEAM_REMOTE_URL=http://localhost:8888/mfe/team
-            NEXT_PUBLIC_MFE_USAGE_REMOTE_URL=http://localhost:8888/mfe/usage
-          tags: web-host:ci
-          load: true
-          push: false
-          cache-from: type=gha,scope=web-host-ci
-          cache-to: type=gha,mode=min,scope=web-host-ci
-      - name: Web-host image summary
-        if: always()
-        run: |
-          echo "## Docker image build summary (web-host)" >> "$GITHUB_STEP_SUMMARY"
-          echo "- web-node-deps tag: \`web-node-deps:ci\` digest: \`${{ steps.docker_web_node_deps.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- web-host tag: \`web-host:ci\` digest: \`${{ steps.docker_web_host.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Cache scopes: \`web-node-deps-ci\`, \`web-host-ci\` (type=gha)" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-
-  web-mfe:
-    name: Build web-mfe remotes (usage/team)
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: write
-    needs:
-      - changes
-    if: needs.changes.outputs.web_mfe == 'true' || needs.changes.outputs.web_shared == 'true'
-    env:
-      NEXT_PRIVATE_LOCAL_WEBPACK: "true"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-      - name: Reset pnpm store metadata
-        run: pnpm store prune
-      - name: Install workspace
-        run: pnpm install --frozen-lockfile
-      - name: Verify MF plugin settings (usage/team remotes)
-        run: |
-          node -e "const fs=require('node:fs');const checks=[['services/usage-service/web-mfe/next.config.ts',['NextFederationPlugin','name: \"usage\"','filename: \"static/chunks/remoteEntry.js\"']],['services/team-service/web/next.config.ts',['NextFederationPlugin','name: \"team\"','filename: \"static/chunks/remoteEntry.js\"']]];for(const [p,needles] of checks){const c=fs.readFileSync(p,'utf8');for(const n of needles){if(!c.includes(n)){throw new Error('missing '+n+' in '+p)}}}"
-      # ESLint: omit --max-warnings so only errors fail the step; warnings do not stop CI
-      - name: Lint / typecheck / build (web-mfe)
-        run: |
-          pnpm --filter usage-web-mfe run lint
-          pnpm --filter team-web run lint
-          pnpm --filter usage-web-mfe exec tsc --noEmit
-          pnpm --filter team-web exec tsc --noEmit
-          pnpm --filter usage-web-mfe run build
-          pnpm --filter team-web run build
-      - name: Docker image (usage-web-mfe, standalone)
-        id: docker_usage_web_mfe
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: services/usage-service/web-mfe/Dockerfile
-          tags: usage-web-mfe:ci
-          load: true
-          push: false
-          cache-from: type=gha,scope=usage-web-mfe
-          # NOTE: 무료 티어(10GB)에서 캐시가 커지면 mode=min으로 유지하는 편이 안정적이다.
-          cache-to: type=gha,mode=min,scope=usage-web-mfe
-      - name: Usage-web-mfe image summary
-        if: always()
-        run: |
-          echo "## Docker image build summary (usage-web-mfe)" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Tag: \`usage-web-mfe:ci\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Digest: \`${{ steps.docker_usage_web_mfe.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Cache scope: \`usage-web-mfe\` (type=gha)" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-      - name: Docker image (team-web, standalone)
-        id: docker_team_web_mfe
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: services/team-service/web/Dockerfile
-          tags: team-web:ci
-          load: true
-          push: false
-          cache-from: type=gha,scope=team-web
-          # NOTE: 무료 티어(10GB)에서 캐시가 커지면 mode=min으로 유지하는 편이 안정적이다.
-          cache-to: type=gha,mode=min,scope=team-web
-      - name: Team-web-mfe image summary
-        if: always()
-        run: |
-          echo "## Docker image build summary (team-web)" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Tag: \`team-web:ci\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Digest: \`${{ steps.docker_team_web_mfe.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Cache scope: \`team-web\` (type=gha)" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-
   # Single required check for branch protection.
   # Skipped Java/Compose jobs (path filter) do not fail the workflow.
   ci-observability:
@@ -802,8 +634,6 @@ jobs:
       - billing-service
       - team-service
       - notification-service
-      - web-host
-      - web-mfe
     if: always()
     steps:
       - name: Collect job metrics from Actions API
@@ -832,7 +662,6 @@ jobs:
           echo "- Node cache hit 여부는 각 서비스 setup-node step 로그를 참고" >> "$GITHUB_STEP_SUMMARY"
           echo "- Docker 단계 시간은 각 Job step duration(표)에서 Docker step 포함 Job을 비교" >> "$GITHUB_STEP_SUMMARY"
           echo "- usage 통합테스트 컨테이너 기동 여유는 withStartupTimeout(5m) 적용 상태" >> "$GITHUB_STEP_SUMMARY"
-          echo "- web-mfe Docker cache hit 여부는 build-push-action 로그의 CACHED 레이어 비율로 확인" >> "$GITHUB_STEP_SUMMARY"
 
   ci-summary:
     name: CI summary
@@ -850,8 +679,6 @@ jobs:
       - billing-service
       - team-service
       - notification-service
-      - web-host
-      - web-mfe
       - ci-observability
     if: always()
     steps:
@@ -869,7 +696,7 @@ jobs:
             echo "compose-validate did not succeed: ${{ needs.compose-validate.result }}"
             exit 1
           fi
-          for name in web-edge api-gateway-service identity-service agent-service proxy-service usage-service billing-service team-service notification-service web-host web-mfe ci-observability; do
+          for name in web-edge api-gateway-service identity-service agent-service proxy-service usage-service billing-service team-service notification-service ci-observability; do
             case "$name" in
               web-edge) v="${{ needs['web-edge'].result }}" ;;
               api-gateway-service) v="${{ needs['api-gateway-service'].result }}" ;;
@@ -880,8 +707,6 @@ jobs:
               billing-service) v="${{ needs.billing-service.result }}" ;;
               team-service) v="${{ needs.team-service.result }}" ;;
               notification-service) v="${{ needs.notification-service.result }}" ;;
-              web-host) v="${{ needs['web-host'].result }}" ;;
-              web-mfe) v="${{ needs['web-mfe'].result }}" ;;
               ci-observability) v="${{ needs['ci-observability'].result }}" ;;
             esac
             if [[ "$v" == "failure" || "$v" == "cancelled" ]]; then
