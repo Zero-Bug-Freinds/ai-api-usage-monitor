@@ -585,9 +585,6 @@ importers:
       '@ai-usage/shell':
         specifier: workspace:*
         version: link:../../../packages/shell
-      '@ai-usage/team-workspace-cache':
-        specifier: workspace:*
-        version: link:../../../packages/team-workspace-cache
       '@ai-usage/ui':
         specifier: workspace:*
         version: link:../../../packages/ui

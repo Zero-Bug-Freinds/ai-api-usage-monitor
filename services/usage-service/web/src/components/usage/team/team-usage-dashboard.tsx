@@ -1,18 +1,15 @@
 "use client"
 
 import * as React from "react"
-import { useLogoutCleanup, type CachedTeamItem } from "@ai-usage/team-workspace-cache"
 import TeamDashboard from "@/components/usage/team/team-dashboard"
 import TeamMemberDashboard from "@/components/usage/team/team-member-dashboard"
 
 type TeamUsageDashboardProps = {
   viewTeamIdFromQuery?: string
-  shellTeamList?: CachedTeamItem[]
   initialTab?: "team" | "member"
 }
 
-export default function TeamUsageDashboard({ viewTeamIdFromQuery, shellTeamList, initialTab = "team" }: TeamUsageDashboardProps) {
-  useLogoutCleanup()
+export default function TeamUsageDashboard({ viewTeamIdFromQuery, initialTab = "team" }: TeamUsageDashboardProps) {
   const [selectedUserId, setSelectedUserId] = React.useState<string>("")
   const [bffTeamId, setBffTeamId] = React.useState<string>("")
   const [activeTab, setActiveTab] = React.useState<"team" | "member">(initialTab)
@@ -45,7 +42,6 @@ export default function TeamUsageDashboard({ viewTeamIdFromQuery, shellTeamList,
         {activeTab === "team" ? (
           <TeamDashboard
             viewTeamIdFromQuery={viewTeamIdFromQuery}
-            shellTeamList={shellTeamList}
             onSelectUser={setSelectedUserId}
             onEffectiveTeamChange={setBffTeamId}
           />

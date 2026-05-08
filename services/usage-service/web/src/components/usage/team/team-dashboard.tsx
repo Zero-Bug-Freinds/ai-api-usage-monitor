@@ -26,13 +26,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@ai-usage/ui"
-import {
-  TEAM_USAGE_DASHBOARD_FILTERS_KEY,
-  readCachedTeamList,
-  readLastSelectedTeamId,
-  writeLastSelectedTeamId,
-  type CachedTeamItem,
-} from "@ai-usage/team-workspace-cache"
 import { formatKstIsoDate, addKstDays } from "@/lib/usage/kst-dates"
 import { formatRequestCount, formatTokenCount, formatUsd, toNumber } from "@/lib/usage/format"
 import { teamUsageBffBase } from "@/lib/usage/team-usage-bff-base"
@@ -42,7 +35,6 @@ const TEAM_WEB_PREFIX = "/teams"
 
 export type TeamDashboardProps = {
   viewTeamIdFromQuery?: string
-  shellTeamList?: CachedTeamItem[]
   onSelectUser: (userId: string) => void
   onEffectiveTeamChange?: (teamId: string) => void
 }
@@ -81,14 +73,6 @@ type BffResponse = {
 type TeamSummary = { id: string; name: string; createdAt?: string }
 type TeamApiKey = { id: number; alias: string; provider: string; createdAt: string }
 type PeriodMode = "today" | "7d" | "30d" | "custom"
-type StoredFilters = {
-  provider: string
-  periodMode: PeriodMode
-  from: string
-  to: string
-  teamId: string
-  apiKeyId: string
-}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const AnyLegend = Legend as any
@@ -130,34 +114,6 @@ function presetRange(mode: PeriodMode, todayKst: string): { from: string; to: st
   }
 }
 
-function readStoredFilters(): Partial<StoredFilters> {
-  if (typeof localStorage === "undefined") return {}
-  try {
-    const raw = localStorage.getItem(TEAM_USAGE_DASHBOARD_FILTERS_KEY)
-    if (!raw) return {}
-    return JSON.parse(raw) as Partial<StoredFilters>
-  } catch {
-    return {}
-  }
-}
-
-function writeStoredFilters(v: StoredFilters) {
-  if (typeof localStorage === "undefined") return
-  try {
-    localStorage.setItem(TEAM_USAGE_DASHBOARD_FILTERS_KEY, JSON.stringify(v))
-  } catch {
-    // ignore
-  }
-}
-
-function mergeTeamLists(shell: CachedTeamItem[] | undefined, cache: CachedTeamItem[], api: TeamSummary[]): TeamSummary[] {
-  const map = new Map<string, TeamSummary>()
-  for (const t of shell ?? []) map.set(t.id, { id: t.id, name: t.name, createdAt: t.createdAt })
-  for (const t of cache) if (!map.has(t.id)) map.set(t.id, { id: t.id, name: t.name, createdAt: t.createdAt })
-  for (const t of api) map.set(t.id, t)
-  return Array.from(map.values())
-}
-
 function pickOldestTeamId(list: TeamSummary[]): string {
   if (list.length === 0) return ""
   const dated = list.filter((t) => t.createdAt)
@@ -165,14 +121,9 @@ function pickOldestTeamId(list: TeamSummary[]): string {
   return [...dated].sort((a, b) => (a.createdAt ?? "").localeCompare(b.createdAt ?? ""))[0]!.id
 }
 
-function pickTeamIdFromSources(list: TeamSummary[], viewQ: string | undefined, storedTeamId: string | undefined): string {
+function pickTeamIdFromSources(list: TeamSummary[], viewQ: string | undefined): string {
   if (list.length === 0) return ""
   if (viewQ && list.some((t) => t.id === viewQ)) return viewQ
-  const cache = readCachedTeamList()
-  const cacheIds = new Set(cache.map((c) => c.id))
-  const last = readLastSelectedTeamId()
-  if (last && list.some((t) => t.id === last) && (cacheIds.size === 0 || cacheIds.has(last))) return last
-  if (storedTeamId && list.some((t) => t.id === storedTeamId)) return storedTeamId
   return pickOldestTeamId(list)
 }
 
@@ -215,40 +166,28 @@ function truncateModelLabel(model: string, max = 36): string {
 
 export default function TeamDashboard({
   viewTeamIdFromQuery,
-  shellTeamList,
   onSelectUser,
   onEffectiveTeamChange,
 }: TeamDashboardProps) {
   const todayKst = formatKstIsoDate()
-  const stored = readStoredFilters()
-  const mergedOnMount = React.useMemo(() => mergeTeamLists(shellTeamList, readCachedTeamList(), []), [shellTeamList])
-  const initialSelected = React.useMemo(
-    () => pickTeamIdFromSources(mergedOnMount, viewTeamIdFromQuery, stored.teamId),
-    [mergedOnMount, stored.teamId, viewTeamIdFromQuery],
-  )
-  const [dashProvider, setDashProvider] = React.useState(stored.provider ?? PROVIDER_ALL)
-  const [periodMode, setPeriodMode] = React.useState<PeriodMode>((stored.periodMode as PeriodMode) ?? "today")
-  const [customFrom, setCustomFrom] = React.useState(stored.from ?? todayKst)
-  const [customTo, setCustomTo] = React.useState(stored.to ?? todayKst)
+  const [dashProvider, setDashProvider] = React.useState(PROVIDER_ALL)
+  const [periodMode, setPeriodMode] = React.useState<PeriodMode>("today")
+  const [customFrom, setCustomFrom] = React.useState(todayKst)
+  const [customTo, setCustomTo] = React.useState(todayKst)
   const range = React.useMemo(
     () => (periodMode === "custom" ? { from: customFrom, to: customTo } : presetRange(periodMode, todayKst)),
     [periodMode, customFrom, customTo, todayKst],
   )
-  const [teams, setTeams] = React.useState<TeamSummary[]>(mergedOnMount)
+  const [teams, setTeams] = React.useState<TeamSummary[]>([])
   const [teamsErr, setTeamsErr] = React.useState<string | null>(null)
-  const [selectedTeamId, setSelectedTeamId] = React.useState(initialSelected)
-  const shellKey = React.useMemo(() => (shellTeamList ?? []).map((t) => `${t.id}`).join(","), [shellTeamList])
+  const [selectedTeamId, setSelectedTeamId] = React.useState("")
   const [apiKeys, setApiKeys] = React.useState<TeamApiKey[]>([])
   const [keysLoading, setKeysLoading] = React.useState(false)
-  const [selectedApiKeyId, setSelectedApiKeyId] = React.useState(stored.apiKeyId ?? "")
+  const [selectedApiKeyId, setSelectedApiKeyId] = React.useState("")
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [data, setData] = React.useState<BffResponse | null>(null)
   const [refresh, setRefresh] = React.useState(0)
-
-  React.useEffect(() => {
-    setTeams((prev) => mergeTeamLists(shellTeamList, readCachedTeamList(), prev))
-  }, [shellKey, shellTeamList])
 
   React.useEffect(() => {
     let cancelled = false
@@ -270,7 +209,7 @@ export default function TeamDashboard({
           })
           .filter((x): x is TeamSummary => x !== null)
         if (cancelled) return
-        setTeams(mergeTeamLists(shellTeamList, readCachedTeamList(), list))
+        setTeams(list)
         setTeamsErr(null)
       } catch {
         if (!cancelled) setTeamsErr("팀 목록을 네트워크에서 불러오지 못했습니다")
@@ -279,13 +218,13 @@ export default function TeamDashboard({
     return () => {
       cancelled = true
     }
-  }, [shellKey, shellTeamList])
+  }, [])
 
   React.useEffect(() => {
     setSelectedTeamId((prev) => {
       if (viewTeamIdFromQuery && teams.some((t) => t.id === viewTeamIdFromQuery)) return viewTeamIdFromQuery
       if (prev && teams.some((t) => t.id === prev)) return prev
-      return pickTeamIdFromSources(teams, undefined, readStoredFilters().teamId)
+      return pickTeamIdFromSources(teams, undefined)
     })
   }, [teams, viewTeamIdFromQuery])
 
@@ -333,10 +272,6 @@ export default function TeamDashboard({
   React.useEffect(() => {
     onEffectiveTeamChange?.(effectiveTeamId)
   }, [effectiveTeamId, onEffectiveTeamChange])
-
-  React.useEffect(() => {
-    writeStoredFilters({ provider: dashProvider, periodMode, from: range.from, to: range.to, teamId: effectiveTeamId, apiKeyId: selectedApiKeyId })
-  }, [dashProvider, periodMode, range.from, range.to, effectiveTeamId, selectedApiKeyId])
 
   React.useEffect(() => {
     if (!effectiveTeamId) {
@@ -464,7 +399,7 @@ export default function TeamDashboard({
         ) : null}
         <div className="space-y-2 sm:w-52">
           <Label>팀</Label>
-          <Select value={selectedTeamId} onValueChange={(id) => { setSelectedTeamId(id); writeLastSelectedTeamId(id) }}>
+          <Select value={selectedTeamId} onValueChange={setSelectedTeamId}>
             <SelectTrigger><SelectValue placeholder="팀 선택" /></SelectTrigger>
             <SelectContent>{teams.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}</SelectContent>
           </Select>
@@ -524,7 +459,15 @@ export default function TeamDashboard({
                   <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                   <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
                   <YAxis yAxisId="right" orientation="right" domain={rateDomain} tick={{ fontSize: 11 }} tickFormatter={(v) => `${Number(v).toFixed(1)}%`} />
-                  <Tooltip formatter={(value: number | string, name: string) => [typeof value === "number" && name.includes("률") ? `${value.toFixed(1)}%` : value, name]} />
+                  <Tooltip
+                    formatter={(value, name) => {
+                      const label = String(name ?? "")
+                      if (typeof value === "number" && label.includes("률")) {
+                        return [`${value.toFixed(1)}%`, label]
+                      }
+                      return [value ?? "", label]
+                    }}
+                  />
                   <AnyLegend />
                   <Bar yAxisId="left" dataKey="requestCount" name="총 요청 수" fill="#a3a3a3" radius={[4, 4, 0, 0]} />
                   <Line yAxisId="right" type="monotone" dataKey="successRate" name="성공률" stroke="#10b981" strokeWidth={2} dot={false} />
@@ -548,7 +491,7 @@ export default function TeamDashboard({
                           <Cell key={`cell-${entry.fullName}-${i}`} fill={pieData.length === 0 ? "var(--border)" : colorForModel(entry.fullName ?? "", entry.provider ?? "")} fillOpacity={pieData.length === 0 ? 0.35 : 1} />
                         ))}
                       </Pie>
-                      <Tooltip formatter={(v: number) => formatRequestCount(v)} />
+                      <Tooltip formatter={(value) => formatRequestCount(Number(value ?? 0))} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
