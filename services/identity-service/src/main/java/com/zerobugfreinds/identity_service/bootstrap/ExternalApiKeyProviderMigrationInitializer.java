@@ -35,6 +35,31 @@ public class ExternalApiKeyProviderMigrationInitializer {
 			return;
 		}
 
+		jdbcTemplate.execute(
+				"""
+				do $$
+				begin
+				  if exists (
+				    select 1
+				    from pg_constraint c
+				    join pg_class t on c.conrelid = t.oid
+				    where t.relname = 'external_api_keys'
+				      and c.conname = 'external_api_keys_provider_check'
+				  ) then
+				    alter table external_api_keys
+				      drop constraint external_api_keys_provider_check;
+				  end if;
+				end $$;
+				"""
+		);
+		jdbcTemplate.execute(
+				"""
+				alter table external_api_keys
+				add constraint external_api_keys_provider_check
+				check (provider in ('GEMINI', 'GOOGLE', 'OPENAI', 'ANTHROPIC'))
+				"""
+		);
+
 		int updated = jdbcTemplate.update(
 				"""
 				update external_api_keys
