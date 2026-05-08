@@ -3,7 +3,6 @@ packages:
   - "packages/*"
   - "services/identity-service/web"
   - "services/usage-service/web"
-  - "services/usage-service/web-mfe"
   - "services/billing-service/web"
   - "services/team-service/web"
   - "services/agent-service/web"
