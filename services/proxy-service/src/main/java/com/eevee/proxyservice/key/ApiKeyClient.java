@@ -21,7 +21,7 @@ import java.util.HexFormat;
 import java.util.List;
 
 import static org.springframework.http.HttpStatus.BAD_GATEWAY;
-import static org.springframework.http.HttpStatus.BAD_REQUEST;
+import static org.springframework.http.HttpStatus.NOT_FOUND;
 
 /**
  * Resolves provider API keys from API Key Service (or mock). Keys are never logged.
@@ -82,13 +82,12 @@ public class ApiKeyClient {
             return new ResolvedApiKey(mock, null, null, fingerprint(mock), "mock");
         }
 
-        List<String> providerSegments = providerSegmentsForLookup(provider);
         try {
             KeyResponse body;
             if (teamRequest) {
-                body = loadTeamKey(keyLookupUserId, teamId, providerSegments);
+                body = loadTeamKey(keyLookupUserId, teamId, provider);
             } else {
-                body = loadIdentityKey(keyLookupUserId, providerSegments);
+                body = loadIdentityKey(keyLookupUserId, provider);
             }
             if (body == null || body.plainKey() == null || body.plainKey().isBlank()) {
                 throw new ResponseStatusException(BAD_GATEWAY, "Key lookup returned empty key");
@@ -107,9 +106,9 @@ public class ApiKeyClient {
                 log.warn("API key lookup not found lookupTarget={} provider={} teamId={} user={} status={}",
                         lookupTarget, provider.pathSegment(), teamForLog, userForLog, e.getStatusCode().value());
                 String message = teamRequest
-                        ? "No registered TEAM provider API key"
-                        : "No registered provider API key";
-                throw new ResponseStatusException(BAD_REQUEST, message, e);
+                        ? "team API key not found for provider=" + provider.pathSegment() + " teamId=" + teamForLog
+                        : "API key not found for provider=" + provider.pathSegment() + " user=" + userForLog;
+                throw new ResponseStatusException(NOT_FOUND, message, e);
             }
             log.warn("API key lookup failed lookupTarget={} provider={} teamId={} user={} status={}",
                     lookupTarget, provider.pathSegment(), teamForLog, userForLog, e.getStatusCode().value());
@@ -123,71 +122,98 @@ public class ApiKeyClient {
         }
     }
 
-    private KeyResponse loadIdentityKey(String keyLookupUserId, List<String> providerSegments) {
+    private KeyResponse loadIdentityKey(String keyLookupUserId, AiProvider provider) {
         String token = proxyProperties.getKeyService().getInternalToken();
-        ResponseStatusException notFound = null;
-        for (String providerSegment : providerSegments) {
-            try {
-                return identityKeyServiceWebClient.get()
-                        .uri(uriBuilder -> uriBuilder
-                                .path("/internal/api-keys/{provider}")
-                                .queryParam("userId", keyLookupUserId)
-                                .build(providerSegment))
-                        .headers(h -> {
-                            if (token != null && !token.isBlank()) {
-                                h.setBearerAuth(token);
-                            }
-                        })
-                        .retrieve()
-                        .bodyToMono(KeyResponse.class)
-                        .block(Duration.ofSeconds(10));
-            } catch (WebClientResponseException e) {
-                if (e.getStatusCode().value() == 404) {
-                    notFound = new ResponseStatusException(BAD_REQUEST, "No registered provider API key", e);
-                    continue;
-                }
+        String primaryProvider = provider.pathSegment();
+        String userForLog = masked(keyLookupUserId);
+        try {
+            return loadIdentityKeyByProviderSegment(keyLookupUserId, primaryProvider, token);
+        } catch (WebClientResponseException e) {
+            if (e.getStatusCode().value() != 404 || provider != AiProvider.GOOGLE) {
                 throw e;
             }
         }
-        if (notFound != null) {
-            throw notFound;
+
+        try {
+            return loadIdentityKeyByProviderSegment(keyLookupUserId, "gemini", token);
+        } catch (WebClientResponseException e) {
+            if (e.getStatusCode().value() == 404) {
+                throw new ResponseStatusException(
+                        NOT_FOUND,
+                        "API key not found for provider=" + primaryProvider + " user=" + userForLog,
+                        e
+                );
+            }
+            throw e;
         }
-        throw new ResponseStatusException(BAD_REQUEST, "No registered provider API key");
+
     }
 
-    private KeyResponse loadTeamKey(String keyLookupUserId, String teamId, List<String> providerSegments) {
+    private KeyResponse loadIdentityKeyByProviderSegment(String keyLookupUserId, String providerSegment, String token) {
+        return identityKeyServiceWebClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/internal/api-keys/{provider}")
+                        .queryParam("userId", keyLookupUserId)
+                        .build(providerSegment))
+                .headers(h -> {
+                    if (token != null && !token.isBlank()) {
+                        h.setBearerAuth(token);
+                    }
+                })
+                .retrieve()
+                .bodyToMono(KeyResponse.class)
+                .block(Duration.ofSeconds(10));
+    }
+
+    private KeyResponse loadTeamKey(String keyLookupUserId, String teamId, AiProvider provider) {
         ProxyProperties.TeamKeyService teamKeyService = proxyProperties.getTeamKeyService();
         String token = teamKeyService.getInternalToken();
         String pathTemplate = teamKeyService.getPathTemplate();
-        ResponseStatusException notFound = null;
-        for (String providerSegment : providerSegments) {
-            try {
-                return teamKeyServiceWebClient.get()
-                        .uri(uriBuilder -> uriBuilder
-                                .path(pathTemplate)
-                                .queryParam("teamId", teamId)
-                                .queryParam("userId", keyLookupUserId)
-                                .build(providerSegment))
-                        .headers(h -> {
-                            if (token != null && !token.isBlank()) {
-                                h.setBearerAuth(token);
-                            }
-                        })
-                        .retrieve()
-                        .bodyToMono(KeyResponse.class)
-                        .block(Duration.ofSeconds(10));
-            } catch (WebClientResponseException e) {
-                if (e.getStatusCode().value() == 404) {
-                    notFound = new ResponseStatusException(BAD_REQUEST, "No registered TEAM provider API key", e);
-                    continue;
-                }
+        String primaryProvider = provider.pathSegment();
+        String teamForLog = masked(teamId);
+        try {
+            return loadTeamKeyByProviderSegment(keyLookupUserId, teamId, primaryProvider, token, pathTemplate);
+        } catch (WebClientResponseException e) {
+            if (e.getStatusCode().value() != 404 || provider != AiProvider.GOOGLE) {
                 throw e;
             }
         }
-        if (notFound != null) {
-            throw notFound;
+
+        try {
+            return loadTeamKeyByProviderSegment(keyLookupUserId, teamId, "gemini", token, pathTemplate);
+        } catch (WebClientResponseException e) {
+            if (e.getStatusCode().value() == 404) {
+                throw new ResponseStatusException(
+                        NOT_FOUND,
+                        "team API key not found for provider=" + primaryProvider + " teamId=" + teamForLog,
+                        e
+                );
+            }
+            throw e;
         }
-        throw new ResponseStatusException(BAD_REQUEST, "No registered TEAM provider API key");
+    }
+
+    private KeyResponse loadTeamKeyByProviderSegment(
+            String keyLookupUserId,
+            String teamId,
+            String providerSegment,
+            String token,
+            String pathTemplate
+    ) {
+        return teamKeyServiceWebClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path(pathTemplate)
+                        .queryParam("teamId", teamId)
+                        .queryParam("userId", keyLookupUserId)
+                        .build(providerSegment))
+                .headers(h -> {
+                    if (token != null && !token.isBlank()) {
+                        h.setBearerAuth(token);
+                    }
+                })
+                .retrieve()
+                .bodyToMono(KeyResponse.class)
+                .block(Duration.ofSeconds(10));
     }
 
     /**
@@ -208,9 +234,6 @@ public class ApiKeyClient {
     }
 
     static List<String> providerSegmentsForLookup(AiProvider provider) {
-        if (provider == AiProvider.GOOGLE) {
-            return List.of("google", "gemini");
-        }
         return List.of(provider.pathSegment());
     }
 
