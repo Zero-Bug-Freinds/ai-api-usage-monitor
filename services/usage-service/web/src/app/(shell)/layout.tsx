@@ -7,8 +7,6 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
   return (
     <ConsoleShell
       profile="usage"
-      logoutApiPath={logoutApiPath}
-      logoutRedirectPath={logoutRedirectPath}
     >
       <div className="flex min-h-full w-full min-w-0 gap-4">
         <Suspense fallback={<aside className="w-64 min-w-[240px] shrink-0 rounded-lg border border-border bg-zinc-100/70 p-3" />}>
