@@ -37,6 +37,7 @@
 - **Base path:** `/api/v1/ai`
 - **패턴:** `/api/v1/ai/{provider}/**`
 - `{provider}`: `openai` | `anthropic` | `google` ([AiProvider](../../libs/usage-events/src/main/java/com/eevee/usage/events/AiProvider.java)와 동일)
+- 공개 계약의 canonical provider 표기는 `google`만 사용한다. 레거시 `gemini` 저장/조회 호환은 내부 구현에서만 처리하며 외부 경로/응답에는 노출하지 않는다.
 
 **예:** `POST /api/v1/ai/openai/v1/chat/completions`
 
@@ -219,12 +220,7 @@ Usage는 MQ로 적재 후 HTTP 조회를 제공한다(컨트롤러: `UsageAnalyt
 | Proxy | 8081 |
 | Identity `web`(호스트 매핑, Compose) | 3000 (`IDENTITY_WEB_PORT`) |
 | Usage `web`(호스트 매핑, Compose) | 3001 (`USAGE_WEB_PORT`) |
-<<<<<<< HEAD
 | Team `web` (호스트 매핑, Compose) | 3002 (`TEAM_WEB_PORT`) |
-=======
-| Team BFF `team-web`(호스트 매핑, Compose) | 3012 (`TEAM_WEB_PORT`) |
-| Main Shell `web-host`(호스트 매핑, Compose) | 3002 (`WEB_HOST_PORT`) |
->>>>>>> origin/develop
 | Billing `web`(호스트 매핑, Compose) | 3003 (`BILLING_WEB_PORT`) |
 | **team-service**(Spring, 호스트 `bootRun` 예시) | `TEAM_SERVICE_PORT` 기본 8093; `scripts/bootrun.ps1`은 **8094** 권장(Compose 호스트 매핑과 충돌 방지 — [`architecture.md`](../architecture.md) §3.3) |
 | **billing-service**(Spring) | `BILLING_SERVICE_PORT` 기본 **8095**; API Gateway **`GATEWAY_BILLING_URI`** 와 맞출 것 |
