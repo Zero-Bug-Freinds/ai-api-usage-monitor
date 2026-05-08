@@ -25,11 +25,14 @@ resolving **team-scoped** provider keys.
 - `openai`
 - `anthropic`
 - `google`
-- `gemini` (alias for Google-compatible key registrations)
+
+Legacy compatibility alias (internal-only):
+
+- `gemini` -> `google`
 
 ### Provider normalization
 
-- `gemini` is normalized to `google` in `team-service`.
+- `gemini` is normalized to `google` in `team-service` for backward compatibility.
 - Unknown provider values must return `400`.
 
 ## Response (200)

@@ -35,7 +35,7 @@ Identity 예산 API 응답은 아래 필드를 포함한다.
     },
     {
       "externalApiKeyId": 102,
-      "provider": "GEMINI",
+      "provider": "GOOGLE",
       "alias": "개인키-2",
       "monthlyBudgetUsd": 25.0
     }
@@ -51,7 +51,7 @@ Identity 예산 API 응답은 아래 필드를 포함한다.
 - **예산 임계 AMQP** (`billing.budget.threshold.reached`): 이벤트 한 건마다 `IdentityBudgetClient.fetchMonthlyBudgetKeyRow(userId, provider, apiKeyId)`로 **해당 키 한 줄**만 고르고,
   - 월 예산(`monthlyBudgetUsd`) 뿐 아니라 표시용 별칭(`alias`)도 함께 활용해 이벤트 페이로드의 `apiKeyAlias`로 전달할 수 있다.
   - `UsageRecordedEvent.apiKeyId`는 Identity의 **`externalApiKeyId`와 동일한 숫자**로 파싱 가능해야 한다(문자열이어도 내용이 long이어야 매칭).
-  - **프로바이더 이름**: billing `AiProvider`는 `OPENAI` / `ANTHROPIC` / `GOOGLE` 이고, Identity JSON의 `provider`는 **`GEMINI`**(Google) / `OPENAI` / `ANTHROPIC` 형태이므로, 클라이언트는 **`GOOGLE` 사용 이벤트 ↔ Identity 행 `GEMINI`** 로 맞춘다.
+  - **프로바이더 이름**: billing `AiProvider`와 Identity JSON의 `provider`는 `OPENAI` / `ANTHROPIC` / `GOOGLE`를 사용한다. 레거시 `GEMINI` 데이터가 남아 있으면 내부에서 `GOOGLE`로 호환 매핑한다.
   - 위 매칭 행이 없거나 예산이 0 이하면 해당 사용 이벤트에 대해 **임계 이벤트를 발행하지 않는다**.
 
 ## MSA 원칙
