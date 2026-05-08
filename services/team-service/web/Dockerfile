@@ -1,10 +1,4 @@
 # syntax=docker/dockerfile:1.7
-# Task49-2 guide:
-# - `/teams/*` edge direct routing target is moving to `team-web` service (App Router entry).
-# - Keep `services/team-service/Dockerfile` (Java backend) unchanged; only web-tier wiring changes in compose/nginx.
-# - Port rollback rule: team-web reuses the historical host-team UI port (`WEB_HOST_PORT`), while web-host is no longer
-#   the primary `/teams` entrypoint.
-# - This Dockerfile remains for legacy `team-web-mfe` runtime and transitional compose compatibility.
 ARG WEB_NODE_DEPS_IMAGE=deps-local
 
 FROM node:22-alpine AS deps-local

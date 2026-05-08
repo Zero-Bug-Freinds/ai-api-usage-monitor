@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 
 const ORIGIN_PROBE_TIMEOUT_MS = 3000
-const FORECAST_FETCH_TIMEOUT_MS = 20000
+const FORECAST_FETCH_TIMEOUT_MS = 45000
 
 type SessionApiResponse = {
   success?: boolean
@@ -112,12 +112,6 @@ export async function POST(request: NextRequest) {
       status: response.status,
       headers: { "content-type": contentType },
     })
-<<<<<<< HEAD
-  } catch {
-    return NextResponse.json(
-      {
-        message: "budget forecast backend 호출에 실패했습니다.",
-=======
   } catch (error) {
     const detail =
       error instanceof Error && error.message.trim().length > 0
@@ -127,7 +121,6 @@ export async function POST(request: NextRequest) {
       {
         message: "budget forecast backend 호출에 실패했습니다.",
         detail,
->>>>>>> origin/develop
       },
       { status: 502 },
     )

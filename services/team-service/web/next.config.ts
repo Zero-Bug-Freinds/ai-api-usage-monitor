@@ -5,10 +5,12 @@ import NextFederationPlugin from "@module-federation/nextjs-mf";
 
 process.env.NEXT_PRIVATE_LOCAL_WEBPACK ??= "true";
 
-const teamAssetPrefix = (process.env.NEXT_PUBLIC_MFE_ASSET_PREFIX ?? "/mfe/team").replace(/\/+$/, "");
+const usageRemoteOrigin = process.env.NEXT_PUBLIC_MFE_USAGE_REMOTE_URL ?? "http://localhost:3011";
+const teamAssetPrefix = (process.env.NEXT_PUBLIC_MFE_ASSET_PREFIX ?? "/teams").replace(/\/+$/, "");
 const enableStandalone = process.env.NEXT_DISABLE_STANDALONE === "false";
 
 const nextConfig: NextConfig = {
+  basePath: "/teams",
   assetPrefix: teamAssetPrefix,
   output: enableStandalone ? "standalone" : undefined,
   outputFileTracingRoot: path.join(__dirname, "../../.."),
@@ -19,6 +21,9 @@ const nextConfig: NextConfig = {
       new NextFederationPlugin({
         name: "team",
         filename: "static/chunks/remoteEntry.js",
+        remotes: {
+          usage: `usage@${usageRemoteOrigin.replace(/\/$/, "")}/_next/static/chunks/remoteEntry.js`,
+        },
         exposes: {
           "./TeamManagement": "./src/components/mf/team-management-entry.tsx",
         },

@@ -21,11 +21,6 @@ import java.util.Optional;
 @Service
 public class BudgetForecastService {
 
-	private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
-	private static final BigDecimal WARNING_THRESHOLD = BigDecimal.valueOf(80);
-	private static final BigDecimal CRITICAL_THRESHOLD = BigDecimal.valueOf(100);
-	private static final long BILLING_GAP_CRITICAL_DAYS = 1;
-
 	private final GeminiAssistantService geminiAssistantService;
 	private final UsageRecordedTokenRollupService usageRecordedTokenRollupService;
 	private final UsagePredictionSignalSnapshotService usagePredictionSignalSnapshotService;
@@ -41,7 +36,8 @@ public class BudgetForecastService {
 	}
 
 	public BudgetForecastResponse forecast(BudgetForecastRequest request) {
-		BudgetForecastRequest normalizedRequest = normalizeByUsageRollup(request);
+		NormalizedRequestContext context = normalizeByUsageRollup(request);
+		BudgetForecastRequest normalizedRequest = context.request();
 		Optional<AiBudgetForecastResult> ai = geminiAssistantService.inferForecast(normalizedRequest);
 		if (ai.isEmpty()) {
 			throw new IllegalStateException("AI_INFERENCE_FAILED");
@@ -91,23 +87,28 @@ public class BudgetForecastService {
 		String riskCriteria = buildRiskCriteria(result.budgetUtilizationPercent(), billingDateGapDays);
 		ConfidenceAssessment confidenceAssessment = assessConfidence(normalizedRequest, rollupApplied);
 
-			return new BudgetForecastResponse(
-					result.healthStatus(),
-					result.predictedRunOutDate(),
-					result.daysUntilRunOut(),
-					daysUntilBillingCycleEnd,
-					billingDateGapDays,
-					result.budgetUtilizationPercent(),
-					result.assistantMessage(),
-					result.recommendedActions()
-			);
-		}
-		return deterministicForecast(normalizedRequest);
+		return new BudgetForecastResponse(
+				result.healthStatus(),
+				healthStatusLabel,
+				riskCriteria,
+				confidenceAssessment.level(),
+				confidenceAssessment.criteria(),
+				result.predictedRunOutDate(),
+				result.daysUntilRunOut(),
+				daysUntilBillingCycleEnd,
+				billingDateGapDays,
+				result.budgetUtilizationPercent(),
+				result.assistantMessage(),
+				result.recommendedActions(),
+				result.anomalySummary(),
+				result.routingRecommendation(),
+				result.estimatedRoutingSavingsPercent()
+		);
 	}
 
-	private BudgetForecastRequest normalizeByUsageRollup(BudgetForecastRequest request) {
+	private NormalizedRequestContext normalizeByUsageRollup(BudgetForecastRequest request) {
 		if (request.keyId() == null) {
-			return request;
+			return new NormalizedRequestContext(request, false);
 		}
 		UsagePredictionSignalSnapshotService.UsagePredictionSignalSnapshot usagePredictionSnapshot =
 				resolveUsagePredictionSnapshot(request);
@@ -147,7 +148,7 @@ public class BudgetForecastService {
 		BigDecimal observedAverageDailyTokenUsage = BigDecimal.valueOf(observedSevenDayTokens)
 				.divide(BigDecimal.valueOf(7), 4, RoundingMode.HALF_UP)
 				.max(BigDecimal.ONE);
-		return new BudgetForecastRequest(
+		BudgetForecastRequest normalized = new BudgetForecastRequest(
 				request.userId(),
 				request.teamId(),
 				request.keyId(),
@@ -162,6 +163,7 @@ public class BudgetForecastService {
 				normalizeModelUsageDistribution(request.modelUsageDistribution7d()),
 				normalizeHourlyTokenUsage24h(request.hourlyTokenUsage24h())
 		);
+		return new NormalizedRequestContext(normalized, true);
 	}
 
 	private UsagePredictionSignalSnapshotService.UsagePredictionSignalSnapshot resolveUsagePredictionSnapshot(BudgetForecastRequest request) {
@@ -208,95 +210,96 @@ public class BudgetForecastService {
 		if (values == null) {
 			return List.of();
 		}
-
-		String healthStatus = resolveHealthStatus(utilizationPercent, billingDateGapDays, spendSpike);
-		List<String> actions = recommendActions(healthStatus, billingDateGapDays, spendSpike);
-		String assistantMessage = deterministicAssistantMessage(healthStatus, daysUntilRunOut, billingDateGapDays);
-
-		return new BudgetForecastResponse(
-				healthStatus,
-				predictedRunOutDate,
-				daysUntilRunOut,
-				daysUntilBillingCycleEnd,
-				billingDateGapDays,
-				utilizationPercent,
-				assistantMessage,
-				actions
-		);
+		return values.stream()
+				.filter(value -> value != null && value.signum() >= 0)
+				.toList();
 	}
 
-	private static String deterministicAssistantMessage(String healthStatus, long daysUntilRunOut, Long billingDateGapDays) {
-		String gapPart = billingDateGapDays != null
-				? "결제일과의 차이는 " + billingDateGapDays + "일입니다."
-				: "결제일과의 차이는 null (결제일 필요)입니다.";
-		return "현재 상태는 " + healthStatus + "이며, 현재 추세라면 약 " + daysUntilRunOut
-				+ "일 뒤 예산 또는 토큰이 소진될 수 있습니다. " + gapPart;
+	private static List<Long> buildRecentDailyTokenUsage7d(
+			UsageRecordedTokenRollupService.SevenDayTokenSummary summary,
+			BudgetForecastRequest request
+	) {
+		if (request.recentDailyTokenUsage7d() != null && !request.recentDailyTokenUsage7d().isEmpty()) {
+			return request.recentDailyTokenUsage7d().stream()
+					.filter(value -> value != null && value >= 0)
+					.limit(7)
+					.toList();
+		}
+		long totalTokens = Math.max(0L, summary.totalInputTokens() + summary.totalOutputTokens());
+		long avg = totalTokens <= 0 ? 0L : Math.max(1L, totalTokens / 7);
+		List<Long> generated = new ArrayList<>();
+		for (int i = 0; i < 7; i++) {
+			generated.add(avg);
+		}
+		return List.copyOf(generated);
 	}
 
-	private static BigDecimal calculateUtilizationPercent(BigDecimal currentSpendUsd, BigDecimal monthlyBudgetUsd) {
-		if (monthlyBudgetUsd.compareTo(BigDecimal.ZERO) == 0) {
-			return currentSpendUsd.compareTo(BigDecimal.ZERO) > 0 ? BigDecimal.valueOf(999) : BigDecimal.ZERO;
+	private static List<BudgetForecastRequest.ModelUsageShare> normalizeModelUsageDistribution(
+			List<BudgetForecastRequest.ModelUsageShare> values
+	) {
+		if (values == null) {
+			return List.of();
 		}
-		return currentSpendUsd.multiply(HUNDRED).divide(monthlyBudgetUsd, 2, RoundingMode.HALF_UP);
+		return values.stream()
+				.filter(value -> value != null && value.model() != null && !value.model().isBlank())
+				.filter(value -> value.percentage() != null && value.percentage().signum() >= 0)
+				.toList();
 	}
 
-	private static double estimateDaysByBudget(BudgetForecastRequest request) {
-		BigDecimal remainingBudget = request.monthlyBudgetUsd().subtract(request.currentSpendUsd());
-		if (remainingBudget.compareTo(BigDecimal.ZERO) <= 0) {
-			return 0;
-		}
-		return remainingBudget.divide(request.averageDailySpendUsd(), 4, RoundingMode.HALF_UP).doubleValue();
-	}
-
-	private static boolean isSpendSpike(List<BigDecimal> recentDailySpendUsd) {
-		if (recentDailySpendUsd == null || recentDailySpendUsd.size() < 4) {
-			return false;
-		}
-		BigDecimal latest = recentDailySpendUsd.get(recentDailySpendUsd.size() - 1);
-		BigDecimal sum = BigDecimal.ZERO;
-		for (int i = 0; i < recentDailySpendUsd.size() - 1; i++) {
-			sum = sum.add(recentDailySpendUsd.get(i));
-		}
-		BigDecimal avgWithoutLatest = sum.divide(
-				BigDecimal.valueOf(recentDailySpendUsd.size() - 1),
-				4,
-				RoundingMode.HALF_UP
-		);
-		if (avgWithoutLatest.compareTo(BigDecimal.ZERO) == 0) {
-			return latest.compareTo(BigDecimal.ZERO) > 0;
-		}
-		BigDecimal ratio = latest.divide(avgWithoutLatest, 4, RoundingMode.HALF_UP);
-		return ratio.compareTo(BigDecimal.valueOf(1.5)) >= 0;
-	}
-
-	private static String resolveHealthStatus(BigDecimal utilizationPercent, Long billingDateGapDays, boolean spendSpike) {
-		if (utilizationPercent.compareTo(CRITICAL_THRESHOLD) >= 0
-				|| (billingDateGapDays != null && billingDateGapDays > BILLING_GAP_CRITICAL_DAYS)) {
-			return "CRITICAL";
-		}
-		if (utilizationPercent.compareTo(WARNING_THRESHOLD) >= 0 || spendSpike) {
-			return "WARNING";
-		}
-		return "HEALTHY";
-	}
-
-	private static List<String> recommendActions(String healthStatus, Long billingDateGapDays, boolean spendSpike) {
-		List<String> actions = new ArrayList<>();
-		if ("CRITICAL".equals(healthStatus)) {
-			actions.add("고비용 모델 사용을 즉시 제한하세요.");
-			actions.add("결제일 전 예산 증액 또는 선충전 검토가 필요합니다.");
-			if (billingDateGapDays != null && billingDateGapDays >= 0) {
-				actions.add("현재 추세에서는 결제일 전에 소진될 가능성이 높습니다.");
+	private static List<Long> normalizeHourlyTokenUsage24h(List<Long> values) {
+		if (values == null || values.isEmpty()) {
+			List<Long> empty24h = new ArrayList<>();
+			for (int i = 0; i < 24; i++) {
+				empty24h.add(0L);
 			}
-		} else if ("WARNING".equals(healthStatus)) {
-			actions.add("사용량 상위 모델을 저비용 모델로 일부 전환하세요.");
-			actions.add("일일 사용량 상한선을 임시로 낮추는 것을 권장합니다.");
-		} else {
-			actions.add("현재 사용 추세가 안정적입니다.");
+			return List.copyOf(empty24h);
 		}
-		if (spendSpike) {
-			actions.add("최근 일일 사용량 급증이 감지되었습니다. 원인 점검이 필요합니다.");
+		return values.stream()
+				.filter(value -> value != null && value >= 0)
+				.limit(24)
+				.toList();
+	}
+
+	private static String toHealthStatusLabel(String healthStatus) {
+		if ("CRITICAL".equalsIgnoreCase(healthStatus)) {
+			return "위험";
 		}
-		return List.copyOf(actions);
+		if ("WARNING".equalsIgnoreCase(healthStatus)) {
+			return "주의";
+		}
+		return "양호";
+	}
+
+	private static String buildRiskCriteria(BigDecimal utilizationPercent, Long billingDateGapDays) {
+		BigDecimal utilization = utilizationPercent == null ? BigDecimal.ZERO : utilizationPercent;
+		String utilizationRule = "예산 사용률 " + utilization.setScale(2, RoundingMode.HALF_UP) + "% 기준 (80% 이상 WARNING, 100% 이상 CRITICAL)";
+		if (billingDateGapDays == null) {
+			return utilizationRule + ", 결제일 정보 없음";
+		}
+		return utilizationRule + ", 소진-결제일 간격 " + billingDateGapDays + "일";
+	}
+
+	private static ConfidenceAssessment assessConfidence(BudgetForecastRequest request, boolean rollupApplied) {
+		List<BigDecimal> recentDailySpendUsd = request.recentDailySpendUsd();
+		int recentDays = recentDailySpendUsd == null ? 0 : recentDailySpendUsd.size();
+		if (rollupApplied && recentDays >= 7) {
+			return new ConfidenceAssessment("HIGH", "7일 토큰 롤업 + 최근 7일 지출 배열 기반");
+		}
+		if (rollupApplied || recentDays >= 4) {
+			return new ConfidenceAssessment("MEDIUM", "부분 시계열(최근 " + recentDays + "일) 또는 롤업 데이터 기반");
+		}
+		return new ConfidenceAssessment("LOW", "입력 데이터 기간이 짧아 추세 신뢰도가 낮음");
+	}
+
+	private record NormalizedRequestContext(
+			BudgetForecastRequest request,
+			boolean rollupApplied
+	) {
+	}
+
+	private record ConfidenceAssessment(
+			String level,
+			String criteria
+	) {
 	}
 }

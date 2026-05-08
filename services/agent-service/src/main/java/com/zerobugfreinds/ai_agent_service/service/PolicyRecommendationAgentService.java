@@ -104,15 +104,17 @@ public class PolicyRecommendationAgentService {
 	public OptimizationRecommendationIssuedEvent analyzeAndStore(RecommendationAnalyzeRequest request) {
 		Instant endAt = Instant.now();
 		Instant startAt = endAt.minus(request.windowDays(), ChronoUnit.DAYS);
-		long totalRequests = Math.max(100, request.windowDays() * 140L);
 
 		BillingSignalSnapshotService.BillingKeySignal billingSignal =
 				resolveBillingSignal(request.scopeType(), request.scopeId(), request.keyId());
 		UsageProfile usageProfile = buildUsageProfile(request, billingSignal);
+		long totalRequests = usageProfile.totalRequests() > 0
+				? usageProfile.totalRequests()
+				: Math.max(100, request.windowDays() * 140L);
 		long totalInputTokens = usageProfile.totalInputTokens();
 		long totalOutputTokens = usageProfile.totalOutputTokens();
 		BigDecimal ratio = calculateRatio(totalInputTokens, totalOutputTokens);
-		long averageLatencyMs = usageProfile.averageLatencyMs();
+		Long averageLatencyMs = usageProfile.averageLatencyMs();
 		RecommendationReasonCode reasonCode = resolveReasonCode(request.scopeType(), ratio, averageLatencyMs);
 		RecommendationConfidenceLevel confidenceLevel = usageProfile.confidenceLevel();
 
@@ -487,9 +489,9 @@ public class PolicyRecommendationAgentService {
 	private static RecommendationReasonCode resolveReasonCode(
 			RecommendationScopeType scopeType,
 			BigDecimal inputOutputRatio,
-			long averageLatencyMs
+			Long averageLatencyMs
 	) {
-		if (averageLatencyMs >= HIGH_LATENCY_THRESHOLD_MS) {
+		if (averageLatencyMs != null && averageLatencyMs >= HIGH_LATENCY_THRESHOLD_MS) {
 			return RecommendationReasonCode.HIGH_LATENCY;
 		}
 		if (inputOutputRatio.compareTo(BigDecimal.valueOf(10)) >= 0) {
@@ -514,7 +516,6 @@ public class PolicyRecommendationAgentService {
 						request.scopeId()
 				);
 		if (rollupSummary.totalInputTokens() > 0 || rollupSummary.totalOutputTokens() > 0) {
-			long fallbackLatency = resolvePatternProfile(request, billingSignal).avgLatencyMs();
 			RecommendationConfidenceLevel confidence = rollupSummary.totalRequests() >= 5
 					? RecommendationConfidenceLevel.HIGH
 					: RecommendationConfidenceLevel.MEDIUM;
@@ -761,8 +762,9 @@ public class PolicyRecommendationAgentService {
 	private record UsageProfile(
 			long totalInputTokens,
 			long totalOutputTokens,
-			long averageLatencyMs,
-			RecommendationConfidenceLevel confidenceLevel
+			Long averageLatencyMs,
+			RecommendationConfidenceLevel confidenceLevel,
+			long totalRequests
 	) {
 	}
 
