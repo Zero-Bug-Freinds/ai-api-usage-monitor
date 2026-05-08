@@ -24,7 +24,7 @@ function asApiResponse(json: unknown): ApiResponse<unknown> | null {
 
 function providerLabel(provider: ExternalKeyProvider) {
   if (provider === "OPENAI") return "OpenAI"
-  if (provider === "GEMINI") return "Gemini"
+  if (provider === "GOOGLE") return "Google"
   return "Anthropic"
 }
 
@@ -735,7 +735,7 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
               onChange={(e) => setProvider(e.target.value as ExternalKeyProvider)}
               disabled={submitLoading}
             >
-              <option value="GEMINI">GEMINI</option>
+              <option value="GOOGLE">GOOGLE</option>
               <option value="OPENAI">OPENAI</option>
               <option value="ANTHROPIC">ANTHROPIC</option>
             </select>

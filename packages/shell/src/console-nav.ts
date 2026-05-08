@@ -125,7 +125,7 @@ export function ownsNavItemForSpaLink(profile: ConsoleProfile, id: ConsoleNavId)
     case "notification":
       return id === "notifications"
     case "team":
-      return false
+      return id === "teams"
     case "agent":
       return id === "assistant"
     default: {
@@ -151,7 +151,8 @@ function spaInternalHref(profile: ConsoleProfile, id: ConsoleNavId): string {
     case "agent":
       return "/"
     case "team":
-      throw new Error("resolveConsoleNavLink: team profile has no SPA main-nav targets")
+      if (id === "teams") return "/"
+      throw new Error(`resolveConsoleNavLink: unexpected team SPA id ${id}`)
     default: {
       const _exhaustive: never = profile
       throw new Error(`Unexpected profile: ${_exhaustive}`)
@@ -174,6 +175,9 @@ export function resolveConsoleNavLink(profile: ConsoleProfile, id: ConsoleNavId)
    * identity 등 타 오리진에서 상대 `/teams`로 잘못 이탈하는 것을 막는다(Task37-13).
    */
   if (id === "teams") {
+    if (ownsNavItemForSpaLink(profile, id)) {
+      return { kind: "next", href: spaInternalHref(profile, id) }
+    }
     return { kind: "anchor", href: resolveTeamShellEntryHref() }
   }
 
@@ -287,7 +291,7 @@ export function isConsoleNavActive(profile: ConsoleProfile, pathname: string, id
   }
 
   if (profile === "team") {
-    if (id === "teams") return p === "/teams" || p.startsWith("/teams?") || p.startsWith("/teams/")
+    if (id === "teams") return p === "/" || p === "/teams" || p.startsWith("/teams?") || p.startsWith("/teams/")
     if (id === "assistant") return p === "/agent" || p.startsWith("/agent/")
     return false
   }

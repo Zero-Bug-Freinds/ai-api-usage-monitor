@@ -241,7 +241,7 @@ export function ConsoleSidebarInner({
   }
 
   return (
-    <aside className="flex h-full min-h-0 w-64 min-w-[240px] max-w-[280px] shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
+    <aside className="sticky top-0 flex h-screen min-h-0 w-64 min-w-[240px] max-w-[280px] shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
       <div className="border-b border-sidebar-border px-4 py-4">
         <p className="text-xs font-medium uppercase tracking-wide text-sidebar-foreground/60">콘솔</p>
         <p className="mt-1 text-sm font-semibold leading-tight tracking-tight text-sidebar-foreground">

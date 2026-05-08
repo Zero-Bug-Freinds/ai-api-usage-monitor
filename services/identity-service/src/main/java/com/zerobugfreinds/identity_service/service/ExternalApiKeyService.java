@@ -72,6 +72,7 @@ public class ExternalApiKeyService {
 		if (provider == null) {
 			throw new IllegalArgumentException("provider는 필수입니다");
 		}
+		ExternalApiKeyProvider normalizedProvider = normalizeProvider(provider);
 		String trimmedAlias = StringUtils.hasText(alias) ? alias.trim() : "";
 		if (!StringUtils.hasText(trimmedAlias)) {
 			throw new IllegalArgumentException("alias는 필수입니다");
@@ -88,9 +89,9 @@ public class ExternalApiKeyService {
 			throw new DuplicateExternalApiKeyAliasException("이미 사용 중인 별칭입니다");
 		}
 
-		String keyHash = encryptionUtil.sha256HexForUniqueness(provider.name(), normalizedKey);
+		String keyHash = encryptionUtil.sha256HexForUniqueness(normalizedProvider.name(), normalizedKey);
 		Optional<ExternalApiKeyEntity> existingSameHash =
-				externalApiKeyRepository.findByUserIdAndProviderAndKeyHash(userId, provider, keyHash);
+				externalApiKeyRepository.findByUserIdAndProviderAndKeyHash(userId, normalizedProvider, keyHash);
 		if (existingSameHash.isPresent()) {
 			if (existingSameHash.get().isPendingDeletion()) {
 				throw new DuplicateExternalApiKeyException("삭제예정키와 중복된 키");
@@ -98,7 +99,7 @@ public class ExternalApiKeyService {
 			log.warn(
 					"[AUDIT] external_api_key_duplicate_detected userId={} provider={} alias={} hashPrefix={}",
 					userId,
-					provider.name(),
+					normalizedProvider.name(),
 					trimmedAlias,
 					keyHash.substring(0, 8)
 			);
@@ -108,7 +109,7 @@ public class ExternalApiKeyService {
 		String encrypted = encryptionUtil.encryptAes256Gcm(normalizedKey);
 		ExternalApiKeyEntity entity = ExternalApiKeyEntity.register(
 				userId,
-				provider,
+				normalizedProvider,
 				trimmedAlias,
 				keyHash,
 				encrypted,
@@ -119,7 +120,7 @@ public class ExternalApiKeyService {
 		log.info(
 				"[AUDIT] external_api_key_registered userId={} provider={} alias={} keyId={}",
 				userId,
-				provider.name(),
+				normalizedProvider.name(),
 				trimmedAlias,
 				saved.getId()
 		);
@@ -184,9 +185,10 @@ public class ExternalApiKeyService {
 			if (provider == null) {
 				throw new IllegalArgumentException("externalKey를 수정할 때 provider는 필수입니다");
 			}
-			String keyHash = encryptionUtil.sha256HexForUniqueness(provider.name(), normalizedKey);
+			ExternalApiKeyProvider normalizedProvider = normalizeProvider(provider);
+			String keyHash = encryptionUtil.sha256HexForUniqueness(normalizedProvider.name(), normalizedKey);
 			Optional<ExternalApiKeyEntity> otherSameHash =
-					externalApiKeyRepository.findByUserIdAndProviderAndKeyHash(userId, provider, keyHash);
+					externalApiKeyRepository.findByUserIdAndProviderAndKeyHash(userId, normalizedProvider, keyHash);
 			if (otherSameHash.isPresent() && !otherSameHash.get().getId().equals(externalKeyId)) {
 				if (otherSameHash.get().isPendingDeletion()) {
 					throw new DuplicateExternalApiKeyException("삭제예정키와 중복된 키");
@@ -195,7 +197,7 @@ public class ExternalApiKeyService {
 			}
 
 			String encrypted = encryptionUtil.encryptAes256Gcm(normalizedKey);
-			entity.updateCredential(provider, trimmedAlias, keyHash, encrypted, monthlyBudgetUsd);
+			entity.updateCredential(normalizedProvider, trimmedAlias, keyHash, encrypted, monthlyBudgetUsd);
 		} else {
 			entity.updateAliasAndBudget(trimmedAlias, monthlyBudgetUsd);
 		}
@@ -203,7 +205,7 @@ public class ExternalApiKeyService {
 		log.info(
 				"[AUDIT] external_api_key_updated userId={} provider={} alias={} keyId={}",
 				userId,
-				entity.getProvider().name(),
+				providerName(entity.getProvider()),
 				trimmedAlias,
 				entity.getId()
 		);
@@ -221,8 +223,9 @@ public class ExternalApiKeyService {
 		if (provider == null) {
 			throw new IllegalArgumentException("provider는 필수입니다");
 		}
+		ExternalApiKeyProvider normalizedProvider = normalizeProvider(provider);
 		ExternalApiKeyEntity entity = externalApiKeyRepository
-				.findTopByUserIdAndProviderAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(userId, provider)
+				.findTopByUserIdAndProviderAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(userId, normalizedProvider)
 				.orElseThrow(() -> new ExternalApiKeyNotFoundException("등록된 API 키를 찾을 수 없습니다"));
 		String plainKey = encryptionUtil.decryptAes256Gcm(entity.getEncryptedKey());
 		return new InternalApiKeyResponse(plainKey, String.valueOf(entity.getId()));
@@ -276,7 +279,7 @@ public class ExternalApiKeyService {
 			monthlyBudgetsByKey.add(
 					new UserMonthlyBudgetByKey(
 							key.getId(),
-							key.getProvider().name(),
+							providerName(key.getProvider()),
 							key.getKeyAlias(),
 							budget
 					)
@@ -363,7 +366,7 @@ public class ExternalApiKeyService {
 					"[AUDIT] external_api_key_purged userId={} keyId={} provider={}",
 					e.getUserId(),
 					e.getId(),
-					e.getProvider().name()
+					providerName(e.getProvider())
 			);
 			publishExternalApiKeyDeleted(e, e.isRetainUsageLogs());
 		}
@@ -376,7 +379,7 @@ public class ExternalApiKeyService {
 				entity.getId(),
 				entity.getKeyAlias(),
 				entity.getUserId(),
-				entity.getProvider().name(),
+				providerName(entity.getProvider()),
 				status
 		);
 		applicationEventPublisher.publishEvent(event);
@@ -388,7 +391,7 @@ public class ExternalApiKeyService {
 				entity.getId(),
 				Instant.now(),
 				retainLogs,
-				entity.getProvider().name(),
+				providerName(entity.getProvider()),
 				entity.getKeyAlias()
 		);
 		applicationEventPublisher.publishEvent(event);
@@ -399,11 +402,19 @@ public class ExternalApiKeyService {
 				entity.getId(),
 				entity.getKeyAlias(),
 				entity.getUserId(),
-				entity.getProvider().name(),
+				providerName(entity.getProvider()),
 				status,
 				entity.getMonthlyBudgetUsd()
 		);
 		applicationEventPublisher.publishEvent(event);
+	}
+
+	private static ExternalApiKeyProvider normalizeProvider(ExternalApiKeyProvider provider) {
+		return provider;
+	}
+
+	private static String providerName(ExternalApiKeyProvider provider) {
+		return normalizeProvider(provider).name();
 	}
 
 	private static int resolveGracePeriodDays(Integer requested) {

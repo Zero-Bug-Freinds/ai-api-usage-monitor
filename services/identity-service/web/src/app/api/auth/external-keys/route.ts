@@ -52,8 +52,8 @@ async function resolveAccessToken(request: Request): Promise<string | null> {
 }
 
 const createExternalKeyRequestSchema = z.object({
-  provider: z.enum(["GEMINI", "OPENAI", "ANTHROPIC"], {
-    message: "provider는 GEMINI/OPENAI/ANTHROPIC 중 하나여야 합니다",
+  provider: z.enum(["GOOGLE", "OPENAI", "ANTHROPIC"], {
+    message: "provider는 GOOGLE/OPENAI/ANTHROPIC 중 하나여야 합니다",
   }),
   externalKey: z
     .string({ message: "externalKey는 문자열이어야 합니다" })
@@ -86,7 +86,7 @@ function isExternalKeySummary(data: unknown): boolean {
   return (
     typeof o.id === "number" &&
     typeof o.provider === "string" &&
-    (o.provider === "GEMINI" || o.provider === "OPENAI" || o.provider === "ANTHROPIC") &&
+    (o.provider === "GOOGLE" || o.provider === "OPENAI" || o.provider === "ANTHROPIC") &&
     typeof o.alias === "string" &&
     typeof o.createdAt === "string" &&
     optionalBudget(o.monthlyBudgetUsd) &&

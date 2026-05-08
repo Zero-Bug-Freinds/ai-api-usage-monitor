@@ -32,7 +32,7 @@ export type LoginResponse = {
   expiresInSeconds: number
 }
 
-export type ExternalKeyProvider = "GEMINI" | "OPENAI" | "ANTHROPIC"
+export type ExternalKeyProvider = "GOOGLE" | "OPENAI" | "ANTHROPIC"
 
 export type CreateExternalKeyRequest = {
   provider: ExternalKeyProvider

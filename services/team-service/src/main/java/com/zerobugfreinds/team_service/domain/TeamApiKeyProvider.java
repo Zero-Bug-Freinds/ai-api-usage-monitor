@@ -7,7 +7,6 @@ public enum TeamApiKeyProvider {
     META,
     MISTRAL,
     COHERE,
-    GEMINI,
     CLAUDE,
     GROK
 }
