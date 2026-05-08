@@ -218,13 +218,6 @@ http {
       proxy_set_header Connection $connection_upgrade;
     }
 
-    location ^~ /mfe/team/ {
-      proxy_pass http://team_mfe/;
-      proxy_set_header Host $http_host;
-      proxy_set_header Upgrade $http_upgrade;
-      proxy_set_header Connection $connection_upgrade;
-    }
-
     location = /teams {
       proxy_pass http://team_web;
       proxy_set_header Upgrade $http_upgrade;
