@@ -28,6 +28,8 @@ public class UsageRabbitProperties {
      */
     private IdentityApiKey identityApiKey = new IdentityApiKey();
 
+    private TeamApiKey teamApiKey = new TeamApiKey();
+
     private CostFinalized costFinalized = new CostFinalized();
 
     private SummaryAggregation summaryAggregation = new SummaryAggregation();
@@ -74,6 +76,16 @@ public class UsageRabbitProperties {
         }
     }
 
+    public TeamApiKey getTeamApiKey() {
+        return teamApiKey;
+    }
+
+    public void setTeamApiKey(TeamApiKey teamApiKey) {
+        if (teamApiKey != null) {
+            this.teamApiKey = teamApiKey;
+        }
+    }
+
     public void setCostFinalized(CostFinalized costFinalized) {
         if (costFinalized != null) {
             this.costFinalized = costFinalized;
@@ -115,6 +127,45 @@ public class UsageRabbitProperties {
         private String exchange = "identity.events";
         private String routingKey = "identity.external-api-key.status-changed";
         private String queue = "usage-service.identity.external-api-key.queue";
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getExchange() {
+            return exchange;
+        }
+
+        public void setExchange(String exchange) {
+            this.exchange = exchange;
+        }
+
+        public String getRoutingKey() {
+            return routingKey;
+        }
+
+        public void setRoutingKey(String routingKey) {
+            this.routingKey = routingKey;
+        }
+
+        public String getQueue() {
+            return queue;
+        }
+
+        public void setQueue(String queue) {
+            this.queue = queue;
+        }
+    }
+
+    public static class TeamApiKey {
+        private boolean enabled = true;
+        private String exchange = "team.events";
+        private String routingKey = "team.api.key.#";
+        private String queue = "usage-service.team.api-key.queue";
 
         public boolean isEnabled() {
             return enabled;
