@@ -1,6 +1,6 @@
 # Web(Next.js) ↔ Identity 인증 BFF 계약
 
-버전: 1.22  
+버전: 1.23  
 관련: [docs/architecture.md](../architecture.md) §1.3, §3.3, §10.2, §13, [Identity 인증 API 계약](../identity-auth-api-contract.md), [Web·Gateway Usage BFF](./web-gateway-bff.md)(Usage BFF·`basePath` 호출 맵), [Web·Team BFF](./web-team-bff.md), [저장소 구조](../repository-structure.md) §6, [웹 경계](./web-split-boundary.md)(§2.4 로컬 `web-edge` Nginx)
 
 **소스 트리:** BFF·화면의 **정본**은 `services/identity-service/web/` 이다. **공용 UI(Shadcn 래퍼·`cn`)** 는 루트 pnpm workspace **`@ai-usage/ui`**(`packages/ui`)를 참조한다([web-split-boundary.md §1.1](./web-split-boundary.md)). Identity vs Usage 라우트·미들웨어 매처는 [web-split-boundary.md](./web-split-boundary.md) §2·§3.
@@ -22,22 +22,25 @@
 | 비밀번호 찾기(재설정 메일 요청) | `POST /api/auth/forgot-password` | `POST /api/auth/forgot-password` |
 | 비밀번호 재설정 | `POST /api/auth/reset-password` | `POST /api/auth/reset-password` |
 | 로그인 | `POST /api/auth/login` | `POST /api/auth/login` |
-| 외부 API 키 조회(개인) | `GET /api/auth/external-keys` | `GET /api/auth/external-keys` |
-| 외부 API 키 등록(개인) | `POST /api/auth/external-keys` | `POST /api/auth/external-keys` |
-| 외부 API 키 수정(개인) | `PUT /api/auth/external-keys/{id}` | `PUT /api/auth/external-keys/{id}` |
-| 외부 API 키 삭제 예약(개인) | `DELETE /api/auth/external-keys/{id}` (선택 쿼리 `gracePeriodDays`) | `DELETE /api/auth/external-keys/{id}` (동일) |
-| 외부 API 키 삭제 취소(개인) | `POST /api/auth/external-keys/{id}/deletion-cancel` | `POST /api/auth/external-keys/{id}/deletion-cancel` |
-| 세션(로그인 여부 단일 기준) | `GET /api/auth/session` | `GET /api/auth/session` (BFF가 쿠키 JWT를 Bearer로 전달해 프록시) |
+| 외부 API 키 조회(개인) | `GET /api/auth/external-keys` | Gateway `GET /api/identity/auth/external-keys` |
+| 외부 API 키 등록(개인) | `POST /api/auth/external-keys` | Gateway `POST /api/identity/auth/external-keys` |
+| 외부 API 키 수정(개인) | `PUT /api/auth/external-keys/{id}` | Gateway `PUT /api/identity/auth/external-keys/{id}` |
+| 외부 API 키 삭제 예약(개인) | `DELETE /api/auth/external-keys/{id}` (선택 쿼리 `gracePeriodDays`, `retainLogs`) | Gateway `DELETE /api/identity/auth/external-keys/{id}` (동일) |
+| 외부 API 키 삭제 취소(개인) | `POST /api/auth/external-keys/{id}/deletion-cancel` | Gateway `POST /api/identity/auth/external-keys/{id}/deletion-cancel` |
+| 세션(로그인 여부 단일 기준) | `GET /api/auth/session` | Gateway `GET /api/identity/auth/session` (BFF가 쿠키 JWT를 Bearer로 전달해 프록시) |
+| 계정 삭제 | `POST /api/auth/delete-account` | Gateway `POST /api/identity/auth/delete-account` |
 | 로그아웃 | `POST /api/auth/logout` | `POST /api/auth/logout` (선택 프록시; stateless이며 실질 로그아웃은 BFF의 쿠키 삭제) |
 
-- Web BFF는 `IDENTITY_SERVICE_URL` 환경 변수를 사용해 Identity로 프록시한다.
+- Web BFF는 경로 성격에 따라 업스트림을 분리한다.
+  - 인증 기본 플로우(`signup/login/forgot-password/reset-password/logout`)는 `IDENTITY_SERVICE_URL` 기반 직접 프록시
+  - 세션/외부 API 키/관리 BFF는 `GATEWAY_URL` 또는 `WEB_GATEWAY_URL` 기반 Gateway 프록시
 - 요청 **본문**이 있는 경로(회원가입·로그인 등)의 입력 검증은 Zod 스키마로 수행한다. `GET /api/auth/session`·`POST /api/auth/logout` 은 본문이 없으며, 로그아웃은 쿠키 삭제가 핵심이다.
 - **`GET /api/auth/session`** 은 프론트가 “로그인됨/만료”를 판단할 때 사용하는 **단일 기준 엔드포인트**로 둔다. BFF 응답에도 `Cache-Control: no-store`를 적용한다(§8).
 
 ### 2.1 `GET /api/auth/session` 동작
 
 1. 브라우저 → BFF: `Cookie`에 `access_token`(httpOnly, 로그인 시 설정)이 포함되면 자동 전송된다.
-2. BFF → Identity: `GET {IDENTITY_SERVICE_URL}/api/auth/session`, 헤더 `Authorization: Bearer {access_token}`, `Accept: application/json`.
+2. BFF → Gateway: `GET {GATEWAY_URL|WEB_GATEWAY_URL}/api/identity/auth/session`, 헤더 `Authorization: Bearer {access_token}`, `Accept: application/json`.
 3. **`access_token` 쿠키가 없거나 값이 비어 있으면** BFF는 Identity를 호출하지 않고 `401` + `ApiResponse<null>` (`success=false`, `data=null`)로 응답한다. 메시지는 BFF에서 고정할 수 있다(예: 로그인 필요 안내).
 4. **성공 시**(`Identity`가 `200` + `success=true`) BFF가 프론트에 돌려주는 `data` 필드는 업스트림과 **동일한 형태**이어야 한다. 필드 정의의 정본은 [Identity 인증 API 계약 §5](../identity-auth-api-contract.md)를 따른다.
 
@@ -49,19 +52,19 @@
 }
 ```
 
-5. **Identity가 `401` 등으로 거절**하면 상태 코드와 JSON 본문을 **그대로** 프론트에 전달한다(§6).
+5. **Gateway/Identity가 `401` 등으로 거절**하면 상태 코드와 JSON 본문을 **그대로** 프론트에 전달한다(§6).
 6. `IDENTITY_SERVICE_URL` 미설정 등 BFF 설정 오류·업스트림 연결 실패·업스트림 성공 응답이 계약과 맞지 않는 경우 등은 BFF가 `500`/`502` 등으로 처리할 수 있다. 프론트는 `success=false`와 `message`로 사용자 메시지를 구성한다.
 
 ### 2.2 `GET /api/auth/external-keys` 동작
 
 1. 브라우저 → BFF: `GET /api/auth/external-keys`
 2. **`access_token` 쿠키가 없거나 값이 비어 있으면** BFF는 Identity를 호출하지 않고 `401` + `ApiResponse<null>` (`success=false`, `data=null`)로 응답한다.
-3. BFF → Identity: `GET {IDENTITY_SERVICE_URL}/api/auth/external-keys`
+3. BFF → Gateway: `GET {GATEWAY_URL|WEB_GATEWAY_URL}/api/identity/auth/external-keys`
    - `Authorization: Bearer {access_token}`
    - `Accept: application/json`
-4. **성공 시** Identity의 상태 코드/본문(`ApiResponse`)을 가능한 그대로 전달한다. 응답에는 `Cache-Control: no-store`를 적용한다.
+4. **성공 시** Gateway/Identity의 상태 코드/본문(`ApiResponse`)을 가능한 그대로 전달한다. 응답에는 `Cache-Control: no-store`를 적용한다.
 5. 목록 항목은 [Identity 인증 API 계약 §6](../identity-auth-api-contract.md)과 동일하며, **삭제 예정** 행에는 `deletionRequestedAt`, `permanentDeletionAt`, `deletionGraceDays`(선택) 등이 포함될 수 있다.
-6. **Identity가 `401` 등으로 거절**하면 상태 코드와 JSON 본문을 **그대로** 프론트에 전달한다(§6).
+6. **Gateway/Identity가 `401` 등으로 거절**하면 상태 코드와 JSON 본문을 **그대로** 프론트에 전달한다(§6).
 7. `IDENTITY_SERVICE_URL` 미설정, 업스트림 연결 실패, 업스트림 응답이 계약과 맞지 않는 경우 등은 BFF가 `500`/`502` 등으로 처리할 수 있다.
 
 ### 2.3 `POST /api/auth/external-keys` 동작
@@ -69,10 +72,10 @@
 1. 브라우저 → BFF: `POST /api/auth/external-keys` (JSON body: `provider`, `externalKey`, `alias`, `monthlyBudgetUsd`)
 2. BFF: 입력 본문을 Zod로 검증한다(요청 본문이므로 검증 대상).
 3. **`access_token` 쿠키가 없거나 값이 비어 있으면** BFF는 Identity를 호출하지 않고 `401` + `ApiResponse<null>` (`success=false`, `data=null`)로 응답한다.
-4. BFF → Identity: `POST {IDENTITY_SERVICE_URL}/api/auth/external-keys`
+4. BFF → Gateway: `POST {GATEWAY_URL|WEB_GATEWAY_URL}/api/identity/auth/external-keys`
    - `Authorization: Bearer {access_token}`
    - `Content-Type: application/json`, `Accept: application/json`
-5. **성공 시** Identity의 상태 코드/본문(`ApiResponse`)을 가능한 그대로 전달한다. 응답에는 `Cache-Control: no-store`를 적용한다.
+5. **성공 시** Gateway/Identity의 상태 코드/본문(`ApiResponse`)을 가능한 그대로 전달한다. 응답에는 `Cache-Control: no-store`를 적용한다.
 6. **Identity가 `400`/`401`/`409` 등으로 거절**하면 상태 코드와 JSON 본문을 **그대로** 프론트에 전달한다(§6). 동일 provider·동일 키 값에 대해 **활성 행이 이미 있으면** `409` 메시지 예: `이미 등록된 API 키입니다`. **삭제 예정인 행과만 해시가 겹치면** `409` 메시지 예: `삭제예정키와 중복된 키`([identity-auth-api-contract §7](../identity-auth-api-contract.md)).
 7. `IDENTITY_SERVICE_URL` 미설정, 업스트림 연결 실패, 업스트림 응답이 계약과 맞지 않는 경우 등은 BFF가 `500`/`502` 등으로 처리할 수 있다. 단, **외부 API 키 평문(`externalKey`)은 로그/에러 메시지에 포함하지 않는다.**
 
@@ -84,7 +87,7 @@
    - `monthlyBudgetUsd`는 필수(0 이상, 소수점 둘째 자리까지)
    - `externalKey`를 보내면 `provider`도 함께 필수
 3. **`access_token` 쿠키가 없거나 값이 비어 있으면** BFF는 Identity를 호출하지 않고 `401` + `ApiResponse<null>` (`success=false`, `data=null`)로 응답한다.
-4. BFF → Identity: `PUT {IDENTITY_SERVICE_URL}/api/auth/external-keys/{id}`
+4. BFF → Gateway: `PUT {GATEWAY_URL|WEB_GATEWAY_URL}/api/identity/auth/external-keys/{id}`
    - `Authorization: Bearer {access_token}`
    - `Content-Type: application/json`, `Accept: application/json`
 5. 성공/오류 모두 Identity의 상태 코드/JSON 본문을 가능한 그대로 전달하고, 응답에 `Cache-Control: no-store`를 적용한다.
@@ -95,14 +98,14 @@
 1. 브라우저 → BFF: `DELETE /api/auth/external-keys/{id}`  
    - 선택 **쿼리** `gracePeriodDays`(정수): 생략 시 Identity 기본 **7일**, 허용 범위는 Identity 구현(현재 **1~365일**). 잘못된 값은 업스트림이 `400`으로 거절할 수 있다.
 2. **`access_token` 쿠키가 없거나 값이 비어 있으면** BFF는 Identity를 호출하지 않고 `401`로 응답한다.
-3. BFF → Identity: 브라우저 요청 URL의 **쿼리 문자열을 그대로 이어 붙여** `DELETE {IDENTITY_SERVICE_URL}/api/auth/external-keys/{id}{?gracePeriodDays=…}` 로 프록시한다(구현: `services/identity-service/web/src/app/api/auth/external-keys/[id]/route.ts`).
+3. BFF → Gateway: 브라우저 요청 URL의 **쿼리 문자열을 그대로 이어 붙여** `DELETE {GATEWAY_URL|WEB_GATEWAY_URL}/api/identity/auth/external-keys/{id}{?gracePeriodDays=…&retainLogs=…}` 로 프록시한다(구현: `services/identity-service/web/src/app/api/auth/external-keys/[id]/route.ts`).
 4. 성공 시 Identity 응답(`deletionRequestedAt`, `permanentDeletionAt`, `deletionGraceDays` 등)을 그대로 전달한다. 유예 종료 후 물리 삭제는 스케줄러가 담당한다([identity-auth-api-contract §10.1](../identity-auth-api-contract.md)).
 
 ### 2.6 `POST /api/auth/external-keys/{id}/deletion-cancel` 동작
 
 1. 브라우저 → BFF: `POST /api/auth/external-keys/{id}/deletion-cancel`
 2. **`access_token` 쿠키가 없거나 값이 비어 있으면** BFF는 Identity를 호출하지 않고 `401`로 응답한다.
-3. BFF → Identity: `POST {IDENTITY_SERVICE_URL}/api/auth/external-keys/{id}/deletion-cancel`
+3. BFF → Gateway: `POST {GATEWAY_URL|WEB_GATEWAY_URL}/api/identity/auth/external-keys/{id}/deletion-cancel`
 4. 성공 시 Identity 응답을 그대로 전달한다.
 
 ### 2.7 `POST /api/auth/forgot-password` 동작
@@ -152,11 +155,11 @@
 
 | 항목 | 값 |
 |------|----|
-| `name` | `access_token` |
+| `name` | `access_token` (`is_logged_in` 보조 쿠키도 함께 설정) |
 | `httpOnly` | `true` |
 | `sameSite` | `lax` |
 | `path` | `/` |
-| `secure` | `production=true`, `local=false` |
+| `secure` | `IDENTITY_WEB_SECURE_COOKIE` 우선, 미설정 시 `x-forwarded-proto`/요청 URL/prod 여부로 결정 |
 | `maxAge` | `expiresInSeconds`(기본 3600초) |
 
 ---
@@ -174,7 +177,7 @@
 
 ### 5.2 Identity 관리 API BFF (`/api/identity/v1/**`)
 
-- **Identity 보호 REST**(게이트웨이가 아닌 Identity 직접)는 브라우저가 **`/api/identity/v1/...`** 로만 호출하고, BFF가 **`{IDENTITY_SERVICE_URL}/api/v1/...`** 로 동일 메서드·쿼리·본문을 프록시한다. 구현: `services/identity-service/web/src/app/api/identity/[[...path]]/route.ts`.
+- **Identity 관리 REST**는 브라우저가 **`/api/identity/v1/...`** 로만 호출하고, BFF가 **`{GATEWAY_URL|WEB_GATEWAY_URL}/api/identity/v1/...`** 로 동일 메서드·쿼리·본문을 프록시한다. 구현: `services/identity-service/web/src/app/api/identity/[[...path]]/route.ts`.
 - `access_token` **httpOnly 쿠키**가 없으면 BFF는 Identity를 호출하지 않고 `401`을 반환한다.
 - 경로는 **`v1`으로 시작하는 세그먼트만** 허용한다(예: 브라우저 `GET /api/identity/v1/me/profile` → 업스트림 `GET /api/v1/me/profile`). **`/api/auth/*`** 는 §2의 전용 BFF 라우트를 쓴다.
 - 응답 본문·상태 코드는 업스트림을 그대로 전달한다(캐시는 `Cache-Control: no-store`).
@@ -202,7 +205,7 @@
 | 항목 | 내용 |
 |------|------|
 | **matcher (정본)** | `/settings/:path*` |
-| **판단 기준** | 요청에 **`access_token` httpOnly 쿠키**가 있고 값이 비어 있지 않으면 통과. **JWT 서명·만료 검증은 여기서 하지 않는다** (쿠키만 없으면 로그인 유도). 토큰 유효성은 `GET /api/auth/session`(§2.1) 등 BFF·업스트림에서 판단한다. |
+| **판단 기준** | 요청에 **`access_token` httpOnly 쿠키**가 있거나, 보조 쿠키 **`is_logged_in=true`** 이면 통과. **JWT 서명·만료 검증은 여기서 하지 않는다** (쿠키만 없으면 로그인 유도). 토큰 유효성은 `GET /api/auth/session`(§2.1) 등 BFF·업스트림에서 판단한다. |
 | **미통과 시** | `307` 리다이렉트 → `/login?next=<원래 pathname>` (`next`는 로그인 후 되돌아갈 경로; 소비 시 오픈 리다이렉트 방지를 위해 `services/identity-service/web/src/lib/auth/safe-next-path.ts` 등으로 검증한다). |
 | **대응 라우트** | 위 접두사마다 App Router **`[[...path]]` optional catch-all** 페이지를 둔다. **사용량 대시보드**는 `services/usage-service/web/src/app/dashboard/[[...path]]/page.tsx` 및 Usage `middleware.ts`를 본다. |
 | **현재 UI 성격** | **설정**은 세션(§2)을 사용한다. 팀 UI는 web-host/Team BFF 경계를 따른다. 서버 측 권한·테넌트 검증은 Identity·게이트웨이에 유지한다(프론트 규칙: `.cursor/rules/project-common-nextjs.mdc`). |
@@ -227,7 +230,7 @@ curl -sS -i -X POST "http://localhost:3000/api/auth/signup" \
 
 ## 7. 로그아웃 쿠키 삭제 규칙
 
-- BFF `POST /api/auth/logout`에서 `access_token` 쿠키를 만료 처리한다.
+- BFF `POST /api/auth/logout`에서 `access_token` 및 `is_logged_in` 쿠키를 만료 처리한다.
 - 저장 시와 동일한 옵션(`path`, `sameSite`, `secure`, `httpOnly`)을 사용한다.
 - `maxAge: 0`과 함께 **`Expires`를 과거 시각**(예: `Thu, 01 Jan 1970 00:00:00 GMT`, 구현에서는 `expires: new Date(0)`)으로 명시해 브라우저 간 삭제를 보장한다.
 
@@ -245,7 +248,7 @@ curl -sS -i -X POST "http://localhost:3000/api/auth/signup" \
 ## 9. 로컬 실행 참고
 
 - **환경 파일:** `services/identity-service/web/.env`(샘플: `.env.example`)  
-  `IDENTITY_SERVICE_URL` 예: `http://localhost:8090`(Identity 기본 포트에 맞출 것; 게이트웨이 `8080`과 혼동 방지). 랜딩·로그인 후 Usage로 갈 때 호스트가 다르면 **`NEXT_PUBLIC_USAGE_WEB_ORIGIN`**(예: `http://localhost:3001`)을 맞춘다(§10.1).
+  `IDENTITY_SERVICE_URL`(로그인/회원가입/비밀번호 재설정/로그아웃 직접 프록시용)과 `GATEWAY_URL` 또는 `WEB_GATEWAY_URL`(세션/외부키/관리 API 프록시용)을 함께 맞춘다. 로컬 `web-edge` 사용 시 기본 게이트웨이 진입은 `http://localhost:8888` 기준이다.
 - **루트 `.env` vs 호스트 `bootRun`:** `docker compose`는 저장소 루트의 **`.env`**만 자동 로드한다. **Identity Spring**을 IDE/`./gradlew bootRun`으로만 띄울 때는 루트 `.env`가 **자동으로 읽히지 않는다** — `POSTGRES_*` 등은 실행 구성·쉘 환경변수로 맞춘다. 반면 **Compose로 뜨는** `identity-web`·`usage-web`·`api-gateway-service` 등은 루트 `.env`의 변수를 받는다.
 - **게이트웨이 스택:** Proxy·게이트웨이를 Compose로 올릴 때 **`GATEWAY_SHARED_SECRET`** 은 비어 있지 않게 유지한다([gateway-proxy.md §5.1](./gateway-proxy.md)).
 - **단일 도메인(`profile: web` + `web-edge`):** 브라우저는 기본 **`http://localhost:8888`**(`WEB_EDGE_PORT`) 한 오리진으로 붙고, 경로 분기는 [`docker/web-edge/nginx.conf.template`](../../docker/web-edge/nginx.conf.template)·[web-split-boundary.md §2.3](./web-split-boundary.md) 정본을 따른다.
@@ -262,9 +265,9 @@ curl -sS -i -X POST "http://localhost:3000/api/auth/signup" \
 - 앱 루트 **`/`** (`services/identity-service/web/src/app/page.tsx`)는 서버 컴포넌트로 메타데이터만 두고, 헤더·히어로 CTA는 클라이언트 컴포넌트 **`LandingHomeWithSession`** (`services/identity-service/web/src/components/landing/landing-header.tsx`)가 담당한다.
 - 마운트 시 브라우저가 동일 오리진으로 **`GET /api/auth/session`** 을 호출할 때 **`fetch(..., { credentials: "include", cache: "no-store" })`** 를 쓴다. 응답은 공통 **`ApiResponse<SessionResponse>`** 로 파싱하고, **`data.authenticated === true`** 이면 로그인된 것으로 본다.
 - **비로그인:** 내비·CTA는 **`/login`**, **`/signup`** 과 동일한 안내다.
-- **로그인됨:** **대시보드** 링크는 Usage `web` 경로 **`/dashboard`** 를 가리키되, 로컬 등에서 Identity와 Usage 호스트가 다르면 **`NEXT_PUBLIC_USAGE_WEB_ORIGIN`**(트레일링 슬래시 없음)을 앞에 붙인 절대 URL이 된다. 구현 헬퍼: **`usageAppHref(path)`** (`services/identity-service/web/src/lib/auth/cross-app-navigation.ts`). **설정** 등 Identity 앱 내부 링크는 **`/settings`** 등 상대 경로로 둔다. 헤더에는 **`로그아웃`** 버튼도 두며, 구현은 **`LogoutButton`** (`services/identity-service/web/src/components/auth/logout-button.tsx`) — 브라우저가 **`POST /api/auth/logout`**(§2 표·§7)을 호출한 뒤 **`/`** 으로 이동한다.
+- **로그인됨:** **대시보드** 링크는 Usage 공개 경로 **`/dashboard`** 로 이동한다. 구현은 `@ai-usage/shell`의 `usageEntryPublicPath()`를 사용한다. **설정** 등 Identity 앱 내부 링크는 **`/settings`** 등 상대 경로를 사용한다. 헤더에는 **`로그아웃`** 버튼(`LogoutButton`)이 있으며, 브라우저가 **`POST /api/auth/logout`**(§2 표·§7)을 호출한 뒤 **`/`** 으로 이동한다.
 - 로그인 후 리다이렉트(`navigateAfterLogin`)도 동일한 오리진 규칙을 쓴다.
-- **크로스 오리진:** 쿠키는 설정한 오리진에만 붙는다. Identity 랜딩에서 세션을 보여 주는 것과 별개로, Usage `web` 쪽 인증·401 처리는 기존 [web-gateway-bff.md](./web-gateway-bff.md)·[web-split-boundary.md §4](./web-split-boundary.md)를 따른다.
+- **단일 오리진 기본:** 로컬/통합 환경에서는 `web-edge` 단일 오리진 경로 분기를 기본으로 한다. Usage 쪽 인증·401 처리는 [web-gateway-bff.md](./web-gateway-bff.md)·[web-split-boundary.md §4](./web-split-boundary.md)를 따른다.
 
 ### 10.2 Vitest(라우트 핸들러·미들웨어)
 
