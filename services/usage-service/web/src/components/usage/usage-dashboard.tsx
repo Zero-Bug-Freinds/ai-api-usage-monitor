@@ -688,7 +688,7 @@ export function UsageDashboard() {
         const rf = customFrom || t
         const rt = customTo || t
         if (Date.parse(`${rt}T12:00:00+09:00`) < Date.parse(`${rf}T12:00:00+09:00`)) {
-          throw new Error("종료일은 시작일보다 빠를 수 없습니다.")
+          throw new Error("종료일은 시작일보다 앞설 수 없습니다.")
         }
         const rangeDays = kstDaysInclusive(rf, rt)
         if (rangeDays > MAX_RANGE_DAYS) {
@@ -1129,7 +1129,7 @@ export function UsageDashboard() {
       <header className="mb-6 flex flex-col gap-4 border-b border-border pb-6 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight">API 사용량</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">사용량 대시보드</h1>
             <span className="rounded-full border border-border bg-muted/50 px-2 py-0.5 text-xs font-medium text-muted-foreground">
               개인
             </span>

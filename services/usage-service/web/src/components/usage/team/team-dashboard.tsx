@@ -196,7 +196,7 @@ export default function TeamDashboard({
         const res = await fetch(teamApiUrl("/api/team/v1/me/teams"), { credentials: "include", headers: { Accept: "application/json" } })
         const json = (await res.json()) as { success?: boolean; data?: unknown; message?: string }
         if (!res.ok || !json.success || !Array.isArray(json.data)) {
-          if (!cancelled) setTeamsErr(typeof json.message === "string" ? json.message : "팀 목록을 네트워크에서 불러오지 못했습니다")
+          if (!cancelled) setTeamsErr(typeof json.message === "string" ? json.message : "팀 목록을 불러오지 못했습니다")
           return
         }
         const list = (json.data as unknown[])
@@ -212,7 +212,7 @@ export default function TeamDashboard({
         setTeams(list)
         setTeamsErr(null)
       } catch {
-        if (!cancelled) setTeamsErr("팀 목록을 네트워크에서 불러오지 못했습니다")
+        if (!cancelled) setTeamsErr("팀 목록을 불러오지 못했습니다")
       }
     })()
     return () => {
@@ -363,7 +363,7 @@ export default function TeamDashboard({
       <header className="mb-6 flex flex-col gap-4 border-b border-border pb-6 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight">팀 사용량</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">팀 사용량 대시보드</h1>
             <span className="rounded-full border border-border bg-muted/50 px-2 py-0.5 text-xs font-medium text-muted-foreground">팀</span>
           </div>
           <p className="text-sm text-muted-foreground">자세한 비용 내역은 &apos;지출&apos; 메뉴를 통해 확인하세요. 집계 구간은 KST 기준입니다.</p>
