@@ -31,7 +31,7 @@ import { formatRequestCount, formatTokenCount, formatUsd, toNumber } from "@/lib
 import { teamUsageBffBase } from "@/lib/usage/team-usage-bff-base"
 
 const PROVIDER_ALL = "__ALL__"
-const TEAM_WEB_PREFIX = "/teams"
+const LAST_TEAM_STORAGE_KEY = "last_team_id"
 
 export type TeamDashboardProps = {
   viewTeamIdFromQuery?: string
@@ -71,17 +71,11 @@ type BffResponse = {
 }
 
 type TeamSummary = { id: string; name: string; createdAt?: string }
-type TeamApiKey = { id: number; alias: string; provider: string; createdAt: string }
+type TeamApiKey = { id: string; alias: string; provider: string; updatedAt: string }
 type PeriodMode = "today" | "7d" | "30d" | "custom"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const AnyLegend = Legend as any
-
-function teamApiUrl(path: string): string {
-  const normalized = path.startsWith("/") ? path : `/${path}`
-  if (typeof window === "undefined") return `${TEAM_WEB_PREFIX}${normalized}`
-  return `${window.location.origin}${TEAM_WEB_PREFIX}${normalized}`
-}
 
 function usageFetchErrorMessage(status: number): string {
   if (status === 400) return "팀/기간 필터를 확인해 주세요."
@@ -124,6 +118,12 @@ function pickOldestTeamId(list: TeamSummary[]): string {
 function pickTeamIdFromSources(list: TeamSummary[], viewQ: string | undefined): string {
   if (list.length === 0) return ""
   if (viewQ && list.some((t) => t.id === viewQ)) return viewQ
+  if (typeof window !== "undefined") {
+    const saved = window.localStorage.getItem(LAST_TEAM_STORAGE_KEY)
+    if (saved && list.some((t) => t.id === saved)) {
+      return saved
+    }
+  }
   return pickOldestTeamId(list)
 }
 
@@ -192,14 +192,19 @@ export default function TeamDashboard({
   React.useEffect(() => {
     let cancelled = false
     void (async () => {
+      const base = teamUsageBffBase()
+      if (!base) {
+        if (!cancelled) setTeamsErr("사용량 API 베이스 URL을 확인할 수 없습니다")
+        return
+      }
       try {
-        const res = await fetch(teamApiUrl("/api/team/v1/me/teams"), { credentials: "include", headers: { Accept: "application/json" } })
-        const json = (await res.json()) as { success?: boolean; data?: unknown; message?: string }
-        if (!res.ok || !json.success || !Array.isArray(json.data)) {
-          if (!cancelled) setTeamsErr(typeof json.message === "string" ? json.message : "팀 목록을 불러오지 못했습니다")
+        const res = await fetch(`${base}/teams`, { credentials: "include", headers: { Accept: "application/json" } })
+        const json = (await res.json()) as { teams?: unknown }
+        if (!res.ok || !Array.isArray(json.teams)) {
+          if (!cancelled) setTeamsErr("팀 목록을 불러오지 못했습니다")
           return
         }
-        const list = (json.data as unknown[])
+        const list = (json.teams as unknown[])
           .map((item): TeamSummary | null => {
             if (!item || typeof item !== "object") return null
             const o = item as Record<string, unknown>
@@ -224,9 +229,14 @@ export default function TeamDashboard({
     setSelectedTeamId((prev) => {
       if (viewTeamIdFromQuery && teams.some((t) => t.id === viewTeamIdFromQuery)) return viewTeamIdFromQuery
       if (prev && teams.some((t) => t.id === prev)) return prev
-      return pickTeamIdFromSources(teams, undefined)
+      return pickTeamIdFromSources(teams, viewTeamIdFromQuery)
     })
   }, [teams, viewTeamIdFromQuery])
+
+  React.useEffect(() => {
+    if (!selectedTeamId || typeof window === "undefined") return
+    window.localStorage.setItem(LAST_TEAM_STORAGE_KEY, selectedTeamId)
+  }, [selectedTeamId])
 
   React.useEffect(() => {
     if (!selectedTeamId) {
@@ -235,27 +245,34 @@ export default function TeamDashboard({
     }
     let cancelled = false
     setKeysLoading(true)
-    fetch(teamApiUrl(`/api/team/v1/teams/${encodeURIComponent(selectedTeamId)}/api-keys`), {
+    const base = teamUsageBffBase()
+    if (!base) {
+      setApiKeys([])
+      setKeysLoading(false)
+      return
+    }
+    fetch(`${base}/teams/${encodeURIComponent(selectedTeamId)}/api-keys`, {
       credentials: "include",
       headers: { Accept: "application/json" },
     })
       .then(async (r) => {
-        const json = (await r.json()) as { success?: boolean; data?: unknown }
-        if (!r.ok || !json.success || !Array.isArray(json.data)) return []
-        return (json.data as unknown[])
+        const json = (await r.json()) as { apiKeys?: unknown }
+        if (!r.ok || !Array.isArray(json.apiKeys)) return []
+        return (json.apiKeys as unknown[])
           .map((item): TeamApiKey | null => {
             if (!item || typeof item !== "object") return null
             const o = item as Record<string, unknown>
-            if (typeof o.id !== "number" || typeof o.alias !== "string" || typeof o.provider !== "string" || typeof o.createdAt !== "string") return null
-            return { id: o.id, alias: o.alias, provider: o.provider, createdAt: o.createdAt }
+            if ((typeof o.id !== "number" && typeof o.id !== "string") || typeof o.alias !== "string" || typeof o.provider !== "string") return null
+            const updatedAt = typeof o.updatedAt === "string" ? o.updatedAt : ""
+            return { id: String(o.id), alias: o.alias, provider: o.provider, updatedAt }
           })
           .filter((x): x is TeamApiKey => x !== null)
-          .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+          .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))
       })
       .then((sorted) => {
         if (cancelled) return
         setApiKeys(sorted)
-        setSelectedApiKeyId((prev) => (prev && sorted.some((k) => String(k.id) === prev) ? prev : sorted[0] ? String(sorted[0].id) : ""))
+        setSelectedApiKeyId((prev) => (prev && sorted.some((k) => k.id === prev) ? prev : sorted[0] ? sorted[0].id : ""))
       })
       .catch(() => {
         if (!cancelled) setApiKeys([])
@@ -357,6 +374,8 @@ export default function TeamDashboard({
     [data?.byModel],
   )
   const hasMainData = (summary?.totalRequests ?? 0) > 0 || (data?.usageSeries ?? []).some((r) => r.requestCount > 0)
+  const hasNoTeams = teams.length === 0
+  const shouldShowNoDataGuide = !hasNoTeams && !!effectiveTeamId && !loading && !error && (!hasMainData || apiKeys.length === 0)
 
   return (
     <div className="w-full min-h-full pb-6">
@@ -426,6 +445,11 @@ export default function TeamDashboard({
       </div>
 
       {teamsErr ? <p className="mb-4 text-sm text-amber-700">{teamsErr}</p> : null}
+      {hasNoTeams ? (
+        <div className="mb-6 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-950 dark:text-amber-100" role="note">
+          팀에 속하게 되면 팀 대시보드 사용이 가능해집니다.
+        </div>
+      ) : null}
       {error ? <p className="mb-6 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p> : null}
       {!effectiveTeamId ? (
         <section className="mb-8 rounded-lg border border-border p-4 shadow-sm">
@@ -478,6 +502,11 @@ export default function TeamDashboard({
             <div className="mt-3 text-xs text-muted-foreground">
               총 요청 {formatRequestCount(rangeRequests)} · 오류 {rangeErrors.toLocaleString("en-US")}건 · 성공률 {successRatePercent.toFixed(1)}% · 총 비용 {formatUsd(rangeCost)} · 총 입력 토큰 {formatTokenCount(rangeTokens)}
             </div>
+            {shouldShowNoDataGuide ? (
+              <div className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-950 dark:text-amber-100" role="note">
+                Api key를 추가하여 AI를 호출하면 API 데이터가 쌓입니다.
+              </div>
+            ) : null}
           </section>
           <div className="mb-8 flex min-w-0 flex-col gap-6">
             <section className="min-w-0 rounded-lg border border-border p-4 shadow-sm">
