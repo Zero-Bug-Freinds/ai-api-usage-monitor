@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class PolicyRecommendationAgentService {
@@ -51,6 +52,7 @@ public class PolicyRecommendationAgentService {
 	private final RecommendationGeminiService recommendationGeminiService;
 	private final RecommendationSnapshotRepository recommendationSnapshotRepository;
 	private final ObjectMapper objectMapper;
+	private final Map<RecommendationCacheKey, RecommendationQueryResponse> recommendationStore = new ConcurrentHashMap<>();
 
 	public PolicyRecommendationAgentService(
 			BillingSignalSnapshotService billingSignalSnapshotService,
@@ -921,6 +923,13 @@ public class PolicyRecommendationAgentService {
 			String reasonMessage,
 			RecommendationConfidenceLevel confidenceLevel,
 			String disclaimer
+	) {
+	}
+
+	private record RecommendationCacheKey(
+			RecommendationScopeType scopeType,
+			String scopeId,
+			String keyId
 	) {
 	}
 
