@@ -111,7 +111,7 @@ public class TeamInternalApiKeyResolveService {
         return switch (providerRaw.trim().toLowerCase(Locale.ROOT)) {
             case "openai" -> TeamApiKeyProvider.OPENAI;
             case "anthropic" -> TeamApiKeyProvider.ANTHROPIC;
-            case "google", "gemini" -> TeamApiKeyProvider.GOOGLE;
+            case "google" -> TeamApiKeyProvider.GOOGLE;
             default -> throw new IllegalArgumentException("지원하지 않는 provider입니다: " + providerRaw);
         };
     }
