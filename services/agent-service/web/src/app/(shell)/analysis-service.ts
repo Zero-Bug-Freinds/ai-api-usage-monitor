@@ -27,6 +27,7 @@ export type ForecastInput = {
   modelUsageDistribution7d: Array<{ model: string; percentage: number }>
   hourlyTokenUsage24h: number[]
   gaps: string[]
+  insufficientForForecast: boolean
 }
 
 type BudgetForecastBatchResponse = {
