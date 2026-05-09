@@ -1,6 +1,6 @@
 # Web(Next.js) ↔ Team Service BFF 계약
 
-버전: 0.11  
+버전: 0.12  
 관련: [web-split-boundary.md](./web-split-boundary.md), [web-identity-bff.md](./web-identity-bff.md) — `/teams` UI 소유·경로: §2.3
 
 ---
@@ -182,6 +182,7 @@
 - 레거시 호환: 내부 저장값/경로에 `GEMINI`가 남아 있어도 외부 BFF 계약의 provider 표기는 `GOOGLE`로 통일한다.
   - 내부 키 조회 API(`GET /internal/team-api-keys/{provider}`)는 `provider=gemini` 별칭을 입력받아 `GOOGLE`로 정규화한다(코드: `TeamInternalApiKeyResolveService`).
   - 부팅 시 `TeamApiKeyProviderMigrationInitializer`가 `team_api_keys`의 `GEMINI` 값을 `GOOGLE`로 정리한다.
+  - **임시 안정화 조치:** DB 혼재 상태로 인한 기동 실패를 막기 위해 부팅 시 `team_api_keys_provider_check`를 재생성하고, 제약조건 허용값에 `GEMINI`/`GOOGLE`를 함께 둔 뒤 데이터를 `GEMINI -> GOOGLE`로 수렴시킨다.
 
 ---
 
