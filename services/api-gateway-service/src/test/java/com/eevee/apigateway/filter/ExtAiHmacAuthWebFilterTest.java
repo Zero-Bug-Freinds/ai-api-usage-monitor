@@ -127,6 +127,30 @@ class ExtAiHmacAuthWebFilterTest {
                 .verify();
     }
 
+    @Test
+    void extRequest_withoutExtUserId_keepsUserHeadersEmpty() {
+        String timestamp = String.valueOf(Instant.now().getEpochSecond());
+        String nonce = "nonce-no-user";
+        String path = "/api/v1/ai/ext/openai/v1/chat/completions";
+        String signature = sign("POST", path, "", timestamp, nonce, null, null);
+        AtomicReference<String> seenUser = new AtomicReference<>("preset");
+
+        MockServerHttpRequest request = MockServerHttpRequest.post(path)
+                .header("X-Web-Edge-Auth", SHARED_SECRET)
+                .header("X-Ext-Key-Id", EXT_KEY_ID)
+                .header("X-Ext-Timestamp", timestamp)
+                .header("X-Ext-Nonce", nonce)
+                .header("X-Ext-Signature", signature)
+                .build();
+
+        StepVerifier.create(filter.filter(MockServerWebExchange.from(request), ex -> {
+                    seenUser.set(ex.getRequest().getHeaders().getFirst("X-User-Id"));
+                    return Mono.empty();
+                }))
+                .verifyComplete();
+        assertThat(seenUser.get()).isNull();
+    }
+
     private static String sign(
             String method,
             String path,
@@ -144,7 +168,7 @@ class ExtAiHmacAuthWebFilterTest {
                 timestamp,
                 nonce,
                 EXT_KEY_ID,
-                extUserId,
+                extUserId == null ? "" : extUserId,
                 teamId == null ? "" : teamId
         );
         try {

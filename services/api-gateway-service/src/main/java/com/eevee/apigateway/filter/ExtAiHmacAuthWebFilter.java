@@ -63,7 +63,7 @@ public class ExtAiHmacAuthWebFilter implements WebFilter {
         String nonce = requiredHeader(request, HDR_EXT_NONCE);
         String bodySha256 = normalizeBodyHash(request.getHeaders().getFirst(HDR_EXT_BODY_SHA256));
         String signature = requiredHeader(request, HDR_EXT_SIGNATURE);
-        String extUserId = requiredHeader(request, HDR_EXT_USER_ID);
+        String extUserId = normalizeOptional(request.getHeaders().getFirst(HDR_EXT_USER_ID));
         String teamId = normalizeOptional(request.getHeaders().getFirst(HDR_TEAM_ID));
 
         if (!keyId.equals(gatewayProperties.getExtAi().getKeyId())) {
@@ -101,8 +101,13 @@ public class ExtAiHmacAuthWebFilter implements WebFilter {
             headers.remove(HDR_EXT_SIGNATURE);
             headers.remove(HDR_EXT_BODY_SHA256);
             headers.remove("Authorization");
-            headers.set(HDR_USER, extUserId);
-            headers.set(HDR_PLATFORM_USER, extUserId);
+            if (hasText(extUserId)) {
+                headers.set(HDR_USER, extUserId);
+                headers.set(HDR_PLATFORM_USER, extUserId);
+            } else {
+                headers.remove(HDR_USER);
+                headers.remove(HDR_PLATFORM_USER);
+            }
             if (hasText(teamId)) {
                 headers.set(HDR_TEAM_ID, teamId);
             } else {
@@ -110,6 +115,11 @@ public class ExtAiHmacAuthWebFilter implements WebFilter {
             }
             headers.set(HDR_SCOPE_TYPE, scopeType);
             headers.set(HDR_GATEWAY_AUTH, gatewayProperties.getSharedSecret());
+            if (hasText(extUserId)) {
+                headers.set(HDR_EXT_USER_ID, extUserId);
+            } else {
+                headers.remove(HDR_EXT_USER_ID);
+            }
             if (!hasText(headers.getFirst(HDR_CORRELATION))) {
                 headers.set(HDR_CORRELATION, nonce);
             }
@@ -138,7 +148,7 @@ public class ExtAiHmacAuthWebFilter implements WebFilter {
                 timestampRaw,
                 nonce,
                 keyId,
-                extUserId,
+                extUserId == null ? "" : extUserId,
                 teamId == null ? "" : teamId
         );
     }
