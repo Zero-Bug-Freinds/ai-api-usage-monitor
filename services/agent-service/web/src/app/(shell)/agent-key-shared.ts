@@ -8,6 +8,7 @@ export type AvailableKeyContext = {
   status: string
   budgetStats?: {
     currentSpendUsd: number
+    lifetimeSpendUsd?: number
     remainingBudgetUsd: number
     budgetUsagePercent: number
     isBudgetExceeded: boolean
@@ -32,6 +33,7 @@ export type TeamBoardItem = {
   monthlyBudgetUsd?: number
   budgetStats?: {
     currentSpendUsd: number
+    lifetimeSpendUsd?: number
     remainingBudgetUsd: number
     budgetUsagePercent: number
     isBudgetExceeded: boolean
@@ -60,18 +62,23 @@ export function resolveTargetKeys(
   if (scope === "PERSONAL") {
     return keys
   }
-  return selectedTeamKeys.map((item: TeamBoardItem) => ({
+  return selectedTeamKeys.map((item: TeamBoardItem) => teamBoardItemToAvailableKeyContext(item))
+}
+
+export function teamBoardItemToAvailableKeyContext(item: TeamBoardItem): AvailableKeyContext {
+  return {
     keyId: item.teamApiKeyId,
     teamIdForBilling: item.teamId,
     keyLabel: item.alias,
     provider: item.provider,
     monthlyBudgetUsd: item.monthlyBudgetUsd ?? 0,
     status: item.status,
+    budgetStats: item.budgetStats,
     providerStats: item.providerStats ?? {
       currentSpendUsd: 0,
       averageDailySpendUsd: 0,
       averageDailyTokenUsage: 0,
       recentDailySpendUsd: [],
     },
-  }))
+  }
 }

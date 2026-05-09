@@ -27,10 +27,13 @@ export async function runBudgetAnalysisFlow(params: {
     setLoadingMessage,
   } = params
   const nextResults: AnalysisResult[] = []
+  const primaryLabel = targetKeys[0]?.keyLabel ?? ""
   setLoadingMessage(
-    scope === "PERSONAL"
-      ? `개인 API 키 사용량을 배치 분석 중입니다... (1/${targetKeys.length})`
-      : `${selectedTeamLabel || `Team ${selectedTeamId}`} 키 사용량을 배치 분석 중입니다... (1/${targetKeys.length})`,
+    targetKeys.length === 1
+      ? `${primaryLabel} 예산·사용량 분석 중...`
+      : scope === "PERSONAL"
+        ? `개인 API 키 사용량을 배치 분석 중입니다... (1/${targetKeys.length})`
+        : `${selectedTeamLabel || `Team ${selectedTeamId}`} 키 사용량을 배치 분석 중입니다... (1/${targetKeys.length})`,
   )
   if (scope === "PERSONAL" && currentUserId == null) {
     return targetKeys.map((keyItem) => ({
@@ -51,43 +54,65 @@ export async function runBudgetAnalysisFlow(params: {
   }
   const forecastByKeyId: Record<number, ForecastInput> = {}
   const billingCycleByKeyId: Record<number, string> = {}
+  const analyzableKeys: AvailableKeyContext[] = []
+  const resultByKeyId: Record<number, AnalysisResult> = {}
   for (const keyItem of targetKeys) {
+    const forecast = resolveForecastInputs(keyItem.providerStats, keyItem.monthlyBudgetUsd)
+    if (forecast.insufficientForForecast) {
+      resultByKeyId[keyItem.keyId] = {
+        keyId: keyItem.keyId,
+        keyLabel: keyItem.keyLabel,
+        provider: keyItem.provider,
+        forecastGaps: forecast.gaps.length > 0 ? forecast.gaps : undefined,
+        error: "사용량 데이터가 없어 소진 예측을 계산할 수 없습니다.",
+      }
+      continue
+    }
     const resolvedTeamIdNumber = Number(resolvedTeamId ?? 0)
     const billingLedgerKey =
       scope === "PERSONAL" ? personalLedgerKey(keyItem.keyId) : teamLedgerKey(resolvedTeamIdNumber, keyItem.keyId)
+    analyzableKeys.push(keyItem)
     billingCycleByKeyId[keyItem.keyId] = (billingByLedgerKey[billingLedgerKey] ?? "").trim()
-    forecastByKeyId[keyItem.keyId] = resolveForecastInputs(keyItem.providerStats, keyItem.monthlyBudgetUsd)
+    forecastByKeyId[keyItem.keyId] = forecast
   }
-  try {
-    const forecastResultByKeyId = await requestBudgetForecastBatch({
-      scope,
-      keyItems: targetKeys,
-      currentUserId,
-      resolvedTeamId: resolvedTeamId == null ? null : Number(resolvedTeamId),
-      forecastByKeyId,
-      billingCycleByKeyId,
-    })
-    for (const keyItem of targetKeys) {
-      const forecast = forecastByKeyId[keyItem.keyId]
-      const data = forecastResultByKeyId[keyItem.keyId]
-      nextResults.push({
-        keyId: keyItem.keyId,
-        keyLabel: keyItem.keyLabel,
-        provider: keyItem.provider,
-        data,
-        forecastGaps: forecast.gaps.length > 0 ? forecast.gaps : undefined,
-        error: data == null ? "분석 결과를 찾을 수 없습니다." : undefined,
+  if (analyzableKeys.length > 0) {
+    try {
+      const forecastResultByKeyId = await requestBudgetForecastBatch({
+        scope,
+        keyItems: analyzableKeys,
+        currentUserId,
+        resolvedTeamId: resolvedTeamId == null ? null : Number(resolvedTeamId),
+        forecastByKeyId,
+        billingCycleByKeyId,
       })
+      for (const keyItem of analyzableKeys) {
+        const forecast = forecastByKeyId[keyItem.keyId]
+        const data = forecastResultByKeyId[keyItem.keyId]
+        resultByKeyId[keyItem.keyId] = {
+          keyId: keyItem.keyId,
+          keyLabel: keyItem.keyLabel,
+          provider: keyItem.provider,
+          data,
+          forecastGaps: forecast.gaps.length > 0 ? forecast.gaps : undefined,
+          error: data == null ? "분석 결과를 찾을 수 없습니다." : undefined,
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "분석 요청 실패"
+      for (const keyItem of analyzableKeys) {
+        resultByKeyId[keyItem.keyId] = {
+          keyId: keyItem.keyId,
+          keyLabel: keyItem.keyLabel,
+          provider: keyItem.provider,
+          error: message,
+        }
+      }
     }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "분석 요청 실패"
-    for (const keyItem of targetKeys) {
-      nextResults.push({
-        keyId: keyItem.keyId,
-        keyLabel: keyItem.keyLabel,
-        provider: keyItem.provider,
-        error: message,
-      })
+  }
+  for (const keyItem of targetKeys) {
+    const result = resultByKeyId[keyItem.keyId]
+    if (result) {
+      nextResults.push(result)
     }
   }
   return nextResults

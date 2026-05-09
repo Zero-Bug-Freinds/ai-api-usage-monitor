@@ -99,7 +99,15 @@ public class TeamApiKeyService {
 
         String encrypted = encryptionUtil.encryptAes256Gcm(normalizedExternalKey);
         TeamApiKeyEntity saved = teamApiKeyRepository.save(
-                TeamApiKeyEntity.register(teamId, provider, normalizedAlias, keyHash, encrypted, monthlyBudgetUsd)
+                TeamApiKeyEntity.register(
+                        teamId,
+                        StringUtils.hasText(actorUserId) ? actorUserId.trim() : null,
+                        provider,
+                        normalizedAlias,
+                        keyHash,
+                        encrypted,
+                        monthlyBudgetUsd
+                )
         );
         TeamApiKeyNotifyContext ctx = teamApiKeyNotifyContext(teamId);
         Instant occurredAt = Instant.now();

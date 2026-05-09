@@ -46,6 +46,13 @@ public class TeamApiKeyEntity {
     @Column(name = "key_alias", nullable = false, length = 100)
     private String keyAlias;
 
+    /**
+     * 키를 등록한 멤버의 사용자 ID. 역조회 응답의 ownerUserId 로 사용한다.
+     * 컬럼 도입 이전 행과의 호환을 위해 nullable 로 둔다.
+     */
+    @Column(name = "created_by_user_id", length = 100)
+    private String createdByUserId;
+
     @Column(name = "key_hash", nullable = false, length = 64)
     private String keyHash;
 
@@ -86,8 +93,21 @@ public class TeamApiKeyEntity {
             String encryptedKey,
             BigDecimal monthlyBudgetUsd
     ) {
+        return register(teamId, null, provider, keyAlias, keyHash, encryptedKey, monthlyBudgetUsd);
+    }
+
+    public static TeamApiKeyEntity register(
+            Long teamId,
+            String createdByUserId,
+            TeamApiKeyProvider provider,
+            String keyAlias,
+            String keyHash,
+            String encryptedKey,
+            BigDecimal monthlyBudgetUsd
+    ) {
         TeamApiKeyEntity entity = new TeamApiKeyEntity();
         entity.teamId = teamId;
+        entity.createdByUserId = createdByUserId;
         entity.provider = provider;
         entity.keyAlias = keyAlias;
         entity.keyHash = keyHash;
@@ -140,6 +160,10 @@ public class TeamApiKeyEntity {
 
     public Long getTeamId() {
         return teamId;
+    }
+
+    public String getCreatedByUserId() {
+        return createdByUserId;
     }
 
     public TeamApiKeyProvider getProvider() {

@@ -75,57 +75,21 @@ public class RecommendationGeminiService {
 		}
 	}
 
+	/**
+	 * Runs one Gemini inference per key so recommendation prompts never mix multiple keys.
+	 */
 	public Map<String, AiRecommendationResult> inferRecommendations(List<AiRecommendationPromptRequest> requests) {
 		if (requests == null || requests.isEmpty()) {
 			return Map.of();
 		}
-		if (properties.apiKey() == null || properties.apiKey().isBlank()) {
-			log.warn("Gemini recommendation batch skipped: API key missing");
-			return Map.of();
-		}
-		String requestId = UUID.randomUUID().toString();
-		UsageAggregate usageAggregate = new UsageAggregate(requestId, "batch");
-		try {
-			String inputJson = objectMapper.writeValueAsString(requests);
-			String prompt = """
-					You are an AI model recommendation assistant for API usage optimization.
-					Return ONLY one raw JSON array.
-					No markdown fences.
-
-					[Input array]
-					%s
-
-					[Rules]
-					- Analyze each item independently.
-					- Preserve every input keyId in output.
-					- Explain recommendation rationale in Korean.
-					- Use one of HIGH, MEDIUM, LOW for confidenceLevel.
-					- Keep reasonMessage concise (<= 2 sentences).
-					- title should be short.
-
-					[Output JSON schema]
-					[
-					  {
-					    "keyId": "string",
-					    "title": "string",
-					    "reasonMessage": "string",
-					    "confidenceLevel": "HIGH|MEDIUM|LOW",
-					    "disclaimer": "string|null"
-					  }
-					]
-					""".formatted(inputJson);
-			Map<String, AiRecommendationResult> primary = inferRecommendationsByPrompt(requestId, 1, prompt, usageAggregate);
-			if (!primary.isEmpty()) {
-				return primary;
+		Map<String, AiRecommendationResult> byKeyId = new LinkedHashMap<>();
+		for (AiRecommendationPromptRequest request : requests) {
+			if (request.keyId() == null || request.keyId().isBlank()) {
+				continue;
 			}
-			String retryPrompt = prompt + "\nDo not omit keyId and required keys. Return valid JSON array only.";
-			return inferRecommendationsByPrompt(requestId, 2, retryPrompt, usageAggregate);
-		} catch (Exception ex) {
-			log.warn("Gemini recommendation batch inference failed: {}", ex.getMessage());
-			return Map.of();
-		} finally {
-			logGeminiUsageSummary(usageAggregate);
+			inferRecommendation(request).ifPresent(result -> byKeyId.put(request.keyId().trim(), result));
 		}
+		return byKeyId;
 	}
 
 	private Optional<AiRecommendationResult> inferRecommendationByPrompt(
@@ -173,67 +137,6 @@ public class RecommendationGeminiService {
 			logGeminiUsage(requestId, keyId, attempt, prompt.length(), null, startedAt, usageAggregate);
 			log.warn("Gemini recommendation attempt failed: {}", ex.getMessage());
 			return Optional.empty();
-		}
-	}
-
-	private Map<String, AiRecommendationResult> inferRecommendationsByPrompt(
-			String requestId,
-			int attempt,
-			String prompt,
-			UsageAggregate usageAggregate
-	) {
-		long startedAt = System.currentTimeMillis();
-		try {
-			String responseBody = callGenerateContent(prompt);
-			if (responseBody == null || responseBody.isBlank()) {
-				logGeminiUsage(requestId, "batch", attempt, prompt.length(), null, startedAt, usageAggregate);
-				return Map.of();
-			}
-			JsonNode root = objectMapper.readTree(responseBody);
-			logGeminiUsage(requestId, "batch", attempt, prompt.length(), root.path("usageMetadata"), startedAt, usageAggregate);
-			JsonNode textNode = root.path("candidates").path(0).path("content").path("parts").path(0).path("text");
-			if (textNode.isMissingNode() || textNode.asText().isBlank()) {
-				return Map.of();
-			}
-			String rawJson = extractJsonPayload(textNode.asText().trim());
-			JsonNode arrayNode = objectMapper.readTree(rawJson);
-			if (!arrayNode.isArray()) {
-				return Map.of();
-			}
-			Map<String, AiRecommendationResult> byKeyId = new LinkedHashMap<>();
-			for (JsonNode recommendation : arrayNode) {
-				String keyId = textOrNull(recommendation.get("keyId"));
-				String title = textOrNull(recommendation.get("title"));
-				String reasonMessage = textOrNull(recommendation.get("reasonMessage"));
-				String confidenceRaw = textOrNull(recommendation.get("confidenceLevel"));
-				String disclaimer = textOrNull(recommendation.get("disclaimer"));
-				if (keyId == null || keyId.isBlank()) {
-					continue;
-				}
-				if (title == null || title.isBlank() || reasonMessage == null || reasonMessage.isBlank() || confidenceRaw == null) {
-					continue;
-				}
-				RecommendationConfidenceLevel confidenceLevel;
-				try {
-					confidenceLevel = RecommendationConfidenceLevel.valueOf(confidenceRaw.trim().toUpperCase());
-				} catch (Exception ex) {
-					continue;
-				}
-				byKeyId.put(
-						keyId.trim(),
-						new AiRecommendationResult(
-								title.trim(),
-								reasonMessage.trim(),
-								confidenceLevel,
-								disclaimer == null || disclaimer.isBlank() ? null : disclaimer.trim()
-						)
-				);
-			}
-			return byKeyId;
-		} catch (Exception ex) {
-			logGeminiUsage(requestId, "batch", attempt, prompt.length(), null, startedAt, usageAggregate);
-			log.warn("Gemini recommendation batch attempt failed: {}", ex.getMessage());
-			return Map.of();
 		}
 	}
 

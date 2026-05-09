@@ -1,6 +1,7 @@
 package com.zerobugfreinds.identity_service.controller;
 
 import com.zerobugfreinds.identity_service.common.ApiResponse;
+import com.zerobugfreinds.identity_service.exception.AmbiguousExternalApiKeyHashException;
 import com.zerobugfreinds.identity_service.exception.ApiKeyLimitExceededException;
 import com.zerobugfreinds.identity_service.exception.AuthContractViolationException;
 import com.zerobugfreinds.identity_service.exception.DuplicateExternalApiKeyAliasException;
@@ -89,6 +90,13 @@ public class GlobalExceptionHandler {
 	@ResponseStatus(HttpStatus.CONFLICT)
 	public ApiResponse<Void> handleDuplicateExternalApiKeyAlias(DuplicateExternalApiKeyAliasException ex) {
 		return failWithFallback(ex.getMessage(), "이미 사용 중인 API 키 별칭입니다");
+	}
+
+	@ExceptionHandler(AmbiguousExternalApiKeyHashException.class)
+	@ResponseStatus(HttpStatus.CONFLICT)
+	public ApiResponse<Void> handleAmbiguousExternalApiKeyHash(AmbiguousExternalApiKeyHashException ex) {
+		log.warn("identity ambiguous external api key lookup message={}", ex.getMessage());
+		return failWithFallback(ex.getMessage(), "동일 해시값에 매칭되는 외부 API 키가 2건 이상입니다");
 	}
 
 	@ExceptionHandler(ExternalApiKeyNotFoundException.class)
