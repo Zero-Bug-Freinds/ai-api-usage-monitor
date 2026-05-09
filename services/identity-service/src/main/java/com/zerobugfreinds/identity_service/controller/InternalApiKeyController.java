@@ -29,7 +29,7 @@ public class InternalApiKeyController {
 	@GetMapping("/{provider}")
 	public ResponseEntity<InternalApiKeyResponse> getByProvider(
 			@PathVariable String provider,
-			@RequestParam Long userId
+			@RequestParam String userId
 	) {
 		try {
 			ExternalApiKeyProvider externalApiKeyProvider = ExternalApiKeyProvider.fromInternalPathSegment(provider);

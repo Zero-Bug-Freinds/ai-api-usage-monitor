@@ -268,8 +268,9 @@ public class ExternalApiKeyService {
 	}
 
 	@Transactional(readOnly = true)
-	public InternalApiKeyResponse resolveInternalKey(Long userId, ExternalApiKeyProvider provider) {
-		if (userId == null) {
+	public InternalApiKeyResponse resolveInternalKey(String userId, ExternalApiKeyProvider provider) {
+		Long resolvedUserId = resolveInternalLookupUserId(userId);
+		if (resolvedUserId == null) {
 			throw new IllegalArgumentException("userId는 필수입니다");
 		}
 		if (provider == null) {
@@ -277,10 +278,27 @@ public class ExternalApiKeyService {
 		}
 		ExternalApiKeyProvider normalizedProvider = normalizeProvider(provider);
 		ExternalApiKeyEntity entity = externalApiKeyRepository
-				.findTopByUserIdAndProviderAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(userId, normalizedProvider)
+				.findTopByUserIdAndProviderAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(resolvedUserId, normalizedProvider)
 				.orElseThrow(() -> new ExternalApiKeyNotFoundException("등록된 API 키를 찾을 수 없습니다"));
 		String plainKey = encryptionUtil.decryptAes256Gcm(entity.getEncryptedKey());
 		return new InternalApiKeyResponse(plainKey, String.valueOf(entity.getId()));
+	}
+
+	private Long resolveInternalLookupUserId(String userIdOrEmail) {
+		if (!StringUtils.hasText(userIdOrEmail)) {
+			return null;
+		}
+		String normalized = userIdOrEmail.trim();
+		if (normalized.contains("@")) {
+			return userRepository.findByEmailIgnoreCase(normalized)
+					.map(user -> user.getId())
+					.orElse(null);
+		}
+		try {
+			return Long.parseLong(normalized);
+		} catch (NumberFormatException ignored) {
+			return null;
+		}
 	}
 
 	@Transactional(readOnly = true)

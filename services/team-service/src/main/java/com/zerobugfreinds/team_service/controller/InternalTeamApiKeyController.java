@@ -24,10 +24,11 @@ public class InternalTeamApiKeyController {
             @PathVariable("provider") String provider,
             @RequestParam("teamId") Long teamId,
             @RequestParam("userId") String userId,
+            @RequestParam(name = "userEmail", required = false) String userEmail,
             @RequestHeader(name = "Authorization", required = false) String authorizationHeader
     ) {
         InternalTeamApiKeyResponse response =
-                teamInternalApiKeyResolveService.resolve(provider, teamId, userId, authorizationHeader);
+                teamInternalApiKeyResolveService.resolve(provider, teamId, userId, userEmail, authorizationHeader);
         return ResponseEntity.ok(response);
     }
 }
