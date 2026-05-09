@@ -12,6 +12,15 @@ spring:
       server:
         webflux:
           routes:
+            # External key-only ingress: protected by ext HMAC filter, not JWT.
+            - id: proxy-ai-ext
+              uri: ${GATEWAY_PROXY_URI:http://proxy-service:8081}
+              predicates:
+                - Path=/api/v1/ai/ext/**
+              filters:
+                - RemoveRequestHeader=Authorization
+                - RewritePath=/api/v1/ai/ext/(?<segment>.*), /proxy/${segment}
+
             # Client Authorization (platform JWT) is validated in SecurityConfiguration; strip before upstream — docs/contracts/gateway-proxy.md §3.1
             - id: proxy-ai
               uri: ${GATEWAY_PROXY_URI:http://proxy-service:8081}
@@ -73,6 +82,12 @@ gateway:
   shared-secret: ${GATEWAY_SHARED_SECRET:local-dev-gateway-shared-secret-do-not-use-in-prod}
   jwt:
     secret: ${GATEWAY_JWT_SECRET:change-this-secret-key-to-at-least-32-bytes}
+  ext-ai:
+    enabled: ${GATEWAY_EXT_AI_ENABLED:false}
+    key-id: ${GATEWAY_EXT_AI_KEY_ID:}
+    hmac-secret: ${GATEWAY_EXT_AI_HMAC_SECRET:}
+    timestamp-skew-seconds: ${GATEWAY_EXT_AI_TIMESTAMP_SKEW_SECONDS:300}
+    nonce-ttl-seconds: ${GATEWAY_EXT_AI_NONCE_TTL_SECONDS:300}
   cors:
     allowed-origins: ${GATEWAY_CORS_ALLOWED_ORIGINS:http://localhost:8888}
 
