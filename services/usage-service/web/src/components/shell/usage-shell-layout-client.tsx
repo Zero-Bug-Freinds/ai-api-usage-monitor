@@ -14,7 +14,7 @@ export function UsageShellLayoutClient({ children }: UsageShellLayoutClientProps
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
 
   return (
-    <div className="flex min-h-full w-full min-w-0 gap-2">
+    <div className="flex min-h-full w-full min-w-0 gap-4">
       <div
         className={[
           "transition-all duration-300 ease-out overflow-hidden",
@@ -26,8 +26,8 @@ export function UsageShellLayoutClient({ children }: UsageShellLayoutClientProps
         </Suspense>
       </div>
 
-      <div className="flex min-w-0 flex-1 gap-2">
-        <div className="flex items-start pt-1">
+      <div className="flex min-w-0 flex-1 gap-2 min-h-0">
+        <div className="flex shrink-0 items-start pt-1">
           <Button
             type="button"
             variant="ghost"
@@ -38,7 +38,7 @@ export function UsageShellLayoutClient({ children }: UsageShellLayoutClientProps
             {isSidebarOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
           </Button>
         </div>
-        <div className="min-w-0 flex-1">{children}</div>
+        <div className="min-h-0 min-w-0 w-full flex-1">{children}</div>
       </div>
     </div>
   )
