@@ -48,11 +48,11 @@ public class UsageBffDashboardController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
-        String requester = currentUser(request);
-        UsageDashboardMode resolvedMode = resolveMode(mode, teamId, userId);
+        Requester requester = currentRequester(request);
+        UsageDashboardMode resolvedMode = resolveMode(mode, teamId, userId, apiKeyId);
         return dashboardContext.fetch(new UsageDashboardQuery(
                 resolvedMode,
-                requester,
+                requester.userId(),
                 blankToNull(teamId),
                 blankToNull(userId),
                 from,
@@ -66,7 +66,10 @@ public class UsageBffDashboardController {
 
     @GetMapping("/teams")
     public TeamSummaryOptionResponse teams(HttpServletRequest request) {
-        return new TeamSummaryOptionResponse(teamBffQueryService.loadTeams(currentUser(request)));
+        Requester requester = currentRequester(request);
+        return new TeamSummaryOptionResponse(
+                teamBffQueryService.loadTeams(requester.userId(), requester.platformUserId())
+        );
     }
 
     @GetMapping("/teams/{teamId}/api-keys")
@@ -74,40 +77,47 @@ public class UsageBffDashboardController {
             HttpServletRequest request,
             @PathVariable String teamId
     ) {
+        Requester requester = currentRequester(request);
         return new TeamApiKeyOptionResponse(
-                teamBffQueryService.loadTeamApiKeys(currentUser(request), blankToNull(teamId))
+                teamBffQueryService.loadTeamApiKeys(requester.userId(), blankToNull(teamId))
         );
     }
 
-    private static UsageDashboardMode resolveMode(String modeRaw, String teamIdRaw, String userIdRaw) {
+    private static UsageDashboardMode resolveMode(String modeRaw, String teamIdRaw, String userIdRaw, String apiKeyIdRaw) {
         String teamId = blankToNull(teamIdRaw);
         String userId = blankToNull(userIdRaw);
+        String apiKeyId = blankToNull(apiKeyIdRaw);
         if (modeRaw != null && !modeRaw.isBlank()) {
             UsageDashboardMode explicit = UsageDashboardMode.valueOf(modeRaw.trim().toUpperCase());
-            if (explicit == UsageDashboardMode.PERSONAL && (teamId != null || userId != null)) {
-                throw new IllegalArgumentException("PERSONAL mode does not accept teamId/userId");
+            if (explicit == UsageDashboardMode.PERSONAL && (teamId != null || userId != null || apiKeyId != null)) {
+                throw new IllegalArgumentException("PERSONAL mode does not accept teamId/userId/apiKeyId");
             }
-            if (explicit == UsageDashboardMode.TEAM_TOTAL && teamId == null) {
-                throw new IllegalArgumentException("TEAM_TOTAL mode requires teamId");
+            if (explicit == UsageDashboardMode.TEAM_TOTAL && (teamId == null || userId != null)) {
+                throw new IllegalArgumentException("TEAM_TOTAL mode requires teamId and disallows userId");
             }
-            if (explicit == UsageDashboardMode.TEAM_MEMBER && (teamId == null || userId == null)) {
-                throw new IllegalArgumentException("TEAM_MEMBER mode requires teamId and userId");
+            if (explicit == UsageDashboardMode.TEAM_MEMBER && (teamId == null || userId == null || apiKeyId != null)) {
+                throw new IllegalArgumentException("TEAM_MEMBER mode requires teamId/userId and disallows apiKeyId");
             }
             return explicit;
         }
         if (teamId == null) {
-            if (userId != null) {
-                throw new IllegalArgumentException("userId without teamId is not allowed");
+            if (userId != null || apiKeyId != null) {
+                throw new IllegalArgumentException("PERSONAL mode does not accept team/member filters");
             }
             return UsageDashboardMode.PERSONAL;
+        }
+        if (userId != null && apiKeyId != null) {
+            throw new IllegalArgumentException("TEAM_MEMBER mode does not accept apiKeyId");
         }
         return userId == null ? UsageDashboardMode.TEAM_TOTAL : UsageDashboardMode.TEAM_MEMBER;
     }
 
-    private static String currentUser(HttpServletRequest request) {
+    private static Requester currentRequester(HttpServletRequest request) {
         Object v = request.getAttribute(UsageGatewayTrustFilter.ATTR_USER_ID);
         if (v instanceof String s && !s.isBlank()) {
-            return s;
+            Object platform = request.getAttribute(UsageGatewayTrustFilter.ATTR_PLATFORM_USER_ID);
+            String platformUserId = (platform instanceof String p && !p.isBlank()) ? p : null;
+            return new Requester(s, platformUserId);
         }
         throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing authenticated user");
     }
@@ -117,5 +127,8 @@ public class UsageBffDashboardController {
             return null;
         }
         return value.trim();
+    }
+
+    private record Requester(String userId, String platformUserId) {
     }
 }

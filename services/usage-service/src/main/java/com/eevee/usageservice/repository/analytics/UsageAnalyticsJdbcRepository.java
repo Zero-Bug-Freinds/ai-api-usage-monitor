@@ -30,6 +30,8 @@ public class UsageAnalyticsJdbcRepository {
      * PostgreSQL: avoid "could not determine data type of parameter" when only {@code IS NULL} binds are used.
      */
     private static final String PROVIDER_FILTER = " AND ((?::text) IS NULL OR provider::text = ?::text)";
+    private static final String PERSONAL_SCOPE_FILTER_SUMMARY = " AND team_id = ''";
+    private static final String PERSONAL_SCOPE_FILTER_LOGS = " AND COALESCE(team_id, '') = ''";
 
     /** Must match {@code UsageDashboardService} date-range zone (KST). */
     private static final String BUCKET_ZONE = "Asia/Seoul";
@@ -53,9 +55,10 @@ public class UsageAnalyticsJdbcRepository {
                        COALESCE(SUM(total_cost), 0)
                 FROM daily_usage_summary
                 WHERE user_id = ?
+                %s
                   AND usage_date >= ((? AT TIME ZONE '%s')::date)
                   AND usage_date < ((? AT TIME ZONE '%s')::date)%s
-                """.formatted(BUCKET_ZONE, BUCKET_ZONE, PROVIDER_FILTER);
+                """.formatted(PERSONAL_SCOPE_FILTER_SUMMARY, BUCKET_ZONE, BUCKET_ZONE, PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         return jdbc.queryForObject(
                 sql,
@@ -155,9 +158,10 @@ public class UsageAnalyticsJdbcRepository {
                 SELECT COALESCE(SUM(total_cost), 0)
                 FROM daily_usage_summary
                 WHERE user_id = ?
+                %s
                   AND usage_date >= ((? AT TIME ZONE '%s')::date)
                   AND usage_date < ((? AT TIME ZONE '%s')::date)%s
-                """.formatted(BUCKET_ZONE, BUCKET_ZONE, PROVIDER_FILTER);
+                """.formatted(PERSONAL_SCOPE_FILTER_SUMMARY, BUCKET_ZONE, BUCKET_ZONE, PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         BigDecimal v = jdbc.queryForObject(
                 sql,
@@ -185,11 +189,12 @@ public class UsageAnalyticsJdbcRepository {
                        COALESCE(SUM(total_cost), 0)
                 FROM daily_usage_summary
                 WHERE user_id = ?
+                %s
                   AND usage_date >= ((? AT TIME ZONE '%s')::date)
                   AND usage_date < ((? AT TIME ZONE '%s')::date)%s
                 GROUP BY usage_date
                 ORDER BY d
-                """.formatted(BUCKET_ZONE, BUCKET_ZONE, PROVIDER_FILTER);
+                """.formatted(PERSONAL_SCOPE_FILTER_SUMMARY, BUCKET_ZONE, BUCKET_ZONE, PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         return jdbc.query(
                 sql,
@@ -302,11 +307,12 @@ public class UsageAnalyticsJdbcRepository {
                        COALESCE(SUM(total_cost), 0)
                 FROM daily_usage_summary
                 WHERE user_id = ?
+                %s
                   AND usage_date >= ((? AT TIME ZONE '%s')::date)
                   AND usage_date < ((? AT TIME ZONE '%s')::date)%s
                 GROUP BY to_char(usage_date, 'YYYY-MM')
                 ORDER BY ym
-                """.formatted(BUCKET_ZONE, BUCKET_ZONE, PROVIDER_FILTER);
+                """.formatted(PERSONAL_SCOPE_FILTER_SUMMARY, BUCKET_ZONE, BUCKET_ZONE, PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         return jdbc.query(
                 sql,
@@ -417,11 +423,12 @@ public class UsageAnalyticsJdbcRepository {
                        COALESCE(SUM(completion_tokens), 0)::bigint
                 FROM daily_usage_summary
                 WHERE user_id = ?
+                %s
                   AND usage_date >= ((? AT TIME ZONE '%s')::date)
                   AND usage_date < ((? AT TIME ZONE '%s')::date)%s
                 GROUP BY model, provider
                 ORDER BY SUM(request_count) DESC
-                """.formatted(BUCKET_ZONE, BUCKET_ZONE, PROVIDER_FILTER);
+                """.formatted(PERSONAL_SCOPE_FILTER_SUMMARY, BUCKET_ZONE, BUCKET_ZONE, PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         return jdbc.query(
                 sql,
@@ -537,10 +544,10 @@ public class UsageAnalyticsJdbcRepository {
                        COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0)::bigint,
                        COALESCE(SUM(estimated_cost), 0)
                 FROM usage_recorded_log
-                WHERE user_id = ? AND occurred_at >= ? AND occurred_at < ?%s
+                WHERE user_id = ?%s AND occurred_at >= ? AND occurred_at < ?%s
                 GROUP BY 1
                 ORDER BY 1
-                """.formatted(BUCKET_ZONE, ERR_PRED, PROVIDER_FILTER);
+                """.formatted(BUCKET_ZONE, ERR_PRED, PERSONAL_SCOPE_FILTER_LOGS, PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         List<HourlyUsagePoint> rows = jdbc.query(
                 sql,
