@@ -104,6 +104,41 @@ public class IdentityUserLookupClient {
         }
     }
 
+    public String findEmailByUserId(String userId) {
+        if (userId == null || userId.isBlank()) {
+            return null;
+        }
+        URI uri = UriComponentsBuilder
+                .fromUriString(identityServiceBaseUrl + "/internal/users/email")
+                .queryParam("userId", userId.trim())
+                .build(true)
+                .toUri();
+        HttpRequest request = HttpRequest.newBuilder(uri)
+                .timeout(Duration.ofSeconds(5))
+                .GET()
+                .header("Accept", "application/json")
+                .build();
+
+        try {
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                return null;
+            }
+            JsonNode root = objectMapper.readTree(response.body());
+            JsonNode data = root.path("data");
+            if (!data.isTextual()) {
+                return null;
+            }
+            String email = data.asText();
+            return (email == null || email.isBlank()) ? null : email.trim().toLowerCase();
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            return null;
+        } catch (IOException ex) {
+            return null;
+        }
+    }
+
     private record UserIdsExistenceRequest(
             List<String> userIds
     ) {

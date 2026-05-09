@@ -233,7 +233,7 @@ function buildForwardHeaders(request: Request, email: string | null, fallbackUse
 function buildBillingForwardHeaders(request: Request, email: string | null, fallbackUserId?: string): Record<string, string> {
   const headers: Record<string, string> = {}
   const userIdFromRequest = userIdFromHeaders(request).trim()
-  const userId = userIdFromRequest.length > 0 ? userIdFromRequest : (fallbackUserId ?? "").trim()
+  const userId = resolveBillingUserId(userIdFromRequest, fallbackUserId)
   if (userId.length > 0) {
     headers["x-user-id"] = userId
   }
@@ -241,6 +241,24 @@ function buildBillingForwardHeaders(request: Request, email: string | null, fall
     headers["x-user-email"] = email.trim()
   }
   return headers
+}
+
+function resolveBillingUserId(primaryUserId?: string, fallbackUserId?: string): string {
+  const primary = (primaryUserId ?? "").trim()
+  const fallback = (fallbackUserId ?? "").trim()
+  // billing 집계는 이메일 userId 기준으로 저장된 레코드가 있어, 숫자형 userId보다 이메일을 우선한다.
+  if (primary.includes("@")) return primary
+  if (fallback.includes("@")) return fallback
+  if (primary.length > 0) return primary
+  return fallback
+}
+
+function billingUserIdCandidates(request: Request, email: string | null, fallbackUserId?: string): string[] {
+  const primary = userIdFromHeaders(request).trim()
+  const fallback = (fallbackUserId ?? "").trim()
+  const mail = (email ?? "").trim()
+  const ordered = [resolveBillingUserId(primary, fallback), mail, fallback, primary]
+  return Array.from(new Set(ordered.filter((value) => value.length > 0)))
 }
 
 function userIdFromHeaders(request: Request): string {
@@ -542,7 +560,8 @@ async function fetchBillingSummaryByKey(
   if (uniqueKeys.length === 0) return byKeyId
 
   const { from, to } = currentMonthRangeKstMonthToDate()
-  const baseHeaders = buildBillingForwardHeaders(request, email, fallbackUserId)
+  const userIdCandidates = billingUserIdCandidates(request, email, fallbackUserId)
+  const baseHeaders = buildBillingForwardHeaders(request, email, userIdCandidates[0] ?? fallbackUserId)
   const gatewaySharedSecret = (
     process.env.GATEWAY_SHARED_SECRET ?? "local-dev-gateway-shared-secret-do-not-use-in-prod"
   ).trim()
@@ -552,28 +571,38 @@ async function fetchBillingSummaryByKey(
 
   for (const key of uniqueKeys) {
     const query = `/api/v1/expenditure/summary?apiKeyId=${encodeURIComponent(String(key.apiKeyId))}&provider=${encodeURIComponent(key.provider)}&from=${from}&to=${to}`
+    let bestTotalCostUsd = -1
+    let bestMonthlyBudgetUsd: number | null = null
     for (const origin of billingServiceOriginCandidates()) {
-      try {
-        const response = await fetchWithTimeout(`${origin}${query}`, CONTEXT_FETCH_TIMEOUT_MS, {
-          method: "GET",
-          headers: baseHeaders,
-        })
-        if (!response.ok) continue
-        const payload = (await response.json()) as ExpenditureSummaryResponse
-        const totalCostUsd = toNumber(payload.totalCostUsd, 0)
-        const rawBudget = payload.monthlyBudgetUsd
-        const monthlyBudgetUsd =
-          rawBudget === null || rawBudget === undefined || String(rawBudget).trim() === ""
-            ? null
-            : toNumber(rawBudget, 0)
-        byKeyId.set(key.apiKeyId, {
-          totalCostUsd,
-          monthlyBudgetUsd: monthlyBudgetUsd != null && monthlyBudgetUsd > 0 ? monthlyBudgetUsd : null,
-        })
-        break
-      } catch {
-        // try next candidate
+      for (const userId of userIdCandidates) {
+        try {
+          const headers = { ...baseHeaders, "x-user-id": userId }
+          const response = await fetchWithTimeout(`${origin}${query}`, CONTEXT_FETCH_TIMEOUT_MS, {
+            method: "GET",
+            headers,
+          })
+          if (!response.ok) continue
+          const payload = (await response.json()) as ExpenditureSummaryResponse
+          const totalCostUsd = toNumber(payload.totalCostUsd, 0)
+          const rawBudget = payload.monthlyBudgetUsd
+          const monthlyBudgetUsd =
+            rawBudget === null || rawBudget === undefined || String(rawBudget).trim() === ""
+              ? null
+              : toNumber(rawBudget, 0)
+          if (totalCostUsd > bestTotalCostUsd) {
+            bestTotalCostUsd = totalCostUsd
+            bestMonthlyBudgetUsd = monthlyBudgetUsd != null && monthlyBudgetUsd > 0 ? monthlyBudgetUsd : null
+          }
+        } catch {
+          // try next candidate
+        }
       }
+    }
+    if (bestTotalCostUsd >= 0) {
+      byKeyId.set(key.apiKeyId, {
+        totalCostUsd: bestTotalCostUsd,
+        monthlyBudgetUsd: bestMonthlyBudgetUsd,
+      })
     }
   }
   return byKeyId
@@ -602,7 +631,8 @@ async function fetchBillingLifetimeSpendByKey(
   })
   if (uniqueKeys.length === 0) return byKeyId
 
-  const baseHeaders = buildBillingForwardHeaders(request, email, fallbackUserId)
+  const userIdCandidates = billingUserIdCandidates(request, email, fallbackUserId)
+  const baseHeaders = buildBillingForwardHeaders(request, email, userIdCandidates[0] ?? fallbackUserId)
   const gatewaySharedSecret = (
     process.env.GATEWAY_SHARED_SECRET ?? "local-dev-gateway-shared-secret-do-not-use-in-prod"
   ).trim()
@@ -613,19 +643,25 @@ async function fetchBillingLifetimeSpendByKey(
 
   for (const key of uniqueKeys) {
     const query = `/api/v1/expenditure/summary?apiKeyId=${encodeURIComponent(String(key.apiKeyId))}&provider=${encodeURIComponent(key.provider)}&from=${from}&to=${to}`
+    let bestTotalCostUsd = -1
     for (const origin of billingServiceOriginCandidates()) {
-      try {
-        const response = await fetchWithTimeout(`${origin}${query}`, CONTEXT_FETCH_TIMEOUT_MS, {
-          method: "GET",
-          headers: baseHeaders,
-        })
-        if (!response.ok) continue
-        const payload = (await response.json()) as ExpenditureSummaryResponse
-        byKeyId.set(key.apiKeyId, toNumber(payload.totalCostUsd, 0))
-        break
-      } catch {
-        // try next candidate
+      for (const userId of userIdCandidates) {
+        try {
+          const headers = { ...baseHeaders, "x-user-id": userId }
+          const response = await fetchWithTimeout(`${origin}${query}`, CONTEXT_FETCH_TIMEOUT_MS, {
+            method: "GET",
+            headers,
+          })
+          if (!response.ok) continue
+          const payload = (await response.json()) as ExpenditureSummaryResponse
+          bestTotalCostUsd = Math.max(bestTotalCostUsd, toNumber(payload.totalCostUsd, 0))
+        } catch {
+          // try next candidate
+        }
       }
+    }
+    if (bestTotalCostUsd >= 0) {
+      byKeyId.set(key.apiKeyId, bestTotalCostUsd)
     }
   }
   return byKeyId
@@ -737,7 +773,7 @@ export async function GET(request: Request) {
       ...keys.map((item) => ({ apiKeyId: item.keyId, provider: item.provider })),
       ...teamApiKeys.map((item) => ({ apiKeyId: item.teamApiKeyId, provider: item.provider })),
     ]
-    const fallbackBillingUserId = currentUserId != null ? String(currentUserId) : undefined
+    const fallbackBillingUserId = resolvedIdentifier.email ?? (currentUserId != null ? String(currentUserId) : undefined)
     const [billingSummaryByKey, lifetimeSpendByKey] = await Promise.all([
       fetchBillingSummaryByKey(request, allKnownKeys, resolvedEmailHeader, fallbackBillingUserId),
       fetchBillingLifetimeSpendByKey(request, allKnownKeys, resolvedEmailHeader, fallbackBillingUserId),

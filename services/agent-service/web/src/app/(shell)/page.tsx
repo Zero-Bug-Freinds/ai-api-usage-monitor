@@ -572,6 +572,43 @@ export default function AgentPage() {
 
   const isAnyLoading = loadingTarget != null
   const contextActionsDisabled = contextRefreshing || isAnyLoading
+  const resultByKeyId = useMemo(
+    () => new Map<number, AnalysisResult>(results.map((item: AnalysisResult) => [item.keyId, item])),
+    [results],
+  )
+
+  const renderKeyInsightSummary = (result: AnalysisResult | undefined) => {
+    if (!result) return null
+    const metrics = result.recommendation?.metricsContext
+    const details = result.recommendation?.recommendationDetails
+    const candidates = details?.candidates ?? []
+    if (!metrics && candidates.length === 0) return null
+    return (
+      <div className="mt-2 rounded-md border border-dashed bg-muted/30 p-2 text-[11px] text-muted-foreground">
+        <p className="font-medium text-foreground">요약 지표</p>
+        {metrics ? (
+          <div className="mt-1 space-y-0.5">
+            <p>토큰 롤업(윈도우): {metrics.totalTokensUsed ?? 0}</p>
+            <p>입출력 비율: {metrics.inputOutputRatio ?? "N/A"}</p>
+            <p>
+              평균 지연:{" "}
+              {metrics.averageLatencyMs == null || !Number.isFinite(Number(metrics.averageLatencyMs))
+                ? "N/A"
+                : `${Number(metrics.averageLatencyMs).toFixed(0)} ms`}
+            </p>
+          </div>
+        ) : null}
+        {candidates.length > 0 ? (
+          <p className="mt-1">
+            추천 모델: {candidates.slice(0, 2).map((candidate) => candidate.modelName).join(", ")}
+            {candidates.length > 2 ? " ..." : ""}
+          </p>
+        ) : (
+          <p className="mt-1">추천 모델 후보 없음</p>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="grid min-h-[70vh] gap-4 p-4 md:grid-cols-12">
@@ -615,6 +652,7 @@ export default function AgentPage() {
                 {item.keyLabel}
                 <span className="text-xs"> ({item.provider})</span>
                 <AgentKeyBudgetSummary monthlyBudgetUsd={item.monthlyBudgetUsd} budgetStats={item.budgetStats} />
+                {renderKeyInsightSummary(resultByKeyId.get(item.keyId))}
                 <div className="mt-1 flex flex-col gap-1 border-t border-border/60 pt-1">
                   <div className="flex items-center justify-between gap-2">
                     <label className="text-[11px] text-muted-foreground" htmlFor={`billing-p-${item.keyId}`}>
@@ -726,6 +764,7 @@ export default function AgentPage() {
                     monthlyBudgetUsd={item.monthlyBudgetUsd ?? 0}
                     budgetStats={item.budgetStats}
                   />
+                  {renderKeyInsightSummary(resultByKeyId.get(item.teamApiKeyId))}
                   <div className="mt-1 flex flex-col gap-1 border-t border-border/60 pt-1">
                     <div className="flex items-center justify-between gap-2">
                       <label
@@ -883,8 +922,7 @@ export default function AgentPage() {
                       </div>
                     ) : null}
 
-                    {result.recommendation?.status === "RECOMMENDATION_AVAILABLE" &&
-                    result.recommendation.recommendationDetails ? (
+                    {result.recommendation?.recommendationDetails ? (
                       <div className="space-y-2 rounded-md border bg-background p-3">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <p className="text-sm font-semibold">{result.recommendation.recommendationDetails.title}</p>
@@ -917,57 +955,78 @@ export default function AgentPage() {
                         {result.recommendation.recommendationDetails.disclaimer ? (
                           <p className="text-xs text-amber-700">{result.recommendation.recommendationDetails.disclaimer}</p>
                         ) : null}
-                        {result.recommendation.metricsContext ? (
-                          <div className="space-y-2 rounded-md border border-dashed bg-muted/30 p-2">
-                            <p className="text-xs font-medium text-muted-foreground">추천 근거 지표</p>
-                            <div className="grid gap-2 md:grid-cols-2">
-                              {(() => {
-                                const ratio = parseInputOutputRatio(result.recommendation?.metricsContext?.inputOutputRatio)
-                                const dominance = ratioDominance(ratio)
-                                return (
-                                  <div className="space-y-1 rounded border bg-background px-2 py-1.5">
-                                    <div className="flex items-center justify-between">
-                                      <p className="text-xs font-medium">입출력 비율</p>
-                                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${dominance.className}`}>
-                                        {dominance.label}
-                                      </span>
-                                    </div>
-                                    <p className="text-xs text-muted-foreground">
-                                      {result.recommendation?.metricsContext?.inputOutputRatio ?? "N/A"}
-                                    </p>
-                                    <div className="h-1.5 w-full overflow-hidden rounded bg-muted">
-                                      <div className="h-full bg-blue-500" style={{ width: `${dominance.inputPct}%` }} />
-                                    </div>
-                                    <p className="text-[10px] text-muted-foreground">
-                                      input {dominance.inputPct.toFixed(0)}% / output {dominance.outputPct.toFixed(0)}%
-                                    </p>
-                                  </div>
-                                )
-                              })()}
-                              {(() => {
-                                const rawLatency = result.recommendation?.metricsContext?.averageLatencyMs
-                                const latency = rawLatency == null ? null : Number(rawLatency)
-                                const latencyMeta = latencyStatusNullable(latency)
-                                return (
-                                  <div className="space-y-1 rounded border bg-background px-2 py-1.5">
-                                    <div className="flex items-center justify-between">
-                                      <p className="text-xs font-medium">최근 평균 지연</p>
-                                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${latencyMeta.className}`}>
-                                        {latencyMeta.label}
-                                      </span>
-                                    </div>
-                                    <p className="text-xs text-muted-foreground">
-                                      {latency == null || !Number.isFinite(latency) ? "N/A" : `${latency.toFixed(0)} ms`}
-                                    </p>
-                                    <div className="h-1.5 w-full overflow-hidden rounded bg-muted">
-                                      <div className="h-full bg-amber-500" style={{ width: `${latencyMeta.progress}%` }} />
-                                    </div>
-                                  </div>
-                                )
-                              })()}
-                            </div>
-                          </div>
-                        ) : null}
+                      </div>
+                    ) : result.recommendation?.status === "NO_RECOMMENDATION" ? (
+                      <div className="rounded-md border border-dashed bg-background p-3 text-xs text-muted-foreground">
+                        <p>추천 생성 조건을 만족하지 않아 결과가 비어 있습니다.</p>
+                        <p className="mt-1">
+                          생성 시각:{" "}
+                          {result.recommendation.generatedAt
+                            ? new Date(result.recommendation.generatedAt).toLocaleString()
+                            : "N/A"}
+                        </p>
+                        <p className="mt-1">과금 신호/토큰 지표가 쌓인 뒤 다시 시도해 주세요.</p>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">추천 결과가 없습니다. 해당 키 옆의 추천을 눌러 주세요.</p>
+                    )}
+
+                    {result.recommendation?.metricsContext ? (
+                      <div className="space-y-2 rounded-md border border-dashed bg-muted/30 p-2">
+                        <p className="text-xs font-medium text-muted-foreground">추천 근거 지표</p>
+                        <div className="grid gap-2 md:grid-cols-2">
+                          {(() => {
+                            const ratio = parseInputOutputRatio(result.recommendation?.metricsContext?.inputOutputRatio)
+                            const dominance = ratioDominance(ratio)
+                            return (
+                              <div className="space-y-1 rounded border bg-background px-2 py-1.5">
+                                <div className="flex items-center justify-between">
+                                  <p className="text-xs font-medium">입출력 비율</p>
+                                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${dominance.className}`}>
+                                    {dominance.label}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                  {result.recommendation?.metricsContext?.inputOutputRatio ?? "N/A"}
+                                </p>
+                                <div className="h-1.5 w-full overflow-hidden rounded bg-muted">
+                                  <div className="h-full bg-blue-500" style={{ width: `${dominance.inputPct}%` }} />
+                                </div>
+                                <p className="text-[10px] text-muted-foreground">
+                                  input {dominance.inputPct.toFixed(0)}% / output {dominance.outputPct.toFixed(0)}%
+                                </p>
+                              </div>
+                            )
+                          })()}
+                          {(() => {
+                            const rawLatency = result.recommendation?.metricsContext?.averageLatencyMs
+                            const latency = rawLatency == null ? null : Number(rawLatency)
+                            const latencyMeta = latencyStatusNullable(latency)
+                            return (
+                              <div className="space-y-1 rounded border bg-background px-2 py-1.5">
+                                <div className="flex items-center justify-between">
+                                  <p className="text-xs font-medium">최근 평균 지연</p>
+                                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${latencyMeta.className}`}>
+                                    {latencyMeta.label}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                  {latency == null || !Number.isFinite(latency) ? "N/A" : `${latency.toFixed(0)} ms`}
+                                </p>
+                                <div className="h-1.5 w-full overflow-hidden rounded bg-muted">
+                                  <div className="h-full bg-amber-500" style={{ width: `${latencyMeta.progress}%` }} />
+                                </div>
+                              </div>
+                            )
+                          })()}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {result.recommendation?.recommendationDetails?.candidates != null &&
+                    result.recommendation.recommendationDetails.candidates.length > 0 ? (
+                      <div className="rounded-md border bg-background p-3">
+                        <p className="mb-2 text-xs font-medium text-muted-foreground">추천 모델 후보</p>
                         <ul className="space-y-1 text-sm">
                           {result.recommendation.recommendationDetails.candidates.map((candidate) => (
                             <li key={`${result.keyId}-${candidate.modelName}`} className="rounded border px-2 py-1">
@@ -984,20 +1043,9 @@ export default function AgentPage() {
                           ))}
                         </ul>
                       </div>
-                    ) : result.recommendation?.status === "NO_RECOMMENDATION" ? (
-                      <div className="rounded-md border border-dashed bg-background p-3 text-xs text-muted-foreground">
-                        <p>추천 생성 조건을 만족하지 않아 결과가 비어 있습니다.</p>
-                        <p className="mt-1">
-                          생성 시각:{" "}
-                          {result.recommendation.generatedAt
-                            ? new Date(result.recommendation.generatedAt).toLocaleString()
-                            : "N/A"}
-                        </p>
-                        <p className="mt-1">과금 신호/토큰 지표가 쌓인 뒤 다시 시도해 주세요.</p>
-                      </div>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">추천 결과가 없습니다. 해당 키 옆의 추천을 눌러 주세요.</p>
-                    )}
+                    ) : result.recommendation != null ? (
+                      <p className="text-xs text-muted-foreground">추천 모델 후보가 아직 생성되지 않았습니다.</p>
+                    ) : null}
                   </div>
 
                   <div className="space-y-2 rounded-md border border-dashed bg-muted/20 p-3 lg:order-1">

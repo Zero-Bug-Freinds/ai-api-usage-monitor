@@ -29,6 +29,7 @@ import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -170,6 +171,19 @@ public class UserService {
 		return userRepository.findAllById(numericUserIds).stream()
 				.map(user -> String.valueOf(user.getId()))
 				.collect(LinkedHashSet::new, Set::add, Set::addAll);
+	}
+
+	@Transactional(readOnly = true)
+	public Optional<String> findEmailByUserId(String rawUserId) {
+		if (rawUserId == null || rawUserId.isBlank()) {
+			return Optional.empty();
+		}
+		try {
+			Long userId = Long.parseLong(rawUserId.trim());
+			return userRepository.findById(userId).map(User::getEmail);
+		} catch (NumberFormatException ignored) {
+			return Optional.empty();
+		}
 	}
 
 	@Transactional(readOnly = true)
