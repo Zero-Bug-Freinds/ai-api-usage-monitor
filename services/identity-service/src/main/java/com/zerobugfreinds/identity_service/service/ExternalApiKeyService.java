@@ -5,8 +5,10 @@ import com.zerobugfreinds.identity.events.ExternalApiKeyDeletedEvent;
 import com.zerobugfreinds.identity.events.ExternalApiKeyBudgetChangedEvent;
 import com.zerobugfreinds.identity.events.ExternalApiKeyStatus;
 import com.zerobugfreinds.identity.events.ExternalApiKeyStatusChangedEvent;
+import com.zerobugfreinds.identity_service.dto.InternalApiKeyLookupResponse;
 import com.zerobugfreinds.identity_service.dto.InternalApiKeyResponse;
 import com.zerobugfreinds.identity_service.entity.ExternalApiKeyEntity;
+import com.zerobugfreinds.identity_service.exception.AmbiguousExternalApiKeyHashException;
 import com.zerobugfreinds.identity_service.exception.DuplicateExternalApiKeyAliasException;
 import com.zerobugfreinds.identity_service.exception.DuplicateExternalApiKeyException;
 import com.zerobugfreinds.identity_service.exception.ExternalApiKeyAlreadyPendingDeletionException;
@@ -215,9 +217,60 @@ public class ExternalApiKeyService {
 		return entity;
 	}
 
+	/**
+	 * Proxy 등 내부 호출자가 클라이언트에게서 받은 외부 API 키의 해시값으로
+	 * 어느 사용자의 어떤 키인지 역추적할 때 사용한다.
+	 *
+	 * <p>해시는 등록 시 사용한 {@link com.zerobugfreinds.identity_service.util.EncryptionUtil#sha256HexForUniqueness}
+	 * 와 동일한 방식(provider name + NUL + 평문 키 → SHA-256 hex)을 가정한다.</p>
+	 *
+	 * <p>활성 키와 삭제 예정 키 모두 결과에 포함하여, 호출자가 상태값(ACTIVE / DELETION_REQUESTED)
+	 * 을 보고 게이트 처리할 수 있게 한다. 동일 해시로 여러 행이 매칭되면
+	 * {@link AmbiguousExternalApiKeyHashException} 으로 409 Conflict 를 유도한다.</p>
+	 */
 	@Transactional(readOnly = true)
-	public InternalApiKeyResponse resolveInternalKey(Long userId, ExternalApiKeyProvider provider) {
-		if (userId == null) {
+	public InternalApiKeyLookupResponse lookupByHashedKey(ExternalApiKeyProvider provider, String hashedKey) {
+		if (provider == null) {
+			throw new IllegalArgumentException("provider는 필수입니다");
+		}
+		if (!StringUtils.hasText(hashedKey)) {
+			throw new IllegalArgumentException("hashedKey는 필수입니다");
+		}
+		ExternalApiKeyProvider normalizedProvider = normalizeProvider(provider);
+		String normalizedHash = hashedKey.trim().toLowerCase();
+		List<ExternalApiKeyEntity> matches =
+				externalApiKeyRepository.findAllByProviderAndKeyHash(normalizedProvider, normalizedHash);
+		if (matches.isEmpty()) {
+			throw new ExternalApiKeyNotFoundException("해당 해시값에 매칭되는 외부 API 키를 찾을 수 없습니다");
+		}
+		if (matches.size() > 1) {
+			log.warn(
+					"[AUDIT] external_api_key_lookup_ambiguous provider={} matchCount={} hashPrefix={}",
+					normalizedProvider.name(),
+					matches.size(),
+					normalizedHash.length() >= 8 ? normalizedHash.substring(0, 8) : normalizedHash
+			);
+			throw new AmbiguousExternalApiKeyHashException(
+					"동일한 해시값에 매칭되는 외부 API 키가 2건 이상입니다"
+			);
+		}
+		ExternalApiKeyEntity entity = matches.get(0);
+		ExternalApiKeyStatus status = entity.isPendingDeletion()
+				? ExternalApiKeyStatus.DELETION_REQUESTED
+				: ExternalApiKeyStatus.ACTIVE;
+		return new InternalApiKeyLookupResponse(
+				String.valueOf(entity.getId()),
+				entity.getUserId(),
+				status.name(),
+				entity.getKeyAlias(),
+				InternalApiKeyLookupResponse.SCOPE_USER
+		);
+	}
+
+	@Transactional(readOnly = true)
+	public InternalApiKeyResponse resolveInternalKey(String userId, ExternalApiKeyProvider provider) {
+		Long resolvedUserId = resolveInternalLookupUserId(userId);
+		if (resolvedUserId == null) {
 			throw new IllegalArgumentException("userId는 필수입니다");
 		}
 		if (provider == null) {
@@ -225,10 +278,27 @@ public class ExternalApiKeyService {
 		}
 		ExternalApiKeyProvider normalizedProvider = normalizeProvider(provider);
 		ExternalApiKeyEntity entity = externalApiKeyRepository
-				.findTopByUserIdAndProviderAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(userId, normalizedProvider)
+				.findTopByUserIdAndProviderAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(resolvedUserId, normalizedProvider)
 				.orElseThrow(() -> new ExternalApiKeyNotFoundException("등록된 API 키를 찾을 수 없습니다"));
 		String plainKey = encryptionUtil.decryptAes256Gcm(entity.getEncryptedKey());
 		return new InternalApiKeyResponse(plainKey, String.valueOf(entity.getId()));
+	}
+
+	private Long resolveInternalLookupUserId(String userIdOrEmail) {
+		if (!StringUtils.hasText(userIdOrEmail)) {
+			return null;
+		}
+		String normalized = userIdOrEmail.trim();
+		if (normalized.contains("@")) {
+			return userRepository.findByEmailIgnoreCase(normalized)
+					.map(user -> user.getId())
+					.orElse(null);
+		}
+		try {
+			return Long.parseLong(normalized);
+		} catch (NumberFormatException ignored) {
+			return null;
+		}
 	}
 
 	@Transactional(readOnly = true)

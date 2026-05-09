@@ -6,13 +6,19 @@ import {
   type AvailableKeyContext,
   type TeamBoardItem,
   type TeamGroup,
-  resolveTargetKeys,
+  teamBoardItemToAvailableKeyContext,
 } from "./agent-key-shared"
 import type { AnalysisResult } from "./agent-result-shared"
 import { runBudgetAnalysisFlow } from "./analysis-flow"
 import { runRecommendationFlow } from "./recommendation-flow"
 
 type AnalysisAction = "ANALYSIS" | "RECOMMENDATION"
+
+type LoadingTarget = {
+  scope: AnalysisScope
+  keyId: number
+  action: AnalysisAction
+}
 
 type ModelCatalogSnapshot = {
   source: string
@@ -105,6 +111,7 @@ type AvailableContextKeyPayload = {
   status: string
   budgetStats?: {
     currentSpendUsd: number
+    lifetimeSpendUsd?: number
     remainingBudgetUsd: number
     budgetUsagePercent: number
     isBudgetExceeded: boolean
@@ -129,6 +136,65 @@ function formatBillingMetric(value: number | null | undefined): string {
     return "표시 불가 — 결제일 미입력"
   }
   return `${value}일`
+}
+
+/** 과금 웹 `formatUsd`와 동일 규칙(소액 4자리, 미만은 임계 라벨). */
+function formatAgentUsd(value: number): string {
+  if (!Number.isFinite(value)) {
+    return "—"
+  }
+  const decimals = 4
+  const minLabel = 0.0001
+  if (value > 0 && value < minLabel) {
+    return `<$${minLabel.toFixed(decimals)}`
+  }
+  return `$${value.toFixed(decimals)}`
+}
+
+function AgentKeyBudgetSummary({
+  monthlyBudgetUsd,
+  budgetStats,
+}: {
+  monthlyBudgetUsd: number
+  budgetStats?: AvailableKeyContext["budgetStats"]
+}) {
+  const monthSpend = budgetStats?.currentSpendUsd ?? 0
+  const lifetimeSpend = budgetStats?.lifetimeSpendUsd ?? 0
+  const monthly = Number.isFinite(monthlyBudgetUsd) ? monthlyBudgetUsd : 0
+  const remaining = budgetStats?.remainingBudgetUsd ?? Math.max(0, monthly - monthSpend)
+  const pct =
+    budgetStats?.budgetUsagePercent ??
+    (monthly > 0 && Number.isFinite(monthSpend) ? (monthSpend / monthly) * 100 : 0)
+
+  if (monthly <= 0) {
+    return (
+      <div className="space-y-0.5 text-xs text-muted-foreground">
+        <p className="leading-snug">
+          누적 지출(최근 400일) {formatAgentUsd(lifetimeSpend)}
+          <span className="text-[10px] text-muted-foreground"> · 월 예산 미설정</span>
+        </p>
+        <p className="text-[10px] leading-snug">
+          당월 지출 {formatAgentUsd(monthSpend)} (진행률·잔여는 월 예산이 있을 때만 계산)
+        </p>
+        <p className="text-[10px] leading-snug">월 예산은 identity·과금 요약에 값이 있으면 여기에도 맞춰집니다.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-0.5 text-xs text-muted-foreground">
+      <p className="leading-snug">
+        누적 지출(최근 400일) {formatAgentUsd(lifetimeSpend)} / 월 예산 ${monthly.toFixed(2)} (당월 잔여 ${remaining.toFixed(2)})
+      </p>
+      <p className="text-[10px] leading-snug text-muted-foreground">
+        당월 지출 {formatAgentUsd(monthSpend)} · 진행률은 당월 기준
+      </p>
+      <div className="flex items-center justify-between gap-2 text-[11px]">
+        <span className="text-muted-foreground">진행률(당월)</span>
+        <span className="tabular-nums font-medium text-foreground">{pct.toFixed(1)}%</span>
+      </div>
+    </div>
+  )
 }
 
 const MANUAL_BILLING_STORAGE_PREFIX = "agent.manualBillingCycleEnd."
@@ -210,20 +276,28 @@ function resolveForecastInputs(
   modelUsageDistribution7d: Array<{ model: string; percentage: number }>
   hourlyTokenUsage24h: number[]
   gaps: string[]
-  sufficientForForecast: boolean
+  insufficientForForecast: boolean
 } {
   const gaps: string[] = []
   const spendFromPrediction = stats.averageDailySpendUsd
   const tokensFromPrediction = stats.averageDailyTokenUsage
   const billedSpend = stats.currentSpendUsd
+  const recentDailySpendUsd = (stats.recentDailySpendUsd ?? [])
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value >= 0)
+    .slice(-7)
+  const hasUsageEvidence =
+    spendFromPrediction > 0 || tokensFromPrediction > 0 || billedSpend > 0 || recentDailySpendUsd.some((value) => value > 0)
+  const insufficientForForecast = !hasUsageEvidence
+  if (insufficientForForecast) {
+    gaps.push("사용량 이벤트가 없어 소진 예측을 계산할 수 없습니다. 키를 사용한 뒤 다시 시도해 주세요.")
+  }
 
   let averageDailySpendUsd = spendFromPrediction
   if (averageDailySpendUsd <= 0 && billedSpend > 0) {
     averageDailySpendUsd = billedSpend / 7
-  } else if (averageDailySpendUsd <= 0 && billedSpend <= 0 && monthlyBudgetUsd > 0) {
-    averageDailySpendUsd = monthlyBudgetUsd / 30
   } else if (averageDailySpendUsd <= 0) {
-    averageDailySpendUsd = 0.01
+    averageDailySpendUsd = 0.000001
   }
 
   const averageDailyTokenUsage = tokensFromPrediction > 0 ? tokensFromPrediction : 1
@@ -231,11 +305,6 @@ function resolveForecastInputs(
   const estimatedDaysByBudget =
     averageDailySpendUsd > 0 ? Math.max(remainingBudgetUsd / averageDailySpendUsd, 0) : 0
   const remainingTokens = Math.max(Math.round(averageDailyTokenUsage * estimatedDaysByBudget), 1)
-
-  const recentDailySpendUsd = (stats.recentDailySpendUsd ?? [])
-    .map((value) => Number(value))
-    .filter((value) => Number.isFinite(value) && value >= 0)
-    .slice(-7)
 
   const recentDailyTokenUsage7d = Array.from({ length: 7 }, (_, index) => {
     const spend = recentDailySpendUsd[index] ?? averageDailySpendUsd
@@ -252,8 +321,6 @@ function resolveForecastInputs(
     return Math.max(0, Math.round((averageDailyTokenUsage / 24) * multiplier))
   })
 
-  const sufficientForForecast = true
-
   return {
     averageDailySpendUsd,
     averageDailyTokenUsage,
@@ -263,7 +330,7 @@ function resolveForecastInputs(
     modelUsageDistribution7d,
     hourlyTokenUsage24h,
     gaps,
-    sufficientForForecast,
+    insufficientForForecast,
   }
 }
 
@@ -296,7 +363,7 @@ function localizeAssistantMessage(message: string): string {
 }
 
 export default function AgentPage() {
-  const [loadingAction, setLoadingAction] = useState<AnalysisAction | null>(null)
+  const [loadingTarget, setLoadingTarget] = useState<LoadingTarget | null>(null)
   const [loadingMessage, setLoadingMessage] = useState<string>("")
   const [results, setResults] = useState<AnalysisResult[]>([])
   const [keys, setKeys] = useState<AvailableKeyContext[]>([])
@@ -308,6 +375,7 @@ export default function AgentPage() {
   const [currentUserId, setCurrentUserId] = useState<number | null>(null)
   const [modelCatalog, setModelCatalog] = useState<ModelCatalogSnapshot | null>(null)
   const [resultsHydrated, setResultsHydrated] = useState<boolean>(false)
+  const [contextRefreshing, setContextRefreshing] = useState<boolean>(false)
   const modelCatalogStats = useMemo(() => {
     if (!modelCatalog) return null
     const activeModels = modelCatalog.models.filter((model: ModelCatalogSnapshot["models"][number]) => {
@@ -427,14 +495,31 @@ export default function AgentPage() {
     }
   }
 
-  const runAnalysis = async (scope: AnalysisScope, action: AnalysisAction) => {
+  const refreshAvailableContext = async () => {
+    if (contextRefreshing) {
+      return
+    }
+    setContextRefreshing(true)
+    try {
+      await loadAvailableContext()
+    } finally {
+      setContextRefreshing(false)
+    }
+  }
+
+  const runAnalysisForKey = async (scope: AnalysisScope, targetKey: AvailableKeyContext, action: AnalysisAction) => {
     if (scope === "TEAM" && selectedTeamId == null) {
       return
     }
-    const targetKeys: AvailableKeyContext[] = resolveTargetKeys(scope, keys, selectedTeamKeys)
-    if (targetKeys.length === 0) return
+    const targetKeys: AvailableKeyContext[] = [targetKey]
+    const teamIdForFlow =
+      scope === "TEAM" ? (targetKey.teamIdForBilling ?? selectedTeamId) : selectedTeamId
+    const teamLabelForFlow =
+      scope === "TEAM"
+        ? teamGroups.find((group: TeamGroup) => group.teamId === teamIdForFlow)?.teamName ?? selectedTeamLabel
+        : selectedTeamLabel
 
-    setLoadingAction(action)
+    setLoadingTarget({ scope, keyId: targetKey.keyId, action })
     try {
       const nextResults =
         action === "ANALYSIS"
@@ -442,8 +527,8 @@ export default function AgentPage() {
               scope,
               targetKeys,
               currentUserId,
-              selectedTeamId,
-              selectedTeamLabel,
+              selectedTeamId: teamIdForFlow,
+              selectedTeamLabel: teamLabelForFlow,
               billingByLedgerKey,
               personalLedgerKey: ledgerKeyPersonal,
               teamLedgerKey: ledgerKeyTeam,
@@ -454,24 +539,107 @@ export default function AgentPage() {
               scope,
               targetKeys,
               currentUserId,
-              selectedTeamId,
-              selectedTeamLabel,
+              selectedTeamId: teamIdForFlow,
+              selectedTeamLabel: teamLabelForFlow,
               setLoadingMessage,
             })
 
-      // 버튼을 누를 때마다 해당 요청 결과만 화면에 표시한다 (이전 결과는 보관하지 않음).
-      setResults(nextResults)
+      const nextResult = nextResults[0]
+      if (nextResult) {
+        setResults((prev: AnalysisResult[]) => {
+          const previous = prev.find((item: AnalysisResult) => item.keyId === nextResult.keyId)
+          if (!previous) {
+            return [nextResult]
+          }
+          const merged: AnalysisResult = {
+            ...previous,
+            ...nextResult,
+            data: nextResult.data ?? previous.data,
+            recommendation: nextResult.recommendation ?? previous.recommendation,
+            forecastGaps: nextResult.forecastGaps ?? previous.forecastGaps,
+          }
+          return [merged]
+        })
+      }
     } finally {
-      setLoadingAction(null)
+      setLoadingTarget(null)
       setLoadingMessage("")
     }
+  }
+
+  const isRowLoading = (scope: AnalysisScope, keyId: number, action: AnalysisAction): boolean =>
+    loadingTarget?.scope === scope && loadingTarget.keyId === keyId && loadingTarget.action === action
+
+  const isAnyLoading = loadingTarget != null
+  const contextActionsDisabled = contextRefreshing || isAnyLoading
+  const resultByKeyId = useMemo(
+    () => new Map<number, AnalysisResult>(results.map((item: AnalysisResult) => [item.keyId, item])),
+    [results],
+  )
+
+  const renderKeyInsightSummary = (result: AnalysisResult | undefined) => {
+    if (!result) return null
+    const metrics = result.recommendation?.metricsContext
+    const details = result.recommendation?.recommendationDetails
+    const candidates = details?.candidates ?? []
+    if (!metrics && candidates.length === 0) return null
+    return (
+      <div className="mt-2 rounded-md border border-dashed bg-muted/30 p-2 text-[11px] text-muted-foreground">
+        <p className="font-medium text-foreground">요약 지표</p>
+        {metrics ? (
+          <div className="mt-1 space-y-0.5">
+            <p>토큰 롤업(윈도우): {metrics.totalTokensUsed ?? 0}</p>
+            <p>입출력 비율: {metrics.inputOutputRatio ?? "N/A"}</p>
+            <p>
+              평균 지연:{" "}
+              {metrics.averageLatencyMs == null || !Number.isFinite(Number(metrics.averageLatencyMs))
+                ? "N/A"
+                : `${Number(metrics.averageLatencyMs).toFixed(0)} ms`}
+            </p>
+          </div>
+        ) : null}
+        {candidates.length > 0 ? (
+          <p className="mt-1">
+            추천 모델: {candidates.slice(0, 2).map((candidate) => candidate.modelName).join(", ")}
+            {candidates.length > 2 ? " ..." : ""}
+          </p>
+        ) : (
+          <p className="mt-1">추천 모델 후보 없음</p>
+        )}
+      </div>
+    )
   }
 
   return (
     <div className="grid min-h-[70vh] gap-4 p-4 md:grid-cols-12">
       <aside className="space-y-4 rounded-xl border bg-card p-4 md:col-span-3">
+        {isAnyLoading ? (
+          <div
+            className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs shadow-sm"
+            role="status"
+            aria-live="polite"
+          >
+            <p className="font-semibold text-foreground">
+              {loadingTarget?.action === "ANALYSIS" ? "예산·사용량 분석 중" : "모델 추천 분석 중"}
+            </p>
+            <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+              {loadingMessage || "잠시만 기다려 주세요. 완료되면 오른쪽에 결과가 표시됩니다."}
+            </p>
+          </div>
+        ) : null}
+
         <div className="space-y-2">
-          <h3 className="text-sm font-semibold">개인 API 키</h3>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold">개인 API 키</h3>
+            <button
+              type="button"
+              className="shrink-0 rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium text-foreground hover:bg-muted/60 disabled:opacity-60"
+              disabled={contextActionsDisabled}
+              onClick={() => void refreshAvailableContext()}
+            >
+              {contextRefreshing ? "불러오는 중…" : "목록 새로고침"}
+            </button>
+          </div>
           <p className="text-[11px] leading-snug text-muted-foreground">
             키마다 콘솔의 다음 결제·청구일을 넣으면 해당 키 예측에만 반영됩니다. 이 브라우저에만 저장됩니다.
           </p>
@@ -483,18 +651,29 @@ export default function AgentPage() {
               <li key={item.keyId} className="rounded-md border px-2 py-1">
                 {item.keyLabel}
                 <span className="text-xs"> ({item.provider})</span>
-                <div className="text-xs text-muted-foreground">
-                  예산 ${((item.budgetStats?.remainingBudgetUsd ?? item.monthlyBudgetUsd) || 0).toFixed(2)} / 사용률{" "}
-                  {((item.budgetStats?.budgetUsagePercent ?? 0) || 0).toFixed(1)}%
-                </div>
+                <AgentKeyBudgetSummary monthlyBudgetUsd={item.monthlyBudgetUsd} budgetStats={item.budgetStats} />
+                {renderKeyInsightSummary(resultByKeyId.get(item.keyId))}
                 <div className="mt-1 flex flex-col gap-1 border-t border-border/60 pt-1">
-                  <label className="text-[11px] text-muted-foreground" htmlFor={`billing-p-${item.keyId}`}>
-                    다음 결제일
-                  </label>
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-[11px] text-muted-foreground" htmlFor={`billing-p-${item.keyId}`}>
+                      다음 결제일
+                    </label>
+                    <span
+                      className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                        (billingByLedgerKey[ledgerKeyPersonal(item.keyId)] ?? "").trim()
+                          ? "bg-emerald-100 text-emerald-800"
+                          : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {(billingByLedgerKey[ledgerKeyPersonal(item.keyId)] ?? "").trim() ? "선택됨" : "미선택"}
+                    </span>
+                  </div>
                   <div className="flex flex-wrap items-center gap-1">
                     <input
                       id={`billing-p-${item.keyId}`}
                       type="date"
+                      title="달력에서 결제일 선택"
+                      aria-label={`${item.keyLabel} 다음 결제일 선택`}
                       className="min-w-0 flex-1 rounded border bg-background px-1 py-0.5 text-xs"
                       value={billingByLedgerKey[ledgerKeyPersonal(item.keyId)] ?? ""}
                       onChange={(event: ChangeEvent<HTMLInputElement>) => {
@@ -518,6 +697,24 @@ export default function AgentPage() {
                       </button>
                     ) : null}
                   </div>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1">
+                  <button
+                    type="button"
+                    className="rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground disabled:opacity-60"
+                    disabled={isAnyLoading}
+                    onClick={() => void runAnalysisForKey("PERSONAL", item, "ANALYSIS")}
+                  >
+                    {isRowLoading("PERSONAL", item.keyId, "ANALYSIS") ? "분석 중..." : "분석"}
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium disabled:opacity-60"
+                    disabled={isAnyLoading}
+                    onClick={() => void runAnalysisForKey("PERSONAL", item, "RECOMMENDATION")}
+                  >
+                    {isRowLoading("PERSONAL", item.keyId, "RECOMMENDATION") ? "추천 중..." : "추천"}
+                  </button>
                 </div>
               </li>
             ))}
@@ -563,21 +760,37 @@ export default function AgentPage() {
               {selectedTeamKeys.map((item: TeamBoardItem) => (
                 <li key={`${item.teamId}-${item.teamApiKeyId}`} className="rounded-md border px-2 py-1">
                   {item.alias}
-                  <div className="text-xs text-muted-foreground">
-                    예산 ${((item.budgetStats?.remainingBudgetUsd ?? item.monthlyBudgetUsd ?? 0) || 0).toFixed(2)} / 사용률{" "}
-                    {((item.budgetStats?.budgetUsagePercent ?? 0) || 0).toFixed(1)}%
-                  </div>
+                  <AgentKeyBudgetSummary
+                    monthlyBudgetUsd={item.monthlyBudgetUsd ?? 0}
+                    budgetStats={item.budgetStats}
+                  />
+                  {renderKeyInsightSummary(resultByKeyId.get(item.teamApiKeyId))}
                   <div className="mt-1 flex flex-col gap-1 border-t border-border/60 pt-1">
-                    <label
-                      className="text-[11px] text-muted-foreground"
-                      htmlFor={`billing-t-${item.teamId}-${item.teamApiKeyId}`}
-                    >
-                      다음 결제일
-                    </label>
+                    <div className="flex items-center justify-between gap-2">
+                      <label
+                        className="text-[11px] text-muted-foreground"
+                        htmlFor={`billing-t-${item.teamId}-${item.teamApiKeyId}`}
+                      >
+                        다음 결제일
+                      </label>
+                      <span
+                        className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                          (billingByLedgerKey[ledgerKeyTeam(item.teamId, item.teamApiKeyId)] ?? "").trim()
+                            ? "bg-emerald-100 text-emerald-800"
+                            : "bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        {(billingByLedgerKey[ledgerKeyTeam(item.teamId, item.teamApiKeyId)] ?? "").trim()
+                          ? "선택됨"
+                          : "미선택"}
+                      </span>
+                    </div>
                     <div className="flex flex-wrap items-center gap-1">
                       <input
                         id={`billing-t-${item.teamId}-${item.teamApiKeyId}`}
                         type="date"
+                        title="달력에서 결제일 선택"
+                        aria-label={`${item.alias} 다음 결제일 선택`}
                         className="min-w-0 flex-1 rounded border bg-background px-1 py-0.5 text-xs"
                         value={billingByLedgerKey[ledgerKeyTeam(item.teamId, item.teamApiKeyId)] ?? ""}
                         onChange={(event: ChangeEvent<HTMLInputElement>) => {
@@ -602,6 +815,26 @@ export default function AgentPage() {
                       ) : null}
                     </div>
                   </div>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    <button
+                      type="button"
+                      className="rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground disabled:opacity-60"
+                      disabled={isAnyLoading}
+                      onClick={() => void runAnalysisForKey("TEAM", teamBoardItemToAvailableKeyContext(item), "ANALYSIS")}
+                    >
+                      {isRowLoading("TEAM", item.teamApiKeyId, "ANALYSIS") ? "분석 중..." : "분석"}
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium disabled:opacity-60"
+                      disabled={isAnyLoading}
+                      onClick={() =>
+                        void runAnalysisForKey("TEAM", teamBoardItemToAvailableKeyContext(item), "RECOMMENDATION")
+                      }
+                    >
+                      {isRowLoading("TEAM", item.teamApiKeyId, "RECOMMENDATION") ? "추천 중..." : "추천"}
+                    </button>
+                  </div>
                 </li>
               ))}
               {selectedTeamId != null && selectedTeamKeys.length === 0 ? (
@@ -619,46 +852,15 @@ export default function AgentPage() {
           )}
         </div>
 
-        <div className="grid gap-2">
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60"
-              onClick={() => void runAnalysis("PERSONAL", "ANALYSIS")}
-              disabled={loadingAction != null || keys.length === 0}
-            >
-              {loadingAction === "ANALYSIS" ? "분석 로딩..." : "개인 키 분석"}
-            </button>
-            <button
-              type="button"
-              className="w-full rounded-md border bg-background px-4 py-2 text-sm font-medium disabled:opacity-60"
-              onClick={() => void runAnalysis("PERSONAL", "RECOMMENDATION")}
-              disabled={loadingAction != null || keys.length === 0}
-            >
-              {loadingAction === "RECOMMENDATION" ? "추천 로딩..." : "개인 키 추천"}
-            </button>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60"
-              onClick={() => void runAnalysis("TEAM", "ANALYSIS")}
-              disabled={loadingAction != null || selectedTeamId == null || selectedTeamKeys.length === 0}
-            >
-              {loadingAction === "ANALYSIS" ? "분석 로딩..." : "팀 키 분석"}
-            </button>
-            <button
-              type="button"
-              className="w-full rounded-md border bg-background px-4 py-2 text-sm font-medium disabled:opacity-60"
-              onClick={() => void runAnalysis("TEAM", "RECOMMENDATION")}
-              disabled={loadingAction != null || selectedTeamId == null || selectedTeamKeys.length === 0}
-            >
-              {loadingAction === "RECOMMENDATION" ? "추천 로딩..." : "팀 키 추천"}
-            </button>
-          </div>
-        </div>
         <div className="rounded-md border border-dashed bg-muted/30 px-2 py-1.5 text-xs text-muted-foreground">
-          분석/추천 버튼은 각각 해당 요청만 호출합니다.
+          <p>각 키의 분석·추천은 해당 키의 데이터만 AI 요청에 포함합니다.</p>
+          <p className="mt-1 text-[11px] leading-snug">
+            <span className="font-medium">누적 지출(최근 400일)</span>은 billing `summary(from,to)`를 활용한 최근 400일 합입니다.{" "}
+            <span className="font-medium">당월 지출·진행률·잔여</span>는{" "}
+            <span className="font-medium">월 1일~오늘</span>과 동일한 방식으로, 요약·스냅샷을 합친 값입니다.
+            과금 서비스가 오래되면 누적 API가 없을 수 있으니 배포를 맞추고, 숫자가 비면{" "}
+            <span className="font-medium">목록 새로고침</span>을 눌러 보세요.
+          </p>
         </div>
         {modelCatalog ? (
           <div className="rounded-md border border-dashed bg-muted/30 p-2 text-xs text-muted-foreground">
@@ -709,7 +911,7 @@ export default function AgentPage() {
                 <div className="grid gap-3 lg:grid-cols-2">
                   <div className="space-y-2 rounded-md border border-dashed bg-muted/20 p-3 lg:order-2">
                     <p className="text-xs font-medium text-muted-foreground">모델 추천</p>
-                    {loadingAction === "RECOMMENDATION" ? (
+                    {loadingTarget?.keyId === result.keyId && loadingTarget.action === "RECOMMENDATION" ? (
                       <div className="rounded-md border bg-background p-3 text-xs text-muted-foreground">
                         {loadingMessage || "추천 로딩 중..."}
                       </div>
@@ -720,8 +922,7 @@ export default function AgentPage() {
                       </div>
                     ) : null}
 
-                    {result.recommendation?.status === "RECOMMENDATION_AVAILABLE" &&
-                    result.recommendation.recommendationDetails ? (
+                    {result.recommendation?.recommendationDetails ? (
                       <div className="space-y-2 rounded-md border bg-background p-3">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <p className="text-sm font-semibold">{result.recommendation.recommendationDetails.title}</p>
@@ -754,57 +955,78 @@ export default function AgentPage() {
                         {result.recommendation.recommendationDetails.disclaimer ? (
                           <p className="text-xs text-amber-700">{result.recommendation.recommendationDetails.disclaimer}</p>
                         ) : null}
-                        {result.recommendation.metricsContext ? (
-                          <div className="space-y-2 rounded-md border border-dashed bg-muted/30 p-2">
-                            <p className="text-xs font-medium text-muted-foreground">추천 근거 지표</p>
-                            <div className="grid gap-2 md:grid-cols-2">
-                              {(() => {
-                                const ratio = parseInputOutputRatio(result.recommendation?.metricsContext?.inputOutputRatio)
-                                const dominance = ratioDominance(ratio)
-                                return (
-                                  <div className="space-y-1 rounded border bg-background px-2 py-1.5">
-                                    <div className="flex items-center justify-between">
-                                      <p className="text-xs font-medium">입출력 비율</p>
-                                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${dominance.className}`}>
-                                        {dominance.label}
-                                      </span>
-                                    </div>
-                                    <p className="text-xs text-muted-foreground">
-                                      {result.recommendation?.metricsContext?.inputOutputRatio ?? "N/A"}
-                                    </p>
-                                    <div className="h-1.5 w-full overflow-hidden rounded bg-muted">
-                                      <div className="h-full bg-blue-500" style={{ width: `${dominance.inputPct}%` }} />
-                                    </div>
-                                    <p className="text-[10px] text-muted-foreground">
-                                      input {dominance.inputPct.toFixed(0)}% / output {dominance.outputPct.toFixed(0)}%
-                                    </p>
-                                  </div>
-                                )
-                              })()}
-                              {(() => {
-                                const rawLatency = result.recommendation?.metricsContext?.averageLatencyMs
-                                const latency = rawLatency == null ? null : Number(rawLatency)
-                                const latencyMeta = latencyStatusNullable(latency)
-                                return (
-                                  <div className="space-y-1 rounded border bg-background px-2 py-1.5">
-                                    <div className="flex items-center justify-between">
-                                      <p className="text-xs font-medium">최근 평균 지연</p>
-                                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${latencyMeta.className}`}>
-                                        {latencyMeta.label}
-                                      </span>
-                                    </div>
-                                    <p className="text-xs text-muted-foreground">
-                                      {latency == null || !Number.isFinite(latency) ? "N/A" : `${latency.toFixed(0)} ms`}
-                                    </p>
-                                    <div className="h-1.5 w-full overflow-hidden rounded bg-muted">
-                                      <div className="h-full bg-amber-500" style={{ width: `${latencyMeta.progress}%` }} />
-                                    </div>
-                                  </div>
-                                )
-                              })()}
-                            </div>
-                          </div>
-                        ) : null}
+                      </div>
+                    ) : result.recommendation?.status === "NO_RECOMMENDATION" ? (
+                      <div className="rounded-md border border-dashed bg-background p-3 text-xs text-muted-foreground">
+                        <p>추천 생성 조건을 만족하지 않아 결과가 비어 있습니다.</p>
+                        <p className="mt-1">
+                          생성 시각:{" "}
+                          {result.recommendation.generatedAt
+                            ? new Date(result.recommendation.generatedAt).toLocaleString()
+                            : "N/A"}
+                        </p>
+                        <p className="mt-1">과금 신호/토큰 지표가 쌓인 뒤 다시 시도해 주세요.</p>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">추천 결과가 없습니다. 해당 키 옆의 추천을 눌러 주세요.</p>
+                    )}
+
+                    {result.recommendation?.metricsContext ? (
+                      <div className="space-y-2 rounded-md border border-dashed bg-muted/30 p-2">
+                        <p className="text-xs font-medium text-muted-foreground">추천 근거 지표</p>
+                        <div className="grid gap-2 md:grid-cols-2">
+                          {(() => {
+                            const ratio = parseInputOutputRatio(result.recommendation?.metricsContext?.inputOutputRatio)
+                            const dominance = ratioDominance(ratio)
+                            return (
+                              <div className="space-y-1 rounded border bg-background px-2 py-1.5">
+                                <div className="flex items-center justify-between">
+                                  <p className="text-xs font-medium">입출력 비율</p>
+                                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${dominance.className}`}>
+                                    {dominance.label}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                  {result.recommendation?.metricsContext?.inputOutputRatio ?? "N/A"}
+                                </p>
+                                <div className="h-1.5 w-full overflow-hidden rounded bg-muted">
+                                  <div className="h-full bg-blue-500" style={{ width: `${dominance.inputPct}%` }} />
+                                </div>
+                                <p className="text-[10px] text-muted-foreground">
+                                  input {dominance.inputPct.toFixed(0)}% / output {dominance.outputPct.toFixed(0)}%
+                                </p>
+                              </div>
+                            )
+                          })()}
+                          {(() => {
+                            const rawLatency = result.recommendation?.metricsContext?.averageLatencyMs
+                            const latency = rawLatency == null ? null : Number(rawLatency)
+                            const latencyMeta = latencyStatusNullable(latency)
+                            return (
+                              <div className="space-y-1 rounded border bg-background px-2 py-1.5">
+                                <div className="flex items-center justify-between">
+                                  <p className="text-xs font-medium">최근 평균 지연</p>
+                                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${latencyMeta.className}`}>
+                                    {latencyMeta.label}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                  {latency == null || !Number.isFinite(latency) ? "N/A" : `${latency.toFixed(0)} ms`}
+                                </p>
+                                <div className="h-1.5 w-full overflow-hidden rounded bg-muted">
+                                  <div className="h-full bg-amber-500" style={{ width: `${latencyMeta.progress}%` }} />
+                                </div>
+                              </div>
+                            )
+                          })()}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {result.recommendation?.recommendationDetails?.candidates != null &&
+                    result.recommendation.recommendationDetails.candidates.length > 0 ? (
+                      <div className="rounded-md border bg-background p-3">
+                        <p className="mb-2 text-xs font-medium text-muted-foreground">추천 모델 후보</p>
                         <ul className="space-y-1 text-sm">
                           {result.recommendation.recommendationDetails.candidates.map((candidate) => (
                             <li key={`${result.keyId}-${candidate.modelName}`} className="rounded border px-2 py-1">
@@ -821,14 +1043,14 @@ export default function AgentPage() {
                           ))}
                         </ul>
                       </div>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">추천 결과가 없습니다. 상단의 추천 버튼을 눌러주세요.</p>
-                    )}
+                    ) : result.recommendation != null ? (
+                      <p className="text-xs text-muted-foreground">추천 모델 후보가 아직 생성되지 않았습니다.</p>
+                    ) : null}
                   </div>
 
                   <div className="space-y-2 rounded-md border border-dashed bg-muted/20 p-3 lg:order-1">
                     <p className="text-xs font-medium text-muted-foreground">예산 분석</p>
-                    {loadingAction === "ANALYSIS" ? (
+                    {loadingTarget?.keyId === result.keyId && loadingTarget.action === "ANALYSIS" ? (
                       <div className="rounded-md border bg-background p-3 text-xs text-muted-foreground">
                         {loadingMessage || "분석 로딩 중..."}
                       </div>
@@ -889,7 +1111,7 @@ export default function AgentPage() {
                         </ul>
                       </>
                     ) : (
-                      <p className="text-xs text-muted-foreground">분석 결과가 없습니다. 상단의 분석 버튼을 눌러주세요.</p>
+                      <p className="text-xs text-muted-foreground">분석 결과가 없습니다. 해당 키 옆의 분석을 눌러 주세요.</p>
                     )}
                   </div>
                 </div>

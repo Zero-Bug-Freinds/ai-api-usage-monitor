@@ -12,10 +12,13 @@ export async function runRecommendationFlow(params: {
 }): Promise<AnalysisResult[]> {
   const { scope, targetKeys, currentUserId, selectedTeamId, selectedTeamLabel, setLoadingMessage } = params
   const nextResults: AnalysisResult[] = []
+  const primaryLabel = targetKeys[0]?.keyLabel ?? ""
   setLoadingMessage(
-    scope === "PERSONAL"
-      ? `개인 API 키 모델 추천을 배치 분석 중입니다... (1/${targetKeys.length})`
-      : `${selectedTeamLabel || `Team ${selectedTeamId}`} 키 모델 추천을 배치 분석 중입니다... (1/${targetKeys.length})`,
+    targetKeys.length === 1
+      ? `${primaryLabel} 모델 추천 분석 중...`
+      : scope === "PERSONAL"
+        ? `개인 API 키 모델 추천을 배치 분석 중입니다... (1/${targetKeys.length})`
+        : `${selectedTeamLabel || `Team ${selectedTeamId}`} 키 모델 추천을 배치 분석 중입니다... (1/${targetKeys.length})`,
   )
   if (scope === "PERSONAL" && currentUserId == null) {
     return targetKeys.map((keyItem) => ({

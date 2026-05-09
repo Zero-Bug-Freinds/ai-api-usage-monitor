@@ -84,6 +84,10 @@ public class IdentityUserSyncService {
                     .map(IdentityUserSyncEntity::getEmail)
                     .filter(StringUtils::hasText)
                     .ifPresent(email -> candidates.add(email.trim().toLowerCase()));
+            String emailFromIdentityService = identityUserLookupClient.findEmailByUserId(normalized);
+            if (StringUtils.hasText(emailFromIdentityService)) {
+                candidates.add(emailFromIdentityService.trim().toLowerCase());
+            }
         }
         return candidates;
     }

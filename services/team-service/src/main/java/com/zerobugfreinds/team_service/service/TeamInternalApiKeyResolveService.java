@@ -16,7 +16,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.util.LinkedHashSet;
 import java.util.Locale;
+import java.util.Set;
 
 @Service
 public class TeamInternalApiKeyResolveService {
@@ -24,28 +26,47 @@ public class TeamInternalApiKeyResolveService {
 
     private final TeamMemberRepository teamMemberRepository;
     private final TeamApiKeyRepository teamApiKeyRepository;
+    private final IdentityUserSyncService identityUserSyncService;
     private final EncryptionUtil encryptionUtil;
     private final String internalToken;
 
     public TeamInternalApiKeyResolveService(
             TeamMemberRepository teamMemberRepository,
             TeamApiKeyRepository teamApiKeyRepository,
+            IdentityUserSyncService identityUserSyncService,
             EncryptionUtil encryptionUtil,
             @Value("${team.internal.api-token:${PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN:}}") String internalToken
     ) {
         this.teamMemberRepository = teamMemberRepository;
         this.teamApiKeyRepository = teamApiKeyRepository;
+        this.identityUserSyncService = identityUserSyncService;
         this.encryptionUtil = encryptionUtil;
         this.internalToken = internalToken;
     }
 
     @Transactional(readOnly = true)
-    public InternalTeamApiKeyResponse resolve(String providerRaw, Long teamId, String userId, String authorizationHeader) {
+    public InternalTeamApiKeyResponse resolve(
+            String providerRaw,
+            Long teamId,
+            String userId,
+            String userEmail,
+            String authorizationHeader
+    ) {
         validateInternalToken(authorizationHeader);
         validateInputs(teamId, userId);
         TeamApiKeyProvider provider = normalizeProvider(providerRaw);
 
-        if (!teamMemberRepository.existsByTeamIdAndUserId(teamId, userId.trim())) {
+        String normalizedUserId = userId.trim();
+        Set<String> candidates = new LinkedHashSet<>(identityUserSyncService.resolveMembershipLookupCandidates(normalizedUserId));
+        if (StringUtils.hasText(userEmail)) {
+            candidates.add(userEmail.trim().toLowerCase(Locale.ROOT));
+        }
+        if (candidates.isEmpty()) {
+            candidates = Set.of(normalizedUserId);
+        }
+        boolean isTeamMember = candidates.stream()
+                .anyMatch(candidate -> teamMemberRepository.existsByTeamIdAndUserId(teamId, candidate));
+        if (!isTeamMember) {
             log.warn("Internal team key lookup denied teamId={} provider={} user={}",
                     teamId, provider.name(), mask(userId));
             throw new ForbiddenTeamAccessException("팀 멤버만 팀 API 키를 조회할 수 있습니다");
@@ -90,7 +111,7 @@ public class TeamInternalApiKeyResolveService {
         return switch (providerRaw.trim().toLowerCase(Locale.ROOT)) {
             case "openai" -> TeamApiKeyProvider.OPENAI;
             case "anthropic" -> TeamApiKeyProvider.ANTHROPIC;
-            case "google", "gemini" -> TeamApiKeyProvider.GOOGLE;
+            case "google" -> TeamApiKeyProvider.GOOGLE;
             default -> throw new IllegalArgumentException("지원하지 않는 provider입니다: " + providerRaw);
         };
     }
