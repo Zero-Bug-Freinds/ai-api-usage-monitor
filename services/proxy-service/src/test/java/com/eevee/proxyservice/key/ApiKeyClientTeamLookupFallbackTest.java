@@ -35,6 +35,9 @@ class ApiKeyClientTeamLookupFallbackTest {
         AtomicInteger geminiCalls = new AtomicInteger();
         startServer(exchange -> {
             String path = exchange.getRequestURI().getPath();
+            String query = exchange.getRequestURI().getQuery();
+            assertThat(query).contains("userId=user-1");
+            assertThat(query).contains("teamId=123");
             if (path.endsWith("/google")) {
                 googleCalls.incrementAndGet();
                 respond(exchange, 404, "{\"message\":\"not found\"}");
