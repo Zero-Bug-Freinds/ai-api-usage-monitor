@@ -16,6 +16,8 @@ public class UserContextResolver {
     private static final String HDR_ORG = "X-Org-Id";
     private static final String HDR_TEAM = "X-Team-Id";
     private static final String HDR_CORRELATION = "X-Correlation-Id";
+    private static final String HDR_API_KEY_ID = "X-Api-Key-Id";
+    private static final String HDR_API_KEY_ALIAS = "X-Api-Key-Alias";
 
     public Mono<UserContext> fromExchange(ServerWebExchange exchange) {
         String correlationId = exchange.getRequest().getHeaders().getFirst(HDR_CORRELATION);
@@ -34,16 +36,34 @@ public class UserContextResolver {
             String correlationId
     ) {
         String platformUserId = firstNonBlankHeader(exchange, HDR_PLATFORM_USER);
+        String requestedApiKeyId = firstNonBlankHeader(exchange, HDR_API_KEY_ID);
+        String requestedApiKeyAlias = firstNonBlankHeader(exchange, HDR_API_KEY_ALIAS);
         if (auth != null && auth.isAuthenticated() && auth.getPrincipal() instanceof String userId) {
             String org = exchange.getRequest().getHeaders().getFirst(HDR_ORG);
             String team = exchange.getRequest().getHeaders().getFirst(HDR_TEAM);
-            return Mono.just(new UserContext(userId, platformUserId, org, team, correlationId));
+            return Mono.just(new UserContext(
+                    userId,
+                    platformUserId,
+                    org,
+                    team,
+                    correlationId,
+                    requestedApiKeyId,
+                    requestedApiKeyAlias
+            ));
         }
         String userId = exchange.getRequest().getHeaders().getFirst(HDR_USER);
         if (userId != null && !userId.isBlank()) {
             String org = exchange.getRequest().getHeaders().getFirst(HDR_ORG);
             String team = exchange.getRequest().getHeaders().getFirst(HDR_TEAM);
-            return Mono.just(new UserContext(userId, platformUserId, org, team, correlationId));
+            return Mono.just(new UserContext(
+                    userId,
+                    platformUserId,
+                    org,
+                    team,
+                    correlationId,
+                    requestedApiKeyId,
+                    requestedApiKeyAlias
+            ));
         }
         return Mono.error(new IllegalStateException("Missing X-User-Id (from Gateway)"));
     }

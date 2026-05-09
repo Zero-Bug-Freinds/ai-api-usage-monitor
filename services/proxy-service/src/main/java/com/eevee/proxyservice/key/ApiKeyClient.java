@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+import org.springframework.web.util.UriBuilder;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -53,8 +54,26 @@ public class ApiKeyClient {
     /**
      * @param keyLookupUserId numeric platform user id when available, else gateway subject (e.g. email)
      */
-    public Mono<ResolvedApiKey> resolveApiKey(String keyLookupUserId, String teamId, AiProvider provider) {
+    public Mono<ResolvedApiKey> resolveApiKey(
+            String keyLookupUserId,
+            String teamId,
+            AiProvider provider,
+            String requestedApiKeyId,
+            String requestedAlias
+    ) {
         String normalizedTeamId = teamId == null ? "" : teamId.trim();
+        String normalizedRequestedApiKeyId = normalizeSelector(requestedApiKeyId);
+        String normalizedRequestedAlias = normalizeSelector(requestedAlias);
+        if (normalizedRequestedApiKeyId != null || normalizedRequestedAlias != null) {
+            return Mono.fromCallable(() -> loadKeyBlocking(
+                            keyLookupUserId,
+                            normalizedTeamId,
+                            provider,
+                            normalizedRequestedApiKeyId,
+                            normalizedRequestedAlias
+                    ))
+                    .subscribeOn(Schedulers.boundedElastic());
+        }
         String cacheKey = keyLookupUserId + ":" + normalizedTeamId + ":" + provider.pathSegment();
         return Mono.fromCallable(() -> cache.get(cacheKey))
                 .subscribeOn(Schedulers.boundedElastic());
@@ -70,6 +89,16 @@ public class ApiKeyClient {
         String teamId = cacheKey.substring(firstIdx + 1, lastIdx);
         String segment = cacheKey.substring(lastIdx + 1);
         AiProvider provider = AiProvider.fromPathSegment(segment);
+        return loadKeyBlocking(keyLookupUserId, teamId, provider, null, null);
+    }
+
+    private ResolvedApiKey loadKeyBlocking(
+            String keyLookupUserId,
+            String teamId,
+            AiProvider provider,
+            String requestedApiKeyId,
+            String requestedAlias
+    ) {
         boolean teamRequest = !teamId.isBlank();
         String userForLog = masked(keyLookupUserId);
         String teamForLog = teamRequest ? masked(teamId) : "-";
@@ -79,36 +108,43 @@ public class ApiKeyClient {
         if (mock != null && !mock.isBlank()) {
             log.info("Resolved API key from mock lookupTarget={} provider={} teamId={} user={}",
                     lookupTarget, provider.pathSegment(), teamForLog, userForLog);
-            return new ResolvedApiKey(mock, null, null, fingerprint(mock), "mock");
+            return new ResolvedApiKey(mock, null, null, requestedAlias, fingerprint(mock), "mock");
         }
 
         try {
             KeyResponse body;
             if (teamRequest) {
-                body = loadTeamKey(keyLookupUserId, teamId, provider);
+                body = loadTeamKey(keyLookupUserId, teamId, provider, requestedApiKeyId, requestedAlias);
             } else {
-                body = loadIdentityKey(keyLookupUserId, provider);
+                body = loadIdentityKey(keyLookupUserId, provider, requestedApiKeyId, requestedAlias);
             }
             if (body == null || body.plainKey() == null || body.plainKey().isBlank()) {
                 throw new ResponseStatusException(BAD_GATEWAY, "Key lookup returned empty key");
             }
+            String resolvedAlias = hasText(body.alias()) ? body.alias() : requestedAlias;
             log.info("Resolved API key lookupTarget={} provider={} teamId={} user={} keySource={}",
                     lookupTarget, provider.pathSegment(), teamForLog, userForLog, teamRequest ? "team" : "managed");
             return new ResolvedApiKey(
                     body.plainKey(),
                     body.keyId(),
                     teamRequest ? body.keyId() : null,
+                    resolvedAlias,
                     fingerprint(body.plainKey()),
                     teamRequest ? "team" : "managed"
             );
         } catch (WebClientResponseException e) {
-            if (e.getStatusCode().value() == 404) {
+            int statusCode = e.getStatusCode().value();
+            if (statusCode == 409) {
+                throw new ResponseStatusException(
+                        org.springframework.http.HttpStatus.CONFLICT,
+                        "동일한 별칭을 가진 키가 여러 개 존재합니다. 정확한 별칭을 입력해주세요.",
+                        e
+                );
+            }
+            if (statusCode == 404) {
                 log.warn("API key lookup not found lookupTarget={} provider={} teamId={} user={} status={}",
                         lookupTarget, provider.pathSegment(), teamForLog, userForLog, e.getStatusCode().value());
-                String message = teamRequest
-                        ? "team API key not found for provider=" + provider.pathSegment() + " teamId=" + teamForLog
-                        : "API key not found for provider=" + provider.pathSegment() + " user=" + userForLog;
-                throw new ResponseStatusException(NOT_FOUND, message, e);
+                throw new ResponseStatusException(NOT_FOUND, "존재하지 않은 API key 입니다", e);
             }
             log.warn("API key lookup failed lookupTarget={} provider={} teamId={} user={} status={}",
                     lookupTarget, provider.pathSegment(), teamForLog, userForLog, e.getStatusCode().value());
@@ -122,12 +158,22 @@ public class ApiKeyClient {
         }
     }
 
-    private KeyResponse loadIdentityKey(String keyLookupUserId, AiProvider provider) {
+    private KeyResponse loadIdentityKey(
+            String keyLookupUserId,
+            AiProvider provider,
+            String requestedApiKeyId,
+            String requestedAlias
+    ) {
         String token = proxyProperties.getKeyService().getInternalToken();
         String primaryProvider = provider.pathSegment();
-        String userForLog = masked(keyLookupUserId);
         try {
-            return loadIdentityKeyByProviderSegment(keyLookupUserId, primaryProvider, token);
+            return loadIdentityKeyByProviderSegment(
+                    keyLookupUserId,
+                    primaryProvider,
+                    token,
+                    requestedApiKeyId,
+                    requestedAlias
+            );
         } catch (WebClientResponseException e) {
             if (e.getStatusCode().value() != 404 || provider != AiProvider.GOOGLE) {
                 throw e;
@@ -135,12 +181,18 @@ public class ApiKeyClient {
         }
 
         try {
-            return loadIdentityKeyByProviderSegment(keyLookupUserId, "gemini", token);
+            return loadIdentityKeyByProviderSegment(
+                    keyLookupUserId,
+                    "gemini",
+                    token,
+                    requestedApiKeyId,
+                    requestedAlias
+            );
         } catch (WebClientResponseException e) {
             if (e.getStatusCode().value() == 404) {
                 throw new ResponseStatusException(
                         NOT_FOUND,
-                        "API key not found for provider=" + primaryProvider + " user=" + userForLog,
+                        "존재하지 않은 API key 입니다",
                         e
                 );
             }
@@ -149,12 +201,22 @@ public class ApiKeyClient {
 
     }
 
-    private KeyResponse loadIdentityKeyByProviderSegment(String keyLookupUserId, String providerSegment, String token) {
+    private KeyResponse loadIdentityKeyByProviderSegment(
+            String keyLookupUserId,
+            String providerSegment,
+            String token,
+            String requestedApiKeyId,
+            String requestedAlias
+    ) {
         return identityKeyServiceWebClient.get()
-                .uri(uriBuilder -> uriBuilder
-                        .path("/internal/api-keys/{provider}")
-                        .queryParam("userId", keyLookupUserId)
-                        .build(providerSegment))
+                .uri(uriBuilder -> buildKeyLookupUri(
+                        uriBuilder.path("/internal/api-keys/{provider}"),
+                        providerSegment,
+                        keyLookupUserId,
+                        null,
+                        requestedApiKeyId,
+                        requestedAlias
+                ))
                 .headers(h -> {
                     if (token != null && !token.isBlank()) {
                         h.setBearerAuth(token);
@@ -165,14 +227,27 @@ public class ApiKeyClient {
                 .block(Duration.ofSeconds(10));
     }
 
-    private KeyResponse loadTeamKey(String keyLookupUserId, String teamId, AiProvider provider) {
+    private KeyResponse loadTeamKey(
+            String keyLookupUserId,
+            String teamId,
+            AiProvider provider,
+            String requestedApiKeyId,
+            String requestedAlias
+    ) {
         ProxyProperties.TeamKeyService teamKeyService = proxyProperties.getTeamKeyService();
         String token = teamKeyService.getInternalToken();
         String pathTemplate = teamKeyService.getPathTemplate();
         String primaryProvider = provider.pathSegment();
-        String teamForLog = masked(teamId);
         try {
-            return loadTeamKeyByProviderSegment(keyLookupUserId, teamId, primaryProvider, token, pathTemplate);
+            return loadTeamKeyByProviderSegment(
+                    keyLookupUserId,
+                    teamId,
+                    primaryProvider,
+                    token,
+                    pathTemplate,
+                    requestedApiKeyId,
+                    requestedAlias
+            );
         } catch (WebClientResponseException e) {
             if (e.getStatusCode().value() != 404 || provider != AiProvider.GOOGLE) {
                 throw e;
@@ -180,12 +255,20 @@ public class ApiKeyClient {
         }
 
         try {
-            return loadTeamKeyByProviderSegment(keyLookupUserId, teamId, "gemini", token, pathTemplate);
+            return loadTeamKeyByProviderSegment(
+                    keyLookupUserId,
+                    teamId,
+                    "gemini",
+                    token,
+                    pathTemplate,
+                    requestedApiKeyId,
+                    requestedAlias
+            );
         } catch (WebClientResponseException e) {
             if (e.getStatusCode().value() == 404) {
                 throw new ResponseStatusException(
                         NOT_FOUND,
-                        "team API key not found for provider=" + primaryProvider + " teamId=" + teamForLog,
+                        "존재하지 않은 API key 입니다",
                         e
                 );
             }
@@ -198,14 +281,19 @@ public class ApiKeyClient {
             String teamId,
             String providerSegment,
             String token,
-            String pathTemplate
+            String pathTemplate,
+            String requestedApiKeyId,
+            String requestedAlias
     ) {
         return teamKeyServiceWebClient.get()
-                .uri(uriBuilder -> uriBuilder
-                        .path(pathTemplate)
-                        .queryParam("teamId", teamId)
-                        .queryParam("userId", keyLookupUserId)
-                        .build(providerSegment))
+                .uri(uriBuilder -> buildKeyLookupUri(
+                        uriBuilder.path(pathTemplate),
+                        providerSegment,
+                        keyLookupUserId,
+                        teamId,
+                        requestedApiKeyId,
+                        requestedAlias
+                ))
                 .headers(h -> {
                     if (token != null && !token.isBlank()) {
                         h.setBearerAuth(token);
@@ -214,6 +302,26 @@ public class ApiKeyClient {
                 .retrieve()
                 .bodyToMono(KeyResponse.class)
                 .block(Duration.ofSeconds(10));
+    }
+
+    private static java.net.URI buildKeyLookupUri(
+            UriBuilder uriBuilder,
+            String providerSegment,
+            String keyLookupUserId,
+            String teamId,
+            String requestedApiKeyId,
+            String requestedAlias
+    ) {
+        UriBuilder builder = uriBuilder.queryParam("userId", keyLookupUserId);
+        if (hasText(teamId)) {
+            builder = builder.queryParam("teamId", teamId);
+        }
+        if (hasText(requestedApiKeyId)) {
+            builder = builder.queryParam("apiKeyId", requestedApiKeyId);
+        } else if (hasText(requestedAlias)) {
+            builder = builder.queryParam("alias", requestedAlias);
+        }
+        return builder.build(providerSegment);
     }
 
     /**
@@ -245,6 +353,17 @@ public class ApiKeyClient {
         return value.substring(0, keep) + "***";
     }
 
+    private static String normalizeSelector(String value) {
+        if (!hasText(value)) {
+            return null;
+        }
+        return value.trim();
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
     private static String fingerprint(String plainKey) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -259,11 +378,12 @@ public class ApiKeyClient {
             String plainKey,
             String keyId,
             String teamApiKeyId,
+            String alias,
             String keyFingerprint,
             String keySource
     ) {
     }
 
-    private record KeyResponse(String plainKey, String keyId) {
+    private record KeyResponse(String plainKey, String keyId, String alias) {
     }
 }
