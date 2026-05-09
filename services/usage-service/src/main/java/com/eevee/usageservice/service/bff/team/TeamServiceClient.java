@@ -69,26 +69,44 @@ public class TeamServiceClient {
         if (cached != null) {
             return cached;
         }
-        List<TeamSummaryClientItem> result = List.of();
-        try {
-            result = callWithCircuitBreaker(() -> fetchUserTeamsInternal(primaryRequester));
-        } catch (RuntimeException ex) {
-            log.warn("Failed to fetch teams from team-service requesterUserId={} reason={}", primaryRequester, ex.getMessage());
+        List<TeamSummaryClientItem> primary = fetchTeamsForRequester(primaryRequester, "primary");
+        List<TeamSummaryClientItem> result;
+        if (fallbackRequester == null) {
+            result = primary;
+        } else {
+            List<TeamSummaryClientItem> fallback = fetchTeamsForRequester(fallbackRequester, "fallback");
+            result = UserTeamListMerge.unionByTeamId(primary, fallback);
+            log.debug(
+                    "fetchUserTeams merged primaryCount={} fallbackCount={} total={}",
+                    primary.size(),
+                    fallback.size(),
+                    result.size()
+            );
         }
-        if (result.isEmpty() && fallbackRequester != null) {
-            try {
-                result = callWithCircuitBreaker(() -> fetchUserTeamsInternal(fallbackRequester));
-            } catch (RuntimeException ex) {
-                log.warn(
-                        "Failed to fetch teams from team-service fallbackRequesterUserId={} reason={}",
-                        fallbackRequester,
-                        ex.getMessage()
-                );
-                result = List.of();
-            }
+        if (result.isEmpty()) {
+            log.warn(
+                    "No teams returned from team-service primaryUserId={} fallbackUserId={} "
+                            + "(check JWT subject vs userId claim alignment with team-service memberships)",
+                    primaryRequester,
+                    fallbackRequester != null ? fallbackRequester : "(none)"
+            );
         }
         userTeamsCache.put(cacheKey, result);
         return result;
+    }
+
+    private List<TeamSummaryClientItem> fetchTeamsForRequester(String requesterUserId, String roleInLog) {
+        try {
+            return callWithCircuitBreaker(() -> fetchUserTeamsInternal(requesterUserId));
+        } catch (RuntimeException ex) {
+            log.warn(
+                    "Failed to fetch teams from team-service role={} requesterUserId={} reason={}",
+                    roleInLog,
+                    requesterUserId,
+                    ex.getMessage()
+            );
+            return List.of();
+        }
     }
 
     public CompletableFuture<TeamEnrichmentResult> loadTeamEnrichment(String requesterUserId, String teamId) {
@@ -166,8 +184,8 @@ public class TeamServiceClient {
         }
         List<TeamSummaryClientItem> teams = new ArrayList<>();
         for (JsonNode n : data) {
-            String id = nullIfBlank(n.path("id").asText(null));
-            String name = nullIfBlank(n.path("name").asText(null));
+            String id = extractTeamListItemId(n);
+            String name = extractTeamListItemName(n);
             if (id == null || name == null) {
                 continue;
             }
@@ -189,6 +207,22 @@ public class TeamServiceClient {
             return null;
         }
         return v;
+    }
+
+    /** Accepts string or numeric {@code id} from team-service JSON. */
+    private static String extractTeamListItemId(JsonNode n) {
+        JsonNode idNode = n.path("id");
+        if (idNode.isMissingNode() || idNode.isNull()) {
+            return null;
+        }
+        if (idNode.isNumber()) {
+            return Long.toString(idNode.longValue());
+        }
+        return nullIfBlank(idNode.asText(null));
+    }
+
+    private static String extractTeamListItemName(JsonNode n) {
+        return nullIfBlank(n.path("name").asText(null));
     }
 
     private static String normalizeFallback(String fallbackRequesterUserId, String primaryRequester) {
