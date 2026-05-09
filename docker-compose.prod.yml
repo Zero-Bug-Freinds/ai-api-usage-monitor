@@ -1,0 +1,239 @@
+# Production-oriented Compose: app containers only (pattern B).
+# RDS, Amazon MQ, ElastiCache are external — see `.env.deploy.example` and `docs/aws-github-oidc-ecr-ssm.md`.
+# Build images in CI (`release.yml`); hosts set `ECR_IMAGE_PREFIX` + immutable `IMAGE_TAG` (git sha).
+
+services:
+  identity-service:
+    restart: unless-stopped
+    image: ${ECR_IMAGE_PREFIX}/identity-service:${IMAGE_TAG}
+    environment:
+      POSTGRES_HOST: ${IDENTITY_POSTGRES_HOST}
+      POSTGRES_PORT: ${IDENTITY_POSTGRES_PORT:-5432}
+      POSTGRES_DB: ${IDENTITY_POSTGRES_DB}
+      POSTGRES_USER: ${IDENTITY_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${IDENTITY_POSTGRES_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      SPRING_RABBITMQ_HOST: ${RABBITMQ_HOST}
+      SPRING_RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      SPRING_RABBITMQ_SSL_ENABLED: ${RABBITMQ_SSL_ENABLED:-false}
+
+  agent-service:
+    restart: unless-stopped
+    image: ${ECR_IMAGE_PREFIX}/agent-service:${IMAGE_TAG}
+    environment:
+      AI_AGENT_SERVICE_PORT: 8096
+      SPRING_RABBITMQ_HOST: ${RABBITMQ_HOST}
+      SPRING_RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      SPRING_RABBITMQ_SSL_ENABLED: ${RABBITMQ_SSL_ENABLED:-false}
+      AI_AGENT_GEMINI_API_KEY: ${AI_AGENT_GEMINI_API_KEY:-}
+      AI_AGENT_GEMINI_MODEL: ${AI_AGENT_GEMINI_MODEL:-gemini-2.5-flash}
+      AI_AGENT_GEMINI_BASE_URL: ${AI_AGENT_GEMINI_BASE_URL:-https://generativelanguage.googleapis.com}
+      AI_AGENT_RECOMMENDATION_CATALOG_URL: ${AI_AGENT_RECOMMENDATION_CATALOG_URL:-}
+      AI_AGENT_RECOMMENDATION_CATALOG_API_KEY: ${AI_AGENT_RECOMMENDATION_CATALOG_API_KEY:-}
+      AI_AGENT_RECOMMENDATION_CATALOG_OPENROUTER_REFERER: ${AI_AGENT_RECOMMENDATION_CATALOG_OPENROUTER_REFERER:-}
+      AI_AGENT_RECOMMENDATION_CATALOG_OPENROUTER_TITLE: ${AI_AGENT_RECOMMENDATION_CATALOG_OPENROUTER_TITLE:-}
+
+  usage-service:
+    restart: unless-stopped
+    image: ${ECR_IMAGE_PREFIX}/usage-service:${IMAGE_TAG}
+    environment:
+      USAGE_POSTGRES_HOST: ${USAGE_POSTGRES_HOST}
+      USAGE_POSTGRES_PORT: ${USAGE_POSTGRES_PORT:-5432}
+      USAGE_POSTGRES_DB: ${USAGE_POSTGRES_DB}
+      USAGE_POSTGRES_USER: ${USAGE_POSTGRES_USER}
+      USAGE_POSTGRES_PASSWORD: ${USAGE_POSTGRES_PASSWORD}
+      SPRING_RABBITMQ_HOST: ${RABBITMQ_HOST}
+      SPRING_RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      SPRING_RABBITMQ_SSL_ENABLED: ${RABBITMQ_SSL_ENABLED:-false}
+      GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET}
+      USAGE_SERVICE_PORT: 8092
+
+  billing-service:
+    restart: unless-stopped
+    image: ${ECR_IMAGE_PREFIX}/billing-service:${IMAGE_TAG}
+    environment:
+      BILLING_POSTGRES_HOST: ${BILLING_POSTGRES_HOST}
+      BILLING_POSTGRES_PORT: ${BILLING_POSTGRES_PORT:-5432}
+      BILLING_POSTGRES_DB: ${BILLING_POSTGRES_DB}
+      BILLING_POSTGRES_USER: ${BILLING_POSTGRES_USER}
+      BILLING_POSTGRES_PASSWORD: ${BILLING_POSTGRES_PASSWORD}
+      SPRING_RABBITMQ_HOST: ${RABBITMQ_HOST}
+      SPRING_RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      SPRING_RABBITMQ_SSL_ENABLED: ${RABBITMQ_SSL_ENABLED:-false}
+      BILLING_SERVICE_PORT: 8095
+      GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET}
+      BILLING_IDENTITY_ENABLED: ${BILLING_IDENTITY_ENABLED:-true}
+      BILLING_IDENTITY_BASE_URL: ${BILLING_IDENTITY_BASE_URL:-http://identity-service:8080}
+      BILLING_IDENTITY_BUDGET_PATH: "${BILLING_IDENTITY_BUDGET_PATH:-/api/identity/v1/users/budget?email={userId}}"
+
+  proxy-service:
+    restart: unless-stopped
+    image: ${ECR_IMAGE_PREFIX}/proxy-service:${IMAGE_TAG}
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      PROXY_KEY_SERVICE_BASE_URL: ${PROXY_KEY_SERVICE_BASE_URL:-http://identity-service:8080}
+      PROXY_TEAM_KEY_SERVICE_BASE_URL: ${PROXY_TEAM_KEY_SERVICE_BASE_URL:-http://team-service:8093}
+      PROXY_OPENAI_TEST_API_KEY: ${PROXY_OPENAI_TEST_API_KEY:-}
+      PROXY_GOOGLE_TEST_API_KEY: ${PROXY_GOOGLE_TEST_API_KEY:-}
+      PROXY_MOCK_KEY_FALLBACK: ${PROXY_MOCK_KEY_FALLBACK:-}
+      GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET}
+    depends_on:
+      - identity-service
+
+  team-service:
+    restart: unless-stopped
+    image: ${ECR_IMAGE_PREFIX}/team-service:${IMAGE_TAG}
+    environment:
+      TEAM_POSTGRES_HOST: ${TEAM_POSTGRES_HOST}
+      TEAM_POSTGRES_PORT: ${TEAM_POSTGRES_PORT:-5432}
+      TEAM_POSTGRES_DB: ${TEAM_POSTGRES_DB}
+      TEAM_POSTGRES_USER: ${TEAM_POSTGRES_USER}
+      TEAM_POSTGRES_PASSWORD: ${TEAM_POSTGRES_PASSWORD}
+      SPRING_RABBITMQ_HOST: ${RABBITMQ_HOST}
+      SPRING_RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      SPRING_RABBITMQ_SSL_ENABLED: ${RABBITMQ_SSL_ENABLED:-false}
+      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
+      SECURITY_JWT_SECRET: ${JWT_SECRET}
+      TEAM_API_KEY_ENCRYPTION_SECRET: ${TEAM_API_KEY_ENCRYPTION_SECRET}
+      TEAM_SERVICE_PORT: 8093
+    depends_on:
+      - identity-service
+
+  notification-service:
+    restart: unless-stopped
+    image: ${ECR_IMAGE_PREFIX}/notification-service:${IMAGE_TAG}
+    environment:
+      DATABASE_URL: ${NOTIFICATION_DATABASE_URL}
+      PORT: 8096
+      NOTIFICATION_INTERNAL_SECRET: ${NOTIFICATION_INTERNAL_SECRET}
+      TEAM_SERVICE_INTERNAL_BASE_URL: ${TEAM_SERVICE_INTERNAL_BASE_URL:-http://team-service:8093}
+      RABBITMQ_URL: ${NOTIFICATION_RABBITMQ_URL}
+      TEAM_EVENTS_CONSUMER_ENABLED: ${TEAM_EVENTS_CONSUMER_ENABLED:-true}
+      TEAM_EVENTS_QUEUE_NAME: ${TEAM_EVENTS_QUEUE_NAME:-notification.team.events}
+      TEAM_EVENTS_ASSERT_TOPOLOGY: ${TEAM_EVENTS_ASSERT_TOPOLOGY:-true}
+      TEAM_EVENTS_EXCHANGE_NAME: ${TEAM_EVENTS_EXCHANGE_NAME:-team.events}
+      TEAM_EVENTS_BINDING_KEYS: ${TEAM_EVENTS_BINDING_KEYS:-team-member-added}
+    depends_on:
+      - team-service
+
+  api-gateway-service:
+    restart: unless-stopped
+    image: ${ECR_IMAGE_PREFIX}/api-gateway-service:${IMAGE_TAG}
+    environment:
+      GATEWAY_PROXY_URI: http://proxy-service:8081
+      GATEWAY_IDENTITY_URI: ${GATEWAY_IDENTITY_URI:-http://identity-service:8080}
+      GATEWAY_USAGE_URI: ${GATEWAY_USAGE_URI:-http://usage-service:8092}
+      GATEWAY_TEAM_URI: ${GATEWAY_TEAM_URI:-http://team-service:8093}
+      GATEWAY_NOTIFICATION_URI: ${GATEWAY_NOTIFICATION_URI:-http://notification-service:8096}
+      GATEWAY_BILLING_URI: ${GATEWAY_BILLING_URI:-http://billing-service:8095}
+      GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET}
+      GATEWAY_JWT_SECRET: ${GATEWAY_JWT_SECRET}
+      GATEWAY_DEV_MODE: ${GATEWAY_DEV_MODE:-false}
+    depends_on:
+      - proxy-service
+      - identity-service
+      - usage-service
+      - billing-service
+      - team-service
+      - notification-service
+
+  identity-web:
+    restart: unless-stopped
+    image: ${ECR_IMAGE_PREFIX}/identity-web:${IMAGE_TAG}
+    environment:
+      GATEWAY_URL: ${WEB_GATEWAY_URL:-http://api-gateway-service:8080}
+      WEB_GATEWAY_URL: ${WEB_GATEWAY_URL:-http://api-gateway-service:8080}
+      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
+    depends_on:
+      - api-gateway-service
+
+  agent-web:
+    restart: unless-stopped
+    image: ${ECR_IMAGE_PREFIX}/agent-web:${IMAGE_TAG}
+    environment:
+      NEXT_PUBLIC_WEB_EDGE_ORIGIN: ${NEXT_PUBLIC_WEB_EDGE_ORIGIN}
+      NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN}
+      AI_AGENT_SERVICE_INTERNAL_ORIGIN: ${AI_AGENT_SERVICE_INTERNAL_ORIGIN:-http://agent-service:8096}
+      AI_AGENT_FALLBACK_USER_ID: ${AI_AGENT_FALLBACK_USER_ID:-}
+      AI_AGENT_TEAM_CATALOG_USER_ID: ${AI_AGENT_TEAM_CATALOG_USER_ID:-}
+    depends_on:
+      - identity-web
+      - agent-service
+      - team-service
+
+  usage-web:
+    restart: unless-stopped
+    image: ${ECR_IMAGE_PREFIX}/usage-web:${IMAGE_TAG}
+    environment:
+      API_GATEWAY_URL: http://api-gateway-service:8080
+      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
+      GATEWAY_DEV_MODE: ${GATEWAY_DEV_MODE:-false}
+    depends_on:
+      - api-gateway-service
+
+  billing-web:
+    restart: unless-stopped
+    image: ${ECR_IMAGE_PREFIX}/billing-web:${IMAGE_TAG}
+    environment:
+      API_GATEWAY_URL: http://api-gateway-service:8080
+      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
+      GATEWAY_DEV_MODE: ${GATEWAY_DEV_MODE:-false}
+      BILLING_TEAM_BFF_BASE_URL: ${BILLING_TEAM_BFF_BASE_URL:-http://web-edge}
+    depends_on:
+      - api-gateway-service
+      - identity-web
+
+  notification-web:
+    restart: unless-stopped
+    image: ${ECR_IMAGE_PREFIX}/notification-web:${IMAGE_TAG}
+    environment:
+      NOTIFICATION_HTTP_UPSTREAM: ${NOTIFICATION_HTTP_UPSTREAM:-direct}
+      API_GATEWAY_URL: ${WEB_GATEWAY_URL:-http://api-gateway-service:8080}
+      NOTIFICATION_SERVICE_URL: ${WEB_NOTIFICATION_SERVICE_URL:-http://notification-service:8096/api}
+      NOTIFICATION_INTERNAL_SECRET: ${NOTIFICATION_INTERNAL_SECRET}
+      NEXT_PUBLIC_NOTIFICATION_POLL_MS: ${NEXT_PUBLIC_NOTIFICATION_POLL_MS:-10000}
+    depends_on:
+      - api-gateway-service
+      - notification-service
+
+  team-web:
+    restart: unless-stopped
+    image: ${ECR_IMAGE_PREFIX}/team-web:${IMAGE_TAG}
+    environment:
+      GATEWAY_URL: ${WEB_GATEWAY_URL:-http://api-gateway-service:8080}
+      WEB_GATEWAY_URL: ${WEB_GATEWAY_URL:-http://api-gateway-service:8080}
+      TEAM_SERVICE_URL: ${WEB_TEAM_SERVICE_URL:-http://team-service:8093}
+      IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
+    expose:
+      - "3000"
+    depends_on:
+      - team-service
+      - api-gateway-service
+      - identity-service
+
+  web-edge:
+    restart: unless-stopped
+    image: ${ECR_IMAGE_PREFIX}/web-edge:${IMAGE_TAG}
+    environment:
+      GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET}
+    ports:
+      - "${WEB_EDGE_HOST_PORT:-80}:80"
+      - "${WEB_EDGE_HEALTH_HOST_PORT:-8080}:8080"
+    depends_on:
+      - identity-web
+      - usage-web
+      - billing-web
+      - team-web
+      - notification-web
+      - agent-web
+      - api-gateway-service

@@ -1,0 +1,113 @@
+# Reusable path filter — keep filters in sync with release / CD callers.
+# Canonical consumer: `.github/workflows/ci.yml`, `.github/workflows/release.yml`.
+
+name: Path changes
+
+on:
+  workflow_call:
+    outputs:
+      web_edge:
+        description: web-edge, apps/web, team web, compose, workflows
+        value: ${{ jobs.detect.outputs.web_edge }}
+      api_gateway:
+        description: api-gateway-service paths
+        value: ${{ jobs.detect.outputs.api_gateway }}
+      identity:
+        description: identity-service paths
+        value: ${{ jobs.detect.outputs.identity }}
+      ai_agent:
+        description: agent-service paths
+        value: ${{ jobs.detect.outputs.ai_agent }}
+      proxy:
+        description: proxy-service paths
+        value: ${{ jobs.detect.outputs.proxy }}
+      usage:
+        description: usage-service paths
+        value: ${{ jobs.detect.outputs.usage }}
+      billing:
+        description: billing-service paths
+        value: ${{ jobs.detect.outputs.billing }}
+      team:
+        description: team-service paths
+        value: ${{ jobs.detect.outputs.team }}
+      notification:
+        description: notification-service paths
+        value: ${{ jobs.detect.outputs.notification }}
+      web_shared:
+        description: shared packages / lockfile / web deps Dockerfile
+        value: ${{ jobs.detect.outputs.web_shared }}
+      workflows:
+        description: workflow definitions
+        value: ${{ jobs.detect.outputs.workflows }}
+
+jobs:
+  detect:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      web_edge: ${{ steps.filter.outputs.web_edge }}
+      api_gateway: ${{ steps.filter.outputs.api_gateway }}
+      identity: ${{ steps.filter.outputs.identity }}
+      ai_agent: ${{ steps.filter.outputs.ai_agent }}
+      proxy: ${{ steps.filter.outputs.proxy }}
+      usage: ${{ steps.filter.outputs.usage }}
+      billing: ${{ steps.filter.outputs.billing }}
+      team: ${{ steps.filter.outputs.team }}
+      notification: ${{ steps.filter.outputs.notification }}
+      web_shared: ${{ steps.filter.outputs.web_shared }}
+      workflows: ${{ steps.filter.outputs.workflows }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v2
+        id: filter
+        with:
+          filters: |
+            web_edge:
+              - 'docker/web-edge/**'
+              - 'apps/web/**'
+              - 'services/team-service/web/**'
+              - 'docker-compose.yml'
+              - 'docker-compose.prod.yml'
+              - '.github/workflows/**'
+            api_gateway:
+              - 'services/api-gateway-service/**'
+              - 'docker-compose.yml'
+              - '.github/workflows/**'
+            identity:
+              - 'services/identity-service/**'
+            ai_agent:
+              - 'services/agent-service/**'
+              - 'libs/identity-events/**'
+              - 'libs/usage-events/**'
+            proxy:
+              - 'services/proxy-service/**'
+              - 'libs/usage-events/**'
+              - 'docker-compose.yml'
+              - '.github/workflows/**'
+            usage:
+              - 'services/usage-service/**'
+              - 'libs/usage-events/**'
+              - 'docker-compose.yml'
+              - '.github/workflows/**'
+            billing:
+              - 'services/billing-service/**'
+              - 'libs/usage-events/**'
+              - 'docker-compose.yml'
+              - '.github/workflows/**'
+            team:
+              - 'services/team-service/**'
+              - 'libs/identity-events/**'
+            notification:
+              - 'services/notification-service/**'
+              - 'docker/backend-node-deps.Dockerfile'
+              - 'docker-compose.yml'
+              - '.github/workflows/**'
+            web_shared:
+              - 'packages/ui/**'
+              - 'packages/shell/**'
+              - 'pnpm-workspace.yaml'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'docker/web-node-deps.Dockerfile'
+            workflows:
+              - '.github/workflows/**'

@@ -1,0 +1,10 @@
+# Copy to backend.hcl (not committed) and pass: terraform init -backend-config=backend.hcl
+#
+bucket         = "YOUR_UNIQUE_TFSTATE_BUCKET"
+key            = "ai-api-usage-monitor/terraform.tfstate"
+region         = "ap-northeast-2"
+dynamodb_table = "YOUR_LOCK_TABLE_NAME"
+encrypt        = true
+
+# Optional: separate state per workspace (after `terraform workspace new staging`):
+# key = "ai-api-usage-monitor/staging/terraform.tfstate"

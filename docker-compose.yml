@@ -530,8 +530,10 @@ services:
   web-edge:
     profiles:
       - web
-    image: nginx:1.27-alpine
     restart: unless-stopped
+    build:
+      context: .
+      dockerfile: docker/web-edge/Dockerfile
     depends_on:
       - identity-web
       - usage-web
@@ -542,15 +544,9 @@ services:
       - api-gateway-service
     environment:
       GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET:-}
-    command: >
-      /bin/sh -c "envsubst '$$GATEWAY_SHARED_SECRET'
-      < /etc/nginx/nginx.conf.template
-      > /etc/nginx/nginx.conf
-      && nginx -g 'daemon off;'"
     ports:
       - "${WEB_EDGE_PORT:-8888}:80"
-    volumes:
-      - ./docker/web-edge/nginx.conf.template:/etc/nginx/nginx.conf.template:ro
+      - "${WEB_EDGE_HEALTH_HOST_PORT:-8889}:8080"
 
 volumes:
   postgres_data:

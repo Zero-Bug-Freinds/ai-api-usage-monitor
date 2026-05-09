@@ -1,0 +1,291 @@
+# Release: build changed images (paths-filter reuse) and push to Amazon ECR with immutable git sha + env pointer tag.
+# Triggers: `develop` → GitHub Environment `staging`; `main` → `production` (configure required reviewers on `production`).
+# See `docs/CI.md` (CD) and `docs/aws-github-oidc-ecr-ssm.md`.
+
+name: Release
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+    paths:
+      - '.github/workflows/**'
+      - 'docker/**'
+      - 'services/**'
+      - 'apps/web/**'
+      - 'packages/**'
+      - 'libs/**'
+      - 'docker-compose.yml'
+      - 'docker-compose.prod.yml'
+      - 'pnpm-workspace.yaml'
+      - 'pnpm-lock.yaml'
+      - 'package.json'
+  workflow_dispatch:
+    inputs:
+      force_rebuild_all:
+        description: Push every service image (ignore paths-filter)
+        type: boolean
+        default: true
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  changes:
+    uses: ./.github/workflows/path-changes.yml
+
+  release-target:
+    name: Resolve release environment
+    runs-on: ubuntu-latest
+    needs:
+      - changes
+    outputs:
+      github_environment: ${{ steps.pick.outputs.github_environment }}
+      pointer_tag: ${{ steps.pick.outputs.pointer_tag }}
+    steps:
+      - id: pick
+        name: Map branch to GitHub Environment and ECR pointer tag
+        run: |
+          set -euo pipefail
+          ref="${GITHUB_REF}"
+          if [ "$ref" = "refs/heads/main" ]; then
+            echo "github_environment=production" >> "$GITHUB_OUTPUT"
+            echo "pointer_tag=prod" >> "$GITHUB_OUTPUT"
+          else
+            echo "github_environment=staging" >> "$GITHUB_OUTPUT"
+            echo "pointer_tag=staging" >> "$GITHUB_OUTPUT"
+          fi
+
+  ecr-build-push:
+    name: Build and push to ECR
+    runs-on: ubuntu-latest
+    needs:
+      - changes
+      - release-target
+    environment: ${{ needs.release-target.outputs.github_environment }}
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: flags
+        name: Force-rebuild flag
+        run: |
+          set -euo pipefail
+          force=false
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force_rebuild_all }}" = "true" ]; then
+            force=true
+          fi
+          echo "force_all=$force" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_RELEASE_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Compute image prefix and tags
+        id: meta
+        run: |
+          set -euo pipefail
+          prefix="${{ vars.ECR_REPOSITORY_PREFIX }}"
+          if [ -z "$prefix" ]; then
+            prefix="ai-api-usage-monitor"
+          fi
+          reg="${{ steps.ecr.outputs.registry }}"
+          sha="${{ github.sha }}"
+          ptr="${{ needs.release-target.outputs.pointer_tag }}"
+          echo "image_prefix=${reg}/${prefix}" >> "$GITHUB_OUTPUT"
+          echo "tag_sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "tag_pointer=$ptr" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Push api-gateway-service
+        if: needs.changes.outputs.api_gateway == 'true' || steps.flags.outputs.force_all == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: services/api-gateway-service
+          file: services/api-gateway-service/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image_prefix }}/api-gateway-service:${{ steps.meta.outputs.tag_sha }}
+            ${{ steps.meta.outputs.image_prefix }}/api-gateway-service:${{ steps.meta.outputs.tag_pointer }}
+
+      - name: Push proxy-service
+        if: needs.changes.outputs.proxy == 'true' || steps.flags.outputs.force_all == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: services/proxy-service
+          file: services/proxy-service/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image_prefix }}/proxy-service:${{ steps.meta.outputs.tag_sha }}
+            ${{ steps.meta.outputs.image_prefix }}/proxy-service:${{ steps.meta.outputs.tag_pointer }}
+
+      - name: Push identity-service
+        if: needs.changes.outputs.identity == 'true' || steps.flags.outputs.force_all == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/identity-service/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image_prefix }}/identity-service:${{ steps.meta.outputs.tag_sha }}
+            ${{ steps.meta.outputs.image_prefix }}/identity-service:${{ steps.meta.outputs.tag_pointer }}
+
+      - name: Push usage-service
+        if: needs.changes.outputs.usage == 'true' || steps.flags.outputs.force_all == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/usage-service/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image_prefix }}/usage-service:${{ steps.meta.outputs.tag_sha }}
+            ${{ steps.meta.outputs.image_prefix }}/usage-service:${{ steps.meta.outputs.tag_pointer }}
+
+      - name: Push billing-service
+        if: needs.changes.outputs.billing == 'true' || steps.flags.outputs.force_all == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/billing-service/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image_prefix }}/billing-service:${{ steps.meta.outputs.tag_sha }}
+            ${{ steps.meta.outputs.image_prefix }}/billing-service:${{ steps.meta.outputs.tag_pointer }}
+
+      - name: Push team-service
+        if: needs.changes.outputs.team == 'true' || steps.flags.outputs.force_all == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/team-service/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image_prefix }}/team-service:${{ steps.meta.outputs.tag_sha }}
+            ${{ steps.meta.outputs.image_prefix }}/team-service:${{ steps.meta.outputs.tag_pointer }}
+
+      - name: Push notification-service
+        if: needs.changes.outputs.notification == 'true' || steps.flags.outputs.force_all == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/notification-service/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image_prefix }}/notification-service:${{ steps.meta.outputs.tag_sha }}
+            ${{ steps.meta.outputs.image_prefix }}/notification-service:${{ steps.meta.outputs.tag_pointer }}
+
+      - name: Push agent-service
+        if: needs.changes.outputs.ai_agent == 'true' || steps.flags.outputs.force_all == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/agent-service/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image_prefix }}/agent-service:${{ steps.meta.outputs.tag_sha }}
+            ${{ steps.meta.outputs.image_prefix }}/agent-service:${{ steps.meta.outputs.tag_pointer }}
+
+      - name: Push identity-web
+        if: needs.changes.outputs.identity == 'true' || needs.changes.outputs.web_shared == 'true' || steps.flags.outputs.force_all == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/identity-service/web/Dockerfile
+          push: true
+          build-args: |
+            NEXT_PUBLIC_USAGE_WEB_ORIGIN=${{ vars.NEXT_PUBLIC_USAGE_WEB_ORIGIN }}
+          tags: |
+            ${{ steps.meta.outputs.image_prefix }}/identity-web:${{ steps.meta.outputs.tag_sha }}
+            ${{ steps.meta.outputs.image_prefix }}/identity-web:${{ steps.meta.outputs.tag_pointer }}
+
+      - name: Push usage-web
+        if: needs.changes.outputs.usage == 'true' || needs.changes.outputs.web_shared == 'true' || steps.flags.outputs.force_all == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/usage-service/web/Dockerfile
+          push: true
+          build-args: |
+            NEXT_PUBLIC_WEB_EDGE_ORIGIN=${{ vars.NEXT_PUBLIC_WEB_EDGE_ORIGIN }}
+            NEXT_PUBLIC_IDENTITY_WEB_ORIGIN=${{ vars.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN }}
+            NEXT_PUBLIC_BASE_PATH=/dashboard
+          tags: |
+            ${{ steps.meta.outputs.image_prefix }}/usage-web:${{ steps.meta.outputs.tag_sha }}
+            ${{ steps.meta.outputs.image_prefix }}/usage-web:${{ steps.meta.outputs.tag_pointer }}
+
+      - name: Push billing-web
+        if: needs.changes.outputs.billing == 'true' || needs.changes.outputs.web_shared == 'true' || steps.flags.outputs.force_all == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/billing-service/web/Dockerfile
+          push: true
+          build-args: |
+            NEXT_PUBLIC_WEB_EDGE_ORIGIN=${{ vars.NEXT_PUBLIC_WEB_EDGE_ORIGIN }}
+            NEXT_PUBLIC_IDENTITY_WEB_ORIGIN=${{ vars.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN }}
+          tags: |
+            ${{ steps.meta.outputs.image_prefix }}/billing-web:${{ steps.meta.outputs.tag_sha }}
+            ${{ steps.meta.outputs.image_prefix }}/billing-web:${{ steps.meta.outputs.tag_pointer }}
+
+      - name: Push team-web
+        if: needs.changes.outputs.team == 'true' || needs.changes.outputs.web_shared == 'true' || steps.flags.outputs.force_all == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/team-service/web/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image_prefix }}/team-web:${{ steps.meta.outputs.tag_sha }}
+            ${{ steps.meta.outputs.image_prefix }}/team-web:${{ steps.meta.outputs.tag_pointer }}
+
+      - name: Push notification-web
+        if: needs.changes.outputs.notification == 'true' || needs.changes.outputs.web_shared == 'true' || steps.flags.outputs.force_all == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/notification-service/web/Dockerfile
+          push: true
+          build-args: |
+            NEXT_PUBLIC_BASE_PATH=/notifications
+          tags: |
+            ${{ steps.meta.outputs.image_prefix }}/notification-web:${{ steps.meta.outputs.tag_sha }}
+            ${{ steps.meta.outputs.image_prefix }}/notification-web:${{ steps.meta.outputs.tag_pointer }}
+
+      - name: Push agent-web
+        if: needs.changes.outputs.ai_agent == 'true' || needs.changes.outputs.web_shared == 'true' || steps.flags.outputs.force_all == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/agent-service/web/Dockerfile
+          push: true
+          build-args: |
+            NEXT_PUBLIC_WEB_EDGE_ORIGIN=${{ vars.NEXT_PUBLIC_WEB_EDGE_ORIGIN }}
+            NEXT_PUBLIC_IDENTITY_WEB_ORIGIN=${{ vars.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN }}
+          tags: |
+            ${{ steps.meta.outputs.image_prefix }}/agent-web:${{ steps.meta.outputs.tag_sha }}
+            ${{ steps.meta.outputs.image_prefix }}/agent-web:${{ steps.meta.outputs.tag_pointer }}
+
+      - name: Push web-edge
+        if: needs.changes.outputs.web_edge == 'true' || steps.flags.outputs.force_all == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/web-edge/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image_prefix }}/web-edge:${{ steps.meta.outputs.tag_sha }}
+            ${{ steps.meta.outputs.image_prefix }}/web-edge:${{ steps.meta.outputs.tag_pointer }}

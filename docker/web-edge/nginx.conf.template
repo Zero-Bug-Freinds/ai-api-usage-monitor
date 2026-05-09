@@ -327,4 +327,19 @@ http {
       return 404;
     }
   }
+
+  # ALB / ops HTTP health: bind 8080 in the container; no Host-header allowlist here.
+  # Target Group: port 8080, path /healthz, success codes 200 (see docs/CI.md CD section).
+  server {
+    listen 8080;
+    server_name _;
+    location = /healthz {
+      access_log off;
+      default_type text/plain;
+      return 200 'ok\n';
+    }
+    location / {
+      return 444;
+    }
+  }
 }
