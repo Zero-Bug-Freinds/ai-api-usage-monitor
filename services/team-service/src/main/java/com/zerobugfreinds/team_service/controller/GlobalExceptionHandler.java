@@ -1,6 +1,7 @@
 package com.zerobugfreinds.team_service.controller;
 
 import com.zerobugfreinds.team_service.common.ApiResponse;
+import com.zerobugfreinds.team_service.exception.AmbiguousTeamApiKeyHashException;
 import com.zerobugfreinds.team_service.exception.DuplicateTeamMemberException;
 import com.zerobugfreinds.team_service.exception.DuplicateTeamInvitationException;
 import com.zerobugfreinds.team_service.exception.ForbiddenTeamAccessException;
@@ -93,6 +94,12 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(TeamApiKeyNotFoundException.class)
 	@ResponseStatus(HttpStatus.NOT_FOUND)
 	public ApiResponse<Void> handleTeamApiKeyNotFound(TeamApiKeyNotFoundException ex) {
+		return ApiResponse.fail(ex.getMessage());
+	}
+
+	@ExceptionHandler(AmbiguousTeamApiKeyHashException.class)
+	@ResponseStatus(HttpStatus.CONFLICT)
+	public ApiResponse<Void> handleAmbiguousTeamApiKeyHash(AmbiguousTeamApiKeyHashException ex) {
 		return ApiResponse.fail(ex.getMessage());
 	}
 
