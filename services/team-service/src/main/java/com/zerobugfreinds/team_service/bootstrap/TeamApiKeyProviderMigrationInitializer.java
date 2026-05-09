@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -35,38 +36,46 @@ public class TeamApiKeyProviderMigrationInitializer {
             return;
         }
 
-        jdbcTemplate.execute(
-                """
-                do $$
-                begin
-                  if exists (
-                    select 1
-                    from pg_constraint c
-                    join pg_class t on c.conrelid = t.oid
-                    where t.relname = 'team_api_keys'
-                      and c.conname = 'team_api_keys_provider_check'
-                  ) then
-                    alter table team_api_keys
-                      drop constraint team_api_keys_provider_check;
-                  end if;
-                end $$;
-                """
-        );
-        jdbcTemplate.execute(
-                """
-                alter table team_api_keys
-                add constraint team_api_keys_provider_check
-                check (provider in ('OPENAI', 'GEMINI', 'GOOGLE', 'ANTHROPIC', 'CLAUDE', 'META', 'MISTRAL', 'COHERE', 'GROK'))
-                """
-        );
+        boolean postgres = isPostgres();
+        if (postgres) {
+            dropProviderCheckConstraint();
+        }
 
         int updatedGemini = jdbcTemplate.update(
                 """
                 update team_api_keys
                 set provider = 'GOOGLE'
-                where provider = 'GEMINI'
+                where cast(provider as varchar) = 'GEMINI'
                 """
         );
+        if (postgres) {
+            addProviderCheckConstraint();
+        }
         log.info("team_api_keys provider migration completed updatedGeminiRows={}", updatedGemini);
+    }
+
+    private boolean isPostgres() {
+        return Boolean.TRUE.equals(jdbcTemplate.execute((ConnectionCallback<Boolean>) connection ->
+                connection.getMetaData().getDatabaseProductName().toLowerCase().contains("postgresql")
+        ));
+    }
+
+    private void dropProviderCheckConstraint() {
+        jdbcTemplate.execute(
+                """
+                alter table team_api_keys
+                drop constraint if exists team_api_keys_provider_check
+                """
+        );
+    }
+
+    private void addProviderCheckConstraint() {
+        jdbcTemplate.execute(
+                """
+                alter table team_api_keys
+                add constraint team_api_keys_provider_check
+                check (provider in ('OPENAI', 'GOOGLE', 'ANTHROPIC', 'CLAUDE', 'META', 'MISTRAL', 'COHERE', 'GROK'))
+                """
+        );
     }
 }
