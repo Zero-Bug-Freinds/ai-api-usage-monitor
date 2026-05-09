@@ -20,6 +20,7 @@ import com.zerobugfreinds.identity_service.repository.UserRepository;
 import com.zerobugfreinds.identity_service.util.EncryptionUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,17 +48,20 @@ public class ExternalApiKeyService {
 	private final UserRepository userRepository;
 	private final EncryptionUtil encryptionUtil;
 	private final ApplicationEventPublisher applicationEventPublisher;
+	private final TeamApiKeyLookupClient teamApiKeyLookupClient;
 
 	public ExternalApiKeyService(
 			ExternalApiKeyRepository externalApiKeyRepository,
 			UserRepository userRepository,
 			EncryptionUtil encryptionUtil,
-			ApplicationEventPublisher applicationEventPublisher
+			ApplicationEventPublisher applicationEventPublisher,
+			TeamApiKeyLookupClient teamApiKeyLookupClient
 	) {
 		this.externalApiKeyRepository = externalApiKeyRepository;
 		this.userRepository = userRepository;
 		this.encryptionUtil = encryptionUtil;
 		this.applicationEventPublisher = applicationEventPublisher;
+		this.teamApiKeyLookupClient = teamApiKeyLookupClient;
 	}
 
 	@Transactional
@@ -92,6 +96,7 @@ public class ExternalApiKeyService {
 		}
 
 		String keyHash = encryptionUtil.sha256HexForUniqueness(normalizedProvider.name(), normalizedKey);
+		verifyNoTeamScopeDuplicate(normalizedProvider, normalizedKey, keyHash);
 		Optional<ExternalApiKeyEntity> existingSameHash =
 				externalApiKeyRepository.findByUserIdAndProviderAndKeyHash(userId, normalizedProvider, keyHash);
 		if (existingSameHash.isPresent()) {
@@ -117,7 +122,12 @@ public class ExternalApiKeyService {
 				encrypted,
 				monthlyBudgetUsd
 		);
-		ExternalApiKeyEntity saved = externalApiKeyRepository.save(entity);
+		ExternalApiKeyEntity saved;
+		try {
+			saved = externalApiKeyRepository.saveAndFlush(entity);
+		} catch (DataIntegrityViolationException ex) {
+			throw toDuplicateException(userId, normalizedProvider, trimmedAlias, keyHash, ex);
+		}
 
 		log.info(
 				"[AUDIT] external_api_key_registered userId={} provider={} alias={} keyId={}",
@@ -189,6 +199,7 @@ public class ExternalApiKeyService {
 			}
 			ExternalApiKeyProvider normalizedProvider = normalizeProvider(provider);
 			String keyHash = encryptionUtil.sha256HexForUniqueness(normalizedProvider.name(), normalizedKey);
+			verifyNoTeamScopeDuplicate(normalizedProvider, normalizedKey, keyHash);
 			Optional<ExternalApiKeyEntity> otherSameHash =
 					externalApiKeyRepository.findByUserIdAndProviderAndKeyHash(userId, normalizedProvider, keyHash);
 			if (otherSameHash.isPresent() && !otherSameHash.get().getId().equals(externalKeyId)) {
@@ -202,6 +213,13 @@ public class ExternalApiKeyService {
 			entity.updateCredential(normalizedProvider, trimmedAlias, keyHash, encrypted, monthlyBudgetUsd);
 		} else {
 			entity.updateAliasAndBudget(trimmedAlias, monthlyBudgetUsd);
+		}
+		try {
+			externalApiKeyRepository.saveAndFlush(entity);
+		} catch (DataIntegrityViolationException ex) {
+			ExternalApiKeyProvider providerForCheck = entity.getProvider();
+			String keyHashForCheck = entity.getKeyHash();
+			throw toDuplicateException(userId, providerForCheck, trimmedAlias, keyHashForCheck, ex);
 		}
 
 		log.info(
@@ -477,5 +495,42 @@ public class ExternalApiKeyService {
 			);
 		}
 		return days;
+	}
+
+	private RuntimeException toDuplicateException(
+			Long userId,
+			ExternalApiKeyProvider provider,
+			String alias,
+			String keyHash,
+			DataIntegrityViolationException ex
+	) {
+		if (externalApiKeyRepository.existsByUserIdAndKeyAlias(userId, alias)) {
+			return new DuplicateExternalApiKeyAliasException("이미 사용 중인 별칭입니다");
+		}
+		Optional<ExternalApiKeyEntity> existingSameHash =
+				externalApiKeyRepository.findByUserIdAndProviderAndKeyHash(userId, provider, keyHash);
+		if (existingSameHash.isPresent()) {
+			if (existingSameHash.get().isPendingDeletion()) {
+				return new DuplicateExternalApiKeyException("삭제예정키와 중복된 키");
+			}
+			return new DuplicateExternalApiKeyException("이미 등록된 API 키입니다");
+		}
+		return ex;
+	}
+
+	private void verifyNoTeamScopeDuplicate(
+			ExternalApiKeyProvider provider,
+			String normalizedKey,
+			String keyHash
+	) {
+		if (teamApiKeyLookupClient.existsByHashedKey(provider.name(), keyHash)) {
+			throw new DuplicateExternalApiKeyException("팀에 이미 등록된 API 키입니다");
+		}
+		if (provider == ExternalApiKeyProvider.ANTHROPIC) {
+			String claudeHash = encryptionUtil.sha256HexForUniqueness("CLAUDE", normalizedKey);
+			if (teamApiKeyLookupClient.existsByHashedKey("CLAUDE", claudeHash)) {
+				throw new DuplicateExternalApiKeyException("팀에 이미 등록된 API 키입니다");
+			}
+		}
 	}
 }

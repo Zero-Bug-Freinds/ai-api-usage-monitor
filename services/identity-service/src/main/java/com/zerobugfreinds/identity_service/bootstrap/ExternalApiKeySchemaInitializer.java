@@ -62,6 +62,33 @@ public class ExternalApiKeySchemaInitializer {
 				alter column retain_usage_logs set not null
 				"""
 		);
+		jdbcTemplate.execute(
+				"""
+				do $$
+				begin
+				  if not exists (
+				    select 1
+				    from pg_constraint c
+				    join pg_class t on c.conrelid = t.oid
+				    where t.relname = 'external_api_keys'
+				      and c.conname = 'uk_external_api_keys_user_alias'
+				  ) then
+				    if exists (
+				      select 1
+				      from external_api_keys e
+				      group by e.user_id, e.key_alias
+				      having count(*) > 1
+				    ) then
+				      raise warning 'skip unique constraint uk_external_api_keys_user_alias due to duplicate rows';
+				    else
+				      alter table external_api_keys
+				        add constraint uk_external_api_keys_user_alias
+				        unique (user_id, key_alias);
+				    end if;
+				  end if;
+				end $$;
+				"""
+		);
 		log.info("external_api_keys.retain_usage_logs column ensured");
 	}
 }

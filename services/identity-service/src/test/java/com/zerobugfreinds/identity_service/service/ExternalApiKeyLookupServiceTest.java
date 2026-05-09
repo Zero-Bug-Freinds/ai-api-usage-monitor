@@ -40,6 +40,8 @@ class ExternalApiKeyLookupServiceTest {
 	private EncryptionUtil encryptionUtil;
 	@Mock
 	private ApplicationEventPublisher applicationEventPublisher;
+	@Mock
+	private TeamApiKeyLookupClient teamApiKeyLookupClient;
 
 	@InjectMocks
 	private ExternalApiKeyService externalApiKeyService;
@@ -50,7 +52,8 @@ class ExternalApiKeyLookupServiceTest {
 				externalApiKeyRepository,
 				userRepository,
 				encryptionUtil,
-				applicationEventPublisher
+				applicationEventPublisher,
+				teamApiKeyLookupClient
 		);
 	}
 
