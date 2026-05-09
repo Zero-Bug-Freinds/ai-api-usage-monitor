@@ -18,12 +18,15 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 
 @Service
 public class ExpenditureQueryService {
+
+    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
     private final DailyExpenditureAggRepository dailyRepository;
     private final MonthlyExpenditureAggRepository monthlyRepository;
@@ -51,6 +54,22 @@ public class ExpenditureQueryService {
         BigDecimal total = dailyRepository.sumTotalCostUsd(userId, apiKeyId, provider, r.fromInclusive(), r.toInclusive());
         BigDecimal budget = identityBudgetClient.fetchMonthlyBudgetUsdForKey(userId, provider, apiKeyId).orElse(null);
         return new ExpenditureSummaryResponse(r.fromInclusive(), r.toInclusive(), total, budget);
+    }
+
+    /**
+     * Lifetime definition is a bounded window for stable performance:
+     * KST today (inclusive) minus (billing.analytics.lifetime-range-days - 1).
+     */
+    @Transactional(readOnly = true)
+    public ExpenditureSummaryResponse lifetimeSummary(String userId, String apiKeyId, AiProvider provider) {
+        int days = billingProperties.getAnalytics().getLifetimeRangeDays();
+        if (days <= 0) {
+            throw new IllegalArgumentException("lifetimeRangeDays must be positive");
+        }
+        LocalDate to = LocalDate.now(KST);
+        LocalDate from = to.minusDays(days - 1L);
+        BigDecimal total = dailyRepository.sumTotalCostUsd(userId, apiKeyId, provider, from, to);
+        return new ExpenditureSummaryResponse(from, to, total, null);
     }
 
     @Transactional(readOnly = true)

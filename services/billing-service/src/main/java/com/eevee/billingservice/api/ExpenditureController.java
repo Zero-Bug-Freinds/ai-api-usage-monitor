@@ -60,6 +60,20 @@ public class ExpenditureController {
         return expenditureQueryService.summary(userId, apiKeyId, provider, from, to);
     }
 
+    /**
+     * Lifetime summary is a bounded window for stable performance.
+     * The effective window is configured by {@code billing.analytics.lifetime-range-days}.
+     */
+    @GetMapping("/summary/lifetime")
+    public ExpenditureSummaryResponse lifetimeSummary(
+            HttpServletRequest request,
+            @RequestParam String apiKeyId,
+            @RequestParam AiProvider provider
+    ) {
+        String userId = currentUser(request);
+        return expenditureQueryService.lifetimeSummary(userId, apiKeyId, provider);
+    }
+
     @GetMapping("/monthly-budget-status")
     public MonthlyBudgetStatusResponse monthlyBudgetStatus(
             HttpServletRequest request,

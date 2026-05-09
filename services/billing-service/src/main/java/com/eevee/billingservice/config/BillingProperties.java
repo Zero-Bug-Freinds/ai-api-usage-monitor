@@ -23,6 +23,11 @@ public class BillingProperties {
 
     public static class Analytics {
         private int maxRangeDays = 400;
+        /**
+         * Defines the effective date window for the lifetime expenditure summary endpoint.
+         * Interpreted as “KST today (inclusive) minus (days-1)”.
+         */
+        private int lifetimeRangeDays = 400;
 
         public int getMaxRangeDays() {
             return maxRangeDays;
@@ -30,6 +35,14 @@ public class BillingProperties {
 
         public void setMaxRangeDays(int maxRangeDays) {
             this.maxRangeDays = maxRangeDays;
+        }
+
+        public int getLifetimeRangeDays() {
+            return lifetimeRangeDays;
+        }
+
+        public void setLifetimeRangeDays(int lifetimeRangeDays) {
+            this.lifetimeRangeDays = lifetimeRangeDays;
         }
     }
 

@@ -38,6 +38,9 @@ billing:
     expose-datasource-failure-hint: ${BILLING_EXPOSE_DATASOURCE_FAILURE_HINT:true}
   analytics:
     max-range-days: ${BILLING_ANALYTICS_MAX_RANGE_DAYS:400}
+    # “Lifetime” definition for GET /api/v1/expenditure/summary/lifetime:
+    # KST today (inclusive) minus (lifetime-range-days - 1).
+    lifetime-range-days: ${BILLING_ANALYTICS_LIFETIME_RANGE_DAYS:400}
   rabbit:
     exchange: usage.events
     routing-key: usage.recorded
