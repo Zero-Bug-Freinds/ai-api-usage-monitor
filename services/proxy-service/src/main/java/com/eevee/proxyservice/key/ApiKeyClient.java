@@ -18,8 +18,14 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.springframework.http.HttpStatus.BAD_GATEWAY;
 import static org.springframework.http.HttpStatus.NOT_FOUND;
@@ -35,6 +41,7 @@ public class ApiKeyClient {
     private final WebClient identityKeyServiceWebClient;
     private final WebClient teamKeyServiceWebClient;
     private final LoadingCache<String, ResolvedApiKey> cache;
+    private final Map<String, List<ReverseLookupEntry>> reverseLookupIndexByHash = new ConcurrentHashMap<>();
 
     public ApiKeyClient(ProxyProperties proxyProperties) {
         this.proxyProperties = proxyProperties;
@@ -49,6 +56,7 @@ public class ApiKeyClient {
                 .expireAfterWrite(ttl)
                 .maximumSize(10_000)
                 .build(this::loadKeyBlocking);
+        buildReverseLookupIndex();
     }
 
     /**
@@ -59,23 +67,30 @@ public class ApiKeyClient {
             String teamId,
             AiProvider provider,
             String requestedApiKeyId,
-            String requestedAlias
+            String requestedAlias,
+            String rawApiKey
     ) {
         String normalizedTeamId = teamId == null ? "" : teamId.trim();
         String normalizedRequestedApiKeyId = normalizeSelector(requestedApiKeyId);
         String normalizedRequestedAlias = normalizeSelector(requestedAlias);
+        String normalizedRawApiKey = normalizeSelector(rawApiKey);
         if (normalizedRequestedApiKeyId != null || normalizedRequestedAlias != null) {
             return Mono.fromCallable(() -> loadKeyBlocking(
-                            keyLookupUserId,
+                            requireLookupUserId(keyLookupUserId),
                             normalizedTeamId,
                             provider,
                             normalizedRequestedApiKeyId,
-                            normalizedRequestedAlias
+                            normalizedRequestedAlias,
+                            null
                     ))
                     .subscribeOn(Schedulers.boundedElastic());
         }
-        String cacheKey = keyLookupUserId + ":" + normalizedTeamId + ":" + provider.pathSegment();
-        return Mono.fromCallable(() -> cache.get(cacheKey))
+        if (normalizedRawApiKey != null) {
+            return Mono.fromCallable(() -> loadByReverseLookup(normalizedRawApiKey, provider))
+                    .subscribeOn(Schedulers.boundedElastic());
+        }
+        String requiredLookupUserId = requireLookupUserId(keyLookupUserId);
+        return Mono.fromCallable(() -> cache.get(requiredLookupUserId + ":" + normalizedTeamId + ":" + provider.pathSegment()))
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
@@ -89,7 +104,7 @@ public class ApiKeyClient {
         String teamId = cacheKey.substring(firstIdx + 1, lastIdx);
         String segment = cacheKey.substring(lastIdx + 1);
         AiProvider provider = AiProvider.fromPathSegment(segment);
-        return loadKeyBlocking(keyLookupUserId, teamId, provider, null, null);
+        return loadKeyBlocking(keyLookupUserId, teamId, provider, null, null, null);
     }
 
     private ResolvedApiKey loadKeyBlocking(
@@ -97,7 +112,8 @@ public class ApiKeyClient {
             String teamId,
             AiProvider provider,
             String requestedApiKeyId,
-            String requestedAlias
+            String requestedAlias,
+            String rawApiKey
     ) {
         boolean teamRequest = !teamId.isBlank();
         String userForLog = masked(keyLookupUserId);
@@ -120,6 +136,9 @@ public class ApiKeyClient {
             }
             if (body == null || body.plainKey() == null || body.plainKey().isBlank()) {
                 throw new ResponseStatusException(BAD_GATEWAY, "Key lookup returned empty key");
+            }
+            if (!isActiveStatus(body.status())) {
+                throw new ResponseStatusException(NOT_FOUND, "존재하지 않은 API key 입니다");
             }
             String resolvedAlias = hasText(body.alias()) ? body.alias() : requestedAlias;
             log.info("Resolved API key lookupTarget={} provider={} teamId={} user={} keySource={}",
@@ -384,6 +403,139 @@ public class ApiKeyClient {
     ) {
     }
 
-    private record KeyResponse(String plainKey, String keyId, String alias) {
+    private ResolvedApiKey loadByReverseLookup(String rawApiKey, AiProvider provider) {
+        String rawHash = sha256Hex(rawApiKey);
+        List<ReverseLookupEntry> entries = reverseLookupIndexByHash.get(rawHash);
+        if (entries == null || entries.isEmpty()) {
+            throw new ResponseStatusException(NOT_FOUND, "존재하지 않은 API key 입니다");
+        }
+        List<ReverseLookupEntry> matches = entries.stream()
+                .filter(entry -> entry.provider() == null || entry.provider() == provider)
+                .toList();
+        if (matches.isEmpty()) {
+            throw new ResponseStatusException(NOT_FOUND, "존재하지 않은 API key 입니다");
+        }
+        List<ReverseLookupEntry> active = matches.stream()
+                .filter(entry -> isActiveStatus(entry.status()))
+                .toList();
+        if (active.isEmpty()) {
+            throw new ResponseStatusException(NOT_FOUND, "존재하지 않은 API key 입니다");
+        }
+        if (active.size() > 1) {
+            throw new ResponseStatusException(
+                    org.springframework.http.HttpStatus.CONFLICT,
+                    "동일한 별칭을 가진 키가 여러 개 존재합니다. 정확한 별칭을 입력해주세요."
+            );
+        }
+        ReverseLookupEntry selected = active.get(0);
+        log.info("Resolved API key via reverse lookup provider={} keyId={} source={}",
+                provider.pathSegment(), masked(selected.keyId()), selected.keySource());
+        String teamApiKeyId = hasText(selected.teamId()) ? selected.keyId() : null;
+        return new ResolvedApiKey(
+                rawApiKey,
+                selected.keyId(),
+                teamApiKeyId,
+                selected.alias(),
+                fingerprint(rawApiKey),
+                selected.keySource()
+        );
+    }
+
+    private void buildReverseLookupIndex() {
+        List<ProxyProperties.ReverseLookupMock> configured = proxyProperties.getKeyService().getReverseLookupMocks();
+        if (configured == null || configured.isEmpty()) {
+            return;
+        }
+        Map<String, List<ReverseLookupEntry>> grouped = new ConcurrentHashMap<>();
+        for (ProxyProperties.ReverseLookupMock item : configured) {
+            String keyHash = resolveConfiguredHash(item);
+            if (!hasText(keyHash) || !hasText(item.getKeyId())) {
+                continue;
+            }
+            AiProvider provider = parseProviderOrNull(item.getProvider());
+            ReverseLookupEntry entry = new ReverseLookupEntry(
+                    keyHash,
+                    provider,
+                    item.getKeyId().trim(),
+                    normalizeSelector(item.getUserId()),
+                    normalizeSelector(item.getTeamId()),
+                    normalizeSelector(item.getAlias()),
+                    normalizeSelector(item.getStatus()),
+                    hasText(item.getKeySource()) ? item.getKeySource().trim() : "reverse_lookup"
+            );
+            grouped.computeIfAbsent(keyHash, __ -> new ArrayList<>()).add(entry);
+        }
+        enforceNoCrossScopeDuplicate(grouped);
+        grouped.forEach((k, v) -> reverseLookupIndexByHash.put(k, v.stream()
+                .sorted(Comparator.comparing(ReverseLookupEntry::keyId))
+                .toList()));
+    }
+
+    private static void enforceNoCrossScopeDuplicate(Map<String, List<ReverseLookupEntry>> grouped) {
+        for (Map.Entry<String, List<ReverseLookupEntry>> item : grouped.entrySet()) {
+            List<ReverseLookupEntry> entries = item.getValue();
+            boolean hasTeam = entries.stream().anyMatch(e -> hasText(e.teamId()));
+            boolean hasPersonal = entries.stream().anyMatch(e -> !hasText(e.teamId()));
+            if (hasTeam && hasPersonal) {
+                throw new IllegalStateException("personal/team duplicate raw key registration is not allowed");
+            }
+        }
+    }
+
+    private static String resolveConfiguredHash(ProxyProperties.ReverseLookupMock item) {
+        if (hasText(item.getRawKeySha256())) {
+            return item.getRawKeySha256().trim().toLowerCase(Locale.ROOT);
+        }
+        if (hasText(item.getRawKey())) {
+            return sha256Hex(item.getRawKey().trim());
+        }
+        return null;
+    }
+
+    private static AiProvider parseProviderOrNull(String provider) {
+        if (!hasText(provider)) {
+            return null;
+        }
+        return AiProvider.fromPathSegment(provider.trim().toLowerCase(Locale.ROOT));
+    }
+
+    private static String requireLookupUserId(String keyLookupUserId) {
+        String normalized = normalizeSelector(keyLookupUserId);
+        if (!hasText(normalized)) {
+            throw new ResponseStatusException(NOT_FOUND, "존재하지 않은 API key 입니다");
+        }
+        return normalized;
+    }
+
+    private static boolean isActiveStatus(String status) {
+        if (!hasText(status)) {
+            return true;
+        }
+        return Objects.equals(status.trim().toUpperCase(Locale.ROOT), "ACTIVE");
+    }
+
+    private static String sha256Hex(String raw) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(raw.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash).toLowerCase(Locale.ROOT);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
+        }
+    }
+
+    private record KeyResponse(String plainKey, String keyId, String alias, String status) {
+    }
+
+    private record ReverseLookupEntry(
+            String keyHash,
+            AiProvider provider,
+            String keyId,
+            String userId,
+            String teamId,
+            String alias,
+            String status,
+            String keySource
+    ) {
     }
 }

@@ -7,12 +7,18 @@ public record UserContext(
         String teamId,
         String correlationId,
         String requestedApiKeyId,
-        String requestedApiKeyAlias
+        String requestedApiKeyAlias,
+        String extUserId,
+        String rawApiKey
 ) {
     /**
      * Internal API key lookup uses numeric user PK when present; otherwise falls back to gateway subject (e.g. email).
      */
     public String keyLookupUserId() {
         return (platformUserId != null && !platformUserId.isBlank()) ? platformUserId : userId;
+    }
+
+    public boolean hasUserContext() {
+        return keyLookupUserId() != null && !keyLookupUserId().isBlank();
     }
 }

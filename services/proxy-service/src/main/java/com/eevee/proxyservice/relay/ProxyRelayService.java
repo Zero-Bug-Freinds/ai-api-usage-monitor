@@ -86,7 +86,8 @@ public class ProxyRelayService {
                                 ctx.teamId(),
                                 provider,
                                 ctx.requestedApiKeyId(),
-                                ctx.requestedApiKeyAlias()
+                                ctx.requestedApiKeyAlias(),
+                                ctx.rawApiKey()
                         )
                         .flatMap(resolvedApiKey -> forward(exchange, ctx, handler, provider, remainder, resolvedApiKey)));
     }
