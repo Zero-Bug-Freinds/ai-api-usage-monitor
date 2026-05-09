@@ -123,7 +123,7 @@ public class BudgetForecastService {
 						scopeType,
 						scopeId
 				);
-		long observedSevenDayTokens = summary.totalInputTokens() + summary.totalOutputTokens();
+		long observedSevenDayTokens = summary.totalTokens();
 		if (observedSevenDayTokens <= 0) {
 			if (usagePredictionSnapshot == null) {
 				return new NormalizedRequestContext(request, false);
@@ -225,7 +225,7 @@ public class BudgetForecastService {
 					.limit(7)
 					.toList();
 		}
-		long totalTokens = Math.max(0L, summary.totalInputTokens() + summary.totalOutputTokens());
+		long totalTokens = summary.totalTokens();
 		long avg = totalTokens <= 0 ? 0L : Math.max(1L, totalTokens / 7);
 		List<Long> generated = new ArrayList<>();
 		for (int i = 0; i < 7; i++) {

@@ -667,13 +667,16 @@ public class PolicyRecommendationAgentService {
 						request.scopeType().name(),
 						request.scopeId()
 				);
-		if (rollupSummary.totalInputTokens() > 0 || rollupSummary.totalOutputTokens() > 0) {
+		if (rollupSummary.totalInputTokens() > 0
+				|| rollupSummary.totalOutputTokens() > 0
+				|| rollupSummary.totalReasoningTokens() > 0) {
 			RecommendationConfidenceLevel confidence = rollupSummary.totalRequests() >= 5
 					? RecommendationConfidenceLevel.MEDIUM
 					: RecommendationConfidenceLevel.LOW;
+			long totalOutputTokens = rollupSummary.totalOutputTokens() + rollupSummary.totalReasoningTokens();
 			return new UsageProfile(
 					rollupSummary.totalInputTokens(),
-					rollupSummary.totalOutputTokens(),
+					totalOutputTokens,
 					rollupSummary.averageLatencyMs(),
 					confidence,
 					rollupSummary.totalRequests()

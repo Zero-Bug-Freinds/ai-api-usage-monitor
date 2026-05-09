@@ -39,6 +39,9 @@ public class UsageRecordedTokenRollupEntity {
 	private long outputTokens;
 
 	@Column(nullable = false)
+	private long reasoningTokens;
+
+	@Column(nullable = false)
 	private long requestCount;
 
 	@Column(nullable = false)
@@ -57,6 +60,7 @@ public class UsageRecordedTokenRollupEntity {
 			LocalDate day,
 			long inputTokens,
 			long outputTokens,
+			long reasoningTokens,
 			long requestCount,
 			long totalLatencyMs,
 			Instant lastUpdatedAt
@@ -67,6 +71,7 @@ public class UsageRecordedTokenRollupEntity {
 		this.day = day;
 		this.inputTokens = inputTokens;
 		this.outputTokens = outputTokens;
+		this.reasoningTokens = reasoningTokens;
 		this.requestCount = requestCount;
 		this.totalLatencyMs = totalLatencyMs;
 		this.lastUpdatedAt = lastUpdatedAt;
@@ -78,12 +83,14 @@ public class UsageRecordedTokenRollupEntity {
 	public LocalDate getDay() { return day; }
 	public long getInputTokens() { return inputTokens; }
 	public long getOutputTokens() { return outputTokens; }
+	public long getReasoningTokens() { return reasoningTokens; }
 	public long getRequestCount() { return requestCount; }
 	public long getTotalLatencyMs() { return totalLatencyMs; }
 	public Instant getLastUpdatedAt() { return lastUpdatedAt; }
 
 	public void setInputTokens(long inputTokens) { this.inputTokens = inputTokens; }
 	public void setOutputTokens(long outputTokens) { this.outputTokens = outputTokens; }
+	public void setReasoningTokens(long reasoningTokens) { this.reasoningTokens = reasoningTokens; }
 	public void setRequestCount(long requestCount) { this.requestCount = requestCount; }
 	public void setTotalLatencyMs(long totalLatencyMs) { this.totalLatencyMs = totalLatencyMs; }
 	public void setLastUpdatedAt(Instant lastUpdatedAt) { this.lastUpdatedAt = lastUpdatedAt; }
