@@ -23,23 +23,23 @@ SELECT v.provider,
 FROM (
     VALUES
         -- Opus
-        ('ANTHROPIC', 'claude-opus-4-7', TIMESTAMPTZ '2024-01-01T00:00:00Z', NULL, 5.00, 25.00),
-        ('ANTHROPIC', 'claude-opus-4-6', TIMESTAMPTZ '2024-01-01T00:00:00Z', NULL, 5.00, 25.00),
-        ('ANTHROPIC', 'claude-opus-4-5-20251101', TIMESTAMPTZ '2024-01-01T00:00:00Z', NULL, 5.00, 25.00),
-        ('ANTHROPIC', 'claude-opus-4-1-20250805', TIMESTAMPTZ '2024-01-01T00:00:00Z', NULL, 15.00, 75.00),
+        ('ANTHROPIC', 'claude-opus-4-7', TIMESTAMPTZ '2024-01-01T00:00:00Z', NULL::timestamptz, 5.00, 25.00),
+        ('ANTHROPIC', 'claude-opus-4-6', TIMESTAMPTZ '2024-01-01T00:00:00Z', NULL::timestamptz, 5.00, 25.00),
+        ('ANTHROPIC', 'claude-opus-4-5-20251101', TIMESTAMPTZ '2024-01-01T00:00:00Z', NULL::timestamptz, 5.00, 25.00),
+        ('ANTHROPIC', 'claude-opus-4-1-20250805', TIMESTAMPTZ '2024-01-01T00:00:00Z', NULL::timestamptz, 15.00, 75.00),
 
         -- Sonnet
-        ('ANTHROPIC', 'claude-sonnet-4-6', TIMESTAMPTZ '2024-01-01T00:00:00Z', NULL, 3.00, 15.00),
-        ('ANTHROPIC', 'claude-sonnet-4-5', TIMESTAMPTZ '2024-01-01T00:00:00Z', NULL, 3.00, 15.00),
-        ('ANTHROPIC', 'claude-sonnet-4-5-20250929', TIMESTAMPTZ '2024-01-01T00:00:00Z', NULL, 3.00, 15.00),
-        ('ANTHROPIC', 'claude-sonnet-4', TIMESTAMPTZ '2024-01-01T00:00:00Z', NULL, 3.00, 15.00),
-        ('ANTHROPIC', 'claude-sonnet-4-20250514', TIMESTAMPTZ '2024-01-01T00:00:00Z', NULL, 3.00, 15.00),
+        ('ANTHROPIC', 'claude-sonnet-4-6', TIMESTAMPTZ '2024-01-01T00:00:00Z', NULL::timestamptz, 3.00, 15.00),
+        ('ANTHROPIC', 'claude-sonnet-4-5', TIMESTAMPTZ '2024-01-01T00:00:00Z', NULL::timestamptz, 3.00, 15.00),
+        ('ANTHROPIC', 'claude-sonnet-4-5-20250929', TIMESTAMPTZ '2024-01-01T00:00:00Z', NULL::timestamptz, 3.00, 15.00),
+        ('ANTHROPIC', 'claude-sonnet-4', TIMESTAMPTZ '2024-01-01T00:00:00Z', NULL::timestamptz, 3.00, 15.00),
+        ('ANTHROPIC', 'claude-sonnet-4-20250514', TIMESTAMPTZ '2024-01-01T00:00:00Z', NULL::timestamptz, 3.00, 15.00),
 
         -- Haiku
-        ('ANTHROPIC', 'claude-haiku-4-5', TIMESTAMPTZ '2024-01-01T00:00:00Z', NULL, 1.00, 5.00),
-        ('ANTHROPIC', 'claude-haiku-4-5-20251001', TIMESTAMPTZ '2024-01-01T00:00:00Z', NULL, 1.00, 5.00),
-        ('ANTHROPIC', 'claude-haiku-3-5', TIMESTAMPTZ '2024-01-01T00:00:00Z', NULL, 0.80, 4.00),
-        ('ANTHROPIC', 'claude-haiku-3', TIMESTAMPTZ '2024-01-01T00:00:00Z', NULL, 0.25, 1.25)
+        ('ANTHROPIC', 'claude-haiku-4-5', TIMESTAMPTZ '2024-01-01T00:00:00Z', NULL::timestamptz, 1.00, 5.00),
+        ('ANTHROPIC', 'claude-haiku-4-5-20251001', TIMESTAMPTZ '2024-01-01T00:00:00Z', NULL::timestamptz, 1.00, 5.00),
+        ('ANTHROPIC', 'claude-haiku-3-5', TIMESTAMPTZ '2024-01-01T00:00:00Z', NULL::timestamptz, 0.80, 4.00),
+        ('ANTHROPIC', 'claude-haiku-3', TIMESTAMPTZ '2024-01-01T00:00:00Z', NULL::timestamptz, 0.25, 1.25)
 ) AS v(
     provider,
     model,
