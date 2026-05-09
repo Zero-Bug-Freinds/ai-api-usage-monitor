@@ -5,7 +5,6 @@ import com.eevee.usage.events.AiProvider;
 import com.eevee.usage.events.TokenUsage;
 import com.eevee.usage.events.UsageRecordedEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,7 +23,6 @@ import static org.awaitility.Awaitility.await;
  * When cost-out is disabled, billable rows are stored as not cost-event-applicable and no outbound message is sent.
  */
 @SpringBootTest
-@Tag("integration")
 @TestPropertySource(properties = "billing.rabbit.cost-out.enabled=false")
 class BillingRecordedEventCostOutDisabledIntegrationTest extends AbstractBillingIntegrationTest {
 
