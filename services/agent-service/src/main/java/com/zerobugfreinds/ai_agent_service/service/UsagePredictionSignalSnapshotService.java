@@ -1,19 +1,30 @@
 package com.zerobugfreinds.ai_agent_service.service;
 
 import com.eevee.usage.events.UsagePredictionSignalsEvent;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.zerobugfreinds.ai_agent_service.entity.UsagePredictionSignalSnapshotEntity;
+import com.zerobugfreinds.ai_agent_service.repository.UsagePredictionSignalSnapshotRepository;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class UsagePredictionSignalSnapshotService {
 
-	private final Map<String, UsagePredictionSignalSnapshot> byScope = new ConcurrentHashMap<>();
+	private final UsagePredictionSignalSnapshotRepository snapshotRepository;
+	private final ObjectMapper objectMapper;
+
+	public UsagePredictionSignalSnapshotService(
+			UsagePredictionSignalSnapshotRepository snapshotRepository,
+			ObjectMapper objectMapper
+	) {
+		this.snapshotRepository = snapshotRepository;
+		this.objectMapper = objectMapper;
+	}
 
 	public void upsert(UsagePredictionSignalsEvent event) {
 		if (event == null || event.userId() == null || event.userId().isBlank()) {
@@ -21,23 +32,33 @@ public class UsagePredictionSignalSnapshotService {
 		}
 		String teamId = event.teamId() != null ? event.teamId().trim() : "";
 		String userId = event.userId().trim();
-		String key = scopeKey(teamId, userId);
-		byScope.put(
-				key,
-				new UsagePredictionSignalSnapshot(
+		UsagePredictionSignalSnapshotEntity entity = snapshotRepository
+				.findByTeamIdAndUserId(teamId, userId)
+				.orElse(new UsagePredictionSignalSnapshotEntity(
 						teamId,
 						userId,
-						event.averageDailySpendUsd7d(),
-						event.averageDailyTokenUsage7d(),
-						event.recentDailySpendUsd(),
-						event.publishedAt()
-				)
-		);
+						null,
+						null,
+						"[]",
+						null
+				));
+		entity.setAverageDailySpendUsd7d(event.averageDailySpendUsd7d());
+		entity.setAverageDailyTokenUsage7d(event.averageDailyTokenUsage7d());
+		entity.setRecentDailySpendUsdJson(serializeRecentDailySpend(event.recentDailySpendUsd()));
+		entity.setPublishedAt(event.publishedAt());
+		snapshotRepository.save(entity);
 	}
 
 	public List<UsagePredictionSignalSnapshot> findAll() {
-		return byScope.values().stream()
-				.sorted(Comparator.comparing(UsagePredictionSignalSnapshot::publishedAt, Comparator.nullsLast(Comparator.reverseOrder())))
+		return snapshotRepository.findAllByOrderByPublishedAtDesc().stream()
+				.map(entity -> new UsagePredictionSignalSnapshot(
+						entity.getTeamId(),
+						entity.getUserId(),
+						entity.getAverageDailySpendUsd7d(),
+						entity.getAverageDailyTokenUsage7d(),
+						deserializeRecentDailySpend(entity.getRecentDailySpendUsdJson()),
+						entity.getPublishedAt()
+				))
 				.toList();
 	}
 
@@ -51,7 +72,22 @@ public class UsagePredictionSignalSnapshotService {
 	) {
 	}
 
-	private static String scopeKey(String teamId, String userId) {
-		return (teamId == null ? "" : teamId) + "|" + userId;
+	private String serializeRecentDailySpend(List<BigDecimal> values) {
+		try {
+			return objectMapper.writeValueAsString(values == null ? List.<BigDecimal>of() : values);
+		} catch (JsonProcessingException e) {
+			throw new IllegalStateException("USAGE_PREDICTION_RECENT_SPEND_SERIALIZATION_FAILED", e);
+		}
+	}
+
+	private List<BigDecimal> deserializeRecentDailySpend(String json) {
+		if (json == null || json.isBlank()) {
+			return List.of();
+		}
+		try {
+			return objectMapper.readValue(json, new TypeReference<List<BigDecimal>>() {});
+		} catch (JsonProcessingException e) {
+			throw new IllegalStateException("USAGE_PREDICTION_RECENT_SPEND_DESERIALIZATION_FAILED", e);
+		}
 	}
 }

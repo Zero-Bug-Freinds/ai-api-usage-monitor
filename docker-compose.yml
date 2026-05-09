@@ -142,6 +142,28 @@ services:
       retries: 10
       start_period: 10s
 
+  postgres-agent:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+      AGENT_POSTGRES_DB: ${AGENT_POSTGRES_DB:-agent_db}
+      AGENT_POSTGRES_USER: ${AGENT_POSTGRES_USER:-agent_app}
+      AGENT_POSTGRES_PASSWORD: ${AGENT_POSTGRES_PASSWORD:-agent_app}
+    ports:
+      - "${AGENT_POSTGRES_PORT:-5437}:5432"
+    volumes:
+      - postgres_agent_data:/var/lib/postgresql/data
+      - ./docker/postgres/init/05-create-agent-db.sh:/docker-entrypoint-initdb.d/05-create-agent-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
   rabbitmq:
     image: rabbitmq:3-management-alpine
     restart: unless-stopped
@@ -228,10 +250,17 @@ services:
       context: .
       dockerfile: services/agent-service/Dockerfile
     depends_on:
+      postgres-agent:
+        condition: service_healthy
       rabbitmq:
         condition: service_healthy
     environment:
       AI_AGENT_SERVICE_PORT: 8096
+      AGENT_POSTGRES_HOST: postgres-agent
+      AGENT_POSTGRES_PORT: 5432
+      AGENT_POSTGRES_DB: ${AGENT_POSTGRES_DB:-agent_db}
+      AGENT_POSTGRES_USER: ${AGENT_POSTGRES_USER:-agent_app}
+      AGENT_POSTGRES_PASSWORD: ${AGENT_POSTGRES_PASSWORD:-agent_app}
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_PORT: 5672
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
@@ -558,3 +587,4 @@ volumes:
   postgres_usage_data:
   postgres_billing_data:
   postgres_notification_data:
+  postgres_agent_data:

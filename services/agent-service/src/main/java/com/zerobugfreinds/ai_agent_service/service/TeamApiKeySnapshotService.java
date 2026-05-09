@@ -1,41 +1,74 @@
 package com.zerobugfreinds.ai_agent_service.service;
 
+import com.zerobugfreinds.ai_agent_service.entity.TeamApiKeySnapshotEntity;
+import com.zerobugfreinds.ai_agent_service.repository.TeamApiKeySnapshotRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
-import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class TeamApiKeySnapshotService {
 
-	private final Map<Long, Map<Long, TeamApiKeySnapshot>> snapshotsByTeamId = new ConcurrentHashMap<>();
+	private final TeamApiKeySnapshotRepository snapshotRepository;
+
+	public TeamApiKeySnapshotService(TeamApiKeySnapshotRepository snapshotRepository) {
+		this.snapshotRepository = snapshotRepository;
+	}
 
 	public void upsert(TeamApiKeySnapshot snapshot) {
-		Map<Long, TeamApiKeySnapshot> teamKeys = snapshotsByTeamId.computeIfAbsent(
-				snapshot.teamId(),
-				unused -> new ConcurrentHashMap<>()
-		);
-		teamKeys.put(snapshot.teamApiKeyId(), snapshot);
+		TeamApiKeySnapshotEntity entity = snapshotRepository
+				.findByTeamIdAndTeamApiKeyId(snapshot.teamId(), snapshot.teamApiKeyId())
+				.orElse(
+						new TeamApiKeySnapshotEntity(
+								snapshot.teamId(),
+								snapshot.teamApiKeyId(),
+								snapshot.teamName(),
+								snapshot.ownerUserId(),
+								snapshot.visibility(),
+								snapshot.alias(),
+								snapshot.provider(),
+								snapshot.status(),
+								snapshot.retainLogs(),
+								snapshot.updatedAt()
+						)
+				);
+		entity.setTeamName(snapshot.teamName());
+		entity.setOwnerUserId(snapshot.ownerUserId());
+		entity.setVisibility(snapshot.visibility());
+		entity.setAlias(snapshot.alias());
+		entity.setProvider(snapshot.provider());
+		entity.setStatus(snapshot.status());
+		entity.setRetainLogs(snapshot.retainLogs());
+		entity.setUpdatedAt(snapshot.updatedAt() != null ? snapshot.updatedAt() : Instant.now());
+		snapshotRepository.save(entity);
 	}
 
 	public List<TeamApiKeySnapshot> findByTeamId(Long teamId) {
-		Map<Long, TeamApiKeySnapshot> teamKeys = snapshotsByTeamId.get(teamId);
-		if (teamKeys == null) {
-			return List.of();
-		}
-		return teamKeys.values().stream()
-				.sorted(Comparator.comparing(TeamApiKeySnapshot::updatedAt).reversed())
+		return snapshotRepository.findByTeamIdOrderByUpdatedAtDesc(teamId).stream()
+				.map(this::toSnapshot)
 				.toList();
 	}
 
 	public List<TeamApiKeySnapshot> findAll() {
-		return snapshotsByTeamId.values().stream()
-				.flatMap(v -> v.values().stream())
-				.sorted(Comparator.comparing(TeamApiKeySnapshot::updatedAt).reversed())
+		return snapshotRepository.findAllByOrderByUpdatedAtDesc().stream()
+				.map(this::toSnapshot)
 				.toList();
+	}
+
+	private TeamApiKeySnapshot toSnapshot(TeamApiKeySnapshotEntity entity) {
+		return new TeamApiKeySnapshot(
+				entity.getTeamId(),
+				entity.getTeamName(),
+				entity.getTeamApiKeyId(),
+				entity.getOwnerUserId(),
+				entity.getVisibility(),
+				entity.getAlias(),
+				entity.getProvider(),
+				entity.getStatus(),
+				entity.getRetainLogs(),
+				entity.getUpdatedAt()
+		);
 	}
 
 	public record TeamApiKeySnapshot(

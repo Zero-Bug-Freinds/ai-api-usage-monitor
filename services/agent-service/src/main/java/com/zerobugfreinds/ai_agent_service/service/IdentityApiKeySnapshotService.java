@@ -3,34 +3,34 @@ package com.zerobugfreinds.ai_agent_service.service;
 import com.zerobugfreinds.identity.events.ExternalApiKeyBudgetChangedEvent;
 import com.zerobugfreinds.identity.events.ExternalApiKeyDeletedEvent;
 import com.zerobugfreinds.identity.events.ExternalApiKeyStatusChangedEvent;
+import com.zerobugfreinds.ai_agent_service.entity.IdentityApiKeySnapshotEntity;
+import com.zerobugfreinds.ai_agent_service.repository.IdentityApiKeySnapshotRepository;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class IdentityApiKeySnapshotService {
 
-	private final Map<Long, Map<Long, ApiKeySnapshot>> snapshotsByUserId = new ConcurrentHashMap<>();
+	private final IdentityApiKeySnapshotRepository snapshotRepository;
+
+	public IdentityApiKeySnapshotService(IdentityApiKeySnapshotRepository snapshotRepository) {
+		this.snapshotRepository = snapshotRepository;
+	}
 
 	public void upsertStatus(ExternalApiKeyStatusChangedEvent event) {
-		Map<Long, ApiKeySnapshot> userKeys = snapshotsByUserId.computeIfAbsent(
-				event.userId(),
-				unused -> new ConcurrentHashMap<>()
-		);
-		ApiKeySnapshot current = userKeys.get(event.keyId());
-		BigDecimal budget = current != null ? current.monthlyBudgetUsd() : null;
+		IdentityApiKeySnapshotEntity current = snapshotRepository
+				.findByUserIdAndKeyId(event.userId(), event.keyId())
+				.orElse(null);
+		BigDecimal budget = current != null ? current.getMonthlyBudgetUsd() : null;
 		Instant updatedAt = event.occurredAt() != null ? event.occurredAt() : Instant.now();
 
-		userKeys.put(
-				event.keyId(),
-				new ApiKeySnapshot(
-						event.keyId(),
+		snapshotRepository.save(
+				new IdentityApiKeySnapshotEntity(
 						event.userId(),
+						event.keyId(),
 						event.alias(),
 						event.provider(),
 						event.visibility(),
@@ -42,32 +42,29 @@ public class IdentityApiKeySnapshotService {
 	}
 
 	public void upsertBudget(ExternalApiKeyBudgetChangedEvent event) {
-		Map<Long, ApiKeySnapshot> userKeys = snapshotsByUserId.computeIfAbsent(
-				event.userId(),
-				unused -> new ConcurrentHashMap<>()
-		);
-		ApiKeySnapshot current = userKeys.get(event.keyId());
+		IdentityApiKeySnapshotEntity current = snapshotRepository
+				.findByUserIdAndKeyId(event.userId(), event.keyId())
+				.orElse(null);
 		Instant updatedAt = event.occurredAt() != null ? event.occurredAt() : Instant.now();
 
 		String alias = event.alias();
 		if ((alias == null || alias.isBlank()) && current != null) {
-			alias = current.alias();
+			alias = current.getAlias();
 		}
 		String provider = event.provider();
 		if ((provider == null || provider.isBlank()) && current != null) {
-			provider = current.provider();
+			provider = current.getProvider();
 		}
 		String visibility = event.visibility();
 		if ((visibility == null || visibility.isBlank()) && current != null) {
-			visibility = current.visibility();
+			visibility = current.getVisibility();
 		}
-		String status = event.status() != null ? event.status().name() : (current != null ? current.status() : "ACTIVE");
+		String status = event.status() != null ? event.status().name() : (current != null ? current.getStatus() : "ACTIVE");
 
-		userKeys.put(
-				event.keyId(),
-				new ApiKeySnapshot(
-						event.keyId(),
+		snapshotRepository.save(
+				new IdentityApiKeySnapshotEntity(
 						event.userId(),
+						event.keyId(),
 						alias,
 						provider,
 						visibility,
@@ -79,31 +76,32 @@ public class IdentityApiKeySnapshotService {
 	}
 
 	public void delete(ExternalApiKeyDeletedEvent event) {
-		Map<Long, ApiKeySnapshot> userKeys = snapshotsByUserId.get(event.userId());
-		if (userKeys == null) {
-			return;
-		}
-		userKeys.remove(event.apiKeyId());
-		if (userKeys.isEmpty()) {
-			snapshotsByUserId.remove(event.userId());
-		}
+		snapshotRepository.deleteByUserIdAndKeyId(event.userId(), event.apiKeyId());
 	}
 
 	public List<ApiKeySnapshot> findByUserId(Long userId) {
-		Map<Long, ApiKeySnapshot> userKeys = snapshotsByUserId.get(userId);
-		if (userKeys == null) {
-			return List.of();
-		}
-		return userKeys.values().stream()
-				.sorted(Comparator.comparing(ApiKeySnapshot::updatedAt).reversed())
+		return snapshotRepository.findByUserIdOrderByUpdatedAtDesc(userId).stream()
+				.map(this::toSnapshot)
 				.toList();
 	}
 
 	public List<ApiKeySnapshot> findAll() {
-		return snapshotsByUserId.values().stream()
-				.flatMap(keys -> keys.values().stream())
-				.sorted(Comparator.comparing(ApiKeySnapshot::updatedAt).reversed())
+		return snapshotRepository.findAllByOrderByUpdatedAtDesc().stream()
+				.map(this::toSnapshot)
 				.toList();
+	}
+
+	private ApiKeySnapshot toSnapshot(IdentityApiKeySnapshotEntity entity) {
+		return new ApiKeySnapshot(
+				entity.getKeyId(),
+				entity.getUserId(),
+				entity.getAlias(),
+				entity.getProvider(),
+				entity.getVisibility(),
+				entity.getStatus(),
+				entity.getMonthlyBudgetUsd(),
+				entity.getUpdatedAt()
+		);
 	}
 
 	public record ApiKeySnapshot(
