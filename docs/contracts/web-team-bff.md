@@ -1,6 +1,6 @@
 # Web(Next.js) ↔ Team Service BFF 계약
 
-버전: 0.12  
+버전: 0.13  
 관련: [web-split-boundary.md](./web-split-boundary.md), [web-identity-bff.md](./web-identity-bff.md) — `/teams` UI 소유·경로: §2.3
 
 ---
@@ -149,7 +149,7 @@
   - 요청 본문: `provider` (`OPENAI`/`GOOGLE`/`ANTHROPIC`), `alias`, `externalKey`, `monthlyBudgetUsd` (0 이상, USD 월 예산 한도 — identity-service 외부 키와 동일 개념)
   - 성공: `201`, `data`에 등록된 키 요약(위 표의 활성 키에 해당하는 필드)
   - 실패:
-    - `400` (`success=false`): 필수값 누락, alias 중복, 동일 provider+키 값(해시)이 **이미 활성**인 경우 `이미 등록된 API Key입니다`, 동일 해시가 **삭제 예정** 행에 있으면 `삭제 예정키와 중복입니다`
+    - `400` (`success=false`): 필수값 누락, alias 중복, 동일 provider+키 값(해시)이 **이미 활성**인 경우 `이미 등록된 API Key입니다`, 동일 해시가 **삭제 예정** 행에 있으면 `삭제 예정키와 중복입니다`, 또는 동일 키가 Identity 개인 키로 이미 등록된 경우 `Identity에 이미 등록된 API Key입니다`
     - `403` (`success=false`): 팀장이 아닌 경우(팀 멤버만인 경우 등)
     - `404` (`success=false`): 대상 팀이 존재하지 않는 경우
 
@@ -157,7 +157,7 @@
   - 요청 본문: `alias`, `monthlyBudgetUsd` (필수). Identity `/teams`·team `web` UI는 별칭·예산만 보낸다. 서버는 `externalKey`가 비어 있지 않을 때에만 키 값·provider 갱신을 허용한다(내부·다른 클라이언트용).
   - 권한: **팀 멤버**(팀장 아님 포함).
   - 성공: `200`, 수정된 키 요약
-  - 실패: `400` (검증/중복/대상 없음, **삭제 예정인 키는 수정 불가**), `403`, `404`
+  - 실패: `400` (검증/중복/대상 없음, **삭제 예정인 키는 수정 불가**, Identity 개인 키와의 해시 중복), `403`, `404`
 
 - `DELETE /api/team/v1/teams/{teamId}/api-keys/{keyId}`
   - 선택 쿼리: `gracePeriodDays` (정수, 생략 시 **기본 7일**). 허용 범위는 **0~365일**.

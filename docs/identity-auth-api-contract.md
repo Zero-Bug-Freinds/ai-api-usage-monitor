@@ -1,6 +1,6 @@
 # Identity 인증 API 계약 (백엔드)
 
-버전: 1.8  
+버전: 1.9  
 관련: [architecture.md](./architecture.md) §1.3, [contracts/web-identity-bff.md](./contracts/web-identity-bff.md)
 
 ---
@@ -188,7 +188,7 @@
 
 ## 7. 외부 API 키 등록 계약
 
-클라이언트가 Gemini 등 **제3자에서 발급받은 API 키 평문**과 **제공자(`provider`)**, **별칭(`alias`)**, **월 예산(`monthlyBudgetUsd`)**을 전달하면, 서버는 키 평문을 **AES-256-GCM으로 암호화해 DB에 저장**하고, 응답 본문에는 **평문·암호문을 포함하지 않는다**. 동일 사용자·동일 `provider`·동일 키 값(해시)에 대해 **이미 활성 행이 있으면** `409`, **삭제 예정 행만 존재하면** `409`(메시지: `삭제예정키와 중복된 키`)를 반환한다.
+클라이언트가 Gemini 등 **제3자에서 발급받은 API 키 평문**과 **제공자(`provider`)**, **별칭(`alias`)**, **월 예산(`monthlyBudgetUsd`)**을 전달하면, 서버는 키 평문을 **AES-256-GCM으로 암호화해 DB에 저장**하고, 응답 본문에는 **평문·암호문을 포함하지 않는다**. 동일 사용자·동일 `provider`·동일 키 값(해시)에 대해 **이미 활성 행이 있으면** `409`, **삭제 예정 행만 존재하면** `409`(메시지: `삭제예정키와 중복된 키`)를 반환한다. 또한 동일 키가 Team API Key로 이미 등록돼 있으면 `409`(메시지: `팀에 이미 등록된 API 키입니다`)를 반환한다.
 
 ### 7.1 요청
 
@@ -262,6 +262,7 @@
 | `provider` 값 불가 | `400` | `{"success":false,"message":"provider 값이 올바르지 않습니다. 허용: GOOGLE, OPENAI, ANTHROPIC","data":null}` (또는 본문 형식 오류 메시지) |
 | 동일 provider·동일 키 재등록(활성 행 존재) | `409` | `{"success":false,"message":"이미 등록된 API 키입니다","data":null}` |
 | 동일 provider·동일 키, 삭제 예정 행과만 충돌 | `409` | `{"success":false,"message":"삭제예정키와 중복된 키","data":null}` |
+| 동일 키가 Team API Key와 충돌 | `409` | `{"success":false,"message":"팀에 이미 등록된 API 키입니다","data":null}` |
 
 ### 7.3 캐시 정책
 
@@ -339,6 +340,7 @@
 | 별칭 중복 | `409` | `{"success":false,"message":"이미 사용 중인 별칭입니다","data":null}` |
 | 동일 provider·동일 키 중복(활성 다른 행) | `409` | `{"success":false,"message":"이미 등록된 API 키입니다","data":null}` |
 | 동일 provider·동일 키, 삭제 예정 행과만 충돌 | `409` | `{"success":false,"message":"삭제예정키와 중복된 키","data":null}` |
+| 동일 키가 Team API Key와 충돌 | `409` | `{"success":false,"message":"팀에 이미 등록된 API 키입니다","data":null}` |
 
 ### 9.3 캐시 정책
 
@@ -396,6 +398,7 @@
 | 보호 API 미인증 | `401` | 액세스 토큰 없음/무효 (`GET/POST/PUT/DELETE /api/auth/external-keys` 등) |
 | 외부 API 키 별칭 중복 | `409` | 동일 사용자 기준 별칭 재사용              |
 | 외부 API 키 중복 등록 | `409` | 동일 사용자·동일 provider·동일 키 값 — 활성 행 존재 시 `이미 등록된 API 키입니다`, 삭제 예정 행과만 충돌 시 `삭제예정키와 중복된 키` |
+| Team API 키와 중복 등록 | `409` | 동일 키 해시가 Team Service에 이미 존재 (`팀에 이미 등록된 API 키입니다`) |
 | 외부 API 키 삭제 예정 충돌 | `409` | 이미 삭제 예정이거나, 삭제 예정 상태가 아닌 키 취소 등 상태 충돌 |
 | 외부 API 키 미존재 | `404` | 수정/조회 대상 외부 API 키를 찾을 수 없음    |
 | 이메일 중복    | `409` | 회원가입 중복                      |
