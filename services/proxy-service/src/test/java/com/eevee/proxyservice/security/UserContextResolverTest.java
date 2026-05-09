@@ -42,4 +42,32 @@ class UserContextResolverTest {
                 })
                 .verifyComplete();
     }
+
+    @Test
+    void allowsMissingUserHeaderWhenRawApiKeyIsProvided() {
+        MockServerHttpRequest request = MockServerHttpRequest.get("/proxy/google/")
+                .header("X-Api-Key", "sk-ext-raw")
+                .build();
+        MockServerWebExchange exchange = MockServerWebExchange.from(request);
+
+        StepVerifier.create(resolver.fromExchange(exchange))
+                .assertNext(ctx -> {
+                    assertThat(ctx.userId()).isNull();
+                    assertThat(ctx.rawApiKey()).isEqualTo("sk-ext-raw");
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void mapsTeamHeaderIntoUserContext() {
+        MockServerHttpRequest request = MockServerHttpRequest.get("/proxy/google/")
+                .header("X-User-Id", "a@b.com")
+                .header("X-Team-Id", "team-123")
+                .build();
+        MockServerWebExchange exchange = MockServerWebExchange.from(request);
+
+        StepVerifier.create(resolver.fromExchange(exchange))
+                .assertNext(ctx -> assertThat(ctx.teamId()).isEqualTo("team-123"))
+                .verifyComplete();
+    }
 }

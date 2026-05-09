@@ -6,11 +6,11 @@ type TeamPageProps = {
 
 export default async function TeamUsagePage({ searchParams }: TeamPageProps) {
   const params = await searchParams
-  const tab = params.tab === "member" ? "member" : "team"
+  const teamView = params.tab === "member" ? "member" : "team"
 
   return (
     <TeamUsageDashboard
-      initialTab={tab}
+      teamView={teamView}
       viewTeamIdFromQuery={typeof params.viewTeamId === "string" ? params.viewTeamId : undefined}
     />
   )

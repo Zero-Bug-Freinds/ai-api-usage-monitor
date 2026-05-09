@@ -82,7 +82,8 @@ usage:
     max-range-days: ${USAGE_ANALYTICS_MAX_RANGE_DAYS:400}
   team:
     base-url: ${USAGE_TEAM_SERVICE_URL:http://team-service:8093}
-    cache-ttl-seconds: ${USAGE_TEAM_CACHE_TTL_SECONDS:180}
+    team-list-cache-ttl-seconds: ${USAGE_TEAM_LIST_CACHE_TTL_SECONDS:300}
+    member-cache-ttl-seconds: ${USAGE_TEAM_MEMBER_CACHE_TTL_SECONDS:300}
     timeout-ms: ${USAGE_TEAM_TIMEOUT_MS:1500}
   gateway:
     # 운영에서는 반드시 환경 변수로 덮어쓴다. 비어 있으면 로컬 기본값(게이트웨이·프록시와 동일).

@@ -22,6 +22,7 @@ public class GatewayProperties {
 
     private final Jwt jwt = new Jwt();
     private final Cors cors = new Cors();
+    private final ExtAi extAi = new ExtAi();
 
     public boolean isDevMode() {
         return devMode;
@@ -45,6 +46,10 @@ public class GatewayProperties {
 
     public Cors getCors() {
         return cors;
+    }
+
+    public ExtAi getExtAi() {
+        return extAi;
     }
 
     public static class Jwt {
@@ -71,6 +76,54 @@ public class GatewayProperties {
 
         public void setAllowedOrigins(List<String> allowedOrigins) {
             this.allowedOrigins = allowedOrigins;
+        }
+    }
+
+    public static class ExtAi {
+        private boolean enabled = false;
+        private String keyId = "";
+        private String hmacSecret = "";
+        private long timestampSkewSeconds = 300;
+        private long nonceTtlSeconds = 300;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getKeyId() {
+            return keyId;
+        }
+
+        public void setKeyId(String keyId) {
+            this.keyId = keyId;
+        }
+
+        public String getHmacSecret() {
+            return hmacSecret;
+        }
+
+        public void setHmacSecret(String hmacSecret) {
+            this.hmacSecret = hmacSecret;
+        }
+
+        public long getTimestampSkewSeconds() {
+            return timestampSkewSeconds;
+        }
+
+        public void setTimestampSkewSeconds(long timestampSkewSeconds) {
+            this.timestampSkewSeconds = timestampSkewSeconds;
+        }
+
+        public long getNonceTtlSeconds() {
+            return nonceTtlSeconds;
+        }
+
+        public void setNonceTtlSeconds(long nonceTtlSeconds) {
+            this.nonceTtlSeconds = nonceTtlSeconds;
         }
     }
 }
