@@ -91,17 +91,35 @@ public class ExternalApiKeyService {
 			throw new IllegalArgumentException("monthlyBudgetUsd는 필수입니다");
 		}
 
-		if (externalApiKeyRepository.existsByUserIdAndKeyAlias(userId, trimmedAlias)) {
-			throw new DuplicateExternalApiKeyAliasException("이미 사용 중인 별칭입니다");
-		}
-
 		String keyHash = encryptionUtil.sha256HexForUniqueness(normalizedProvider.name(), normalizedKey);
 		verifyNoTeamScopeDuplicate(normalizedProvider, normalizedKey, keyHash);
 		Optional<ExternalApiKeyEntity> existingSameHash =
 				externalApiKeyRepository.findByUserIdAndProviderAndKeyHash(userId, normalizedProvider, keyHash);
 		if (existingSameHash.isPresent()) {
-			if (existingSameHash.get().isPendingDeletion()) {
-				throw new DuplicateExternalApiKeyException("삭제예정키와 중복된 키");
+			ExternalApiKeyEntity existing = existingSameHash.get();
+			if (existing.isPendingDeletion()) {
+				if (externalApiKeyRepository.existsByUserIdAndKeyAliasAndIdNot(userId, trimmedAlias, existing.getId())) {
+					throw new DuplicateExternalApiKeyAliasException("이미 사용 중인 별칭입니다");
+				}
+				String encrypted = encryptionUtil.encryptAes256Gcm(normalizedKey);
+				existing.clearPendingDeletion();
+				existing.updateCredential(normalizedProvider, trimmedAlias, keyHash, encrypted, monthlyBudgetUsd);
+				ExternalApiKeyEntity reactivated;
+				try {
+					reactivated = externalApiKeyRepository.saveAndFlush(existing);
+				} catch (DataIntegrityViolationException ex) {
+					throw toDuplicateException(userId, normalizedProvider, trimmedAlias, keyHash, ex);
+				}
+				log.info(
+						"[AUDIT] external_api_key_reactivated userId={} provider={} alias={} keyId={}",
+						userId,
+						normalizedProvider.name(),
+						trimmedAlias,
+						reactivated.getId()
+				);
+				publishExternalApiKeyStatusChanged(reactivated, ExternalApiKeyStatus.ACTIVE);
+				publishExternalApiKeyBudgetChanged(reactivated, ExternalApiKeyStatus.ACTIVE);
+				return reactivated;
 			}
 			log.warn(
 					"[AUDIT] external_api_key_duplicate_detected userId={} provider={} alias={} hashPrefix={}",
@@ -111,6 +129,9 @@ public class ExternalApiKeyService {
 					keyHash.substring(0, 8)
 			);
 			throw new DuplicateExternalApiKeyException("이미 등록된 API 키입니다");
+		}
+		if (externalApiKeyRepository.existsByUserIdAndKeyAlias(userId, trimmedAlias)) {
+			throw new DuplicateExternalApiKeyAliasException("이미 사용 중인 별칭입니다");
 		}
 
 		String encrypted = encryptionUtil.encryptAes256Gcm(normalizedKey);

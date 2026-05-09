@@ -244,7 +244,7 @@ export async function POST(request: Request) {
 
   const message =
     getUpstreamMessage(upstreamJson) ??
-    (upstream.status === 401 || upstream.status === 403 ? "로그인이 필요합니다" : "요청 처리에 실패했습니다")
+    (upstream.status === 401 || upstream.status === 403 ? "로그인이 필요합니다" : "중복키 등록")
 
   if (upstream.status === 400 || upstream.status === 401 || upstream.status === 409) {
     return json(upstream.status, { success: false, message, data: null })

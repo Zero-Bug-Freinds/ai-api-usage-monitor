@@ -90,16 +90,50 @@ public class TeamApiKeyService {
         String keyHash = encryptionUtil.sha256HexForUniqueness(provider.name(), normalizedExternalKey);
         verifyNoIdentityScopeDuplicate(provider, normalizedExternalKey, keyHash);
 
-        if (teamApiKeyRepository.existsByTeamIdAndKeyAlias(teamId, normalizedAlias)) {
-            throw new IllegalArgumentException("이미 사용 중인 API Key 별칭입니다");
-        }
         Optional<TeamApiKeyEntity> sameKeyHash =
                 teamApiKeyRepository.findByTeamIdAndProviderAndKeyHash(teamId, provider, keyHash);
         if (sameKeyHash.isPresent()) {
-            if (sameKeyHash.get().isDeletionPending()) {
-                throw new IllegalArgumentException("삭제 예정키와 중복입니다");
+            TeamApiKeyEntity existing = sameKeyHash.get();
+            if (existing.isDeletionPending()) {
+                if (teamApiKeyRepository.existsByTeamIdAndKeyAliasAndIdNot(teamId, normalizedAlias, existing.getId())) {
+                    throw new IllegalArgumentException("이미 사용 중인 API Key 별칭입니다");
+                }
+                String encrypted = encryptionUtil.encryptAes256Gcm(normalizedExternalKey);
+                existing.clearDeletionRequest();
+                existing.updateCredential(provider, normalizedAlias, keyHash, encrypted, monthlyBudgetUsd);
+                TeamApiKeyEntity reactivated;
+                try {
+                    reactivated = teamApiKeyRepository.saveAndFlush(existing);
+                } catch (DataIntegrityViolationException ex) {
+                    throw toDuplicateRegisterException(teamId, provider, normalizedAlias, keyHash, ex);
+                }
+                TeamApiKeyNotifyContext reactivatedCtx = teamApiKeyNotifyContext(teamId);
+                Instant reactivatedAt = Instant.now();
+                publish(TeamApiKeyRegisteredEvent.of(
+                        actorUserId,
+                        teamId,
+                        reactivatedCtx.teamName(),
+                        reactivatedCtx.recipientUserIds(),
+                        reactivated.getId(),
+                        reactivated.getProvider().name(),
+                        reactivated.getKeyAlias(),
+                        reactivatedAt
+                ));
+                publishTeamApiKeyStatusChanged(
+                        teamId,
+                        reactivated.getId(),
+                        reactivated.getKeyAlias(),
+                        reactivated.getProvider().name(),
+                        reactivated.getMonthlyBudgetUsd(),
+                        TeamApiKeyStatus.ACTIVE,
+                        null
+                );
+                return toSummary(reactivated);
             }
             throw new IllegalArgumentException("이미 등록된 API Key입니다");
+        }
+        if (teamApiKeyRepository.existsByTeamIdAndKeyAlias(teamId, normalizedAlias)) {
+            throw new IllegalArgumentException("이미 사용 중인 API Key 별칭입니다");
         }
 
         String encrypted = encryptionUtil.encryptAes256Gcm(normalizedExternalKey);
