@@ -82,17 +82,24 @@
   - `X-Ext-Nonce` (재사용 금지)
   - `X-Ext-Body-Sha256` (없으면 empty-body hash)
   - `X-Ext-Signature` (Base64 HMAC-SHA256)
-  - `X-Ext-User-Id` (내부 식별 주체)
+  - optional `X-Ext-User-Id` (있으면 내부 사용자 식별자로 우선 사용)
   - optional `X-Team-Id`
 
 Canonical string:
 
-`METHOD + "\\n" + PATH + "\\n" + RAW_QUERY + "\\n" + BODY_SHA256 + "\\n" + TIMESTAMP + "\\n" + NONCE + "\\n" + KEY_ID + "\\n" + EXT_USER_ID + "\\n" + TEAM_ID_OR_EMPTY`
+`METHOD + "\\n" + PATH + "\\n" + RAW_QUERY + "\\n" + BODY_SHA256 + "\\n" + TIMESTAMP + "\\n" + NONCE + "\\n" + KEY_ID + "\\n" + EXT_USER_ID_OR_EMPTY + "\\n" + TEAM_ID_OR_EMPTY`
 
 오류 코드:
 - `401`: 필수 헤더 누락, 키 ID 불일치, 서명 불일치, 타임스탬프 만료, body hash 형식 오류
 - `403`: ext ingress 비활성화
 - `409`: nonce 재사용(Replay)
+
+Proxy key selection priority for ext/JWT 공통:
+
+- `X-Api-Key-Id` > `X-Api-Key-Alias` > raw key reverse lookup > latest fallback lookup
+- `ACTIVE` 상태 키만 허용 (inactive/deleted는 `404`)
+- reverse lookup 경로는 현재 identity/team 정식 API 미지원으로, `proxy.key-service.reverse-lookup-mocks`(테스트/임시 운영)로 보완한다.
+- 동일 raw key hash를 personal/team에 동시에 등록하는 구성은 금지한다(기동 시 예외).
 
 ---
 
