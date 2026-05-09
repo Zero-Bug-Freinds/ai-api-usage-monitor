@@ -1,6 +1,8 @@
 package com.eevee.apigateway.config;
 
 import com.eevee.apigateway.filter.WebEdgePreAuthWebFilter;
+import com.eevee.apigateway.filter.ExtAiHmacAuthWebFilter;
+import com.eevee.apigateway.filter.ExtAiNonceReplayGuard;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -73,6 +75,7 @@ public class SecurityConfiguration {
         if (gatewayProperties.isDevMode()) {
             http.authorizeExchange(ex -> ex
                     .pathMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                    .pathMatchers("/api/v1/ai/ext/**").permitAll()
                     .pathMatchers("/api/v1/ai/**").permitAll()
                     .pathMatchers("/api/v1/usage/**").permitAll()
                     .pathMatchers("/api/v1/expenditure/**").permitAll()
@@ -91,6 +94,7 @@ public class SecurityConfiguration {
             http.oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.jwtDecoder(jwtDecoder)));
             http.authorizeExchange(ex -> ex
                     .pathMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                    .pathMatchers("/api/v1/ai/ext/**").permitAll()
                     .pathMatchers("/api/v1/ai/**").authenticated()
                     .pathMatchers("/api/v1/usage/**").authenticated()
                     .pathMatchers("/api/v1/expenditure/**").authenticated()
@@ -103,7 +107,11 @@ public class SecurityConfiguration {
             );
         }
 
+        ExtAiNonceReplayGuard nonceReplayGuard = new ExtAiNonceReplayGuard(
+                gatewayProperties.getExtAi().getNonceTtlSeconds()
+        );
         http.addFilterBefore(new WebEdgePreAuthWebFilter(gatewayProperties), SecurityWebFiltersOrder.AUTHENTICATION);
+        http.addFilterAfter(new ExtAiHmacAuthWebFilter(gatewayProperties, nonceReplayGuard), SecurityWebFiltersOrder.AUTHENTICATION);
         http.addFilterAfter(new ProxyTrustHeadersWebFilter(gatewayProperties), SecurityWebFiltersOrder.AUTHORIZATION);
         return http.build();
     }
@@ -126,7 +134,13 @@ public class SecurityConfiguration {
                 "X-User-Id",
                 "X-Platform-User-Id",
                 "X-Team-Id",
-                "X-Scope-Type"
+                "X-Scope-Type",
+                "X-Ext-Key-Id",
+                "X-Ext-Timestamp",
+                "X-Ext-Nonce",
+                "X-Ext-Body-Sha256",
+                "X-Ext-Signature",
+                "X-Ext-User-Id"
         ));
         config.setExposedHeaders(List.of("X-Correlation-Id"));
         config.setAllowCredentials(true);

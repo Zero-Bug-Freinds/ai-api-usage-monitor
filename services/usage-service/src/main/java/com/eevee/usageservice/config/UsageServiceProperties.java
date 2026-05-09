@@ -47,7 +47,8 @@ public class UsageServiceProperties {
 
     public static class Team {
         private String baseUrl = "http://team-service:8093";
-        private int cacheTtlSeconds = 180;
+        private int teamListCacheTtlSeconds = 300;
+        private int memberCacheTtlSeconds = 300;
         private int timeoutMs = 1500;
 
         public String getBaseUrl() {
@@ -58,12 +59,20 @@ public class UsageServiceProperties {
             this.baseUrl = baseUrl;
         }
 
-        public int getCacheTtlSeconds() {
-            return cacheTtlSeconds;
+        public int getTeamListCacheTtlSeconds() {
+            return teamListCacheTtlSeconds;
         }
 
-        public void setCacheTtlSeconds(int cacheTtlSeconds) {
-            this.cacheTtlSeconds = cacheTtlSeconds;
+        public void setTeamListCacheTtlSeconds(int teamListCacheTtlSeconds) {
+            this.teamListCacheTtlSeconds = teamListCacheTtlSeconds;
+        }
+
+        public int getMemberCacheTtlSeconds() {
+            return memberCacheTtlSeconds;
+        }
+
+        public void setMemberCacheTtlSeconds(int memberCacheTtlSeconds) {
+            this.memberCacheTtlSeconds = memberCacheTtlSeconds;
         }
 
         public int getTimeoutMs() {

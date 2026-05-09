@@ -2,7 +2,9 @@ package com.eevee.proxyservice.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @ConfigurationProperties(prefix = "proxy")
@@ -69,6 +71,7 @@ public class ProxyProperties {
         private String mockKeyOpenai = "";
         private String mockKeyGoogle = "";
         private String cacheTtl = "PT5M";
+        private List<ReverseLookupMock> reverseLookupMocks = new ArrayList<>();
 
         public String getBaseUrl() {
             return baseUrl;
@@ -116,6 +119,98 @@ public class ProxyProperties {
 
         public void setCacheTtl(String cacheTtl) {
             this.cacheTtl = cacheTtl;
+        }
+
+        public List<ReverseLookupMock> getReverseLookupMocks() {
+            return reverseLookupMocks;
+        }
+
+        public void setReverseLookupMocks(List<ReverseLookupMock> reverseLookupMocks) {
+            this.reverseLookupMocks = reverseLookupMocks;
+        }
+    }
+
+    public static class ReverseLookupMock {
+        private String rawKey = "";
+        private String rawKeySha256 = "";
+        private String provider = "";
+        private String keyId = "";
+        private String userId = "";
+        private String teamId = "";
+        private String alias = "";
+        private String status = "ACTIVE";
+        private String keySource = "reverse_lookup";
+
+        public String getRawKey() {
+            return rawKey;
+        }
+
+        public void setRawKey(String rawKey) {
+            this.rawKey = rawKey;
+        }
+
+        public String getRawKeySha256() {
+            return rawKeySha256;
+        }
+
+        public void setRawKeySha256(String rawKeySha256) {
+            this.rawKeySha256 = rawKeySha256;
+        }
+
+        public String getProvider() {
+            return provider;
+        }
+
+        public void setProvider(String provider) {
+            this.provider = provider;
+        }
+
+        public String getKeyId() {
+            return keyId;
+        }
+
+        public void setKeyId(String keyId) {
+            this.keyId = keyId;
+        }
+
+        public String getUserId() {
+            return userId;
+        }
+
+        public void setUserId(String userId) {
+            this.userId = userId;
+        }
+
+        public String getTeamId() {
+            return teamId;
+        }
+
+        public void setTeamId(String teamId) {
+            this.teamId = teamId;
+        }
+
+        public String getAlias() {
+            return alias;
+        }
+
+        public void setAlias(String alias) {
+            this.alias = alias;
+        }
+
+        public String getStatus() {
+            return status;
+        }
+
+        public void setStatus(String status) {
+            this.status = status;
+        }
+
+        public String getKeySource() {
+            return keySource;
+        }
+
+        public void setKeySource(String keySource) {
+            this.keySource = keySource;
         }
     }
 

@@ -20,6 +20,7 @@ public class GatewayStartupValidation implements ApplicationRunner {
     public void run(ApplicationArguments args) {
         validateSharedSecret();
         validateJwtSecretForProdMode();
+        validateExtAiSettings();
     }
 
     private void validateSharedSecret() {
@@ -43,6 +44,25 @@ public class GatewayStartupValidation implements ApplicationRunner {
         if (jwtSecret.length() < HMAC256_MIN_SECRET_LENGTH) {
             throw new IllegalStateException(
                     "gateway.jwt.secret must be at least 32 characters for HS256.");
+        }
+    }
+
+    private void validateExtAiSettings() {
+        GatewayProperties.ExtAi extAi = gatewayProperties.getExtAi();
+        if (!extAi.isEnabled()) {
+            return;
+        }
+        if (!StringUtils.hasText(extAi.getKeyId())) {
+            throw new IllegalStateException(
+                    "gateway.ext-ai.key-id is required when gateway.ext-ai.enabled=true");
+        }
+        if (!StringUtils.hasText(extAi.getHmacSecret())) {
+            throw new IllegalStateException(
+                    "gateway.ext-ai.hmac-secret is required when gateway.ext-ai.enabled=true");
+        }
+        if (extAi.getTimestampSkewSeconds() <= 0 || extAi.getNonceTtlSeconds() <= 0) {
+            throw new IllegalStateException(
+                    "gateway.ext-ai timestamp/nonce settings must be positive");
         }
     }
 }

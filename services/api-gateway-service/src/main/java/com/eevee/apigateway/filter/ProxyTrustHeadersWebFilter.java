@@ -188,13 +188,14 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
 
     private Mono<Void> forwardWithJwt(ServerWebExchange exchange, WebFilterChain chain, JwtAuthenticationToken jwtAuth) {
         Jwt jwt = jwtAuth.getToken();
+        String path = exchange.getRequest().getPath().value();
         String platformUserId = jwt.getClaimAsString("userId");
         if (platformUserId == null || platformUserId.isBlank()) {
             log.warn("Reject JWT without userId claim path={} subject={}",
-                    exchange.getRequest().getPath().value(), jwt.getSubject());
+                    path, jwt.getSubject());
             return Mono.error(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing userId claim"));
         }
-        String service = pathToService(exchange.getRequest().getPath().value());
+        String service = pathToService(path);
         String effectiveUserId = resolveUserIdForService(service, jwt.getSubject(), platformUserId);
         ServerHttpRequest.Builder req = exchange.getRequest().mutate();
         req.header(HDR_USER, effectiveUserId);
@@ -204,7 +205,12 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
         if (org != null && !org.isBlank()) {
             req.header(HDR_ORG, org);
         }
-        String team = jwt.getClaimAsString("team_id");
+        String jwtTeamId = jwt.getClaimAsString("team_id");
+        String requestedTeamId = exchange.getRequest().getHeaders().getFirst(HDR_TEAM);
+        String team = jwtTeamId;
+        if (path.startsWith("/api/v1/ai/") && requestedTeamId != null && !requestedTeamId.isBlank()) {
+            team = requestedTeamId;
+        }
         if (team != null && !team.isBlank()) {
             req.header(HDR_TEAM, team);
         }
@@ -344,6 +350,9 @@ public class ProxyTrustHeadersWebFilter implements WebFilter {
     }
 
     static boolean requiresGatewayTrustHeaders(String path) {
+        if (path.startsWith("/api/v1/ai/ext/")) {
+            return false;
+        }
         return path.startsWith("/api/v1/ai/")
                 || path.startsWith("/api/v1/usage/")
                 || path.startsWith("/api/v1/expenditure/")

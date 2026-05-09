@@ -31,7 +31,7 @@ type TeamMemberDashboardProps = {
 }
 
 type PeriodMode = "today" | "7d" | "30d"
-type TeamApiKey = { id: number; alias: string; provider: string; createdAt: string }
+type TeamApiKey = { id: string; alias: string; provider: string; updatedAt: string }
 type TeamMemberProfile = { userId: string; displayName?: string; role?: string }
 type ModelAgg = { model: string; provider: string; requestCount: number }
 type BffResponse = {
@@ -56,7 +56,6 @@ type TooltipPayloadEntry = {
 }
 
 const PROVIDER_ALL = "__ALL__"
-const TEAM_WEB_PREFIX = "/teams"
 const MODEL_REQUESTS_TOP_N = 10
 const OTHERS_LABEL = "기타 (Others)"
 const OTHERS_BAR_COLOR = "#94a3b8"
@@ -74,12 +73,6 @@ const MEMBER_PALETTE = [
 ]
 
 const memberDashboardCache = new Map<string, BffResponse>()
-
-function teamApiUrl(path: string): string {
-  const normalized = path.startsWith("/") ? path : `/${path}`
-  if (typeof window === "undefined") return `${TEAM_WEB_PREFIX}${normalized}`
-  return `${window.location.origin}${TEAM_WEB_PREFIX}${normalized}`
-}
 
 function memberUsageFetchError(status: number): string {
   if (status === 400) return "멤버 상세 조회 파라미터가 올바르지 않습니다."
@@ -190,28 +183,36 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
     }
     let cancelled = false
     setKeysLoading(true)
-    fetch(teamApiUrl(`/api/team/v1/teams/${encodeURIComponent(teamId)}/api-keys`), {
+    const base = teamUsageBffBase()
+    if (!base) {
+      setApiKeys([])
+      setApiKeyId("")
+      setKeysLoading(false)
+      return
+    }
+    fetch(`${base}/teams/${encodeURIComponent(teamId)}/api-keys`, {
       credentials: "include",
       headers: { Accept: "application/json" },
     })
       .then(async (r) => {
-        const json = (await r.json()) as { success?: boolean; data?: unknown }
-        if (!r.ok || !json.success || !Array.isArray(json.data)) return []
-        return (json.data as unknown[])
+        const json = (await r.json()) as { apiKeys?: unknown }
+        if (!r.ok || !Array.isArray(json.apiKeys)) return []
+        return (json.apiKeys as unknown[])
           .map((item): TeamApiKey | null => {
             if (!item || typeof item !== "object") return null
             const o = item as Record<string, unknown>
-            if (typeof o.id !== "number" || typeof o.alias !== "string") return null
-            if (typeof o.provider !== "string" || typeof o.createdAt !== "string") return null
-            return { id: o.id, alias: o.alias, provider: o.provider, createdAt: o.createdAt }
+            if ((typeof o.id !== "number" && typeof o.id !== "string") || typeof o.alias !== "string") return null
+            if (typeof o.provider !== "string") return null
+            const updatedAt = typeof o.updatedAt === "string" ? o.updatedAt : ""
+            return { id: String(o.id), alias: o.alias, provider: o.provider, updatedAt }
           })
           .filter((x): x is TeamApiKey => x !== null)
-          .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+          .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))
       })
       .then((rows) => {
         if (cancelled) return
         setApiKeys(rows)
-        setApiKeyId((prev) => (prev && rows.some((x) => String(x.id) === prev) ? prev : rows[0] ? String(rows[0].id) : ""))
+        setApiKeyId((prev) => (prev && rows.some((x) => x.id === prev) ? prev : rows[0] ? rows[0].id : ""))
       })
       .catch(() => {
         if (!cancelled) {

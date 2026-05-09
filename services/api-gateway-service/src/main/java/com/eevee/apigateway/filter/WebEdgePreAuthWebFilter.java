@@ -32,6 +32,9 @@ public class WebEdgePreAuthWebFilter implements WebFilter {
         if (!path.startsWith("/api/")) {
             return chain.filter(exchange);
         }
+        if (path.startsWith("/api/v1/ai/ext/")) {
+            return chain.filter(exchange);
+        }
         String expectedSecret = gatewayProperties.getSharedSecret();
         String trustedHeader = exchange.getRequest().getHeaders().getFirst(HDR_WEB_EDGE_AUTH);
         String authUserId = exchange.getRequest().getHeaders().getFirst(HDR_AUTH_USER_ID);

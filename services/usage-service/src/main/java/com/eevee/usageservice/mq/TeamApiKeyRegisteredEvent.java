@@ -13,6 +13,8 @@ public record TeamApiKeyRegisteredEvent(
         Instant occurredAt,
         @JsonProperty("apiKeyId")
         Long apiKeyId,
+        @JsonProperty("teamId")
+        Long teamId,
         @JsonProperty("provider")
         String provider,
         @JsonProperty("alias")

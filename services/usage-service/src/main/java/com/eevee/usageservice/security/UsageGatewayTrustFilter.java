@@ -22,8 +22,10 @@ import java.io.IOException;
 public class UsageGatewayTrustFilter extends OncePerRequestFilter {
 
     public static final String ATTR_USER_ID = "usage.authenticatedUserId";
+    public static final String ATTR_PLATFORM_USER_ID = "usage.authenticatedPlatformUserId";
 
     private static final String HDR_USER = "X-User-Id";
+    private static final String HDR_PLATFORM_USER = "X-Platform-User-Id";
     private static final String HDR_GATEWAY_AUTH = "X-Gateway-Auth";
 
     private final UsageServiceProperties properties;
@@ -59,6 +61,10 @@ public class UsageGatewayTrustFilter extends OncePerRequestFilter {
             return;
         }
         request.setAttribute(ATTR_USER_ID, userId.trim());
+        String platformUserId = request.getHeader(HDR_PLATFORM_USER);
+        if (StringUtils.hasText(platformUserId)) {
+            request.setAttribute(ATTR_PLATFORM_USER_ID, platformUserId.trim());
+        }
         filterChain.doFilter(request, response);
     }
 }

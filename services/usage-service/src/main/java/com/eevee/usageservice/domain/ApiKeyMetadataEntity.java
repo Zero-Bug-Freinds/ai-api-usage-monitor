@@ -20,6 +20,8 @@ public class ApiKeyMetadataEntity {
     @Column(nullable = false)
     private String userId;
 
+    private String teamId;
+
     private String provider;
 
     private String alias;
@@ -45,12 +47,14 @@ public class ApiKeyMetadataEntity {
 
     public void apply(
             String userId,
+            String teamId,
             String provider,
             String alias,
             ApiKeyStatus status,
             Instant updatedAt
     ) {
         this.userId = userId;
+        this.teamId = teamId;
         this.provider = provider;
         this.alias = alias;
         this.status = status;
@@ -67,6 +71,10 @@ public class ApiKeyMetadataEntity {
 
     public String getProvider() {
         return provider;
+    }
+
+    public String getTeamId() {
+        return teamId;
     }
 
     public String getAlias() {

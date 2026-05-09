@@ -46,6 +46,7 @@ class ApiKeyMetadataSyncServiceTest {
                 "TEAM_API_KEY_REGISTERED",
                 Instant.parse("2026-05-01T00:00:00Z"),
                 101L,
+                1L,
                 "OPENAI",
                 "team-main",
                 "owner-1"
@@ -69,6 +70,7 @@ class ApiKeyMetadataSyncServiceTest {
                 "TEAM_API_KEY_DELETION_SCHEDULED",
                 Instant.parse("2026-05-01T00:00:00Z"),
                 202L,
+                2L,
                 "GOOGLE",
                 "team-google",
                 "owner-2"
@@ -88,6 +90,7 @@ class ApiKeyMetadataSyncServiceTest {
                 "TEAM_API_KEY_DELETION_CANCELLED",
                 Instant.parse("2026-05-01T00:00:00Z"),
                 303L,
+                3L,
                 "OPENAI",
                 "team-openai",
                 "owner-3"
@@ -107,6 +110,7 @@ class ApiKeyMetadataSyncServiceTest {
                 "TEAM_API_KEY_DELETED",
                 Instant.parse("2026-05-01T00:00:00Z"),
                 404L,
+                4L,
                 "OPENAI",
                 "team-delete",
                 "owner-4"
@@ -126,6 +130,7 @@ class ApiKeyMetadataSyncServiceTest {
                 "TEAM_API_KEY_STATUS_CHANGED",
                 Instant.parse("2026-05-01T00:00:00Z"),
                 505L,
+                5L,
                 "owner-5",
                 "OPENAI",
                 "team-status",
@@ -143,13 +148,14 @@ class ApiKeyMetadataSyncServiceTest {
     @Test
     void upsertFromTeamStatusChanged_usesExistingUserIdWhenOwnerMissing() {
         ApiKeyMetadataEntity existing = ApiKeyMetadataEntity.create("606", "owner-existing");
-        existing.apply("owner-existing", "OPENAI", "old", ApiKeyStatus.ACTIVE, Instant.parse("2026-04-01T00:00:00Z"));
+        existing.apply("owner-existing", "6", "OPENAI", "old", ApiKeyStatus.ACTIVE, Instant.parse("2026-04-01T00:00:00Z"));
         when(apiKeyMetadataRepository.findById("606")).thenReturn(Optional.of(existing));
 
         TeamApiKeyStatusChangedEvent event = new TeamApiKeyStatusChangedEvent(
                 "TEAM_API_KEY_STATUS_CHANGED",
                 Instant.parse("2026-05-01T00:00:00Z"),
                 606L,
+                6L,
                 null,
                 "OPENAI",
                 "new-alias",
@@ -171,6 +177,7 @@ class ApiKeyMetadataSyncServiceTest {
                 "TEAM_API_KEY_STATUS_CHANGED",
                 Instant.parse("2026-05-01T00:00:00Z"),
                 707L,
+                7L,
                 null,
                 "OPENAI",
                 "alias",

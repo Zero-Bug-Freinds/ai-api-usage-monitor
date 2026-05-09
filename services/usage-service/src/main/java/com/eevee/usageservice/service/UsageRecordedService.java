@@ -26,19 +26,22 @@ public class UsageRecordedService {
     private final ApplicationEventPublisher eventPublisher;
     private final UsageAggregationService aggregationService;
     private final DailyCumulativeTokensAfterRecordedService dailyCumulativeTokensAfterRecordedService;
+    private final ApiKeyMetadataSyncService apiKeyMetadataSyncService;
 
     public UsageRecordedService(
             UsageRecordedLogRepository repository,
             ObjectMapper objectMapper,
             ApplicationEventPublisher eventPublisher,
             UsageAggregationService aggregationService,
-            DailyCumulativeTokensAfterRecordedService dailyCumulativeTokensAfterRecordedService
+            DailyCumulativeTokensAfterRecordedService dailyCumulativeTokensAfterRecordedService,
+            ApiKeyMetadataSyncService apiKeyMetadataSyncService
     ) {
         this.repository = repository;
         this.objectMapper = objectMapper;
         this.eventPublisher = eventPublisher;
         this.aggregationService = aggregationService;
         this.dailyCumulativeTokensAfterRecordedService = dailyCumulativeTokensAfterRecordedService;
+        this.apiKeyMetadataSyncService = apiKeyMetadataSyncService;
     }
 
     @Transactional
@@ -49,6 +52,7 @@ public class UsageRecordedService {
         }
         UsageRecordedLogEntity entity = map(event);
         repository.save(entity);
+        apiKeyMetadataSyncService.upsertFromUsageRecordedEvent(event);
         aggregationService.applyFromEvent(toAggregationMessage(entity));
         dailyCumulativeTokensAfterRecordedService.onRecorded(entity);
         eventPublisher.publishEvent(new UsageSummaryAggregationRequestedEvent(
@@ -101,6 +105,8 @@ public class UsageRecordedService {
     }
 
     private UsageRecordedLogEntity map(UsageRecordedEvent event) {
+        String normalizedTeamId = normalizeTeamId(event.teamId());
+        String normalizedTeamApiKeyId = normalizeTeamApiKeyId(event.teamApiKeyId(), normalizedTeamId);
         TokenUsage tu = event.tokenUsage();
         String model = event.model();
         Long prompt = null;
@@ -139,9 +145,9 @@ public class UsageRecordedService {
                 event.correlationId(),
                 event.userId(),
                 event.organizationId(),
-                event.teamId(),
+                normalizedTeamId,
                 event.apiKeyId(),
-                event.teamApiKeyId(),
+                normalizedTeamApiKeyId,
                 event.apiKeyFingerprint(),
                 event.apiKeySource(),
                 event.provider(),
@@ -160,6 +166,25 @@ public class UsageRecordedService {
                 event.upstreamStatusCode(),
                 Instant.now()
         );
+    }
+
+    private static String normalizeTeamId(String teamId) {
+        if (teamId == null) {
+            return null;
+        }
+        String normalized = teamId.trim();
+        return normalized.isEmpty() ? null : normalized;
+    }
+
+    private static String normalizeTeamApiKeyId(String teamApiKeyId, String normalizedTeamId) {
+        if (normalizedTeamId == null) {
+            return null;
+        }
+        if (teamApiKeyId == null) {
+            return null;
+        }
+        String normalized = teamApiKeyId.trim();
+        return normalized.isEmpty() ? null : normalized;
     }
 
     private String buildProviderTokenDetailsJson(AiProvider provider,
