@@ -214,6 +214,7 @@
   - 팀 도메인의 데이터 소유권을 분리해 관리한다.
   - 팀 멤버십 기준 권한(예: 팀 멤버만 초대 가능)을 서버에서 강제한다.
   - 팀원 초대 시 Identity 사용자 존재 여부를 검증한다. 우선 RabbitMQ 기반 `identity_user_sync` 캐시를 확인하고, 필요 시 Identity 내부 API로 fallback 조회해 실제 가입된 사용자(이메일 아이디)만 초대되도록 보장한다.
+  - **`GET /internal/v1/users/{userId}/teams`** 및 이를 호출하는 usage-service Usage BFF 팀 목록 등에서는 `team_members.user_id`와 요청 `{userId}` 형태가 다를 수 있으므로, 동일한 **`resolveMembershipLookupCandidates`** 경로로 이메일·숫자 ID 후보를 넓힌 뒤 멤버십을 조회한다. 식별자 불일치·빈 목록 분석은 [`docs/contracts/web-team-bff.md`](contracts/web-team-bff.md) §6.1을 본다.
   - 팀 API Key는 암호화 저장하고, 조회 시 원문 대신 마스킹된 요약만 제공한다.
 
 ---
