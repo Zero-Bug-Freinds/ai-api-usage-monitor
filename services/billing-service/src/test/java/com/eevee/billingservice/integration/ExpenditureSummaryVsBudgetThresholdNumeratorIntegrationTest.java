@@ -10,6 +10,7 @@ import com.eevee.billingservice.repository.MonthlyExpenditureAggRepository;
 import com.eevee.billingservice.service.BillingAggregationJdbc;
 import com.eevee.billingservice.service.ExpenditureQueryService;
 import com.eevee.usage.events.AiProvider;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -27,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * for a full-month range. {@code monthly_expenditure_agg} remains all-provider for other features.
  */
 @SuppressWarnings("resource")
+@Tag("integration")
 @SpringBootTest
 @Import(IdentityBudgetClientMockConfig.class)
 class ExpenditureSummaryVsBudgetThresholdNumeratorIntegrationTest extends AbstractBillingIntegrationTest {

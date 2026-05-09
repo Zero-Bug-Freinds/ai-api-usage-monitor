@@ -46,6 +46,26 @@ dependencies {
 }
 
 tasks.named('test') {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        excludeTags 'integration'
+    }
+
+    def isCi = System.getenv('CI') != null
+    maxParallelForks = isCi ? 2 : 1
+}
+
+tasks.register('integrationTest', Test) {
+    group = 'verification'
+    description = 'Runs Testcontainers integration tests.'
+
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+
+    useJUnitPlatform {
+        includeTags 'integration'
+    }
+
+    // Integration tests share containerized infra; keep conservative.
     maxParallelForks = 1
+    shouldRunAfter(tasks.named('test'))
 }

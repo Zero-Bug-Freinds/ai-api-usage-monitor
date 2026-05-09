@@ -5,6 +5,7 @@ import com.eevee.billingservice.events.BillingCostCorrectedEvent;
 import com.eevee.billingservice.events.BillingCostCorrectionAmqp;
 import com.eevee.billingservice.repository.BillingCostCorrectionProcessedRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
@@ -27,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 @SuppressWarnings("resource")
+@Tag("integration")
 @SpringBootTest
 @Import(BillingCostCorrectionPipelineIntegrationTest.CorrectedOutAmqpTestConfig.class)
 class BillingCostCorrectionPipelineIntegrationTest extends AbstractBillingIntegrationTest {

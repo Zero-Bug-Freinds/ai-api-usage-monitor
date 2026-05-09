@@ -7,6 +7,7 @@ import com.eevee.usage.events.TokenUsage;
 import com.eevee.usage.events.UsageCostFinalizedEvent;
 import com.eevee.usage.events.UsageRecordedEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
@@ -34,6 +35,7 @@ import static org.awaitility.Awaitility.await;
  * on fluent configuration chains.
  */
 @SuppressWarnings("resource")
+@Tag("integration")
 @SpringBootTest
 @Import(BillingRecordedEventPipelineIntegrationTest.CostFinalizedAmqpTestConfig.class)
 class BillingRecordedEventPipelineIntegrationTest extends AbstractBillingIntegrationTest {

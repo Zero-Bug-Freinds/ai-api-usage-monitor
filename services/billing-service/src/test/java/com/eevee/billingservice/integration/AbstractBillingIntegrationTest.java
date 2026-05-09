@@ -1,5 +1,6 @@
 package com.eevee.billingservice.integration;
 
+import org.junit.jupiter.api.Tag;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -14,6 +15,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * which is a major contributor to CI runtime.
  */
 @Testcontainers
+@Tag("integration")
 abstract class AbstractBillingIntegrationTest {
 
     @Container
