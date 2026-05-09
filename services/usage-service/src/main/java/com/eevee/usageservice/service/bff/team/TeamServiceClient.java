@@ -53,20 +53,39 @@ public class TeamServiceClient {
     }
 
     public List<TeamSummaryClientItem> fetchUserTeams(String requesterUserId) {
+        return fetchUserTeams(requesterUserId, null);
+    }
+
+    public List<TeamSummaryClientItem> fetchUserTeams(String requesterUserId, String fallbackRequesterUserId) {
         if (!StringUtils.hasText(requesterUserId)) {
             throw new IllegalArgumentException("requester userId is required");
         }
-        String cacheKey = requesterUserId.trim();
+        String primaryRequester = requesterUserId.trim();
+        String fallbackRequester = normalizeFallback(fallbackRequesterUserId, primaryRequester);
+        String cacheKey = fallbackRequester == null
+                ? primaryRequester
+                : primaryRequester + "|" + fallbackRequester;
         List<TeamSummaryClientItem> cached = userTeamsCache.getIfPresent(cacheKey);
         if (cached != null) {
             return cached;
         }
-        List<TeamSummaryClientItem> result;
+        List<TeamSummaryClientItem> result = List.of();
         try {
-            result = callWithCircuitBreaker(() -> fetchUserTeamsInternal(cacheKey));
+            result = callWithCircuitBreaker(() -> fetchUserTeamsInternal(primaryRequester));
         } catch (RuntimeException ex) {
-            log.warn("Failed to fetch teams from team-service requesterUserId={} reason={}", cacheKey, ex.getMessage());
-            result = List.of();
+            log.warn("Failed to fetch teams from team-service requesterUserId={} reason={}", primaryRequester, ex.getMessage());
+        }
+        if (result.isEmpty() && fallbackRequester != null) {
+            try {
+                result = callWithCircuitBreaker(() -> fetchUserTeamsInternal(fallbackRequester));
+            } catch (RuntimeException ex) {
+                log.warn(
+                        "Failed to fetch teams from team-service fallbackRequesterUserId={} reason={}",
+                        fallbackRequester,
+                        ex.getMessage()
+                );
+                result = List.of();
+            }
         }
         userTeamsCache.put(cacheKey, result);
         return result;
@@ -170,5 +189,16 @@ public class TeamServiceClient {
             return null;
         }
         return v;
+    }
+
+    private static String normalizeFallback(String fallbackRequesterUserId, String primaryRequester) {
+        if (!StringUtils.hasText(fallbackRequesterUserId)) {
+            return null;
+        }
+        String normalized = fallbackRequesterUserId.trim();
+        if (normalized.equals(primaryRequester)) {
+            return null;
+        }
+        return normalized;
     }
 }

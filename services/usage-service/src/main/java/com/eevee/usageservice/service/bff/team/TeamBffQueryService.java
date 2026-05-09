@@ -29,8 +29,8 @@ public class TeamBffQueryService {
     }
 
     @Transactional(readOnly = true)
-    public List<TeamSummaryOptionItem> loadTeams(String requesterUserId) {
-        return teamServiceClient.fetchUserTeams(requesterUserId).stream()
+    public List<TeamSummaryOptionItem> loadTeams(String requesterUserId, String fallbackPlatformUserId) {
+        return teamServiceClient.fetchUserTeams(requesterUserId, fallbackPlatformUserId).stream()
                 .map(team -> new TeamSummaryOptionItem(team.id(), team.name(), team.createdAt()))
                 .toList();
     }
