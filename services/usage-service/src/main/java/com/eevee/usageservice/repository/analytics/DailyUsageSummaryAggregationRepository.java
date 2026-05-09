@@ -109,6 +109,10 @@ public class DailyUsageSummaryAggregationRepository {
     }
 
     private static String normalizeTeamId(String teamId) {
-        return teamId != null ? teamId : "";
+        if (teamId == null) {
+            return "";
+        }
+        String normalized = teamId.trim();
+        return normalized.isEmpty() ? "" : normalized;
     }
 }
