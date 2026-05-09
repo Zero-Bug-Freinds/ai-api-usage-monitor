@@ -49,7 +49,7 @@ class ApiKeyClientTeamLookupFallbackTest {
         });
 
         ApiKeyClient client = new ApiKeyClient(baseProps(server.getAddress().getPort()));
-        ApiKeyClient.ResolvedApiKey resolved = client.resolveApiKey("user-1", "123", AiProvider.GOOGLE).block();
+        ApiKeyClient.ResolvedApiKey resolved = client.resolveApiKey("user-1", "123", AiProvider.GOOGLE, null, null).block();
 
         assertThat(resolved).isNotNull();
         assertThat(resolved.plainKey()).isEqualTo("AIza-legacy");
@@ -64,13 +64,12 @@ class ApiKeyClientTeamLookupFallbackTest {
 
         ApiKeyClient client = new ApiKeyClient(baseProps(server.getAddress().getPort()));
 
-        assertThatThrownBy(() -> client.resolveApiKey("user-1", "999", AiProvider.GOOGLE).block())
+        assertThatThrownBy(() -> client.resolveApiKey("user-1", "999", AiProvider.GOOGLE, null, null).block())
                 .isInstanceOf(ResponseStatusException.class)
                 .satisfies(ex -> {
                     ResponseStatusException statusException = (ResponseStatusException) ex;
                     assertThat(statusException.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
-                    assertThat(statusException.getReason()).contains("provider=google");
-                    assertThat(statusException.getReason()).contains("teamId=999***");
+                    assertThat(statusException.getReason()).isEqualTo("존재하지 않은 API key 입니다");
                 });
     }
 
@@ -95,7 +94,7 @@ class ApiKeyClientTeamLookupFallbackTest {
 
         ApiKeyClient client = new ApiKeyClient(baseProps(server.getAddress().getPort()));
 
-        assertThatThrownBy(() -> client.resolveApiKey("user-1", "123", AiProvider.GOOGLE).block())
+        assertThatThrownBy(() -> client.resolveApiKey("user-1", "123", AiProvider.GOOGLE, null, null).block())
                 .isInstanceOf(ResponseStatusException.class)
                 .satisfies(ex -> {
                     ResponseStatusException statusException = (ResponseStatusException) ex;

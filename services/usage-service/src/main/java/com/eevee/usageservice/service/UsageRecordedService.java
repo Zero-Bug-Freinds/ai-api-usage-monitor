@@ -26,19 +26,22 @@ public class UsageRecordedService {
     private final ApplicationEventPublisher eventPublisher;
     private final UsageAggregationService aggregationService;
     private final DailyCumulativeTokensAfterRecordedService dailyCumulativeTokensAfterRecordedService;
+    private final ApiKeyMetadataSyncService apiKeyMetadataSyncService;
 
     public UsageRecordedService(
             UsageRecordedLogRepository repository,
             ObjectMapper objectMapper,
             ApplicationEventPublisher eventPublisher,
             UsageAggregationService aggregationService,
-            DailyCumulativeTokensAfterRecordedService dailyCumulativeTokensAfterRecordedService
+            DailyCumulativeTokensAfterRecordedService dailyCumulativeTokensAfterRecordedService,
+            ApiKeyMetadataSyncService apiKeyMetadataSyncService
     ) {
         this.repository = repository;
         this.objectMapper = objectMapper;
         this.eventPublisher = eventPublisher;
         this.aggregationService = aggregationService;
         this.dailyCumulativeTokensAfterRecordedService = dailyCumulativeTokensAfterRecordedService;
+        this.apiKeyMetadataSyncService = apiKeyMetadataSyncService;
     }
 
     @Transactional
@@ -49,6 +52,7 @@ public class UsageRecordedService {
         }
         UsageRecordedLogEntity entity = map(event);
         repository.save(entity);
+        apiKeyMetadataSyncService.upsertFromUsageRecordedEvent(event);
         aggregationService.applyFromEvent(toAggregationMessage(entity));
         dailyCumulativeTokensAfterRecordedService.onRecorded(entity);
         eventPublisher.publishEvent(new UsageSummaryAggregationRequestedEvent(

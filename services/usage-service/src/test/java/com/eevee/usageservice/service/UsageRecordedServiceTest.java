@@ -35,6 +35,8 @@ class UsageRecordedServiceTest {
     private UsageAggregationService aggregationService;
     @Mock
     private DailyCumulativeTokensAfterRecordedService dailyCumulativeTokensAfterRecordedService;
+    @Mock
+    private ApiKeyMetadataSyncService apiKeyMetadataSyncService;
 
     private UsageRecordedService usageRecordedService;
 
@@ -45,7 +47,8 @@ class UsageRecordedServiceTest {
                 new ObjectMapper(),
                 eventPublisher,
                 aggregationService,
-                dailyCumulativeTokensAfterRecordedService
+                dailyCumulativeTokensAfterRecordedService,
+                apiKeyMetadataSyncService
         );
     }
 

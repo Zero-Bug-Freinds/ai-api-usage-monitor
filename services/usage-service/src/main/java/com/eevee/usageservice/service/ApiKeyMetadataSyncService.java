@@ -1,5 +1,6 @@
 package com.eevee.usageservice.service;
 
+import com.eevee.usage.events.UsageRecordedEvent;
 import com.eevee.usageservice.domain.ApiKeyMetadataEntity;
 import com.eevee.usageservice.domain.ApiKeyStatus;
 import com.eevee.usageservice.mq.ExternalApiKeyDeletedEvent;
@@ -98,6 +99,32 @@ public class ApiKeyMetadataSyncService {
                 mapTeamStatus(event.status()),
                 event.occurredAt()
         );
+    }
+
+    @Transactional
+    public void upsertFromUsageRecordedEvent(UsageRecordedEvent event) {
+        if (event == null || !StringUtils.hasText(event.apiKeyId())) {
+            return;
+        }
+        String keyId = event.apiKeyId().trim();
+        ApiKeyMetadataEntity entity = apiKeyMetadataRepository.findById(keyId)
+                .orElseGet(() -> ApiKeyMetadataEntity.create(keyId, resolveUserId(event, keyId)));
+
+        String userId = resolveUserId(event, keyId);
+        String alias = StringUtils.hasText(event.apiKeyAlias()) ? event.apiKeyAlias().trim() : entity.getAlias();
+        String provider = resolveProvider(event, entity);
+        String teamId = StringUtils.hasText(event.teamId()) ? event.teamId().trim() : entity.getTeamId();
+        Instant updatedAt = event.occurredAt() != null ? event.occurredAt() : Instant.now();
+
+        entity.apply(
+                userId,
+                teamId,
+                provider,
+                alias,
+                entity.getStatus() != null ? entity.getStatus() : ApiKeyStatus.ACTIVE,
+                updatedAt
+        );
+        apiKeyMetadataRepository.save(entity);
     }
 
     /**
@@ -201,5 +228,19 @@ public class ApiKeyMetadataSyncService {
                 updatedAt
         );
         apiKeyMetadataRepository.save(target);
+    }
+
+    private static String resolveUserId(UsageRecordedEvent event, String keyId) {
+        if (!StringUtils.hasText(event.userId())) {
+            throw new IllegalArgumentException("usage event userId is required for keyId=" + keyId);
+        }
+        return event.userId().trim();
+    }
+
+    private static String resolveProvider(UsageRecordedEvent event, ApiKeyMetadataEntity entity) {
+        if (event.provider() != null) {
+            return event.provider().name();
+        }
+        return entity.getProvider();
     }
 }
