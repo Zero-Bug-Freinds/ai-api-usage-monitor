@@ -203,6 +203,64 @@ class ProxyTrustHeadersWebFilterTest {
     }
 
     @Test
+    void aiPath_prefersInboundTeamHeaderOverJwtTeamClaim() {
+        gatewayProperties.setDevMode(false);
+        Jwt jwt = Jwt.withTokenValue("dummy")
+                .header("alg", "HS256")
+                .subject("user@example.com")
+                .claim("userId", "42")
+                .claim("team_id", "jwt-team")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt);
+
+        MockServerHttpRequest request = MockServerHttpRequest.get("/api/v1/ai/openai/v1/chat/completions")
+                .header("X-Team-Id", "request-team")
+                .build();
+        MockServerWebExchange exchange = MockServerWebExchange.from(request);
+        AtomicReference<String> teamIdSeen = new AtomicReference<>();
+        WebFilterChain chain = ex -> {
+            teamIdSeen.set(ex.getRequest().getHeaders().getFirst("X-Team-Id"));
+            return Mono.empty();
+        };
+
+        ProxyTrustHeadersWebFilter filter = new ProxyTrustHeadersWebFilter(gatewayProperties);
+
+        StepVerifier.create(filter.applyTrustHeaders(exchange, chain, auth))
+                .verifyComplete();
+
+        assertThat(teamIdSeen.get()).isEqualTo("request-team");
+    }
+
+    @Test
+    void nonAiPath_keepsJwtTeamClaimPrecedence() {
+        gatewayProperties.setDevMode(false);
+        Jwt jwt = Jwt.withTokenValue("dummy")
+                .header("alg", "HS256")
+                .subject("user@example.com")
+                .claim("userId", "42")
+                .claim("team_id", "jwt-team")
+                .build();
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(jwt);
+
+        MockServerHttpRequest request = MockServerHttpRequest.get("/api/v1/usage/dashboard/summary")
+                .header("X-Team-Id", "request-team")
+                .build();
+        MockServerWebExchange exchange = MockServerWebExchange.from(request);
+        AtomicReference<String> teamIdSeen = new AtomicReference<>();
+        WebFilterChain chain = ex -> {
+            teamIdSeen.set(ex.getRequest().getHeaders().getFirst("X-Team-Id"));
+            return Mono.empty();
+        };
+
+        ProxyTrustHeadersWebFilter filter = new ProxyTrustHeadersWebFilter(gatewayProperties);
+
+        StepVerifier.create(filter.applyTrustHeaders(exchange, chain, auth))
+                .verifyComplete();
+
+        assertThat(teamIdSeen.get()).isEqualTo("jwt-team");
+    }
+
+    @Test
     void jwtUserIdClaimIsForwardedAsXUserId_forIdentityPath() {
         gatewayProperties.setDevMode(false);
         Jwt jwt = Jwt.withTokenValue("dummy")
