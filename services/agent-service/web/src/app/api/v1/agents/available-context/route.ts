@@ -260,7 +260,6 @@ function billingUserIdCandidates(request: Request, email: string | null, fallbac
   const ordered = [resolveBillingUserId(primary, fallback), mail, fallback, primary]
   return Array.from(new Set(ordered.filter((value) => value.length > 0)))
 }
-
 function userIdFromHeaders(request: Request): string {
   const candidates = [
     "x-user-id",
