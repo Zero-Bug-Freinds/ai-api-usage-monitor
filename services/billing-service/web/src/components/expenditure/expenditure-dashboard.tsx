@@ -14,7 +14,7 @@ import type {
   TeamApiKeyMonthSpendResponse,
 } from "@/lib/expenditure/types";
 
-type IdentityExternalKeyProvider = "GEMINI" | "OPENAI" | "ANTHROPIC";
+type IdentityExternalKeyProvider = "GOOGLE" | "OPENAI" | "ANTHROPIC";
 
 type RegisteredExternalKey = {
   id: number | string;
@@ -45,9 +45,10 @@ async function fetchJson<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-function mapBillingProviderToIdentity(p: AiProviderCode): IdentityExternalKeyProvider {
-  if (p === "GOOGLE") return "GEMINI";
-  return p;
+function normalizeIdentityExternalKeyProvider(prov: unknown): IdentityExternalKeyProvider | null {
+  if (prov === "GOOGLE" || prov === "OPENAI" || prov === "ANTHROPIC") return prov;
+  if (prov === "GEMINI") return "GOOGLE";
+  return null;
 }
 
 function parseRegisteredExternalKeys(json: unknown): RegisteredExternalKey[] {
@@ -64,9 +65,10 @@ function parseRegisteredExternalKeys(json: unknown): RegisteredExternalKey[] {
     const alias = o.alias;
     const idOk = typeof id === "number" || (typeof id === "string" && id.length > 0);
     if (!idOk) continue;
-    if (prov !== "GEMINI" && prov !== "OPENAI" && prov !== "ANTHROPIC") continue;
+    const normalizedProv = normalizeIdentityExternalKeyProvider(prov);
+    if (normalizedProv === null) continue;
     if (typeof alias !== "string") continue;
-    out.push({ id, provider: prov, alias });
+    out.push({ id, provider: normalizedProv, alias });
   }
   return out;
 }
@@ -169,9 +171,8 @@ export function ExpenditureDashboard() {
   }, [loadRegisteredKeys]);
 
   const keysForProvider = useMemo(() => {
-    const want = mapBillingProviderToIdentity(provider);
     return registeredKeys
-      .filter((k) => k.provider === want)
+      .filter((k) => k.provider === provider)
       .slice()
       .sort((a, b) => a.alias.localeCompare(b.alias, "ko"));
   }, [registeredKeys, provider]);
@@ -656,7 +657,7 @@ export function ExpenditureDashboard() {
                 disabled={keysForProvider.length === 0}
               >
                 {keysForProvider.length === 0 ? (
-                  <option value="">사용 데이터가 없습니다</option>
+                  <option value="">등록된 API 키가 없습니다</option>
                 ) : (
                   <optgroup label="등록된 키">
                     {keysForProvider.map((k) => (
