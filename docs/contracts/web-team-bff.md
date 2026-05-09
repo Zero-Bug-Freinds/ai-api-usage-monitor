@@ -1,6 +1,6 @@
 # Web(Next.js) ↔ Team Service BFF 계약
 
-버전: 0.13  
+버전: 0.14  
 관련: [web-split-boundary.md](./web-split-boundary.md), [web-identity-bff.md](./web-identity-bff.md) — `/teams` UI 소유·경로: §2.3
 
 ---
@@ -149,7 +149,7 @@
   - 요청 본문: `provider` (`OPENAI`/`GOOGLE`/`ANTHROPIC`), `alias`, `externalKey`, `monthlyBudgetUsd` (0 이상, USD 월 예산 한도 — identity-service 외부 키와 동일 개념)
   - 성공: `201`, `data`에 등록된 키 요약(위 표의 활성 키에 해당하는 필드)
   - 실패:
-    - `400` (`success=false`): 필수값 누락, alias 중복, 동일 provider+키 값(해시)이 **이미 활성**인 경우 `이미 등록된 API Key입니다`, 동일 해시가 **삭제 예정** 행에 있으면 `삭제 예정키와 중복입니다`, 또는 동일 키가 Identity 개인 키로 이미 등록된 경우 `Identity에 이미 등록된 API Key입니다`
+    - `400` (`success=false`): 필수값 누락, alias 중복, 동일 provider+키 값(해시)이 **이미 활성**인 경우 `이미 등록된 API Key입니다`, 또는 동일 키가 Identity 개인 키로 이미 등록된 경우 `Identity에 이미 등록된 API Key입니다`
     - `403` (`success=false`): 팀장이 아닌 경우(팀 멤버만인 경우 등)
     - `404` (`success=false`): 대상 팀이 존재하지 않는 경우
 
@@ -261,7 +261,7 @@
 1. **삭제 예약/즉시 삭제** — 활성 키 행에서 **`삭제`** → 모달에서 유예 기간(일) 입력(기본 7일, **0이면 즉시 삭제**) 및 로그 보존 여부 선택 후 `DELETE .../api-keys/{keyId}?gracePeriodDays=...&retainLogs=...` 호출.
 2. **삭제 예정 표시** — 해당 행에 `(삭제 예정)` 안내, **영구 삭제 예정 시각**·유예 일수 표시, **`수정` 비활성**.
 3. **삭제 취소** — **`삭제 취소`** → 확인 후 `POST .../api-keys/{keyId}/deletion/cancel`. 성공 시 다시 활성 키로 표시.
-4. **동일 키 재등록** — 삭제 예정 중인 키와 같은 provider+키 값으로 등록 시 서버 메시지 `삭제 예정키와 중복입니다`.
+4. **동일 키 재등록** — 삭제 예정 중인 키와 같은 provider+키 값으로 등록하면 실패하지 않고, 기존 삭제 예정 키를 ACTIVE로 복구(재활성화)한다.
 
 ### 7.5 Team `web` (`services/team-service/web/`) 보완 설명
 

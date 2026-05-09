@@ -1,6 +1,6 @@
 # Web(Next.js) ↔ Identity 인증 BFF 계약
 
-버전: 1.25  
+버전: 1.26  
 관련: [docs/architecture.md](../architecture.md) §1.3, §3.3, §10.2, §13, [Identity 인증 API 계약](../identity-auth-api-contract.md), [Web·Gateway Usage BFF](./web-gateway-bff.md)(Usage BFF·`basePath` 호출 맵), [Web·Team BFF](./web-team-bff.md), [저장소 구조](../repository-structure.md) §6, [웹 경계](./web-split-boundary.md)(§2.4 로컬 `web-edge` Nginx)
 
 **소스 트리:** BFF·화면의 **정본**은 `services/identity-service/web/` 이다. **공용 UI(Shadcn 래퍼·`cn`)** 는 루트 pnpm workspace **`@ai-usage/ui`**(`packages/ui`)를 참조한다([web-split-boundary.md §1.1](./web-split-boundary.md)). Identity vs Usage 라우트·미들웨어 매처는 [web-split-boundary.md](./web-split-boundary.md) §2·§3.
@@ -76,7 +76,7 @@
    - `Authorization: Bearer {access_token}`
    - `Content-Type: application/json`, `Accept: application/json`
 5. **성공 시** Gateway/Identity의 상태 코드/본문(`ApiResponse`)을 가능한 그대로 전달한다. 응답에는 `Cache-Control: no-store`를 적용한다.
-6. **Identity가 `400`/`401`/`409` 등으로 거절**하면 상태 코드와 JSON 본문을 **그대로** 프론트에 전달한다(§6). 동일 provider·동일 키 값에 대해 **활성 행이 이미 있으면** `409` 메시지 예: `이미 등록된 API 키입니다`. **삭제 예정인 행과만 해시가 겹치면** `409` 메시지 예: `삭제예정키와 중복된 키`. **동일 키가 Team 키로 이미 등록돼 있으면** `409` 메시지 예: `팀에 이미 등록된 API 키입니다`([identity-auth-api-contract §7](../identity-auth-api-contract.md)).
+6. **Identity가 `400`/`401`/`409` 등으로 거절**하면 상태 코드와 JSON 본문을 **그대로** 프론트에 전달한다(§6). 동일 provider·동일 키 값에 대해 **활성 행이 이미 있으면** `409` 메시지 예: `이미 등록된 API 키입니다`. 동일 해시 키가 **삭제 예정 행으로만 존재하면** `409`로 거절하지 않고 기존 키를 ACTIVE로 복구해 등록 성공으로 처리한다. **동일 키가 Team 키로 이미 등록돼 있으면** `409` 메시지 예: `팀에 이미 등록된 API 키입니다`([identity-auth-api-contract §7](../identity-auth-api-contract.md)).
 7. `IDENTITY_SERVICE_URL` 미설정, 업스트림 연결 실패, 업스트림 응답이 계약과 맞지 않는 경우 등은 BFF가 `500`/`502` 등으로 처리할 수 있다. 단, **외부 API 키 평문(`externalKey`)은 로그/에러 메시지에 포함하지 않는다.**
 
 ### 2.4 `PUT /api/auth/external-keys/{id}` 동작
