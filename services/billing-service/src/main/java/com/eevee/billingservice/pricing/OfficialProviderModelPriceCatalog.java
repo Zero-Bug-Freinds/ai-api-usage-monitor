@@ -486,12 +486,120 @@ public final class OfficialProviderModelPriceCatalog {
                 ),
                 new CatalogRow(
                         AiProvider.ANTHROPIC,
+                        "claude-opus-4-7",
+                        new BigDecimal("5.00"),
+                        new BigDecimal("25.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_ANTHROPIC,
+                        "Claude Opus 4.7 — Base input $5/MTok, Output $25/MTok (Anthropic pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.ANTHROPIC,
+                        "claude-opus-4-6",
+                        new BigDecimal("5.00"),
+                        new BigDecimal("25.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_ANTHROPIC,
+                        "Claude Opus 4.6 — Base input $5/MTok, Output $25/MTok (Anthropic pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.ANTHROPIC,
+                        "claude-opus-4-5-20251101",
+                        new BigDecimal("5.00"),
+                        new BigDecimal("25.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_ANTHROPIC,
+                        "Claude Opus 4.5 (dated id) — Base input $5/MTok, Output $25/MTok (Anthropic pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.ANTHROPIC,
+                        "claude-opus-4-1-20250805",
+                        new BigDecimal("15.00"),
+                        new BigDecimal("75.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_ANTHROPIC,
+                        "Claude Opus 4.1 (dated id) — Base input $15/MTok, Output $75/MTok (Anthropic pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.ANTHROPIC,
+                        "claude-sonnet-4-6",
+                        new BigDecimal("3.00"),
+                        new BigDecimal("15.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_ANTHROPIC,
+                        "Claude Sonnet 4.6 — Base input $3/MTok, Output $15/MTok (Anthropic pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.ANTHROPIC,
+                        "claude-sonnet-4-5",
+                        new BigDecimal("3.00"),
+                        new BigDecimal("15.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_ANTHROPIC,
+                        "Claude Sonnet 4.5 (alias) — Base input $3/MTok, Output $15/MTok (Anthropic pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.ANTHROPIC,
+                        "claude-sonnet-4-5-20250929",
+                        new BigDecimal("3.00"),
+                        new BigDecimal("15.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_ANTHROPIC,
+                        "Claude Sonnet 4.5 (dated id) — Base input $3/MTok, Output $15/MTok (Anthropic pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.ANTHROPIC,
+                        "claude-sonnet-4",
+                        new BigDecimal("3.00"),
+                        new BigDecimal("15.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_ANTHROPIC,
+                        "Claude Sonnet 4 (alias) — Base input $3/MTok, Output $15/MTok (Anthropic pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.ANTHROPIC,
                         "claude-sonnet-4-20250514",
                         new BigDecimal("3.00"),
                         new BigDecimal("15.00"),
                         DEFAULT_VALID_FROM,
                         REFERENCE_URL_ANTHROPIC,
-                        "Claude Sonnet 4.x — Base input $3/MTok, Output $15/MTok (API model id may vary; add rows for other IDs if needed)"
+                        "Claude Sonnet 4 (dated id) — Base input $3/MTok, Output $15/MTok (Anthropic pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.ANTHROPIC,
+                        "claude-haiku-4-5",
+                        new BigDecimal("1.00"),
+                        new BigDecimal("5.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_ANTHROPIC,
+                        "Claude Haiku 4.5 (alias) — Base input $1/MTok, Output $5/MTok (Anthropic pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.ANTHROPIC,
+                        "claude-haiku-4-5-20251001",
+                        new BigDecimal("1.00"),
+                        new BigDecimal("5.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_ANTHROPIC,
+                        "Claude Haiku 4.5 (dated id) — Base input $1/MTok, Output $5/MTok (Anthropic pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.ANTHROPIC,
+                        "claude-haiku-3-5",
+                        new BigDecimal("0.80"),
+                        new BigDecimal("4.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_ANTHROPIC,
+                        "Claude Haiku 3.5 — Base input $0.80/MTok, Output $4/MTok (Anthropic pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.ANTHROPIC,
+                        "claude-haiku-3",
+                        new BigDecimal("0.25"),
+                        new BigDecimal("1.25"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_ANTHROPIC,
+                        "Claude Haiku 3 — Base input $0.25/MTok, Output $1.25/MTok (Anthropic pricing table)"
                 ),
                 new CatalogRow(
                         AiProvider.ANTHROPIC,
