@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zerobugfreinds.team_service.dto.IdentityUserSyncEvent;
 import com.zerobugfreinds.team_service.entity.IdentityUserSyncEntity;
 import com.zerobugfreinds.team_service.repository.IdentityUserSyncRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -16,6 +18,8 @@ import java.util.Set;
 
 @Service
 public class IdentityUserSyncService {
+
+    private static final Logger log = LoggerFactory.getLogger(IdentityUserSyncService.class);
 
     private static final String UNKNOWN_EVENT_TYPE = "USER_SYNC_UNKNOWN";
     private static final String UNKNOWN_EMAIL_DOMAIN = "@unknown.local";
@@ -89,6 +93,12 @@ public class IdentityUserSyncService {
                 candidates.add(emailFromIdentityService.trim().toLowerCase());
             }
         }
+        log.info(
+                "membershipLookupCandidates input={} candidateCount={} candidates={}",
+                normalized,
+                candidates.size(),
+                candidates
+        );
         return candidates;
     }
 

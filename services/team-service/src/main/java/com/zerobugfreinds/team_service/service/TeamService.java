@@ -118,8 +118,20 @@ public class TeamService {
 		List<String> lookupCandidates = resolveLookupCandidates(actorUserId);
 		List<TeamMemberEntity> memberships = teamMemberRepository.findAllByUserIdIn(lookupCandidates);
 		if (memberships.isEmpty()) {
+			log.warn(
+					"getMyTeams no team_members rows matched actorUserId={} lookupCandidateCount={} lookupCandidates={}",
+					actorUserId,
+					lookupCandidates.size(),
+					lookupCandidates
+			);
 			return List.of();
 		}
+		log.info(
+				"getMyTeams matched actorUserId={} lookupCandidateCount={} membershipRowCount={}",
+				actorUserId,
+				lookupCandidates.size(),
+				memberships.size()
+		);
 		List<Long> teamIds = memberships.stream()
 				.map(TeamMemberEntity::getTeamId)
 				.distinct()
