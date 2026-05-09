@@ -62,4 +62,29 @@ class WebEdgePreAuthWebFilterTest {
 
         assertThat(hasContext.get()).isFalse();
     }
+
+    @Test
+    void extPath_skipsPreAuthenticationEvenWithTrustedHeaders() {
+        GatewayProperties props = new GatewayProperties();
+        props.setSharedSecret("local-secret");
+        WebEdgePreAuthWebFilter filter = new WebEdgePreAuthWebFilter(props);
+
+        MockServerHttpRequest req = MockServerHttpRequest.get("/api/v1/ai/ext/openai/v1/chat/completions")
+                .header("X-Web-Edge-Auth", "local-secret")
+                .header("X-Auth-UserId", "42")
+                .header("X-Auth-Subject", "user@example.com")
+                .build();
+        MockServerWebExchange exchange = MockServerWebExchange.from(req);
+        AtomicReference<Boolean> hasContext = new AtomicReference<>(false);
+
+        WebFilterChain chain = ex -> ReactiveSecurityContextHolder.getContext()
+                .doOnNext(ctx -> hasContext.set(true))
+                .switchIfEmpty(Mono.empty())
+                .then();
+
+        StepVerifier.create(filter.filter(exchange, chain))
+                .verifyComplete();
+
+        assertThat(hasContext.get()).isFalse();
+    }
 }

@@ -1,12 +1,13 @@
 # Gateway ↔ Proxy 서비스 간 계약
 
-버전: 1.4  
+버전: 1.5  
 관련: [docs/architecture.md](../architecture.md) §4.1, §4.2, §8.2, §10.1, §10.2, 루트 [`docker-compose.yml`](../../docker-compose.yml)(`web-edge`, `docker/web-edge/nginx.conf.template`), 루트 [`.env.example`](../../.env.example), [`services/usage-service/web/.env.example`](../../services/usage-service/web/.env.example), [Web·Gateway Usage BFF](./web-gateway-bff.md)(Usage BFF 브라우저 경로·`basePath`는 [web-split-boundary.md](./web-split-boundary.md))
 
 **v1.1:** `application.yml` 라우트·`RemoveRequestHeader=Authorization`·Bearer 검증·Web `API_GATEWAY_URL` 합의를 §1.1·§3·§9에 명시(게이트웨이·Usage BFF 담당 정합).  
 **v1.2:** §4.2 Identity JWT `sub`(이메일)·Usage 원장 `user_id`·BFF `GATEWAY_DEV_MODE` 세션 이메일 정합·게이트웨이 회귀 테스트 위치 명시.  
 **v1.3:** 웹 BFF 소재를 `services/*/web` 목표 구조·풀스택 소유에 맞게 서술 보강.  
 **v1.4:** §5.1 Docker Compose·루트 `.env`와 `GATEWAY_SHARED_SECRET` 빈 값 주의, 로컬 기본 문자열을 게이트웨이·Proxy·usage와 정합.
+**v1.5:** `/api/v1/ai/ext/**` key-only ingress(HMAC+timestamp+nonce) 경로를 추가하고 기존 `/api/v1/ai/**` JWT 경로와 분리.
 
 ---
 
@@ -51,6 +52,7 @@
 
 | Route ID | Predicate | Upstream URI (환경 변수) | 필터 |
 |----------|-----------|--------------------------|------|
+| `proxy-ai-ext` | `Path=/api/v1/ai/ext/**` | `GATEWAY_PROXY_URI` (기본 `http://localhost:8081`) | `RemoveRequestHeader=Authorization`, `RewritePath=/api/v1/ai/ext/(?<segment>.*), /proxy/${segment}` |
 | `proxy-ai` | `Path=/api/v1/ai/**` | `GATEWAY_PROXY_URI` (기본 `http://localhost:8081`) | `RemoveRequestHeader=Authorization`, `RewritePath=/api/v1/ai/(?<segment>.*), /proxy/${segment}` |
 | `usage-http` | `Path=/api/v1/usage/**` | `GATEWAY_USAGE_URI` (기본 `http://localhost:8092`) | `RemoveRequestHeader=Authorization` |
 
@@ -69,6 +71,28 @@
 **AI 라우트 필터:** Gateway는 `/api/v1/ai/**` 에 대해 **`RemoveRequestHeader=Authorization`** 을 적용한다. 클라이언트가 보낸 플랫폼 JWT(또는 기타 `Authorization`)는 **Proxy로 전달되지 않는다**(게이트웨이 보안 체인에서 소비·검증 후 라우팅). 구현: [`api-gateway-service` `application.yml`](../../services/api-gateway-service/src/main/resources/application.yml).
 
 **로컬 개발(`gateway.dev-mode=true`):** JWT 없이 호출할 수 있으며, 이 경우 **`X-User-Id`** 는 클라이언트가 보낸 값을 게이트웨이 필터가 그대로 신뢰 경로에 실어 Proxy로 넘긴다(`ProxyTrustHeadersWebFilter`). Mock 키(`PROXY_GOOGLE_TEST_API_KEY` 등)를 쓰면 Key Service의 `userId`는 사실상 mock 분기에서 무시되기 쉽다.
+
+### 3.3 외부 key-only ingress (`/api/v1/ai/ext/**`)
+
+- 목적: 우리 전용 사용자 헤더 없이도 외부 클라이언트가 API 호출을 보낼 수 있도록, **JWT 경로와 분리된 확장 ingress** 제공.
+- web-edge: `auth_request`를 사용하지 않고 ext 검증 헤더만 gateway로 전달한다.
+- gateway: `ExtAiHmacAuthWebFilter`가 아래 헤더를 검증한다.
+  - `X-Ext-Key-Id`
+  - `X-Ext-Timestamp` (epoch seconds)
+  - `X-Ext-Nonce` (재사용 금지)
+  - `X-Ext-Body-Sha256` (없으면 empty-body hash)
+  - `X-Ext-Signature` (Base64 HMAC-SHA256)
+  - `X-Ext-User-Id` (내부 식별 주체)
+  - optional `X-Team-Id`
+
+Canonical string:
+
+`METHOD + "\\n" + PATH + "\\n" + RAW_QUERY + "\\n" + BODY_SHA256 + "\\n" + TIMESTAMP + "\\n" + NONCE + "\\n" + KEY_ID + "\\n" + EXT_USER_ID + "\\n" + TEAM_ID_OR_EMPTY`
+
+오류 코드:
+- `401`: 필수 헤더 누락, 키 ID 불일치, 서명 불일치, 타임스탬프 만료, body hash 형식 오류
+- `403`: ext ingress 비활성화
+- `409`: nonce 재사용(Replay)
 
 ---
 

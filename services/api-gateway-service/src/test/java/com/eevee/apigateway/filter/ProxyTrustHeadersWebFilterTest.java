@@ -348,6 +348,25 @@ class ProxyTrustHeadersWebFilterTest {
     }
 
     @Test
+    void extAiPath_skipsProxyTrustFilter() {
+        MockServerHttpRequest request = MockServerHttpRequest.get("/api/v1/ai/ext/openai/v1/chat/completions").build();
+        ServerWebExchange exchange = MockServerWebExchange.from(request);
+        AtomicReference<Boolean> chainRan = new AtomicReference<>(false);
+        WebFilterChain chain = ex -> {
+            chainRan.set(true);
+            return Mono.empty();
+        };
+
+        ProxyTrustHeadersWebFilter filter = new ProxyTrustHeadersWebFilter(gatewayProperties);
+
+        StepVerifier.create(filter.filter(exchange, chain))
+                .verifyComplete();
+
+        assertThat(chainRan.get()).isTrue();
+        assertThat(exchange.getRequest().getHeaders().getFirst("X-User-Id")).isNull();
+    }
+
+    @Test
     void notificationPath_noLongerBypassesFilter_andForwardsDevHeaders() {
         MockServerHttpRequest request = MockServerHttpRequest.get("/api/notification/in-app-notifications")
                 .header("X-User-Id", "42")
