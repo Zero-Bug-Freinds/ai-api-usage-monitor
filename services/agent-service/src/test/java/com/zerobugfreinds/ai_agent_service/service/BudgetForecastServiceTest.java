@@ -30,7 +30,7 @@ class BudgetForecastServiceTest {
 		usageRecordedTokenRollupService = Mockito.mock(UsageRecordedTokenRollupService.class);
 		usagePredictionSignalSnapshotService = Mockito.mock(UsagePredictionSignalSnapshotService.class);
 		when(usageRecordedTokenRollupService.summarizeLastSevenDays(any(), any(), any()))
-				.thenReturn(new UsageRecordedTokenRollupService.SevenDayTokenSummary(0L, 0L, 0L, null));
+				.thenReturn(new UsageRecordedTokenRollupService.SevenDayTokenSummary(0L, 0L, 0L, 0L, null));
 		when(usagePredictionSignalSnapshotService.findAll()).thenReturn(List.of());
 		budgetForecastService = new BudgetForecastService(
 				geminiAssistantService,
