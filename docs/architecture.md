@@ -1,5 +1,5 @@
 # <Team Project> AI Usage & Billing Platform (MSA) 아키텍처 문서
-버전: 0.6.2
+버전: 0.6.3
 
 ---
 
@@ -149,6 +149,7 @@
 - 책임 범위
   - 사용자-조직-권한 모델을 관리한다(팀 단위 멤버십·팀 키 저장은 Team Service DB 소유).
   - Quota/Key 설정의 “정책 값(설정)”을 제공한다.
+  - 개인 외부 API Key 등록/수정 시 Team 내부 역조회 API를 통해 동일 키 해시 존재를 확인하고, 팀 키와의 중복 등록을 거절한다.
 
 ### 4.4 API Key Service
 - 역할
@@ -213,9 +214,11 @@
 - 책임 범위
   - 팀 도메인의 데이터 소유권을 분리해 관리한다.
   - 팀 멤버십 기준 권한(예: 팀 멤버만 초대 가능)을 서버에서 강제한다.
-  - 팀원 초대 시 Identity 사용자 존재 여부를 검증한다. 우선 RabbitMQ 기반 `identity_user_sync` 캐시를 확인하고, 필요 시 Identity 내부 API로 fallback 조회해 실제 가입된 사용자(이메일 아이디)만 초대되도록 보장한다.
+  - 팀원 초대 시 Identity 사용자 존재 여부를 검증한다. **identity-service**가 RabbitMQ(`identity.events` / `identity.user.sync`)로 사용자 동기화 이벤트를 발행하면 team-service가 `identity_user_sync`에 적재한다(계약·백필: [`docs/contracts/web-team-bff.md`](contracts/web-team-bff.md) §5.2). 캐시 미스 시 Identity 내부 API로 fallback 조회해 실제 가입된 사용자(이메일 아이디)만 초대되도록 보장한다.
   - **`GET /internal/v1/users/{userId}/teams`** 및 이를 호출하는 usage-service Usage BFF 팀 목록 등에서는 `team_members.user_id`와 요청 `{userId}` 형태가 다를 수 있으므로, 동일한 **`resolveMembershipLookupCandidates`** 경로로 이메일·숫자 ID 후보를 넓힌 뒤 멤버십을 조회한다. 식별자 불일치·빈 목록 분석은 [`docs/contracts/web-team-bff.md`](contracts/web-team-bff.md) §6.1을 본다.
   - 팀 API Key는 암호화 저장하고, 조회 시 원문 대신 마스킹된 요약만 제공한다.
+  - **Identity 개인 키와 Team 키는 상호 중복 등록을 허용하지 않는다.** Team 키 등록/수정 시 Identity 내부 역조회 API로 동일 해시 키 존재를 확인하며, 이미 개인 키로 등록된 키면 거절한다.
+  - 동일 서비스 내에서 삭제 예정 상태의 키를 다시 등록하면 중복 오류로 거절하지 않고 ACTIVE로 복구(재등록)한다.
 
 ---
 

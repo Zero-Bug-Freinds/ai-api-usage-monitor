@@ -99,7 +99,7 @@ public class TeamApiKeyLookupService {
         return switch (providerRaw.trim()) {
             case "OPENAI" -> TeamApiKeyProvider.OPENAI;
             case "ANTHROPIC" -> TeamApiKeyProvider.ANTHROPIC;
-            case "GOOGLE" -> TeamApiKeyProvider.GOOGLE;
+            case "GOOGLE", "GEMINI" -> TeamApiKeyProvider.GOOGLE;
             case "META" -> TeamApiKeyProvider.META;
             case "MISTRAL" -> TeamApiKeyProvider.MISTRAL;
             case "COHERE" -> TeamApiKeyProvider.COHERE;

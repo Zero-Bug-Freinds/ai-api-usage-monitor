@@ -2,60 +2,26 @@ package com.zerobugfreinds.ai_agent_service.service;
 
 import com.eevee.usage.events.UsageCostFinalizedEvent;
 import com.zerobugfreinds.ai_agent_service.dto.BillingCostCorrectedEvent;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.annotation.PostConstruct;
+import com.zerobugfreinds.ai_agent_service.entity.BillingSignalSnapshotEntity;
+import com.zerobugfreinds.ai_agent_service.repository.BillingSignalSnapshotRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class BillingSignalSnapshotService {
 
 	private static final Logger log = LoggerFactory.getLogger(BillingSignalSnapshotService.class);
-	private static final String REDIS_HASH_KEY = "ai-agent:billing-signals";
 
-	private final Map<String, BillingKeySignal> byApiKeyId = new ConcurrentHashMap<>();
-	private final StringRedisTemplate redisTemplate;
-	private final ObjectMapper objectMapper;
+	private final BillingSignalSnapshotRepository snapshotRepository;
 
-	public BillingSignalSnapshotService(
-			org.springframework.beans.factory.ObjectProvider<StringRedisTemplate> redisTemplateProvider,
-			ObjectMapper objectMapper
-	) {
-		this.redisTemplate = redisTemplateProvider.getIfAvailable();
-		this.objectMapper = objectMapper;
-	}
-
-	@PostConstruct
-	public void restoreFromRedis() {
-		if (redisTemplate == null) {
-			log.info("Redis template is not available; billing signal snapshots will remain in-memory only.");
-			return;
-		}
-		try {
-			Map<Object, Object> entries = redisTemplate.opsForHash().entries(REDIS_HASH_KEY);
-			for (Map.Entry<Object, Object> entry : entries.entrySet()) {
-				String apiKeyId = String.valueOf(entry.getKey());
-				String json = String.valueOf(entry.getValue());
-				BillingKeySignal signal = objectMapper.readValue(json, BillingKeySignal.class);
-				if (apiKeyId != null && !apiKeyId.isBlank() && signal != null) {
-					byApiKeyId.put(apiKeyId, signal);
-				}
-			}
-			log.info("Restored {} billing signal snapshots from Redis.", byApiKeyId.size());
-		} catch (Exception ex) {
-			log.warn("Failed to restore billing signal snapshots from Redis.", ex);
-		}
+	public BillingSignalSnapshotService(BillingSignalSnapshotRepository snapshotRepository) {
+		this.snapshotRepository = snapshotRepository;
 	}
 
 	public void upsertUsageCost(
@@ -69,19 +35,27 @@ public class BillingSignalSnapshotService {
 			return;
 		}
 
-		BillingKeySignal signal = new BillingKeySignal(
-				apiKeyId,
-				userId,
-				teamId,
-				subjectType,
-				event.estimatedCostUsd(),
-				event.finalizedAt(),
-				event.provider() != null ? event.provider().name() : null,
-				event.model(),
-				event.pricingRuleVersion()
-		);
-		byApiKeyId.put(apiKeyId, signal);
-		persistSignal(apiKeyId, signal);
+		BillingSignalSnapshotEntity entity = snapshotRepository.findByApiKeyId(apiKeyId)
+				.orElse(new BillingSignalSnapshotEntity(
+						apiKeyId,
+						userId,
+						teamId,
+						subjectType,
+						event.estimatedCostUsd(),
+						event.finalizedAt(),
+						event.provider() != null ? event.provider().name() : null,
+						event.model(),
+						event.pricingRuleVersion()
+				));
+		entity.setUserId(userId);
+		entity.setTeamId(teamId);
+		entity.setSubjectType(subjectType);
+		entity.setLatestEstimatedCostUsd(event.estimatedCostUsd());
+		entity.setLatestFinalizedAt(event.finalizedAt());
+		entity.setProvider(event.provider() != null ? event.provider().name() : null);
+		entity.setModel(event.model());
+		entity.setPricingRuleVersion(event.pricingRuleVersion());
+		snapshotRepository.save(entity);
 	}
 
 	public void applyCostCorrection(
@@ -94,10 +68,10 @@ public class BillingSignalSnapshotService {
 		if (apiKeyId == null || apiKeyId.isBlank()) {
 			return;
 		}
-		BillingKeySignal current = byApiKeyId.get(apiKeyId);
+		BillingSignalSnapshotEntity current = snapshotRepository.findByApiKeyId(apiKeyId).orElse(null);
 
-		BigDecimal currentCost = current != null && current.latestEstimatedCostUsd() != null
-				? current.latestEstimatedCostUsd()
+		BigDecimal currentCost = current != null && current.getLatestEstimatedCostUsd() != null
+				? current.getLatestEstimatedCostUsd()
 				: BigDecimal.ZERO;
 		BigDecimal delta = event.appliedDeltaCostUsd() != null ? event.appliedDeltaCostUsd() : BigDecimal.ZERO;
 		BigDecimal correctedCost = currentCost.add(delta);
@@ -105,34 +79,33 @@ public class BillingSignalSnapshotService {
 			correctedCost = BigDecimal.ZERO;
 		}
 
-		String nextUserId = userId != null && !userId.isBlank() ? userId : (current != null ? current.userId() : null);
-		String nextTeamId = teamId != null && !teamId.isBlank() ? teamId : (current != null ? current.teamId() : null);
+		String nextUserId = userId != null && !userId.isBlank() ? userId : (current != null ? current.getUserId() : null);
+		String nextTeamId = teamId != null && !teamId.isBlank() ? teamId : (current != null ? current.getTeamId() : null);
 		String nextSubjectType = subjectType != null && !subjectType.isBlank()
 				? subjectType
-				: (current != null ? current.subjectType() : null);
+				: (current != null ? current.getSubjectType() : null);
 		String nextProvider = event.provider() != null && !event.provider().isBlank()
 				? event.provider()
-				: (current != null ? current.provider() : null);
+				: (current != null ? current.getProvider() : null);
 		String nextModel = event.model() != null && !event.model().isBlank()
 				? event.model()
-				: (current != null ? current.model() : null);
+				: (current != null ? current.getModel() : null);
 		Instant nextFinalizedAt = event.occurredAt() != null
 				? event.occurredAt()
-				: (current != null ? current.latestFinalizedAt() : null);
+				: (current != null ? current.getLatestFinalizedAt() : null);
 
-		BillingKeySignal signal = new BillingKeySignal(
-				apiKeyId,
-				nextUserId,
-				nextTeamId,
-				nextSubjectType,
-				correctedCost,
-				nextFinalizedAt,
-				nextProvider,
-				nextModel,
-				current != null ? current.pricingRuleVersion() : null
+		BillingSignalSnapshotEntity entity = current != null ? current : new BillingSignalSnapshotEntity(
+				apiKeyId, nextUserId, nextTeamId, nextSubjectType, correctedCost, nextFinalizedAt, nextProvider, nextModel, null
 		);
-		byApiKeyId.put(apiKeyId, signal);
-		persistSignal(apiKeyId, signal);
+		entity.setUserId(nextUserId);
+		entity.setTeamId(nextTeamId);
+		entity.setSubjectType(nextSubjectType);
+		entity.setLatestEstimatedCostUsd(correctedCost);
+		entity.setLatestFinalizedAt(nextFinalizedAt);
+		entity.setProvider(nextProvider);
+		entity.setModel(nextModel);
+		entity.setPricingRuleVersion(current != null ? current.getPricingRuleVersion() : null);
+		snapshotRepository.save(entity);
 	}
 
 	public void upsertReconciledCost(
@@ -146,41 +119,36 @@ public class BillingSignalSnapshotService {
 		if (apiKeyId == null || apiKeyId.isBlank() || reconciledCostUsd == null) {
 			return;
 		}
-		BillingKeySignal current = byApiKeyId.get(apiKeyId);
+		BillingSignalSnapshotEntity current = snapshotRepository.findByApiKeyId(apiKeyId).orElse(null);
 		BigDecimal mergedCost = reconciledCostUsd;
-		if (current != null && current.latestEstimatedCostUsd() != null) {
-			mergedCost = current.latestEstimatedCostUsd().max(reconciledCostUsd);
+		if (current != null && current.getLatestEstimatedCostUsd() != null) {
+			mergedCost = current.getLatestEstimatedCostUsd().max(reconciledCostUsd);
 		}
-		BillingKeySignal signal = new BillingKeySignal(
-				apiKeyId,
-				hasText(userId) ? userId : (current != null ? current.userId() : null),
-				hasText(teamId) ? teamId : (current != null ? current.teamId() : null),
-				hasText(subjectType) ? subjectType : (current != null ? current.subjectType() : "API_KEY"),
-				mergedCost,
-				Instant.now(),
-				hasText(provider) ? provider : (current != null ? current.provider() : null),
-				current != null ? current.model() : null,
-				current != null ? current.pricingRuleVersion() : null
+		BillingSignalSnapshotEntity entity = current != null ? current : new BillingSignalSnapshotEntity(
+				apiKeyId, null, null, "API_KEY", mergedCost, Instant.now(), provider, null, null
 		);
-		byApiKeyId.put(apiKeyId, signal);
-		persistSignal(apiKeyId, signal);
+		entity.setUserId(hasText(userId) ? userId : (current != null ? current.getUserId() : null));
+		entity.setTeamId(hasText(teamId) ? teamId : (current != null ? current.getTeamId() : null));
+		entity.setSubjectType(hasText(subjectType) ? subjectType : (current != null ? current.getSubjectType() : "API_KEY"));
+		entity.setLatestEstimatedCostUsd(mergedCost);
+		entity.setLatestFinalizedAt(Instant.now());
+		entity.setProvider(hasText(provider) ? provider : (current != null ? current.getProvider() : null));
+		entity.setModel(current != null ? current.getModel() : null);
+		entity.setPricingRuleVersion(current != null ? current.getPricingRuleVersion() : null);
+		snapshotRepository.save(entity);
 	}
 
 	public List<BillingKeySignal> findAll() {
-		return byApiKeyId.values().stream()
-				.sorted(Comparator.comparing(BillingKeySignal::latestFinalizedAt, Comparator.nullsLast(Comparator.reverseOrder())))
+		return snapshotRepository.findAllByOrderByLatestFinalizedAtDesc().stream()
+				.map(this::toSignal)
 				.toList();
 	}
 
 	public List<BillingKeySignal> findByTeamId(String teamId) {
-		List<BillingKeySignal> result = new ArrayList<>();
-		for (BillingKeySignal signal : byApiKeyId.values()) {
-			if (teamId.equals(signal.teamId())) {
-				result.add(signal);
-			}
-		}
-		result.sort(Comparator.comparing(BillingKeySignal::latestFinalizedAt, Comparator.nullsLast(Comparator.reverseOrder())));
-		return result;
+		return snapshotRepository.findByTeamIdOrderByLatestFinalizedAtDesc(teamId).stream()
+				.map(this::toSignal)
+				.sorted(Comparator.comparing(BillingKeySignal::latestFinalizedAt, Comparator.nullsLast(Comparator.reverseOrder())))
+				.toList();
 	}
 
 	public record BillingKeySignal(
@@ -196,18 +164,18 @@ public class BillingSignalSnapshotService {
 	) {
 	}
 
-	private void persistSignal(String apiKeyId, BillingKeySignal signal) {
-		if (redisTemplate == null || apiKeyId == null || apiKeyId.isBlank() || signal == null) {
-			return;
-		}
-		try {
-			String json = objectMapper.writeValueAsString(signal);
-			redisTemplate.opsForHash().put(REDIS_HASH_KEY, apiKeyId, json);
-		} catch (JsonProcessingException ex) {
-			log.warn("Failed to serialize billing signal for apiKeyId={}", apiKeyId, ex);
-		} catch (Exception ex) {
-			log.warn("Failed to persist billing signal for apiKeyId={}", apiKeyId, ex);
-		}
+	private BillingKeySignal toSignal(BillingSignalSnapshotEntity entity) {
+		return new BillingKeySignal(
+				entity.getApiKeyId(),
+				entity.getUserId(),
+				entity.getTeamId(),
+				entity.getSubjectType(),
+				entity.getLatestEstimatedCostUsd(),
+				entity.getLatestFinalizedAt(),
+				entity.getProvider(),
+				entity.getModel(),
+				entity.getPricingRuleVersion()
+		);
 	}
 
 	private static boolean hasText(String value) {

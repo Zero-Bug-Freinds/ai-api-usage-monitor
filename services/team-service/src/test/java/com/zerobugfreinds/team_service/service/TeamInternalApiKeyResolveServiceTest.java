@@ -116,6 +116,47 @@ class TeamInternalApiKeyResolveServiceTest {
     }
 
     @Test
+    void resolve_numericUserId_matchesEmailStoredMembership() {
+        TeamMemberRepository teamMemberRepository = mock(TeamMemberRepository.class);
+        TeamApiKeyRepository teamApiKeyRepository = mock(TeamApiKeyRepository.class);
+        IdentityUserSyncService identityUserSyncService = mock(IdentityUserSyncService.class);
+        EncryptionUtil encryptionUtil = mock(EncryptionUtil.class);
+        when(identityUserSyncService.resolveMembershipLookupCandidates("42")).thenReturn(Set.of("42", "member@test.com"));
+
+        TeamInternalApiKeyResolveService service = new TeamInternalApiKeyResolveService(
+                teamMemberRepository,
+                teamApiKeyRepository,
+                identityUserSyncService,
+                encryptionUtil,
+                "internal-token"
+        );
+
+        when(teamMemberRepository.existsByTeamIdAndUserId(10L, "42")).thenReturn(false);
+        when(teamMemberRepository.existsByTeamIdAndUserId(10L, "member@test.com")).thenReturn(true);
+
+        TeamApiKeyEntity entity = TeamApiKeyEntity.register(
+                10L,
+                TeamApiKeyProvider.OPENAI,
+                "sk-test",
+                "hash",
+                "enc",
+                BigDecimal.ONE
+        );
+        ReflectionTestUtils.setField(entity, "id", 99L);
+        ReflectionTestUtils.setField(entity, "createdAt", Instant.now());
+
+        when(teamApiKeyRepository.findFirstByTeamIdAndProviderAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(
+                10L, TeamApiKeyProvider.OPENAI
+        )).thenReturn(Optional.of(entity));
+        when(encryptionUtil.decryptAes256Gcm("enc")).thenReturn("sk-plain");
+
+        InternalTeamApiKeyResponse response =
+                service.resolve("openai", 10L, "42", null, "Bearer internal-token");
+
+        assertThat(response.plainKey()).isEqualTo("sk-plain");
+    }
+
+    @Test
     void resolve_deletionPendingOnlyKey_throwsNotFound() {
         TeamMemberRepository teamMemberRepository = mock(TeamMemberRepository.class);
         TeamApiKeyRepository teamApiKeyRepository = mock(TeamApiKeyRepository.class);
@@ -150,7 +191,7 @@ class TeamInternalApiKeyResolveServiceTest {
     ) {
         IdentityUserSyncService identityUserSyncService = mock(IdentityUserSyncService.class);
         when(identityUserSyncService.resolveMembershipLookupCandidates(anyString()))
-                .thenAnswer(invocation -> Set.of(invocation.getArgument(0, String.class)));
+                .thenAnswer(invocation -> Set.of(invocation.getArgument(0, String.class).trim()));
         return new TeamInternalApiKeyResolveService(
                 teamMemberRepository,
                 teamApiKeyRepository,

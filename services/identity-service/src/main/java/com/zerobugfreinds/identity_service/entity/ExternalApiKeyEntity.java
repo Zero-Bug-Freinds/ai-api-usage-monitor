@@ -23,10 +23,16 @@ import java.time.Instant;
 @Entity
 @Table(
 		name = "external_api_keys",
-		uniqueConstraints = @UniqueConstraint(
-				name = "uk_external_api_keys_user_provider_key_hash",
-				columnNames = {"user_id", "provider", "key_hash"}
-		)
+		uniqueConstraints = {
+				@UniqueConstraint(
+						name = "uk_external_api_keys_user_provider_key_hash",
+						columnNames = {"user_id", "provider", "key_hash"}
+				),
+				@UniqueConstraint(
+						name = "uk_external_api_keys_user_alias",
+						columnNames = {"user_id", "key_alias"}
+				)
+		}
 )
 public class ExternalApiKeyEntity {
 

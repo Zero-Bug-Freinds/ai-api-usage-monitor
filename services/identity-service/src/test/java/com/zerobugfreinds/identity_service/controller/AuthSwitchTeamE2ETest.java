@@ -3,6 +3,7 @@ package com.zerobugfreinds.identity_service.controller;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zerobugfreinds.identity_service.security.GatewayHeaderInterceptor;
+import com.zerobugfreinds.identity_service.service.TeamApiKeyLookupClient;
 import com.zerobugfreinds.identity_service.service.TeamMembershipVerificationClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -206,6 +207,11 @@ class AuthSwitchTeamE2ETest {
         @Bean
         TeamMembershipVerificationClient teamMembershipVerificationClient() {
             return mock(TeamMembershipVerificationClient.class);
+        }
+
+        @Bean
+        TeamApiKeyLookupClient teamApiKeyLookupClient() {
+            return mock(TeamApiKeyLookupClient.class);
         }
     }
 }

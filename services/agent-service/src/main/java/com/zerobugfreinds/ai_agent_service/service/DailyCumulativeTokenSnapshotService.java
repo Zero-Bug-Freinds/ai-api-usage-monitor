@@ -1,18 +1,21 @@
 package com.zerobugfreinds.ai_agent_service.service;
 
 import com.eevee.usage.events.DailyCumulativeTokensUpdatedEvent;
+import com.zerobugfreinds.ai_agent_service.entity.DailyCumulativeTokenSnapshotEntity;
+import com.zerobugfreinds.ai_agent_service.repository.DailyCumulativeTokenSnapshotRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
-import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class DailyCumulativeTokenSnapshotService {
 
-	private final Map<String, DailyCumulativeTokenSnapshot> byScope = new ConcurrentHashMap<>();
+	private final DailyCumulativeTokenSnapshotRepository snapshotRepository;
+
+	public DailyCumulativeTokenSnapshotService(DailyCumulativeTokenSnapshotRepository snapshotRepository) {
+		this.snapshotRepository = snapshotRepository;
+	}
 
 	public void upsert(DailyCumulativeTokensUpdatedEvent event) {
 		if (event == null || event.userId() == null || event.userId().isBlank()) {
@@ -22,23 +25,23 @@ public class DailyCumulativeTokenSnapshotService {
 		String teamId = normalize(event.teamId());
 		String userId = normalize(event.userId());
 		String apiKeyId = normalize(event.apiKeyId());
-		String scopeKey = scopeKey(teamId, userId, apiKeyId);
-
-		byScope.put(
-				scopeKey,
-				new DailyCumulativeTokenSnapshot(
-						teamId,
-						userId,
-						apiKeyId,
-						event.dailyTotalTokens(),
-						event.occurredAt()
-				)
-		);
+		DailyCumulativeTokenSnapshotEntity entity = snapshotRepository
+				.findByTeamIdAndUserIdAndApiKeyId(teamId, userId, apiKeyId)
+				.orElse(new DailyCumulativeTokenSnapshotEntity(teamId, userId, apiKeyId, 0L, null));
+		entity.setDailyTotalTokens(event.dailyTotalTokens());
+		entity.setOccurredAt(event.occurredAt() != null ? event.occurredAt() : Instant.now());
+		snapshotRepository.save(entity);
 	}
 
 	public List<DailyCumulativeTokenSnapshot> findAll() {
-		return byScope.values().stream()
-				.sorted(Comparator.comparing(DailyCumulativeTokenSnapshot::occurredAt, Comparator.nullsLast(Comparator.reverseOrder())))
+		return snapshotRepository.findAllByOrderByOccurredAtDesc().stream()
+				.map(entity -> new DailyCumulativeTokenSnapshot(
+						entity.getTeamId(),
+						entity.getUserId(),
+						entity.getApiKeyId(),
+						entity.getDailyTotalTokens(),
+						entity.getOccurredAt()
+				))
 				.toList();
 	}
 
@@ -49,10 +52,6 @@ public class DailyCumulativeTokenSnapshotService {
 			long dailyTotalTokens,
 			Instant occurredAt
 	) {
-	}
-
-	private static String scopeKey(String teamId, String userId, String apiKeyId) {
-		return teamId + "|" + userId + "|" + apiKeyId;
 	}
 
 	private static String normalize(String value) {

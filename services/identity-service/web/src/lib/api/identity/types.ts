@@ -82,3 +82,17 @@ export type SessionResponse = {
   authenticated: boolean
 }
 
+/** BFF `PUT /api/auth/profile` 본문(부분 갱신). 둘 다 비우면 Identity가 400을 반환한다. */
+export type ProfileUpdateRequest = {
+  email?: string | null
+  name?: string | null
+}
+
+/** Identity `PUT /api/auth/profile`의 `data` 본문과 동기화 */
+export type ProfileUpdateResponse = {
+  userId: number
+  email: string
+  name: string
+  role: Role
+}
+
