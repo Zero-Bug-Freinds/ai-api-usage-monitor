@@ -3,6 +3,7 @@ package com.zerobugfreinds.identity_service.bootstrap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
@@ -62,6 +63,19 @@ public class ExternalApiKeySchemaInitializer {
 				alter column retain_usage_logs set not null
 				"""
 		);
+		if (isPostgres()) {
+			ensureUserAliasUniqueConstraint();
+		}
+		log.info("external_api_keys.retain_usage_logs column ensured");
+	}
+
+	private boolean isPostgres() {
+		return Boolean.TRUE.equals(jdbcTemplate.execute((ConnectionCallback<Boolean>) connection ->
+				connection.getMetaData().getDatabaseProductName().toLowerCase().contains("postgresql")
+		));
+	}
+
+	private void ensureUserAliasUniqueConstraint() {
 		jdbcTemplate.execute(
 				"""
 				do $$
@@ -89,6 +103,5 @@ public class ExternalApiKeySchemaInitializer {
 				end $$;
 				"""
 		);
-		log.info("external_api_keys.retain_usage_logs column ensured");
 	}
 }
