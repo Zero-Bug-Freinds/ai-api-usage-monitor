@@ -232,6 +232,9 @@
 - 분석 플로우는 `insufficientForForecast` 상태여도 백엔드 분석 호출을 시도하도록 변경했고, 성공 데이터가 있으면 기존 `forecastGaps` 경고 문구를 비워 stale 메시지가 남지 않게 했다.
 - 추천 영역의 중복 빈 상태 메시지(`추천 결과가 없습니다...`)를 제거해 같은 안내가 중첩 렌더링되지 않게 정리했다.
 - 개인 키 추천 생성에서 `userId`(숫자)와 이메일 문자열이 혼재해도 매칭되도록, `PolicyRecommendationAgentService`의 PERSONAL scope billing signal 매칭에 `keyId` 기반 fallback을 추가했다.
+- 응답 스냅샷 저장 범위를 확장했다.
+  - 추천 분석은 `RECOMMENDATION_AVAILABLE` 뿐 아니라 `RECOMMENDATION_EMPTY`도 `recommendation_projection`에 저장한다.
+  - 예산 분석(`budget-forecast-assistant`) 응답은 요청/응답 JSON을 `budget_forecast_projection`에 저장해 후속 Analytics(추천 효과 추적)용 이력으로 활용할 수 있게 했다.
 - 이벤트 파싱/조회 안정화:
   - `IdentityExternalApiKeyEventListener`: status changed payload 역직렬화 전에 `eventType` 필드를 제거해 `UnrecognizedPropertyException`을 방지한다.
   - `UsagePredictionSignalSnapshotService.findAll()`: `@Transactional(readOnly = true)`를 적용해 LOB 조회 시점 예외를 방지한다.

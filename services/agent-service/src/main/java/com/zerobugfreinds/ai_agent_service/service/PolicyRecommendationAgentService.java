@@ -164,6 +164,7 @@ public class PolicyRecommendationAgentService {
 					totalRequests
 			);
 			recommendationStore.put(new RecommendationCacheKey(request.scopeType(), request.scopeId(), request.keyId()), noRecommendation);
+			persistSnapshot(noRecommendation, request.scopeType(), request.scopeId(), request.keyId());
 			return new OptimizationRecommendationIssuedEvent(
 					UUID.randomUUID().toString(),
 					"OPTIMIZATION_RECOMMENDATION_ISSUED",
@@ -328,6 +329,7 @@ public class PolicyRecommendationAgentService {
 						new RecommendationCacheKey(request.scopeType(), request.scopeId(), request.keyId()),
 						noRecommendation
 				);
+				persistSnapshot(noRecommendation, request.scopeType(), request.scopeId(), request.keyId());
 				continue;
 			}
 			BigDecimal currentMonthlyCost = billingSignal.latestEstimatedCostUsd();
@@ -356,6 +358,7 @@ public class PolicyRecommendationAgentService {
 						new RecommendationCacheKey(request.scopeType(), request.scopeId(), request.keyId()),
 						noRecommendation
 				);
+				persistSnapshot(noRecommendation, request.scopeType(), request.scopeId(), request.keyId());
 				continue;
 			}
 			CandidateCost bestCandidate = topCandidates.getFirst();
