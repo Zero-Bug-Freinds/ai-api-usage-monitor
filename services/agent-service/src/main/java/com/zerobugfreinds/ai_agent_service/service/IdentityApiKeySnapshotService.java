@@ -26,6 +26,9 @@ public class IdentityApiKeySnapshotService {
 				.orElse(null);
 		BigDecimal budget = current != null ? current.getMonthlyBudgetUsd() : null;
 		Instant updatedAt = event.occurredAt() != null ? event.occurredAt() : Instant.now();
+		String keyHash = (event.keyHash() != null && !event.keyHash().isBlank())
+				? event.keyHash()
+				: (current != null ? current.getKeyHash() : null);
 
 		snapshotRepository.save(
 				new IdentityApiKeySnapshotEntity(
@@ -36,6 +39,7 @@ public class IdentityApiKeySnapshotService {
 						event.visibility(),
 						event.status().name(),
 						budget,
+						keyHash,
 						updatedAt
 				)
 		);
@@ -60,6 +64,9 @@ public class IdentityApiKeySnapshotService {
 			visibility = current.getVisibility();
 		}
 		String status = event.status() != null ? event.status().name() : (current != null ? current.getStatus() : "ACTIVE");
+		String keyHash = (event.keyHash() != null && !event.keyHash().isBlank())
+				? event.keyHash()
+				: (current != null ? current.getKeyHash() : null);
 
 		snapshotRepository.save(
 				new IdentityApiKeySnapshotEntity(
@@ -70,6 +77,7 @@ public class IdentityApiKeySnapshotService {
 						visibility,
 						status,
 						event.monthlyBudgetUsd(),
+						keyHash,
 						updatedAt
 				)
 		);
@@ -100,6 +108,7 @@ public class IdentityApiKeySnapshotService {
 				entity.getVisibility(),
 				entity.getStatus(),
 				entity.getMonthlyBudgetUsd(),
+				entity.getKeyHash(),
 				entity.getUpdatedAt()
 		);
 	}
@@ -112,6 +121,7 @@ public class IdentityApiKeySnapshotService {
 			String visibility,
 			String status,
 			BigDecimal monthlyBudgetUsd,
+			String keyHash,
 			Instant updatedAt
 	) {
 	}

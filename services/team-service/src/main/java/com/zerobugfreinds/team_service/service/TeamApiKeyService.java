@@ -126,7 +126,8 @@ public class TeamApiKeyService {
                         reactivated.getProvider().name(),
                         reactivated.getMonthlyBudgetUsd(),
                         TeamApiKeyStatus.ACTIVE,
-                        null
+                        null,
+                        reactivated.getKeyHash()
                 );
                 return toSummary(reactivated);
             }
@@ -172,7 +173,8 @@ public class TeamApiKeyService {
                 saved.getProvider().name(),
                 saved.getMonthlyBudgetUsd(),
                 TeamApiKeyStatus.ACTIVE,
-                null
+                null,
+                saved.getKeyHash()
         );
         return toSummary(saved);
     }
@@ -261,7 +263,8 @@ public class TeamApiKeyService {
                 entity.getProvider().name(),
                 entity.getMonthlyBudgetUsd(),
                 TeamApiKeyStatus.ACTIVE,
-                null
+                null,
+                entity.getKeyHash()
         );
         return toSummary(entity);
     }
@@ -307,7 +310,8 @@ public class TeamApiKeyService {
                     entity.getProvider().name(),
                     entity.getMonthlyBudgetUsd(),
                     TeamApiKeyStatus.DELETED,
-                    retainLogs
+                    retainLogs,
+                    entity.getKeyHash()
             );
             return toSummary(entity);
         }
@@ -332,7 +336,8 @@ public class TeamApiKeyService {
                 entity.getProvider().name(),
                 entity.getMonthlyBudgetUsd(),
                 TeamApiKeyStatus.DELETION_REQUESTED,
-                retainLogs
+                retainLogs,
+                entity.getKeyHash()
         );
         return toSummary(entity);
     }
@@ -392,7 +397,8 @@ public class TeamApiKeyService {
                 entity.getProvider().name(),
                 entity.getMonthlyBudgetUsd(),
                 TeamApiKeyStatus.ACTIVE,
-                null
+                null,
+                entity.getKeyHash()
         );
         return toSummary(entity);
     }
@@ -509,7 +515,8 @@ public class TeamApiKeyService {
             String provider,
             BigDecimal monthlyBudgetUsd,
             TeamApiKeyStatus status,
-            Boolean retainLogs
+            Boolean retainLogs,
+            String keyHash
     ) {
         applicationEventPublisher.publishEvent(
                 TeamApiKeyStatusChangedEvent.of(
@@ -522,7 +529,8 @@ public class TeamApiKeyService {
                         provider,
                         monthlyBudgetUsd,
                         status,
-                        retainLogs
+                        retainLogs,
+                        keyHash
                 )
         );
     }

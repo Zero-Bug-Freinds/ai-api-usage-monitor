@@ -38,6 +38,9 @@ public class IdentityApiKeySnapshotEntity {
 
 	private BigDecimal monthlyBudgetUsd;
 
+	@Column(name = "key_hash", length = 64)
+	private String keyHash;
+
 	@Column(nullable = false)
 	private Instant updatedAt;
 
@@ -52,6 +55,7 @@ public class IdentityApiKeySnapshotEntity {
 			String visibility,
 			String status,
 			BigDecimal monthlyBudgetUsd,
+			String keyHash,
 			Instant updatedAt
 	) {
 		this.userId = userId;
@@ -61,6 +65,7 @@ public class IdentityApiKeySnapshotEntity {
 		this.visibility = visibility;
 		this.status = status;
 		this.monthlyBudgetUsd = monthlyBudgetUsd;
+		this.keyHash = keyHash;
 		this.updatedAt = updatedAt;
 	}
 
@@ -71,6 +76,7 @@ public class IdentityApiKeySnapshotEntity {
 	public String getVisibility() { return visibility; }
 	public String getStatus() { return status; }
 	public BigDecimal getMonthlyBudgetUsd() { return monthlyBudgetUsd; }
+	public String getKeyHash() { return keyHash; }
 	public Instant getUpdatedAt() { return updatedAt; }
 
 	public void setAlias(String alias) { this.alias = alias; }
@@ -78,6 +84,7 @@ public class IdentityApiKeySnapshotEntity {
 	public void setVisibility(String visibility) { this.visibility = visibility; }
 	public void setStatus(String status) { this.status = status; }
 	public void setMonthlyBudgetUsd(BigDecimal monthlyBudgetUsd) { this.monthlyBudgetUsd = monthlyBudgetUsd; }
+	public void setKeyHash(String keyHash) { this.keyHash = keyHash; }
 	public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
 
 	public static class IdentityApiKeySnapshotId implements Serializable {

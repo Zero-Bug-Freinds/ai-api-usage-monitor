@@ -30,6 +30,7 @@ public class TeamApiKeySnapshotService {
 								snapshot.provider(),
 								snapshot.status(),
 								snapshot.retainLogs(),
+								snapshot.keyHash(),
 								snapshot.updatedAt()
 						)
 				);
@@ -40,6 +41,7 @@ public class TeamApiKeySnapshotService {
 		entity.setProvider(snapshot.provider());
 		entity.setStatus(snapshot.status());
 		entity.setRetainLogs(snapshot.retainLogs());
+		entity.setKeyHash(snapshot.keyHash());
 		entity.setUpdatedAt(snapshot.updatedAt() != null ? snapshot.updatedAt() : Instant.now());
 		snapshotRepository.save(entity);
 	}
@@ -67,6 +69,7 @@ public class TeamApiKeySnapshotService {
 				entity.getProvider(),
 				entity.getStatus(),
 				entity.getRetainLogs(),
+				entity.getKeyHash(),
 				entity.getUpdatedAt()
 		);
 	}
@@ -81,6 +84,7 @@ public class TeamApiKeySnapshotService {
 			String provider,
 			String status,
 			Boolean retainLogs,
+			String keyHash,
 			Instant updatedAt
 	) {
 	}

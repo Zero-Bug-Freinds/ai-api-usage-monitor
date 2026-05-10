@@ -105,6 +105,7 @@ function ratioDominance(ratio: { input: number; output: number } | null): {
 
 type AvailableContextKeyPayload = {
   keyId: number
+  mergedKeyIds?: number[]
   alias: string
   provider: string
   monthlyBudgetUsd: number
@@ -149,6 +150,11 @@ function formatAgentUsd(value: number): string {
     return `<$${minLabel.toFixed(decimals)}`
   }
   return `$${value.toFixed(decimals)}`
+}
+
+function isCredentialDeletedStatus(status: string): boolean {
+  const u = (status ?? "").toUpperCase()
+  return u === "DELETED" || u === "DELETION_REQUESTED"
 }
 
 function AgentKeyBudgetSummary({
@@ -472,6 +478,7 @@ export default function AgentPage() {
 
       const normalized = (payload.data ?? []).map((item: AvailableContextKeyPayload) => ({
         keyId: item.keyId,
+        mergedKeyIds: item.mergedKeyIds,
         keyLabel: item.alias,
         provider: item.provider,
         monthlyBudgetUsd: item.monthlyBudgetUsd,
@@ -612,8 +619,22 @@ export default function AgentPage() {
           <ul className="space-y-1 text-sm text-muted-foreground">
             {keys.map((item: AvailableKeyContext) => (
               <li key={item.keyId} className="rounded-md border px-2 py-1">
-                {item.keyLabel}
-                <span className="text-xs"> ({item.provider})</span>
+                <div className="flex flex-wrap items-baseline gap-1">
+                  <span>
+                    {item.keyLabel}
+                    <span className="text-xs"> ({item.provider})</span>
+                  </span>
+                  {isCredentialDeletedStatus(item.status) ? (
+                    <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                      삭제된 키
+                    </span>
+                  ) : null}
+                </div>
+                {item.mergedKeyIds != null && item.mergedKeyIds.length > 1 ? (
+                  <p className="mt-0.5 text-[10px] leading-snug text-muted-foreground">
+                    동일 키 해시(동일 시크릿)·또는 동일 제공자·별칭으로 병합 (키 ID: {item.mergedKeyIds.join(", ")}) — 아래 누적·당월 수치는 병합 합산입니다.
+                  </p>
+                ) : null}
                 <AgentKeyBudgetSummary monthlyBudgetUsd={item.monthlyBudgetUsd} budgetStats={item.budgetStats} />
                 <div className="mt-1 flex flex-col gap-1 border-t border-border/60 pt-1">
                   <div className="flex items-center justify-between gap-2">
@@ -721,7 +742,19 @@ export default function AgentPage() {
             <ul className="space-y-1 text-sm text-muted-foreground">
               {selectedTeamKeys.map((item: TeamBoardItem) => (
                 <li key={`${item.teamId}-${item.teamApiKeyId}`} className="rounded-md border px-2 py-1">
-                  {item.alias}
+                  <div className="flex flex-wrap items-baseline gap-1">
+                    <span>{item.alias}</span>
+                    {isCredentialDeletedStatus(item.status) ? (
+                      <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                        삭제된 키
+                      </span>
+                    ) : null}
+                  </div>
+                  {item.mergedTeamApiKeyIds != null && item.mergedTeamApiKeyIds.length > 1 ? (
+                    <p className="mt-0.5 text-[10px] leading-snug text-muted-foreground">
+                      동일 키 해시(동일 시크릿)·또는 동일 팀·제공자·별칭으로 병합 (팀 키 ID: {item.mergedTeamApiKeyIds.join(", ")}) — 아래 수치는 병합 합산입니다.
+                    </p>
+                  ) : null}
                   <AgentKeyBudgetSummary
                     monthlyBudgetUsd={item.monthlyBudgetUsd ?? 0}
                     budgetStats={item.budgetStats}

@@ -466,7 +466,8 @@ public sealed interface TeamDomainOutboundEvent permits
 			String provider,
 			BigDecimal monthlyBudgetUsd,
 			TeamApiKeyStatus status,
-			Boolean retainLogs
+			Boolean retainLogs,
+			String keyHash
 	) implements TeamDomainOutboundEvent {
 
 		public TeamApiKeyStatusChangedEvent {
@@ -485,7 +486,8 @@ public sealed interface TeamDomainOutboundEvent permits
 				String provider,
 				BigDecimal monthlyBudgetUsd,
 				TeamApiKeyStatus status,
-				Boolean retainLogs
+				Boolean retainLogs,
+				String keyHash
 		) {
 			return new TeamApiKeyStatusChangedEvent(
 					"v1",
@@ -501,7 +503,8 @@ public sealed interface TeamDomainOutboundEvent permits
 					provider,
 					monthlyBudgetUsd,
 					status,
-					retainLogs
+					retainLogs,
+					keyHash
 			);
 		}
 

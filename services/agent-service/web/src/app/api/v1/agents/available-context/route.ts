@@ -8,6 +8,8 @@ type IdentitySnapshot = {
   visibility?: string
   status: string
   monthlyBudgetUsd?: number | null
+  /** identity 저장소의 SHA-256 해시; 동일 시크릿 재등록·별칭 변경 시 병합용 */
+  keyHash?: string | null
 }
 
 type TeamApiKeySnapshot = {
@@ -20,6 +22,7 @@ type TeamApiKeySnapshot = {
   provider: string
   status: string
   monthlyBudgetUsd?: number | null
+  keyHash?: string | null
 }
 
 type BillingSignal = {
@@ -390,6 +393,60 @@ async function fetchIdentityBudgetKeys(
   return []
 }
 
+async function fetchIdentityKeyHashesForUser(
+  request: Request,
+  userId: number,
+  email: string | null,
+): Promise<Map<number, string>> {
+  const map = new Map<number, string>()
+  const headers = buildForwardHeaders(request, email)
+  for (const origin of identityServiceOriginCandidates()) {
+    try {
+      const response = await fetchWithTimeout(
+        `${origin}/internal/v1/api-keys/users/${encodeURIComponent(String(userId))}/key-hashes`,
+        CONTEXT_FETCH_TIMEOUT_MS,
+        { method: "GET", headers },
+      )
+      if (!response.ok) continue
+      const rows = (await response.json()) as Array<{ keyId?: number; keyHash?: string | null }>
+      for (const row of rows ?? []) {
+        const id = toNumber(row.keyId, 0)
+        const h = (row.keyHash ?? "").trim()
+        if (id > 0 && h.length > 0) {
+          map.set(id, h)
+        }
+      }
+      return map
+    } catch {
+      // try next origin
+    }
+  }
+  return map
+}
+
+async function enrichIdentitySnapshotsWithKeyHashes(
+  request: Request,
+  keys: IdentitySnapshot[],
+  userId: number,
+  email: string | null,
+): Promise<IdentitySnapshot[]> {
+  const hashByKeyId = await fetchIdentityKeyHashesForUser(request, userId, email)
+  if (hashByKeyId.size === 0) {
+    return keys
+  }
+  return keys.map((k) => {
+    const existing = (k.keyHash ?? "").trim()
+    if (existing.length > 0) {
+      return k
+    }
+    const h = hashByKeyId.get(k.keyId)
+    if (h != null && h.length > 0) {
+      return { ...k, keyHash: h }
+    }
+    return k
+  })
+}
+
 async function fetchTeamCatalogFromTeamService(request: Request, candidateUserIds: string[]): Promise<TeamCatalog> {
   const uniqueUserIds = Array.from(
     new Set(candidateUserIds.map((value) => value.trim()).filter((value) => value.length > 0)),
@@ -663,6 +720,206 @@ function buildBudgetStats(
   }
 }
 
+type PersonalContextRow = {
+  keyId: number
+  alias: string
+  provider: string
+  monthlyBudgetUsd: number
+  status: string
+  budgetStats: BudgetStats
+  providerStats: {
+    currentSpendUsd: number
+    averageDailySpendUsd: number
+    averageDailyTokenUsage: number
+    recentDailySpendUsd: number[]
+  }
+  mergedKeyIds?: number[]
+  /** agent 스냅샷 key_hash; 있으면 별칭과 무관하게 동일 키로 병합 */
+  keyHash?: string | null
+}
+
+type TeamContextRow = {
+  teamId: number
+  teamName: string
+  teamApiKeyId: number
+  ownerUserId?: string | null
+  visibility?: string
+  alias: string
+  provider: string
+  status: string
+  monthlyBudgetUsd: number
+  budgetStats: BudgetStats
+  providerStats: {
+    currentSpendUsd: number
+    averageDailySpendUsd: number
+    averageDailyTokenUsage: number
+    recentDailySpendUsd: number[]
+  }
+  mergedTeamApiKeyIds?: number[]
+  keyHash?: string | null
+}
+
+function normalizeCredentialSegment(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ")
+}
+
+/** 재등록 등으로 keyId만 다른 동일 별칭·제공자 조합을 묶을 때(구버전 스냅샷) fallback 지문. */
+function personalCredentialFingerprint(provider: string, alias: string): string {
+  const p = normalizeCredentialSegment(provider || "UNKNOWN")
+  const a = normalizeCredentialSegment(alias || "")
+  return `${p}::${a}`
+}
+
+/** 동일 외부 시크릿(키 해시) 우선; 해시 없으면 별칭·제공자 fallback. */
+function personalKeyMergeFingerprint(provider: string, alias: string, keyHash?: string | null): string {
+  const h = (keyHash ?? "").trim()
+  if (h.length > 0) {
+    return `hash:${h}`
+  }
+  return `legacy:${personalCredentialFingerprint(provider, alias)}`
+}
+
+function teamKeyMergeFingerprint(
+  teamId: number,
+  provider: string,
+  alias: string,
+  keyHash?: string | null,
+): string {
+  const h = (keyHash ?? "").trim()
+  if (h.length > 0) {
+    return `${teamId}::hash:${h}`
+  }
+  return `${teamId}::legacy:${personalCredentialFingerprint(provider, alias)}`
+}
+
+function credentialStatusRank(status: string): number {
+  const u = (status ?? "").toUpperCase()
+  if (u === "ACTIVE") return 0
+  if (u === "DELETION_REQUESTED") return 1
+  if (u === "DELETED") return 2
+  return 3
+}
+
+function mergeProviderStatsBundle(
+  stats: PersonalContextRow["providerStats"][],
+): PersonalContextRow["providerStats"] {
+  let currentSpendUsd = 0
+  let averageDailySpendUsd = 0
+  let averageDailyTokenUsage = 0
+  const recentDailySpendUsd: number[] = []
+  for (const p of stats) {
+    currentSpendUsd += p.currentSpendUsd
+    averageDailySpendUsd += p.averageDailySpendUsd
+    averageDailyTokenUsage += p.averageDailyTokenUsage
+    const arr = p.recentDailySpendUsd ?? []
+    for (let i = 0; i < arr.length; i++) {
+      recentDailySpendUsd[i] = (recentDailySpendUsd[i] ?? 0) + (arr[i] ?? 0)
+    }
+  }
+  return { currentSpendUsd, averageDailySpendUsd, averageDailyTokenUsage, recentDailySpendUsd }
+}
+
+function dedupePersonalKeysByCredential(rows: PersonalContextRow[]): PersonalContextRow[] {
+  const byFp = new Map<string, PersonalContextRow[]>()
+  for (const row of rows) {
+    const fp = personalKeyMergeFingerprint(row.provider, row.alias, row.keyHash)
+    const list = byFp.get(fp) ?? []
+    list.push(row)
+    byFp.set(fp, list)
+  }
+  const out: PersonalContextRow[] = []
+  for (const [fp, group] of byFp) {
+    if (group.length === 1) {
+      const single = group[0]
+      out.push({ ...single, mergedKeyIds: [single.keyId] })
+      continue
+    }
+    const sorted = [...group].sort((a, b) => {
+      const r = credentialStatusRank(a.status) - credentialStatusRank(b.status)
+      if (r !== 0) return r
+      return b.keyId - a.keyId
+    })
+    const primary = sorted[0]
+    const mergedKeyIds = [...new Set(group.map((g) => g.keyId))].sort((a, b) => a - b)
+    let monthlyBudgetUsd = 0
+    let totalCurrent = 0
+    let totalLifetime = 0
+    for (const r of group) {
+      monthlyBudgetUsd = Math.max(monthlyBudgetUsd, r.monthlyBudgetUsd ?? 0)
+      totalCurrent += r.budgetStats?.currentSpendUsd ?? 0
+      totalLifetime += r.budgetStats?.lifetimeSpendUsd ?? 0
+    }
+    const mergedBudget = buildBudgetStats(monthlyBudgetUsd, totalCurrent, totalLifetime)
+    const mergedProvider = mergeProviderStatsBundle(group.map((g) => g.providerStats))
+    console.info("[agent available-context] merged personal keys (same keyHash or legacy provider+alias)", {
+      fingerprint: fp,
+      canonicalKeyId: primary.keyId,
+      mergedKeyIds,
+      statuses: group.map((g) => ({ keyId: g.keyId, status: g.status })),
+    })
+    out.push({
+      ...primary,
+      monthlyBudgetUsd,
+      status: primary.status,
+      budgetStats: mergedBudget,
+      providerStats: mergedProvider,
+      mergedKeyIds,
+    })
+  }
+  return out
+}
+
+function dedupeTeamBoardByCredential(rows: TeamContextRow[]): TeamContextRow[] {
+  const byFp = new Map<string, TeamContextRow[]>()
+  for (const row of rows) {
+    const fp = teamKeyMergeFingerprint(row.teamId, row.provider, row.alias, row.keyHash)
+    const list = byFp.get(fp) ?? []
+    list.push(row)
+    byFp.set(fp, list)
+  }
+  const out: TeamContextRow[] = []
+  for (const [fp, group] of byFp) {
+    if (group.length === 1) {
+      const single = group[0]
+      out.push({ ...single, mergedTeamApiKeyIds: [single.teamApiKeyId] })
+      continue
+    }
+    const sorted = [...group].sort((a, b) => {
+      const r = credentialStatusRank(a.status) - credentialStatusRank(b.status)
+      if (r !== 0) return r
+      return b.teamApiKeyId - a.teamApiKeyId
+    })
+    const primary = sorted[0]
+    const mergedTeamApiKeyIds = [...new Set(group.map((g) => g.teamApiKeyId))].sort((a, b) => a - b)
+    let monthlyBudgetUsd = 0
+    let totalCurrent = 0
+    let totalLifetime = 0
+    for (const r of group) {
+      monthlyBudgetUsd = Math.max(monthlyBudgetUsd, r.monthlyBudgetUsd ?? 0)
+      totalCurrent += r.budgetStats?.currentSpendUsd ?? 0
+      totalLifetime += r.budgetStats?.lifetimeSpendUsd ?? 0
+    }
+    const mergedBudget = buildBudgetStats(monthlyBudgetUsd, totalCurrent, totalLifetime)
+    const mergedProvider = mergeProviderStatsBundle(group.map((g) => g.providerStats))
+    console.info("[agent available-context] merged team keys (same keyHash or legacy team+provider+alias)", {
+      fingerprint: fp,
+      canonicalTeamApiKeyId: primary.teamApiKeyId,
+      mergedTeamApiKeyIds,
+      teamId: primary.teamId,
+      statuses: group.map((g) => ({ teamApiKeyId: g.teamApiKeyId, status: g.status })),
+    })
+    out.push({
+      ...primary,
+      monthlyBudgetUsd,
+      status: primary.status,
+      budgetStats: mergedBudget,
+      providerStats: mergedProvider,
+      mergedTeamApiKeyIds,
+    })
+  }
+  return out
+}
+
 export async function GET(request: Request) {
   try {
     const sessionEmail = await resolveSessionEmail(request)
@@ -675,7 +932,7 @@ export async function GET(request: Request) {
       strictUserId != null
         ? `/api/v1/agents/identity-api-keys/${strictUserId}`
         : "/api/v1/agents/identity-api-keys"
-    const [keys, billingSignals, usagePredictionSignals, dailyCumulativeTokens, snapshotTeamApiKeys] = backendOrigin
+    const [keysInitial, billingSignals, usagePredictionSignals, dailyCumulativeTokens, snapshotTeamApiKeys] = backendOrigin
       ? await Promise.all([
           fetchWithTimeout(`${backendOrigin}${identityApiKeyPath}`, CONTEXT_FETCH_TIMEOUT_MS, {
             method: "GET",
@@ -699,12 +956,16 @@ export async function GET(request: Request) {
           }).then(async (response) => (response.ok ? (((await response.json()) as TeamApiKeySnapshot[]) ?? []) : [])),
         ])
       : [[], [], [], [], []]
+    let keys: IdentitySnapshot[] = keysInitial
     const headerIdentifier = userIdentifierFromHeaders(request)
     const resolvedIdentifier = {
       userId: headerIdentifier.userId,
       email: resolvedEmailHeader ?? headerIdentifier.email,
     }
     const currentUserId = resolveCurrentUserId(request, keys)
+    if (currentUserId != null && keys.length > 0) {
+      keys = await enrichIdentitySnapshotsWithKeyHashes(request, keys, currentUserId, resolvedEmailHeader)
+    }
     const fallbackUserId = (process.env.AI_AGENT_FALLBACK_USER_ID ?? "").trim()
     const teamCatalogOverrideUserId = (process.env.AI_AGENT_TEAM_CATALOG_USER_ID ?? "").trim()
     const teamCatalogUserIds = [
@@ -828,6 +1089,7 @@ export async function GET(request: Request) {
         provider: key.provider,
         monthlyBudgetUsd,
         status: key.status,
+        keyHash: key.keyHash ?? null,
         budgetStats,
         providerStats: {
           currentSpendUsd: budgetStats.currentSpendUsd,
@@ -875,6 +1137,7 @@ export async function GET(request: Request) {
           provider: (key.provider ?? "").trim() || "UNKNOWN",
           monthlyBudgetUsd,
           status: "ACTIVE",
+          keyHash: null,
           budgetStats,
           providerStats: {
             currentSpendUsd: budgetStats.currentSpendUsd,
@@ -919,9 +1182,11 @@ export async function GET(request: Request) {
         },
       })
     }
-    const personalKeys = Array.from(personalKeysById.values())
+    const personalKeysMerged = dedupePersonalKeysByCredential(
+      Array.from(personalKeysById.values()) as PersonalContextRow[],
+    )
 
-    const teamBoard = teamApiKeys.map((item) => {
+    const teamBoardRaw = teamApiKeys.map((item) => {
       const signal = billingByKeyId.get(String(item.teamApiKeyId))
       const billingRow = billingSummaryByKey.get(item.teamApiKeyId)
       const { currentSpendUsd, monthlyBudgetUsd } = spendAndBudgetForKey(
@@ -957,6 +1222,7 @@ export async function GET(request: Request) {
         alias: item.alias,
         provider: item.provider,
         status: item.status,
+        keyHash: item.keyHash ?? null,
         monthlyBudgetUsd,
         budgetStats,
         providerStats: {
@@ -967,6 +1233,8 @@ export async function GET(request: Request) {
         },
       }
     })
+
+    const teamBoard = dedupeTeamBoardByCredential(teamBoardRaw as TeamContextRow[])
 
     const teamNameById = new Map<number, string>()
     for (const item of teamCatalog.teams) {
@@ -988,7 +1256,7 @@ export async function GET(request: Request) {
     }))
 
     return NextResponse.json({
-      data: personalKeys,
+      data: personalKeysMerged,
       currentUserId,
       userContext: null,
       teamBoard,

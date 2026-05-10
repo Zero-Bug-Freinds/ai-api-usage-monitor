@@ -43,6 +43,9 @@ public class TeamApiKeySnapshotEntity {
 
 	private Boolean retainLogs;
 
+	@Column(name = "key_hash", length = 64)
+	private String keyHash;
+
 	@Column(nullable = false)
 	private Instant updatedAt;
 
@@ -59,6 +62,7 @@ public class TeamApiKeySnapshotEntity {
 			String provider,
 			String status,
 			Boolean retainLogs,
+			String keyHash,
 			Instant updatedAt
 	) {
 		this.teamId = teamId;
@@ -70,6 +74,7 @@ public class TeamApiKeySnapshotEntity {
 		this.provider = provider;
 		this.status = status;
 		this.retainLogs = retainLogs;
+		this.keyHash = keyHash;
 		this.updatedAt = updatedAt;
 	}
 
@@ -82,6 +87,7 @@ public class TeamApiKeySnapshotEntity {
 	public String getProvider() { return provider; }
 	public String getStatus() { return status; }
 	public Boolean getRetainLogs() { return retainLogs; }
+	public String getKeyHash() { return keyHash; }
 	public Instant getUpdatedAt() { return updatedAt; }
 
 	public void setTeamName(String teamName) { this.teamName = teamName; }
@@ -91,6 +97,7 @@ public class TeamApiKeySnapshotEntity {
 	public void setProvider(String provider) { this.provider = provider; }
 	public void setStatus(String status) { this.status = status; }
 	public void setRetainLogs(Boolean retainLogs) { this.retainLogs = retainLogs; }
+	public void setKeyHash(String keyHash) { this.keyHash = keyHash; }
 	public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
 
 	public static class TeamApiKeySnapshotId implements Serializable {

@@ -7,6 +7,7 @@ import com.zerobugfreinds.identity.events.ExternalApiKeyStatus;
 import com.zerobugfreinds.identity.events.ExternalApiKeyStatusChangedEvent;
 import com.zerobugfreinds.identity_service.dto.InternalApiKeyLookupResponse;
 import com.zerobugfreinds.identity_service.dto.InternalApiKeyResponse;
+import com.zerobugfreinds.identity_service.dto.InternalApiKeyHashEntry;
 import com.zerobugfreinds.identity_service.entity.ExternalApiKeyEntity;
 import com.zerobugfreinds.identity_service.exception.AmbiguousExternalApiKeyHashException;
 import com.zerobugfreinds.identity_service.exception.DuplicateExternalApiKeyAliasException;
@@ -471,7 +472,8 @@ public class ExternalApiKeyService {
 				entity.getKeyAlias(),
 				entity.getUserId(),
 				providerName(entity.getProvider()),
-				status
+				status,
+				entity.getKeyHash()
 		);
 		applicationEventPublisher.publishEvent(event);
 	}
@@ -495,7 +497,8 @@ public class ExternalApiKeyService {
 				entity.getUserId(),
 				providerName(entity.getProvider()),
 				status,
-				entity.getMonthlyBudgetUsd()
+				entity.getMonthlyBudgetUsd(),
+				entity.getKeyHash()
 		);
 		applicationEventPublisher.publishEvent(event);
 	}
@@ -553,5 +556,15 @@ public class ExternalApiKeyService {
 				throw new DuplicateExternalApiKeyException("팀에 이미 등록된 API 키입니다");
 			}
 		}
+	}
+
+	@Transactional(readOnly = true)
+	public List<InternalApiKeyHashEntry> listKeyHashesForInternal(Long userId) {
+		if (userId == null || userId <= 0) {
+			return List.of();
+		}
+		return externalApiKeyRepository.findAllByUserIdOrderByCreatedAtDesc(userId).stream()
+				.map(e -> new InternalApiKeyHashEntry(e.getId(), e.getKeyHash()))
+				.toList();
 	}
 }
