@@ -33,7 +33,7 @@ BILLING_IDENTITY_BUDGET_PATH=/api/identity/v1/users/{userId}/budget
 `billing-service`는 Identity 응답 body를 JSON으로 파싱합니다.
 
 - **기본 예산 조회(기존)**: 최상위 `monthlyBudgetUsd` 를 사용합니다.
-- **키별 예산(선택)**: `monthlyBudgetsByKey` 배열이 있으면 `ExpenditureQueryService` / `IdentityBudgetClient.fetchMonthlyBudgetUsdForKey` 등에서 사용합니다.
+- **키별 예산(선택)**: `monthlyBudgetsByKey` 배열이 있으면 `ExpenditureQueryService` / `IdentityBudgetClient.fetchMonthlyBudgetUsdForKey` 등에서 사용합니다. 행의 `provider`는 Identity canonical로 **`OPENAI` / `ANTHROPIC` / `GOOGLE`** 이며, billing `AiProvider.GOOGLE` 조회 시 레거시 **`GEMINI`** 행도 매칭됩니다.
 
 예시:
 
@@ -41,7 +41,8 @@ BILLING_IDENTITY_BUDGET_PATH=/api/identity/v1/users/{userId}/budget
 {
   "monthlyBudgetUsd": 100.00,
   "monthlyBudgetsByKey": [
-    { "externalApiKeyId": 123, "provider": "OPENAI", "monthlyBudgetUsd": 25.00 }
+    { "externalApiKeyId": 123, "provider": "OPENAI", "monthlyBudgetUsd": 25.00 },
+    { "externalApiKeyId": 456, "provider": "GOOGLE", "monthlyBudgetUsd": 10.00 }
   ]
 }
 ```

@@ -47,6 +47,7 @@ async function fetchJson<T>(path: string): Promise<T> {
 
 function normalizeIdentityExternalKeyProvider(prov: unknown): IdentityExternalKeyProvider | null {
   if (prov === "GOOGLE" || prov === "OPENAI" || prov === "ANTHROPIC") return prov;
+  // Legacy Identity external-key provider string (pre-GOOGLE canonical); not the same as billing AiProvider naming.
   if (prov === "GEMINI") return "GOOGLE";
   return null;
 }

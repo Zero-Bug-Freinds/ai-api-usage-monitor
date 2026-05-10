@@ -48,12 +48,11 @@ public class IdentityBudgetClient {
             return Optional.empty();
         }
 
-        String identityProvider = toIdentityProviderName(provider);
         return fetchMonthlyBudgetEnvelope(userId)
                 .flatMap(env -> env.monthlyBudgetsByKey().stream()
                         .filter(v -> v != null && v.externalApiKeyId() != null)
                         .filter(v -> v.externalApiKeyId().equals(externalKeyId.get()))
-                        .filter(v -> v.provider() != null && v.provider().equalsIgnoreCase(identityProvider))
+                        .filter(v -> matchesIdentityProvider(provider, v.provider()))
                         .findFirst()
                 );
     }
@@ -118,11 +117,26 @@ public class IdentityBudgetClient {
         }
     }
 
+    /** Canonical Identity {@code provider} string for OPENAI/ANTHROPIC; GOOGLE row matching allows legacy GEMINI in {@code matchesIdentityProvider}. */
     private static String toIdentityProviderName(AiProvider provider) {
         return switch (provider) {
             case OPENAI -> "OPENAI";
             case ANTHROPIC -> "ANTHROPIC";
-            case GOOGLE -> "GEMINI";
+            case GOOGLE -> "GOOGLE";
         };
+    }
+
+    /**
+     * Matches Identity {@code monthlyBudgetsByKey[].provider} to billing {@link AiProvider}.
+     * {@link AiProvider#GOOGLE} accepts both {@code GOOGLE} and legacy {@code GEMINI} in Identity JSON.
+     */
+    private static boolean matchesIdentityProvider(AiProvider billingProvider, String rowProvider) {
+        if (billingProvider == null || rowProvider == null || rowProvider.isBlank()) {
+            return false;
+        }
+        if (billingProvider == AiProvider.GOOGLE) {
+            return rowProvider.equalsIgnoreCase("GOOGLE") || rowProvider.equalsIgnoreCase("GEMINI");
+        }
+        return rowProvider.equalsIgnoreCase(toIdentityProviderName(billingProvider));
     }
 }
