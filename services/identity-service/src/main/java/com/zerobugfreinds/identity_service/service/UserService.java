@@ -1,8 +1,10 @@
 package com.zerobugfreinds.identity_service.service;
 
 import com.zerobugfreinds.identity_service.dto.InternalUserPrincipalResponse;
+import com.zerobugfreinds.identity_service.dto.ProfileUpdateResponse;
 import com.zerobugfreinds.identity_service.dto.SignupRequest;
 import com.zerobugfreinds.identity_service.dto.SignupResponse;
+import com.zerobugfreinds.identity_service.dto.UpdateProfileRequest;
 import com.zerobugfreinds.identity_service.dto.LoginRequest;
 import com.zerobugfreinds.identity_service.dto.TokenResponse;
 import com.zerobugfreinds.identity_service.entity.User;
@@ -17,7 +19,6 @@ import com.zerobugfreinds.identity_service.mq.IdentityUserSyncEventPublisher;
 import com.zerobugfreinds.identity.events.IdentityUserSyncEvent;
 import com.zerobugfreinds.identity.events.IdentityUserSyncEventTypes;
 import com.zerobugfreinds.identity.events.UserContextChangedEvent;
-import io.jsonwebtoken.Claims;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -29,6 +30,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import jakarta.mail.internet.AddressException;
+import jakarta.mail.internet.InternetAddress;
+
 import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -103,6 +107,68 @@ public class UserService {
 				)
 		);
 		return new SignupResponse(saved.getId(), saved.getEmail(), saved.getName(), saved.getRole());
+	}
+
+	/**
+	 * 이메일·표시 이름 갱신 후 team-service 동기화용 {@code USER_PROFILE_UPDATED} 를 커밋 이후 발행한다.
+	 */
+	@Transactional
+	public ProfileUpdateResponse updateProfile(Long userId, UpdateProfileRequest request) {
+		String rawEmail = request.email() != null ? request.email().trim() : "";
+		String rawName = request.name() != null ? request.name().trim() : "";
+		if (rawEmail.isEmpty() && rawName.isEmpty()) {
+			throw new InvalidSignupRequestException("변경할 이메일 또는 이름을 입력해 주세요");
+		}
+
+		User user = userRepository.findById(userId)
+				.orElseThrow(() -> new InvalidCredentialsException("사용자 정보를 찾을 수 없습니다"));
+
+		boolean changed = false;
+		if (!rawEmail.isEmpty()) {
+			String normalizedEmail = normalizeEmail(rawEmail);
+			assertValidProfileEmail(normalizedEmail);
+			if (!normalizedEmail.equalsIgnoreCase(user.getEmail())) {
+				userRepository.findByEmailIgnoreCase(normalizedEmail)
+						.filter(other -> !other.getId().equals(userId))
+						.ifPresent(other -> {
+							throw new DuplicateEmailException("이미 사용 중인 이메일입니다");
+						});
+				user.setEmail(normalizedEmail);
+				changed = true;
+			}
+		}
+		if (!rawName.isEmpty() && !rawName.equals(user.getName())) {
+			user.setName(rawName);
+			changed = true;
+		}
+
+		if (changed) {
+			try {
+				userRepository.save(user);
+			} catch (DataIntegrityViolationException ex) {
+				throw new DuplicateEmailException("이미 사용 중인 이메일입니다");
+			}
+			identityUserSyncEventPublisher.publishAfterCommit(
+					IdentityUserSyncEvent.of(
+							IdentityUserSyncEventTypes.USER_PROFILE_UPDATED,
+							user.getId(),
+							user.getEmail(),
+							user.getName(),
+							Instant.now()
+					)
+			);
+		}
+
+		return new ProfileUpdateResponse(user.getId(), user.getEmail(), user.getName(), user.getRole());
+	}
+
+	private static void assertValidProfileEmail(String normalizedEmail) {
+		try {
+			InternetAddress addr = new InternetAddress(normalizedEmail, false);
+			addr.validate();
+		} catch (AddressException ex) {
+			throw new InvalidSignupRequestException("유효한 이메일 형식이 아닙니다");
+		}
 	}
 
 	private void validateSignupRequest(SignupRequest request) {

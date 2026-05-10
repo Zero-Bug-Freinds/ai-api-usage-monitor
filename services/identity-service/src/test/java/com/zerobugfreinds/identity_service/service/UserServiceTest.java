@@ -1,14 +1,18 @@
 package com.zerobugfreinds.identity_service.service;
 
 import com.zerobugfreinds.identity_service.dto.InternalUserPrincipalResponse;
+import com.zerobugfreinds.identity_service.dto.ProfileUpdateResponse;
 import com.zerobugfreinds.identity_service.dto.SignupRequest;
+import com.zerobugfreinds.identity_service.dto.UpdateProfileRequest;
 import com.zerobugfreinds.identity_service.entity.Role;
 import com.zerobugfreinds.identity_service.entity.User;
 import com.zerobugfreinds.identity_service.exception.DuplicateEmailException;
+import com.zerobugfreinds.identity_service.exception.InvalidSignupRequestException;
 import com.zerobugfreinds.identity_service.repository.RefreshTokenRepository;
 import com.zerobugfreinds.identity_service.repository.UserRepository;
 import com.zerobugfreinds.identity_service.security.JwtTokenProvider;
 import com.zerobugfreinds.identity_service.mq.IdentityUserSyncEventPublisher;
+import com.zerobugfreinds.identity.events.IdentityUserSyncEventTypes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -17,13 +21,16 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -138,5 +145,57 @@ class UserServiceTest {
 
 		assertThat(userService.resolvePrincipalForInternalLookup("7"))
 				.contains(new InternalUserPrincipalResponse("7", "who@example.com"));
+	}
+
+	@Test
+	void updateProfile_throwsWhenBothFieldsBlank() {
+		assertThatThrownBy(() -> userService.updateProfile(1L, new UpdateProfileRequest("  ", "   ")))
+				.isInstanceOf(InvalidSignupRequestException.class);
+		assertThatThrownBy(() -> userService.updateProfile(1L, new UpdateProfileRequest(null, null)))
+				.isInstanceOf(InvalidSignupRequestException.class);
+	}
+
+	@Test
+	void updateProfile_publishesWhenDisplayNameChanges() {
+		User user = new User("a@example.com", "pw", "Old", Role.USER);
+		ReflectionTestUtils.setField(user, "id", 9L);
+		when(userRepository.findById(9L)).thenReturn(Optional.of(user));
+		when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+		ProfileUpdateResponse out = userService.updateProfile(9L, new UpdateProfileRequest(null, "New"));
+
+		assertThat(out.name()).isEqualTo("New");
+		assertThat(out.email()).isEqualTo("a@example.com");
+		verify(identityUserSyncEventPublisher).publishAfterCommit(
+				argThat(
+						ev -> IdentityUserSyncEventTypes.USER_PROFILE_UPDATED.equals(ev.eventType())
+								&& "9".equals(ev.userId())
+				)
+		);
+	}
+
+	@Test
+	void updateProfile_skipsPublishWhenNoEffectiveChange() {
+		User user = new User("a@example.com", "pw", "Same", Role.USER);
+		ReflectionTestUtils.setField(user, "id", 3L);
+		when(userRepository.findById(3L)).thenReturn(Optional.of(user));
+
+		userService.updateProfile(3L, new UpdateProfileRequest(null, "Same"));
+
+		verify(userRepository, never()).save(any());
+		verify(identityUserSyncEventPublisher, never()).publishAfterCommit(any());
+	}
+
+	@Test
+	void updateProfile_throwsDuplicateWhenEmailTakenByOther() {
+		User self = new User("self@example.com", "pw", "Me", Role.USER);
+		ReflectionTestUtils.setField(self, "id", 1L);
+		User other = new User("taken@example.com", "pw2", "Other", Role.USER);
+		ReflectionTestUtils.setField(other, "id", 2L);
+		when(userRepository.findById(1L)).thenReturn(Optional.of(self));
+		when(userRepository.findByEmailIgnoreCase("taken@example.com")).thenReturn(Optional.of(other));
+
+		assertThatThrownBy(() -> userService.updateProfile(1L, new UpdateProfileRequest("taken@example.com", null)))
+				.isInstanceOf(DuplicateEmailException.class);
 	}
 }

@@ -5,11 +5,13 @@ import com.zerobugfreinds.identity_service.dto.DeleteAccountRequest;
 import com.zerobugfreinds.identity_service.dto.ForgotPasswordRequest;
 import com.zerobugfreinds.identity_service.dto.LoginRequest;
 import com.zerobugfreinds.identity_service.dto.ResetPasswordRequest;
+import com.zerobugfreinds.identity_service.dto.ProfileUpdateResponse;
 import com.zerobugfreinds.identity_service.dto.SessionResponse;
 import com.zerobugfreinds.identity_service.dto.SignupRequest;
 import com.zerobugfreinds.identity_service.dto.SignupResponse;
 import com.zerobugfreinds.identity_service.dto.SwitchTeamRequest;
 import com.zerobugfreinds.identity_service.dto.TokenResponse;
+import com.zerobugfreinds.identity_service.dto.UpdateProfileRequest;
 import com.zerobugfreinds.identity_service.exception.AuthContractViolationException;
 import com.zerobugfreinds.identity_service.entity.User;
 import com.zerobugfreinds.identity_service.service.AccountDeletionService;
@@ -22,6 +24,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -81,6 +84,18 @@ public class AuthController {
 		return ResponseEntity.ok()
 				.cacheControl(CacheControl.noStore().mustRevalidate())
 				.body(ApiResponse.ok("Login successful", body));
+	}
+
+	@PutMapping("/profile")
+	public ResponseEntity<ApiResponse<ProfileUpdateResponse>> updateProfile(
+			Authentication authentication,
+			@Valid @RequestBody UpdateProfileRequest request
+	) {
+		User user = userService.findByAuthenticatedPrincipal(authentication.getName());
+		ProfileUpdateResponse body = userService.updateProfile(user.getId(), request);
+		return ResponseEntity.ok()
+				.cacheControl(CacheControl.noStore().mustRevalidate())
+				.body(ApiResponse.ok("Profile updated", body));
 	}
 
 	@GetMapping("/session")
