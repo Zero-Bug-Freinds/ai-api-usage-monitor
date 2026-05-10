@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.util.Locale;
+import java.util.Set;
 
 @Service
 public class TeamInternalApiKeyResolveService {
@@ -24,17 +25,20 @@ public class TeamInternalApiKeyResolveService {
 
     private final TeamMemberRepository teamMemberRepository;
     private final TeamApiKeyRepository teamApiKeyRepository;
+    private final IdentityUserSyncService identityUserSyncService;
     private final EncryptionUtil encryptionUtil;
     private final String internalToken;
 
     public TeamInternalApiKeyResolveService(
             TeamMemberRepository teamMemberRepository,
             TeamApiKeyRepository teamApiKeyRepository,
+            IdentityUserSyncService identityUserSyncService,
             EncryptionUtil encryptionUtil,
             @Value("${team.internal.api-token:${PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN:}}") String internalToken
     ) {
         this.teamMemberRepository = teamMemberRepository;
         this.teamApiKeyRepository = teamApiKeyRepository;
+        this.identityUserSyncService = identityUserSyncService;
         this.encryptionUtil = encryptionUtil;
         this.internalToken = internalToken;
     }
@@ -45,7 +49,14 @@ public class TeamInternalApiKeyResolveService {
         validateInputs(teamId, userId);
         TeamApiKeyProvider provider = normalizeProvider(providerRaw);
 
-        if (!teamMemberRepository.existsByTeamIdAndUserId(teamId, userId.trim())) {
+        String trimmedUserId = userId.trim();
+        Set<String> membershipCandidates = identityUserSyncService.resolveMembershipLookupCandidates(trimmedUserId);
+        boolean isMember = membershipCandidates.stream()
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .distinct()
+                .anyMatch(candidate -> teamMemberRepository.existsByTeamIdAndUserId(teamId, candidate));
+        if (!isMember) {
             log.warn("Internal team key lookup denied teamId={} provider={} user={}",
                     teamId, provider.name(), mask(userId));
             throw new ForbiddenTeamAccessException("팀 멤버만 팀 API 키를 조회할 수 있습니다");

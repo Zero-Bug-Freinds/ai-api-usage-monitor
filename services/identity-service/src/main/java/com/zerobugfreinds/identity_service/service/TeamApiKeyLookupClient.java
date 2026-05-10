@@ -7,6 +7,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
+import com.zerobugfreinds.identity_service.exception.TeamApiKeyLookupUnavailableException;
+
 import java.net.ConnectException;
 import java.nio.channels.UnresolvedAddressException;
 import java.util.ArrayList;
@@ -46,7 +48,8 @@ public class TeamApiKeyLookupClient {
             throw new IllegalArgumentException("provider와 hashedKey는 필수입니다");
         }
         if (internalToken.isBlank()) {
-            throw new IllegalStateException("팀 API 키 내부 조회 토큰이 설정되지 않았습니다");
+            throw new TeamApiKeyLookupUnavailableException(
+                    "팀 API 키 내부 조회 토큰이 설정되지 않았습니다 (PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN 등)");
         }
 
         String normalizedProvider = provider.trim();
@@ -71,7 +74,7 @@ public class TeamApiKeyLookupClient {
             } catch (HttpClientErrorException.Conflict ex) {
                 return true;
             } catch (HttpClientErrorException ex) {
-                throw new IllegalStateException(
+                throw new TeamApiKeyLookupUnavailableException(
                         "team-service 내부 조회 호출 실패 status=" + ex.getStatusCode() + " baseUrl=" + baseUrl,
                         ex
                 );
@@ -87,7 +90,8 @@ public class TeamApiKeyLookupClient {
                 );
             }
         }
-        throw new IllegalStateException("team-service에 연결할 수 없어 팀 API 키 중복 검증에 실패했습니다");
+        throw new TeamApiKeyLookupUnavailableException(
+                "team-service에 연결할 수 없어 팀 API 키 중복 검증에 실패했습니다");
     }
 
     private static boolean isRecoverableConnectivityError(Throwable ex) {

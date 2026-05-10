@@ -1,5 +1,6 @@
 package com.zerobugfreinds.identity_service.service;
 
+import com.zerobugfreinds.identity_service.dto.InternalUserPrincipalResponse;
 import com.zerobugfreinds.identity_service.dto.SignupRequest;
 import com.zerobugfreinds.identity_service.dto.SignupResponse;
 import com.zerobugfreinds.identity_service.dto.LoginRequest;
@@ -29,6 +30,7 @@ import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -146,6 +148,28 @@ public class UserService {
 			return false;
 		}
 		return userRepository.existsByEmailIgnoreCase(normalizeEmail(email));
+	}
+
+	/**
+	 * 내부 서비스(team 프록시 멤버십 등)용: 이메일 또는 숫자 user id 문자열로 동일 사용자의 id·이메일을 조회한다.
+	 */
+	@Transactional(readOnly = true)
+	public Optional<InternalUserPrincipalResponse> resolvePrincipalForInternalLookup(String raw) {
+		if (raw == null || raw.isBlank()) {
+			return Optional.empty();
+		}
+		String t = raw.trim();
+		if (t.contains("@")) {
+			return userRepository.findByEmailIgnoreCase(normalizeEmail(t))
+					.map(u -> new InternalUserPrincipalResponse(String.valueOf(u.getId()), normalizeEmail(u.getEmail())));
+		}
+		try {
+			Long id = Long.parseLong(t);
+			return userRepository.findById(id)
+					.map(u -> new InternalUserPrincipalResponse(String.valueOf(u.getId()), normalizeEmail(u.getEmail())));
+		} catch (NumberFormatException ex) {
+			return Optional.empty();
+		}
 	}
 
 	@Transactional(readOnly = true)

@@ -1,5 +1,6 @@
 package com.zerobugfreinds.identity_service.service;
 
+import com.zerobugfreinds.identity_service.dto.InternalUserPrincipalResponse;
 import com.zerobugfreinds.identity_service.dto.SignupRequest;
 import com.zerobugfreinds.identity_service.entity.Role;
 import com.zerobugfreinds.identity_service.entity.User;
@@ -16,9 +17,13 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -102,5 +107,27 @@ class UserServiceTest {
 
 		verify(userRepository).existsByEmailIgnoreCase(eq("test@example.com"));
 		verify(userRepository).save(any(User.class));
+	}
+
+	@Test
+	void resolvePrincipal_forEmail_returnsNumericUserIdAndNormalizedEmail() {
+		User user = mock(User.class);
+		when(user.getId()).thenReturn(42L);
+		when(user.getEmail()).thenReturn("Mix@Example.COM");
+		when(userRepository.findByEmailIgnoreCase("mix@example.com")).thenReturn(Optional.of(user));
+
+		assertThat(userService.resolvePrincipalForInternalLookup("  Mix@Example.COM  "))
+				.contains(new InternalUserPrincipalResponse("42", "mix@example.com"));
+	}
+
+	@Test
+	void resolvePrincipal_forNumericId_returnsSameIdAndNormalizedEmail() {
+		User user = mock(User.class);
+		when(user.getId()).thenReturn(7L);
+		when(user.getEmail()).thenReturn("who@Example.COM");
+		when(userRepository.findById(7L)).thenReturn(Optional.of(user));
+
+		assertThat(userService.resolvePrincipalForInternalLookup("7"))
+				.contains(new InternalUserPrincipalResponse("7", "who@example.com"));
 	}
 }

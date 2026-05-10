@@ -236,7 +236,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
       JWT_SECRET: ${GATEWAY_JWT_SECRET:-change-this-secret-key-to-at-least-32-bytes}
       TEAM_SERVICE_INTERNAL_URL: ${TEAM_SERVICE_INTERNAL_URL:-http://team-service:8093}
-      IDENTITY_TEAM_SERVICE_INTERNAL_API_TOKEN: ${PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN:-}
+      # team-service `team.internal.api-token` 과 동일 값 권장 (루트 .env 의 PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN)
+      IDENTITY_TEAM_SERVICE_INTERNAL_API_TOKEN: ${PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN:-change-this-team-internal-api-token}
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_PORT: 5672
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
@@ -342,6 +343,8 @@ services:
       SPRING_PROFILES_ACTIVE: docker
       PROXY_KEY_SERVICE_BASE_URL: ${PROXY_KEY_SERVICE_BASE_URL:-http://identity-service:8080}
       PROXY_TEAM_KEY_SERVICE_BASE_URL: ${PROXY_TEAM_KEY_SERVICE_BASE_URL:-http://team-service:8093}
+      # proxy.jar 수정 없이 Spring 이 기존 설정으로 읽음 — team-service 내부 토큰과 동일해야 함
+      PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN: ${PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN:-change-this-team-internal-api-token}
       PROXY_OPENAI_TEST_API_KEY: ${PROXY_OPENAI_TEST_API_KEY:-}
       PROXY_GOOGLE_TEST_API_KEY: ${PROXY_GOOGLE_TEST_API_KEY:-}
       PROXY_MOCK_KEY_FALLBACK: ${PROXY_MOCK_KEY_FALLBACK:-}
@@ -523,6 +526,7 @@ services:
       IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
       SECURITY_JWT_SECRET: ${JWT_SECRET:-change-this-secret-key-to-at-least-32-bytes}
       TEAM_API_KEY_ENCRYPTION_SECRET: ${TEAM_API_KEY_ENCRYPTION_SECRET:-change-this-team-api-key-encryption-secret-min-32-chars}
+      PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN: ${PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN:-change-this-team-internal-api-token}
       TEAM_SERVICE_PORT: 8093
     depends_on:
       postgres-team:

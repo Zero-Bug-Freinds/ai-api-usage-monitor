@@ -66,13 +66,26 @@ const createExternalKeyRequestSchema = z.object({
     .multipleOf(0.01, "monthlyBudgetUsd는 소수점 둘째 자리까지 입력할 수 있습니다"),
 })
 
-function getUpstreamMessage(upstreamJson: unknown): string | null {
-  return typeof upstreamJson === "object" &&
-    upstreamJson !== null &&
-    "message" in upstreamJson &&
-    typeof (upstreamJson as { message?: unknown }).message === "string"
-    ? (upstreamJson as { message: string }).message
-    : null
+/** 게이트웨이·백엔드가 내려준 본문에서 사용자에게 보여줄 문자열을 뽑는다 (형식이 제각각일 수 있음). */
+function extractUpstreamErrorMessage(upstreamJson: unknown): string | null {
+  if (typeof upstreamJson !== "object" || upstreamJson === null) return null
+  const o = upstreamJson as Record<string, unknown>
+  const pick = (v: unknown) =>
+    typeof v === "string" && v.trim().length > 0 ? v.trim() : null
+  return pick(o.message) ?? pick(o.detail) ?? pick(o.error) ?? pick(o.title)
+}
+
+/** 업스트림이 메시지를 주지 않았을 때만 사용한다 (409를 무조건 ‘중복’으로 단정하지 않음). */
+function fallbackMessageForUpstreamFailure(status: number): string {
+  if (status === 401 || status === 403) return "로그인이 필요합니다"
+  if (status === 400) return "요청 값이 올바르지 않습니다"
+  if (status === 409)
+    return "이미 등록된 외부 API 키이거나 팀 범위와 중복될 수 있습니다"
+  if (status === 404) return "요청한 리소스를 찾을 수 없습니다"
+  if (status === 502 || status === 503 || status === 504)
+    return "인증 서비스에 일시적으로 연결할 수 없습니다"
+  if (status >= 500) return "인증 서비스 처리 중 오류가 발생했습니다"
+  return "등록에 실패했습니다"
 }
 
 function isExternalKeySummary(data: unknown): boolean {
@@ -236,20 +249,36 @@ export async function POST(request: Request) {
   try {
     upstreamJson = await upstream.json()
   } catch {
-    return NextResponse.json(
-      { success: false, message: "Invalid JSON response from upstream", data: null },
-      { status: 502, headers: noStoreHeaders() }
-    )
+    return json(502, {
+      success: false,
+      message: "인증 서비스 응답을 해석할 수 없습니다",
+      data: null,
+    })
   }
 
-  const message =
-    getUpstreamMessage(upstreamJson) ??
-    (upstream.status === 401 || upstream.status === 403 ? "로그인이 필요합니다" : "중복키 등록")
+  if (typeof upstreamJson === "object" && upstreamJson !== null) {
+    const rec = upstreamJson as Record<string, unknown>
+    // Identity `ApiResponse`는 그대로 전달해 서버 메시지(팀 중복 등)가 유실되지 않게 한다.
+    if (typeof rec.success === "boolean" && typeof rec.message === "string") {
+      const normalized =
+        "data" in rec ? upstreamJson : { ...rec, data: null }
+      return NextResponse.json(normalized, { status: upstream.status, headers: noStoreHeaders() })
+    }
 
+    const message =
+      extractUpstreamErrorMessage(upstreamJson) ?? fallbackMessageForUpstreamFailure(upstream.status)
+
+    if (upstream.status === 400 || upstream.status === 401 || upstream.status === 409) {
+      return json(upstream.status, { success: false, message, data: null })
+    }
+
+    return json(502, { success: false, message, data: null })
+  }
+
+  const message = fallbackMessageForUpstreamFailure(upstream.status)
   if (upstream.status === 400 || upstream.status === 401 || upstream.status === 409) {
     return json(upstream.status, { success: false, message, data: null })
   }
-
   return json(502, { success: false, message, data: null })
 }
 
