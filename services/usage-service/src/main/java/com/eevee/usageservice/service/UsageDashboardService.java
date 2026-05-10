@@ -11,6 +11,7 @@ import com.eevee.usageservice.api.dto.UsageLogApiKeyItemResponse;
 import com.eevee.usageservice.api.dto.UsageSeriesPoint;
 import com.eevee.usageservice.api.dto.UsageSeriesUnit;
 import com.eevee.usageservice.api.dto.UsageLogEntryResponse;
+import com.eevee.usageservice.api.dto.UsageDataContext;
 import com.eevee.usageservice.api.dto.UsageSummaryResponse;
 import com.eevee.usageservice.config.UsageServiceProperties;
 import com.eevee.usageservice.domain.ApiKeyStatus;
@@ -71,10 +72,32 @@ public class UsageDashboardService {
 
     @Transactional(readOnly = true)
     public UsageSummaryResponse summary(String userId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
+        return summary(userId, from, toInclusive, provider, UsageDataContext.PERSONAL, null);
+    }
+
+    @Transactional(readOnly = true)
+    public UsageSummaryResponse summary(
+            String userId,
+            LocalDate from,
+            LocalDate toInclusive,
+            AiProvider provider,
+            UsageDataContext dataContext,
+            String apiKeyId
+    ) {
         Range r = validateRange(from, toInclusive);
         long startedAt = System.nanoTime();
-        UsageSummaryResponse response = analyticsJdbcRepository.aggregateSummary(userId, r.from(), r.toExclusive(), provider);
-        log.debug("dashboard.summary dbMs={} range={}~{} provider={}", (System.nanoTime() - startedAt) / 1_000_000, from, toInclusive, provider);
+        String key = normalizeApiKey(apiKeyId);
+        UsageSummaryResponse response;
+        if (key != null) {
+            response = analyticsJdbcRepository.aggregateSummaryForUserFromLogs(
+                    userId, r.from(), r.toExclusive(), provider, key, dataContext);
+        } else if (dataContext == UsageDataContext.TEAM_MEMBER_ONLY) {
+            response = analyticsJdbcRepository.aggregateSummaryTeamMemberOnly(userId, r.from(), r.toExclusive(), provider);
+        } else {
+            response = analyticsJdbcRepository.aggregateSummary(userId, r.from(), r.toExclusive(), provider);
+        }
+        log.debug("dashboard.summary dbMs={} range={}~{} provider={} dataContext={}",
+                (System.nanoTime() - startedAt) / 1_000_000, from, toInclusive, provider, dataContext);
         return response;
     }
 
@@ -107,9 +130,30 @@ public class UsageDashboardService {
 
     @Transactional(readOnly = true)
     public List<DailyUsagePoint> dailySeries(String userId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
+        return dailySeries(userId, from, toInclusive, provider, UsageDataContext.PERSONAL, null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<DailyUsagePoint> dailySeries(
+            String userId,
+            LocalDate from,
+            LocalDate toInclusive,
+            AiProvider provider,
+            UsageDataContext dataContext,
+            String apiKeyId
+    ) {
         Range r = validateRange(from, toInclusive);
         long startedAt = System.nanoTime();
-        List<DailyUsagePoint> rows = analyticsJdbcRepository.aggregateDaily(userId, r.from(), r.toExclusive(), provider);
+        String key = normalizeApiKey(apiKeyId);
+        List<DailyUsagePoint> rows;
+        if (key != null) {
+            rows = analyticsJdbcRepository.aggregateDailyForUserFromLogs(
+                    userId, r.from(), r.toExclusive(), provider, key, dataContext);
+        } else if (dataContext == UsageDataContext.TEAM_MEMBER_ONLY) {
+            rows = analyticsJdbcRepository.aggregateDailyTeamMemberOnly(userId, r.from(), r.toExclusive(), provider);
+        } else {
+            rows = analyticsJdbcRepository.aggregateDaily(userId, r.from(), r.toExclusive(), provider);
+        }
         log.debug("dashboard.daily dbMs={} rows={} range={}~{} provider={}", (System.nanoTime() - startedAt) / 1_000_000, rows.size(), from, toInclusive, provider);
         return rows;
     }
@@ -143,9 +187,30 @@ public class UsageDashboardService {
 
     @Transactional(readOnly = true)
     public List<MonthlyUsagePoint> monthlySeries(String userId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
+        return monthlySeries(userId, from, toInclusive, provider, UsageDataContext.PERSONAL, null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<MonthlyUsagePoint> monthlySeries(
+            String userId,
+            LocalDate from,
+            LocalDate toInclusive,
+            AiProvider provider,
+            UsageDataContext dataContext,
+            String apiKeyId
+    ) {
         Range r = validateRange(from, toInclusive);
         long startedAt = System.nanoTime();
-        List<MonthlyUsagePoint> rows = analyticsJdbcRepository.aggregateMonthly(userId, r.from(), r.toExclusive(), provider);
+        String key = normalizeApiKey(apiKeyId);
+        List<MonthlyUsagePoint> rows;
+        if (key != null) {
+            rows = analyticsJdbcRepository.aggregateMonthlyForUserFromLogs(
+                    userId, r.from(), r.toExclusive(), provider, key, dataContext);
+        } else if (dataContext == UsageDataContext.TEAM_MEMBER_ONLY) {
+            rows = analyticsJdbcRepository.aggregateMonthlyTeamMemberOnly(userId, r.from(), r.toExclusive(), provider);
+        } else {
+            rows = analyticsJdbcRepository.aggregateMonthly(userId, r.from(), r.toExclusive(), provider);
+        }
         log.debug("dashboard.monthly dbMs={} rows={} range={}~{} provider={}", (System.nanoTime() - startedAt) / 1_000_000, rows.size(), from, toInclusive, provider);
         return rows;
     }
@@ -179,9 +244,30 @@ public class UsageDashboardService {
 
     @Transactional(readOnly = true)
     public List<ModelUsageAggregate> byModel(String userId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
+        return byModel(userId, from, toInclusive, provider, UsageDataContext.PERSONAL, null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ModelUsageAggregate> byModel(
+            String userId,
+            LocalDate from,
+            LocalDate toInclusive,
+            AiProvider provider,
+            UsageDataContext dataContext,
+            String apiKeyId
+    ) {
         Range r = validateRange(from, toInclusive);
         long startedAt = System.nanoTime();
-        List<ModelUsageAggregate> rows = analyticsJdbcRepository.aggregateByModel(userId, r.from(), r.toExclusive(), provider);
+        String key = normalizeApiKey(apiKeyId);
+        List<ModelUsageAggregate> rows;
+        if (key != null) {
+            rows = analyticsJdbcRepository.aggregateByModelForUserFromLogs(
+                    userId, r.from(), r.toExclusive(), provider, key, dataContext);
+        } else if (dataContext == UsageDataContext.TEAM_MEMBER_ONLY) {
+            rows = analyticsJdbcRepository.aggregateByModelTeamMemberOnly(userId, r.from(), r.toExclusive(), provider);
+        } else {
+            rows = analyticsJdbcRepository.aggregateByModel(userId, r.from(), r.toExclusive(), provider);
+        }
         log.debug("dashboard.byModel dbMs={} rows={} range={}~{} provider={}", (System.nanoTime() - startedAt) / 1_000_000, rows.size(), from, toInclusive, provider);
         return rows;
     }
@@ -277,14 +363,30 @@ public class UsageDashboardService {
             AiProvider provider,
             UsageSeriesUnit unit
     ) {
+        return series(userId, from, toInclusive, provider, unit, UsageDataContext.PERSONAL, null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<UsageSeriesPoint> series(
+            String userId,
+            LocalDate from,
+            LocalDate toInclusive,
+            AiProvider provider,
+            UsageSeriesUnit unit,
+            UsageDataContext dataContext,
+            String apiKeyId
+    ) {
         Range r = validateRange(from, toInclusive);
         long startedAt = System.nanoTime();
+        String key = normalizeApiKey(apiKeyId);
+        String keyFilter = key != null ? key : "";
         if (unit == UsageSeriesUnit.HOUR) {
             long days = ChronoUnit.DAYS.between(from, toInclusive) + 1;
             if (days != 1) {
                 throw new IllegalArgumentException("HOUR unit requires a single-day range");
             }
-            List<UsageSeriesPoint> rows = analyticsJdbcRepository.aggregateHourlyForKstDay(userId, r.from(), r.toExclusive(), provider)
+            List<UsageSeriesPoint> rows = analyticsJdbcRepository
+                    .aggregateHourlyForKstDayUserScoped(userId, r.from(), r.toExclusive(), provider, dataContext, keyFilter)
                     .stream()
                     .map(row -> new UsageSeriesPoint(
                             String.format("%02d:00", row.hour()),
@@ -298,8 +400,8 @@ public class UsageDashboardService {
             return rows;
         }
         if (unit == UsageSeriesUnit.DAY) {
-            List<UsageSeriesPoint> rows = analyticsJdbcRepository.aggregateDaily(userId, r.from(), r.toExclusive(), provider)
-                    .stream()
+            List<DailyUsagePoint> dailyPoints = dailySeries(userId, from, toInclusive, provider, dataContext, apiKeyId);
+            List<UsageSeriesPoint> rows = dailyPoints.stream()
                     .map(row -> new UsageSeriesPoint(
                             row.date().toString(),
                             row.requestCount(),
@@ -311,8 +413,8 @@ public class UsageDashboardService {
             log.debug("dashboard.series unit=DAY dbAndMapMs={} rows={} range={}~{} provider={}", (System.nanoTime() - startedAt) / 1_000_000, rows.size(), from, toInclusive, provider);
             return rows;
         }
-        List<UsageSeriesPoint> rows = analyticsJdbcRepository.aggregateMonthly(userId, r.from(), r.toExclusive(), provider)
-                .stream()
+        List<MonthlyUsagePoint> monthlyPoints = monthlySeries(userId, from, toInclusive, provider, dataContext, apiKeyId);
+        List<UsageSeriesPoint> rows = monthlyPoints.stream()
                 .map(row -> new UsageSeriesPoint(
                         row.yearMonth(),
                         row.requestCount(),
@@ -330,18 +432,46 @@ public class UsageDashboardService {
      */
     @Transactional(readOnly = true)
     public UsageCostIntradayKpiResponse costIntradayKpi(String userId, AiProvider provider) {
+        return costIntradayKpi(userId, provider, UsageDataContext.PERSONAL, null);
+    }
+
+    @Transactional(readOnly = true)
+    public UsageCostIntradayKpiResponse costIntradayKpi(
+            String userId,
+            AiProvider provider,
+            UsageDataContext dataContext,
+            String apiKeyId
+    ) {
         Instant now = clock.instant();
         LocalDate todayKst = LocalDate.ofInstant(now, DASHBOARD_ZONE);
         Instant dayStart = todayKst.atStartOfDay(DASHBOARD_ZONE).toInstant();
         Instant dayEndExclusive = todayKst.plusDays(1).atStartOfDay(DASHBOARD_ZONE).toInstant();
         Instant windowEnd = now.isBefore(dayEndExclusive) ? now : dayEndExclusive;
 
-        BigDecimal todayCost = analyticsJdbcRepository.sumEstimatedCost(userId, dayStart, windowEnd, provider);
-
-        Duration elapsed = Duration.between(dayStart, windowEnd);
-        Instant yStart = dayStart.minus(1, ChronoUnit.DAYS);
-        Instant yEnd = yStart.plus(elapsed);
-        BigDecimal yesterdayCost = analyticsJdbcRepository.sumEstimatedCost(userId, yStart, yEnd, provider);
+        String key = normalizeApiKey(apiKeyId);
+        BigDecimal todayCost;
+        BigDecimal yesterdayCost;
+        if (key != null) {
+            todayCost = analyticsJdbcRepository.sumEstimatedCostForUserFromLogs(
+                    userId, dayStart, windowEnd, provider, key, dataContext);
+            Duration elapsed = Duration.between(dayStart, windowEnd);
+            Instant yStart = dayStart.minus(1, ChronoUnit.DAYS);
+            Instant yEnd = yStart.plus(elapsed);
+            yesterdayCost = analyticsJdbcRepository.sumEstimatedCostForUserFromLogs(
+                    userId, yStart, yEnd, provider, key, dataContext);
+        } else if (dataContext == UsageDataContext.TEAM_MEMBER_ONLY) {
+            todayCost = analyticsJdbcRepository.sumEstimatedCostTeamMemberOnly(userId, dayStart, windowEnd, provider);
+            Duration elapsed = Duration.between(dayStart, windowEnd);
+            Instant yStart = dayStart.minus(1, ChronoUnit.DAYS);
+            Instant yEnd = yStart.plus(elapsed);
+            yesterdayCost = analyticsJdbcRepository.sumEstimatedCostTeamMemberOnly(userId, yStart, yEnd, provider);
+        } else {
+            todayCost = analyticsJdbcRepository.sumEstimatedCost(userId, dayStart, windowEnd, provider);
+            Duration elapsed = Duration.between(dayStart, windowEnd);
+            Instant yStart = dayStart.minus(1, ChronoUnit.DAYS);
+            Instant yEnd = yStart.plus(elapsed);
+            yesterdayCost = analyticsJdbcRepository.sumEstimatedCost(userId, yStart, yEnd, provider);
+        }
 
         BigDecimal rate = null;
         if (yesterdayCost.compareTo(BigDecimal.ZERO) > 0) {
@@ -360,9 +490,28 @@ public class UsageDashboardService {
      */
     @Transactional(readOnly = true)
     public List<HourlyUsagePoint> hourlySeriesForKstDate(String userId, LocalDate kstDate, AiProvider provider) {
+        return hourlySeriesForKstDate(userId, kstDate, provider, UsageDataContext.PERSONAL, null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<HourlyUsagePoint> hourlySeriesForKstDate(
+            String userId,
+            LocalDate kstDate,
+            AiProvider provider,
+            UsageDataContext dataContext,
+            String apiKeyId
+    ) {
         Instant kstDayStart = kstDate.atStartOfDay(DASHBOARD_ZONE).toInstant();
         Instant kstDayEndExclusive = kstDate.plusDays(1).atStartOfDay(DASHBOARD_ZONE).toInstant();
-        return analyticsJdbcRepository.aggregateHourlyForKstDay(userId, kstDayStart, kstDayEndExclusive, provider);
+        String key = normalizeApiKey(apiKeyId);
+        return analyticsJdbcRepository.aggregateHourlyForKstDayUserScoped(
+                userId,
+                kstDayStart,
+                kstDayEndExclusive,
+                provider,
+                dataContext,
+                key != null ? key : ""
+        );
     }
 
     @Transactional(readOnly = true)
@@ -484,9 +633,17 @@ public class UsageDashboardService {
 
     @Transactional(readOnly = true)
     public List<UsageLogApiKeyItemResponse> logApiKeys(String userId, AiProvider provider) {
+        return logApiKeys(userId, provider, UsageDataContext.PERSONAL);
+    }
+
+    @Transactional(readOnly = true)
+    public List<UsageLogApiKeyItemResponse> logApiKeys(String userId, AiProvider provider, UsageDataContext dataContext) {
         Instant to = clock.instant();
         Instant from = to.minus(LOG_API_KEY_LOOKUP_DAYS, ChronoUnit.DAYS);
-        return logRepository.findDistinctApiKeysForUserInRange(userId, from, to, provider);
+        if (dataContext == UsageDataContext.TEAM_MEMBER_ONLY) {
+            return logRepository.findDistinctApiKeysForUserTeamMemberInRange(userId, from, to, provider);
+        }
+        return logRepository.findDistinctApiKeysForUserPersonalInRange(userId, from, to, provider);
     }
 
     private UsageLogEntryResponse toLogDto(UsageRecordedLogEntity e) {
@@ -595,6 +752,13 @@ public class UsageDashboardService {
 
     private static boolean restrictTeamToApiKey(String apiKeyId) {
         return apiKeyId != null && !apiKeyId.isBlank();
+    }
+
+    private static String normalizeApiKey(String apiKeyId) {
+        if (apiKeyId == null || apiKeyId.isBlank()) {
+            return null;
+        }
+        return apiKeyId.trim();
     }
 
     public record TeamUsageSeriesBundle(UsageSeriesUnit unit, List<UsageSeriesPoint> points) {
