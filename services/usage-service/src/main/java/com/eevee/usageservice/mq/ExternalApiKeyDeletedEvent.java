@@ -1,6 +1,7 @@
 package com.eevee.usageservice.mq;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -11,6 +12,7 @@ import java.time.Instant;
  * {@code retainLogs} 가 JSON 에 없으면 null 로 두고, 소비 측에서 true(로그 유지)로 간주한다.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record ExternalApiKeyDeletedEvent(
         @JsonProperty("eventType")
         String eventType,

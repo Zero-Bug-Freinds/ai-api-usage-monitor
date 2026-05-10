@@ -2,6 +2,7 @@ package com.eevee.proxyservice.key;
 
 import com.eevee.proxyservice.config.ProxyProperties;
 import com.eevee.usage.events.AiProvider;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.LoadingCache;
 import org.slf4j.Logger;
@@ -524,6 +525,7 @@ public class ApiKeyClient {
         }
     }
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
     private record KeyResponse(String plainKey, String keyId, String alias, String status) {
     }
 
