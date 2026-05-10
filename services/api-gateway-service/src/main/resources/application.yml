@@ -5,6 +5,9 @@ server:
 spring:
   application:
     name: api-gateway-service
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: false
   cloud:
     gateway:
       preserve-host-header: true
