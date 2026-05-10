@@ -88,9 +88,18 @@ public class IdentityUserSyncService {
                     .map(IdentityUserSyncEntity::getEmail)
                     .filter(StringUtils::hasText)
                     .ifPresent(email -> candidates.add(email.trim().toLowerCase()));
+            String emailFromIdentityService = identityUserLookupClient.findEmailByUserId(normalized);
+            if (StringUtils.hasText(emailFromIdentityService)) {
+                candidates.add(emailFromIdentityService.trim().toLowerCase());
+            }
         }
         identityUserLookupClient.addResolvedPrincipalIdentifiers(normalized, candidates);
-        log.debug("membership lookup candidates input={} count={} candidates={}", normalized, candidates.size(), candidates);
+        log.info(
+                "membershipLookupCandidates input={} candidateCount={} candidates={}",
+                normalized,
+                candidates.size(),
+                candidates
+        );
         return candidates;
     }
 

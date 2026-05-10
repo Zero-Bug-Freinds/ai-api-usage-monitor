@@ -212,6 +212,19 @@ public class UserService {
 	}
 
 	@Transactional(readOnly = true)
+	public Optional<String> findEmailByUserId(String rawUserId) {
+		if (rawUserId == null || rawUserId.isBlank()) {
+			return Optional.empty();
+		}
+		try {
+			Long userId = Long.parseLong(rawUserId.trim());
+			return userRepository.findById(userId).map(User::getEmail);
+		} catch (NumberFormatException ignored) {
+			return Optional.empty();
+		}
+	}
+
+	@Transactional(readOnly = true)
 	public User findByAuthenticatedPrincipal(String principal) {
 		if (principal == null || principal.isBlank()) {
 			throw new InvalidCredentialsException("인증 사용자 정보가 없습니다");

@@ -19,17 +19,17 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.mockito.ArgumentMatchers.anyString;
 
 class TeamInternalApiKeyResolveServiceTest {
 
     @Test
     void resolve_missingTeamId_throwsBadRequest() {
         TeamInternalApiKeyResolveService service = newService("internal-token");
-        assertThatThrownBy(() -> service.resolve("google", null, "member@test.com", "Bearer internal-token"))
+        assertThatThrownBy(() -> service.resolve("google", null, "member@test.com", null, "Bearer internal-token"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("teamId");
     }
@@ -38,21 +38,13 @@ class TeamInternalApiKeyResolveServiceTest {
     void resolve_nonMember_throwsForbidden() {
         TeamMemberRepository teamMemberRepository = mock(TeamMemberRepository.class);
         TeamApiKeyRepository teamApiKeyRepository = mock(TeamApiKeyRepository.class);
-        IdentityUserSyncService identityUserSyncService = mock(IdentityUserSyncService.class);
         EncryptionUtil encryptionUtil = mock(EncryptionUtil.class);
-        when(identityUserSyncService.resolveMembershipLookupCandidates(anyString()))
-                .thenAnswer(inv -> Set.of(inv.getArgument(0, String.class).trim()));
-        TeamInternalApiKeyResolveService service = new TeamInternalApiKeyResolveService(
-                teamMemberRepository,
-                teamApiKeyRepository,
-                identityUserSyncService,
-                encryptionUtil,
-                "internal-token"
-        );
+        TeamInternalApiKeyResolveService service = newService(
+                teamMemberRepository, teamApiKeyRepository, encryptionUtil, "internal-token");
 
         when(teamMemberRepository.existsByTeamIdAndUserId(10L, "outsider@test.com")).thenReturn(false);
 
-        assertThatThrownBy(() -> service.resolve("openai", 10L, "outsider@test.com", "Bearer internal-token"))
+        assertThatThrownBy(() -> service.resolve("openai", 10L, "outsider@test.com", null, "Bearer internal-token"))
                 .isInstanceOf(ForbiddenTeamAccessException.class);
     }
 
@@ -60,47 +52,31 @@ class TeamInternalApiKeyResolveServiceTest {
     void resolve_noActiveKey_throwsNotFound() {
         TeamMemberRepository teamMemberRepository = mock(TeamMemberRepository.class);
         TeamApiKeyRepository teamApiKeyRepository = mock(TeamApiKeyRepository.class);
-        IdentityUserSyncService identityUserSyncService = mock(IdentityUserSyncService.class);
         EncryptionUtil encryptionUtil = mock(EncryptionUtil.class);
-        when(identityUserSyncService.resolveMembershipLookupCandidates(anyString()))
-                .thenAnswer(inv -> Set.of(inv.getArgument(0, String.class).trim()));
-        TeamInternalApiKeyResolveService service = new TeamInternalApiKeyResolveService(
-                teamMemberRepository,
-                teamApiKeyRepository,
-                identityUserSyncService,
-                encryptionUtil,
-                "internal-token"
-        );
+        TeamInternalApiKeyResolveService service = newService(
+                teamMemberRepository, teamApiKeyRepository, encryptionUtil, "internal-token");
 
         when(teamMemberRepository.existsByTeamIdAndUserId(15L, "member@test.com")).thenReturn(true);
         when(teamApiKeyRepository.findFirstByTeamIdAndProviderAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(
                 15L, TeamApiKeyProvider.GOOGLE
         )).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.resolve("gemini", 15L, "member@test.com", "Bearer internal-token"))
+        assertThatThrownBy(() -> service.resolve("google", 15L, "member@test.com", null, "Bearer internal-token"))
                 .isInstanceOf(TeamApiKeyNotFoundException.class);
     }
 
     @Test
-    void resolve_geminiAlias_returnsGoogleKey() {
+    void resolve_googleProvider_returnsGoogleKey() {
         TeamMemberRepository teamMemberRepository = mock(TeamMemberRepository.class);
         TeamApiKeyRepository teamApiKeyRepository = mock(TeamApiKeyRepository.class);
-        IdentityUserSyncService identityUserSyncService = mock(IdentityUserSyncService.class);
         EncryptionUtil encryptionUtil = mock(EncryptionUtil.class);
-        when(identityUserSyncService.resolveMembershipLookupCandidates(anyString()))
-                .thenAnswer(inv -> Set.of(inv.getArgument(0, String.class).trim()));
-        TeamInternalApiKeyResolveService service = new TeamInternalApiKeyResolveService(
-                teamMemberRepository,
-                teamApiKeyRepository,
-                identityUserSyncService,
-                encryptionUtil,
-                "internal-token"
-        );
+        TeamInternalApiKeyResolveService service = newService(
+                teamMemberRepository, teamApiKeyRepository, encryptionUtil, "internal-token");
 
         TeamApiKeyEntity entity = TeamApiKeyEntity.register(
                 22L,
                 TeamApiKeyProvider.GOOGLE,
-                "gemini-key",
+                "google-key",
                 "hash",
                 "encrypted-value",
                 BigDecimal.ONE
@@ -115,7 +91,7 @@ class TeamInternalApiKeyResolveServiceTest {
         when(encryptionUtil.decryptAes256Gcm("encrypted-value")).thenReturn("AIza-real-key");
 
         InternalTeamApiKeyResponse response =
-                service.resolve("gemini", 22L, "member@test.com", "Bearer internal-token");
+                service.resolve("google", 22L, "member@test.com", null, "Bearer internal-token");
 
         assertThat(response.plainKey()).isEqualTo("AIza-real-key");
         assertThat(response.keyId()).isEqualTo("777");
@@ -127,14 +103,14 @@ class TeamInternalApiKeyResolveServiceTest {
     @Test
     void resolve_requiresInternalTokenWhenConfigured() {
         TeamInternalApiKeyResolveService service = newService("internal-token");
-        assertThatThrownBy(() -> service.resolve("openai", 20L, "member@test.com", null))
+        assertThatThrownBy(() -> service.resolve("openai", 20L, "member@test.com", null, null))
                 .isInstanceOf(InternalRequestUnauthorizedException.class);
     }
 
     @Test
     void resolve_withoutConfiguredToken_throwsForbidden() {
         TeamInternalApiKeyResolveService service = newService("");
-        assertThatThrownBy(() -> service.resolve("openai", 30L, "member@test.com", "Bearer any"))
+        assertThatThrownBy(() -> service.resolve("openai", 30L, "member@test.com", null, "Bearer any"))
                 .isInstanceOf(InternalRequestUnauthorizedException.class)
                 .hasMessageContaining("서버에 설정되지");
     }
@@ -175,7 +151,7 @@ class TeamInternalApiKeyResolveServiceTest {
         when(encryptionUtil.decryptAes256Gcm("enc")).thenReturn("sk-plain");
 
         InternalTeamApiKeyResponse response =
-                service.resolve("openai", 10L, "42", "Bearer internal-token");
+                service.resolve("openai", 10L, "42", null, "Bearer internal-token");
 
         assertThat(response.plainKey()).isEqualTo("sk-plain");
     }
@@ -184,37 +160,43 @@ class TeamInternalApiKeyResolveServiceTest {
     void resolve_deletionPendingOnlyKey_throwsNotFound() {
         TeamMemberRepository teamMemberRepository = mock(TeamMemberRepository.class);
         TeamApiKeyRepository teamApiKeyRepository = mock(TeamApiKeyRepository.class);
-        IdentityUserSyncService identityUserSyncService = mock(IdentityUserSyncService.class);
         EncryptionUtil encryptionUtil = mock(EncryptionUtil.class);
-        when(identityUserSyncService.resolveMembershipLookupCandidates(anyString()))
-                .thenAnswer(inv -> Set.of(inv.getArgument(0, String.class).trim()));
-        TeamInternalApiKeyResolveService service = new TeamInternalApiKeyResolveService(
-                teamMemberRepository,
-                teamApiKeyRepository,
-                identityUserSyncService,
-                encryptionUtil,
-                "internal-token"
-        );
+        TeamInternalApiKeyResolveService service = newService(
+                teamMemberRepository, teamApiKeyRepository, encryptionUtil, "internal-token");
 
         when(teamMemberRepository.existsByTeamIdAndUserId(45L, "member@test.com")).thenReturn(true);
         when(teamApiKeyRepository.findFirstByTeamIdAndProviderAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(
                 45L, TeamApiKeyProvider.OPENAI
         )).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.resolve("openai", 45L, "member@test.com", "Bearer internal-token"))
+        assertThatThrownBy(() -> service.resolve("openai", 45L, "member@test.com", null, "Bearer internal-token"))
                 .isInstanceOf(TeamApiKeyNotFoundException.class)
                 .hasMessageContaining("활성 상태 API 키");
     }
 
     private static TeamInternalApiKeyResolveService newService(String token) {
-        IdentityUserSyncService identityUserSyncService = mock(IdentityUserSyncService.class);
-        when(identityUserSyncService.resolveMembershipLookupCandidates(anyString()))
-                .thenAnswer(inv -> Set.of(inv.getArgument(0, String.class).trim()));
-        return new TeamInternalApiKeyResolveService(
+        return newService(
                 mock(TeamMemberRepository.class),
                 mock(TeamApiKeyRepository.class),
-                identityUserSyncService,
                 mock(EncryptionUtil.class),
+                token
+        );
+    }
+
+    private static TeamInternalApiKeyResolveService newService(
+            TeamMemberRepository teamMemberRepository,
+            TeamApiKeyRepository teamApiKeyRepository,
+            EncryptionUtil encryptionUtil,
+            String token
+    ) {
+        IdentityUserSyncService identityUserSyncService = mock(IdentityUserSyncService.class);
+        when(identityUserSyncService.resolveMembershipLookupCandidates(anyString()))
+                .thenAnswer(invocation -> Set.of(invocation.getArgument(0, String.class).trim()));
+        return new TeamInternalApiKeyResolveService(
+                teamMemberRepository,
+                teamApiKeyRepository,
+                identityUserSyncService,
+                encryptionUtil,
                 token
         );
     }

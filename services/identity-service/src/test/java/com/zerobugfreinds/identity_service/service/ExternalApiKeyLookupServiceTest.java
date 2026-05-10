@@ -7,6 +7,7 @@ import com.zerobugfreinds.identity_service.exception.AmbiguousExternalApiKeyHash
 import com.zerobugfreinds.identity_service.exception.ExternalApiKeyNotFoundException;
 import com.zerobugfreinds.identity_service.repository.ExternalApiKeyRepository;
 import com.zerobugfreinds.identity_service.repository.UserRepository;
+import com.zerobugfreinds.identity_service.service.TeamApiKeyLookupClient;
 import com.zerobugfreinds.identity_service.util.EncryptionUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

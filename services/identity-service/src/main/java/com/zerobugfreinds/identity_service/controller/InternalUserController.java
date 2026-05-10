@@ -47,6 +47,12 @@ public class InternalUserController {
                 .orElse(ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse.fail("사용자를 찾을 수 없습니다")));
     }
 
+    @GetMapping("/email")
+    public ResponseEntity<ApiResponse<String>> getEmailByUserId(@RequestParam("userId") String userId) {
+        String email = userService.findEmailByUserId(userId).orElse(null);
+        return ResponseEntity.ok(ApiResponse.ok("사용자 이메일 조회에 성공했습니다", email));
+    }
+
     @PostMapping("/exists/user-ids")
     public ResponseEntity<ApiResponse<InternalUserIdsExistenceResponse>> existsByUserIds(
             @RequestBody(required = false) InternalUserIdsExistenceRequest request

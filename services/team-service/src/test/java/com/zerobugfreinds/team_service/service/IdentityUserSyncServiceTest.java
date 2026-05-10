@@ -13,6 +13,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -75,7 +76,7 @@ class IdentityUserSyncServiceTest {
                 "USER_UPDATED",
                 Instant.now()
         );
-        when(identityUserSyncRepository.findById("42")).thenReturn(java.util.Optional.of(sync));
+        when(identityUserSyncRepository.findById("42")).thenReturn(Optional.of(sync));
 
         Set<String> candidates = identityUserSyncService.resolveMembershipLookupCandidates("42");
 
@@ -92,7 +93,7 @@ class IdentityUserSyncServiceTest {
                 "USER_UPDATED",
                 Instant.now()
         );
-        when(identityUserSyncRepository.findByEmailIgnoreCase("user@example.com")).thenReturn(java.util.Optional.of(sync));
+        when(identityUserSyncRepository.findByEmailIgnoreCase("user@example.com")).thenReturn(Optional.of(sync));
 
         Set<String> candidates = identityUserSyncService.resolveMembershipLookupCandidates("User@Example.com");
 
@@ -102,7 +103,7 @@ class IdentityUserSyncServiceTest {
 
     @Test
     void resolveMembershipLookupCandidates_identityPrincipalAugmentsCandidates() {
-        when(identityUserSyncRepository.findById("7")).thenReturn(java.util.Optional.empty());
+        when(identityUserSyncRepository.findById("7")).thenReturn(Optional.empty());
         doAnswer(invocation -> {
             @SuppressWarnings("unchecked")
             Set<String> set = invocation.getArgument(1);
@@ -115,5 +116,50 @@ class IdentityUserSyncServiceTest {
 
         assertThat(candidates).containsExactlyInAnyOrder("7", "resolved@naver.com");
         verify(identityUserLookupClient).addResolvedPrincipalIdentifiers(eq("7"), any());
+    }
+
+    @Test
+    void resolveMembershipLookupCandidates_numericId_usesIdentityEmailWhenSyncMissing() {
+        when(identityUserSyncRepository.findById("99")).thenReturn(Optional.empty());
+        when(identityUserLookupClient.findEmailByUserId("99")).thenReturn("dpsk1515@naver.com");
+
+        Set<String> candidates = identityUserSyncService.resolveMembershipLookupCandidates("99");
+
+        assertThat(candidates).containsExactlyInAnyOrder("99", "dpsk1515@naver.com");
+        verify(identityUserLookupClient).findEmailByUserId("99");
+        verify(identityUserLookupClient).addResolvedPrincipalIdentifiers(eq("99"), any());
+    }
+
+    @Test
+    void resolveMembershipLookupCandidates_numericId_includesSyncAndIdentityEmails() {
+        IdentityUserSyncEntity syncRow = IdentityUserSyncEntity.create(
+                "99",
+                "from-sync@naver.com",
+                "n",
+                "USER_SYNC",
+                Instant.parse("2025-01-01T00:00:00Z")
+        );
+        when(identityUserSyncRepository.findById("99")).thenReturn(Optional.of(syncRow));
+        when(identityUserLookupClient.findEmailByUserId("99")).thenReturn("from-identity@naver.com");
+
+        Set<String> candidates = identityUserSyncService.resolveMembershipLookupCandidates("99");
+
+        assertThat(candidates).contains("99", "from-sync@naver.com", "from-identity@naver.com");
+    }
+
+    @Test
+    void resolveMembershipLookupCandidates_email_findsLinkedNumericUserId_caseInsensitive() {
+        IdentityUserSyncEntity syncRow = IdentityUserSyncEntity.create(
+                "100",
+                "member@test.com",
+                "n",
+                "USER_SYNC",
+                Instant.parse("2025-01-01T00:00:00Z")
+        );
+        when(identityUserSyncRepository.findByEmailIgnoreCase("member@test.com")).thenReturn(Optional.of(syncRow));
+
+        Set<String> candidates = identityUserSyncService.resolveMembershipLookupCandidates("Member@Test.Com");
+
+        assertThat(candidates).contains("Member@Test.Com", "member@test.com", "100");
     }
 }

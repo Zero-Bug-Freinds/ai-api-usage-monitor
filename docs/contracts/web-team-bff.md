@@ -207,6 +207,11 @@
   - `userId`는 identity 동기화 후보(`email/userId` 등)까지 확장해 검증한다.
 - 내부 사용자 팀 목록 조회용으로 `GET /internal/v1/users/{userId}/teams`를 제공한다.
   - 응답 `data`: `TeamSummaryResponse[]` (`id`, `name`, `createdAt`)
+  - **식별자 정렬(멤버십 조회):** 구현은 `TeamService#getMyTeams` → `resolveLookupCandidates` → `IdentityUserSyncService#resolveMembershipLookupCandidates` 이후 **`team_members`를 `findAllByUserIdIn(후보들)`** 로 조회한다. 따라서 경로 변수 `{userId}`만으로는 부족하고, **DB에 저장된 `team_members.user_id` 형태(이메일 문자열 vs Identity 사용자 ID 숫자 문자열 등)** 와 요청 식별자가 다를 때는 후보 집합에 상대 방식이 포함되어야 행이 매칭된다.
+  - **후보 확장 규칙(요약):** 이메일 형 입력이면 동기화 테이블에서 연결된 `userId`를 추가하고, 비이메일(숫자 ID 문자열 등)이면 `identity_user_sync`의 해당 `user_id` 행 이메일과 **Identity 내부 API** `GET /internal/users/email?userId={userId}` 결과 이메일을 후보에 넣는다(team-service `IdentityUserLookupClient`).
+  - **usage-service 연동:** Usage BFF `GET /api/v1/usage/bff/teams`는 게이트웨이가 넣은 **`X-User-Id`** 를 신뢰 필터로 받아 동일 문자열을 **`GET …/internal/v1/users/{userId}/teams`** 의 `{userId}` 로 전달한다(`TeamServiceClient#fetchUserTeamsInternal`). 경로만 전달되며, 이 내부 호출에는 별도 `X-User-Id` 헤더를 붙이지 않는다.
+  - **빈 목록(`data: []`)이 의심될 때:** `team_members`에는 행이 있는데 응답만 비면, (1) 게이트웨이·Usage가 넘기는 식별자가 멤버십 행의 `user_id`와 다른 형태인지, (2) **`identity_user_sync`** 에 해당 사용자 매핑이 있는지, (3) team-service의 **`identity.service.url`** 이 올바르고 Identity `GET /internal/users/email` 이 성공하는지를 순서대로 확인한다.
+  - **`identity.user.sync` 이벤트:** team-service는 RabbitMQ로 사용자 동기화 메시지를 소비해 `identity_user_sync`를 채운다(큐·바인딩·DTO는 동일 문서 §5의 **identity → team 사용자 동기화 이벤트** 절). **현재 본 저장소의 identity-service에는 동일 라우팅 키로 발행하는 구현이 없으며**, 로컬 캐시가 비어 있는 환경에서는 위 Identity HTTP fallback에 더 의존한다. 발행 측이 추가되면 본 문서와 배포 설정을 함께 갱신한다.
 - Billing 연동용으로 `GET /internal/teams/users/{userId}/billing-summaries`를 제공한다.
   - 응답 목록의 각 팀 항목은 `teamId`, `teamAlias`, `monthlyBudgetUsd`, `monthlyBudgetsByKey`, `apiKeys`를 포함한다.
   - `monthlyBudgetUsd`: 팀 API 키 월 예산 합계(USD)

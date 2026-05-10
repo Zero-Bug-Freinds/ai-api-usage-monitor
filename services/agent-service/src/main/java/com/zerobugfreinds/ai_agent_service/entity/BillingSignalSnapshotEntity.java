@@ -26,6 +26,7 @@ public class BillingSignalSnapshotEntity {
 	private String subjectType;
 
 	private BigDecimal latestEstimatedCostUsd;
+
 	private Instant latestFinalizedAt;
 
 	@Column(length = 80)
@@ -62,22 +63,71 @@ public class BillingSignalSnapshotEntity {
 		this.pricingRuleVersion = pricingRuleVersion;
 	}
 
-	public String getApiKeyId() { return apiKeyId; }
-	public String getUserId() { return userId; }
-	public String getTeamId() { return teamId; }
-	public String getSubjectType() { return subjectType; }
-	public BigDecimal getLatestEstimatedCostUsd() { return latestEstimatedCostUsd; }
-	public Instant getLatestFinalizedAt() { return latestFinalizedAt; }
-	public String getProvider() { return provider; }
-	public String getModel() { return model; }
-	public String getPricingRuleVersion() { return pricingRuleVersion; }
+	public String getApiKeyId() {
+		return apiKeyId;
+	}
 
-	public void setUserId(String userId) { this.userId = userId; }
-	public void setTeamId(String teamId) { this.teamId = teamId; }
-	public void setSubjectType(String subjectType) { this.subjectType = subjectType; }
-	public void setLatestEstimatedCostUsd(BigDecimal latestEstimatedCostUsd) { this.latestEstimatedCostUsd = latestEstimatedCostUsd; }
-	public void setLatestFinalizedAt(Instant latestFinalizedAt) { this.latestFinalizedAt = latestFinalizedAt; }
-	public void setProvider(String provider) { this.provider = provider; }
-	public void setModel(String model) { this.model = model; }
-	public void setPricingRuleVersion(String pricingRuleVersion) { this.pricingRuleVersion = pricingRuleVersion; }
+	public String getUserId() {
+		return userId;
+	}
+
+	public String getTeamId() {
+		return teamId;
+	}
+
+	public String getSubjectType() {
+		return subjectType;
+	}
+
+	public BigDecimal getLatestEstimatedCostUsd() {
+		return latestEstimatedCostUsd;
+	}
+
+	public Instant getLatestFinalizedAt() {
+		return latestFinalizedAt;
+	}
+
+	public String getProvider() {
+		return provider;
+	}
+
+	public String getModel() {
+		return model;
+	}
+
+	public String getPricingRuleVersion() {
+		return pricingRuleVersion;
+	}
+
+	public void setUserId(String userId) {
+		this.userId = userId;
+	}
+
+	public void setTeamId(String teamId) {
+		this.teamId = teamId;
+	}
+
+	public void setSubjectType(String subjectType) {
+		this.subjectType = subjectType;
+	}
+
+	public void setLatestEstimatedCostUsd(BigDecimal latestEstimatedCostUsd) {
+		this.latestEstimatedCostUsd = latestEstimatedCostUsd;
+	}
+
+	public void setLatestFinalizedAt(Instant latestFinalizedAt) {
+		this.latestFinalizedAt = latestFinalizedAt;
+	}
+
+	public void setProvider(String provider) {
+		this.provider = provider;
+	}
+
+	public void setModel(String model) {
+		this.model = model;
+	}
+
+	public void setPricingRuleVersion(String pricingRuleVersion) {
+		this.pricingRuleVersion = pricingRuleVersion;
+	}
 }
