@@ -43,7 +43,8 @@ class ExternalApiKeyStatusChangedEventPublisherTest {
 				"Main key",
 				99L,
 				"OPENAI",
-				ExternalApiKeyStatus.ACTIVE
+				ExternalApiKeyStatus.ACTIVE,
+				"abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"
 		);
 		publisher.onExternalApiKeyStatusChanged(event);
 
@@ -63,6 +64,7 @@ class ExternalApiKeyStatusChangedEventPublisherTest {
 		assertThat(node.get("visibility").asText()).isEqualTo("PRIVATE");
 		assertThat(node.get("provider").asText()).isEqualTo("OPENAI");
 		assertThat(node.get("status").asText()).isEqualTo("ACTIVE");
+		assertThat(node.get("keyHash").asText()).isEqualTo("abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd");
 		assertThat(node.hasNonNull("occurredAt")).isTrue();
 	}
 
@@ -118,7 +120,8 @@ class ExternalApiKeyStatusChangedEventPublisherTest {
 				99L,
 				"OPENAI",
 				ExternalApiKeyStatus.ACTIVE,
-				new BigDecimal("123.45")
+				new BigDecimal("123.45"),
+				"abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"
 		);
 		publisher.onExternalApiKeyBudgetChanged(event);
 
@@ -138,6 +141,7 @@ class ExternalApiKeyStatusChangedEventPublisherTest {
 		assertThat(node.get("visibility").asText()).isEqualTo("PRIVATE");
 		assertThat(node.get("monthlyBudgetUsd").asText()).isEqualTo("123.45");
 		assertThat(node.get("status").asText()).isEqualTo("ACTIVE");
+		assertThat(node.get("keyHash").asText()).isEqualTo("abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd");
 		assertThat(node.hasNonNull("occurredAt")).isTrue();
 	}
 }

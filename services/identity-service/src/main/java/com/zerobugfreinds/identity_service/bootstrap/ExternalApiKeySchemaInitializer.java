@@ -3,6 +3,7 @@ package com.zerobugfreinds.identity_service.bootstrap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
@@ -62,6 +63,45 @@ public class ExternalApiKeySchemaInitializer {
 				alter column retain_usage_logs set not null
 				"""
 		);
+		if (isPostgres()) {
+			ensureUserAliasUniqueConstraint();
+		}
 		log.info("external_api_keys.retain_usage_logs column ensured");
+	}
+
+	private boolean isPostgres() {
+		return Boolean.TRUE.equals(jdbcTemplate.execute((ConnectionCallback<Boolean>) connection ->
+				connection.getMetaData().getDatabaseProductName().toLowerCase().contains("postgresql")
+		));
+	}
+
+	private void ensureUserAliasUniqueConstraint() {
+		jdbcTemplate.execute(
+				"""
+				do $$
+				begin
+				  if not exists (
+				    select 1
+				    from pg_constraint c
+				    join pg_class t on c.conrelid = t.oid
+				    where t.relname = 'external_api_keys'
+				      and c.conname = 'uk_external_api_keys_user_alias'
+				  ) then
+				    if exists (
+				      select 1
+				      from external_api_keys e
+				      group by e.user_id, e.key_alias
+				      having count(*) > 1
+				    ) then
+				      raise warning 'skip unique constraint uk_external_api_keys_user_alias due to duplicate rows';
+				    else
+				      alter table external_api_keys
+				        add constraint uk_external_api_keys_user_alias
+				        unique (user_id, key_alias);
+				    end if;
+				  end if;
+				end $$;
+				"""
+		);
 	}
 }

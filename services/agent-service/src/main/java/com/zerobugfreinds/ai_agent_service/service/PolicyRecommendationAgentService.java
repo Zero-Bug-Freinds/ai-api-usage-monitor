@@ -9,6 +9,10 @@ import com.zerobugfreinds.ai_agent_service.dto.RecommendationQueryResponse;
 import com.zerobugfreinds.ai_agent_service.dto.RecommendationLevel;
 import com.zerobugfreinds.ai_agent_service.dto.RecommendationReasonCode;
 import com.zerobugfreinds.ai_agent_service.dto.RecommendationScopeType;
+import com.zerobugfreinds.ai_agent_service.entity.RecommendationSnapshotEntity;
+import com.zerobugfreinds.ai_agent_service.repository.RecommendationSnapshotRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -40,13 +44,15 @@ public class PolicyRecommendationAgentService {
 			"OPENAI", "ANTHROPIC", "GOOGLE", "META", "MISTRAL", "COHERE"
 	);
 
-	private final Map<RecommendationCacheKey, RecommendationQueryResponse> recommendationStore = new ConcurrentHashMap<>();
 	private final BillingSignalSnapshotService billingSignalSnapshotService;
 	private final ExternalModelCatalogService externalModelCatalogService;
 	private final DailyCumulativeTokenSnapshotService dailyCumulativeTokenSnapshotService;
 	private final UsagePredictionSignalSnapshotService usagePredictionSignalSnapshotService;
 	private final UsageRecordedTokenRollupService usageRecordedTokenRollupService;
 	private final RecommendationGeminiService recommendationGeminiService;
+	private final RecommendationSnapshotRepository recommendationSnapshotRepository;
+	private final ObjectMapper objectMapper;
+	private final Map<RecommendationCacheKey, RecommendationQueryResponse> recommendationStore = new ConcurrentHashMap<>();
 
 	public PolicyRecommendationAgentService(
 			BillingSignalSnapshotService billingSignalSnapshotService,
@@ -54,7 +60,9 @@ public class PolicyRecommendationAgentService {
 			DailyCumulativeTokenSnapshotService dailyCumulativeTokenSnapshotService,
 			UsagePredictionSignalSnapshotService usagePredictionSignalSnapshotService,
 			UsageRecordedTokenRollupService usageRecordedTokenRollupService,
-			RecommendationGeminiService recommendationGeminiService
+			RecommendationGeminiService recommendationGeminiService,
+			RecommendationSnapshotRepository recommendationSnapshotRepository,
+			ObjectMapper objectMapper
 	) {
 		this.billingSignalSnapshotService = billingSignalSnapshotService;
 		this.externalModelCatalogService = externalModelCatalogService;
@@ -62,6 +70,8 @@ public class PolicyRecommendationAgentService {
 		this.usagePredictionSignalSnapshotService = usagePredictionSignalSnapshotService;
 		this.usageRecordedTokenRollupService = usageRecordedTokenRollupService;
 		this.recommendationGeminiService = recommendationGeminiService;
+		this.recommendationSnapshotRepository = recommendationSnapshotRepository;
+		this.objectMapper = objectMapper;
 	}
 
 	public PolicyRecommendationResponse recommend(PolicyRecommendationRequest request) {
@@ -261,7 +271,7 @@ public class PolicyRecommendationAgentService {
 								.toList()
 				)
 		);
-		recommendationStore.put(new RecommendationCacheKey(request.scopeType(), request.scopeId(), request.keyId()), queryResponse);
+		persistSnapshot(queryResponse, request.scopeType(), request.scopeId(), request.keyId());
 		return event;
 	}
 
@@ -422,10 +432,7 @@ public class PolicyRecommendationAgentService {
 									.toList()
 					)
 			);
-			recommendationStore.put(
-					new RecommendationCacheKey(draft.request().scopeType(), draft.request().scopeId(), draft.request().keyId()),
-					queryResponse
-			);
+			persistSnapshot(queryResponse, draft.request().scopeType(), draft.request().scopeId(), draft.request().keyId());
 			responses.put(draft.request().keyId(), queryResponse);
 		}
 		return responses;
@@ -436,9 +443,9 @@ public class PolicyRecommendationAgentService {
 			String scopeId,
 			String keyId
 	) {
-		RecommendationQueryResponse response = recommendationStore.get(new RecommendationCacheKey(scopeType, scopeId, keyId));
-		if (response != null) {
-			return response;
+		RecommendationQueryResponse persisted = findPersistedRecommendation(scopeType, scopeId, keyId);
+		if (persisted != null) {
+			return persisted;
 		}
 		return new RecommendationQueryResponse(
 				keyId,
@@ -448,6 +455,51 @@ public class PolicyRecommendationAgentService {
 				new RecommendationQueryResponse.MetricsContext(0, 0L, "0:0", 0L, 0L),
 				null
 		);
+	}
+
+	private void persistSnapshot(
+			RecommendationQueryResponse response,
+			RecommendationScopeType scopeType,
+			String scopeId,
+			String keyId
+	) {
+		String payloadJson;
+		try {
+			payloadJson = objectMapper.writeValueAsString(response);
+		} catch (JsonProcessingException e) {
+			throw new IllegalStateException("RECOMMENDATION_PROJECTION_SERIALIZATION_FAILED", e);
+		}
+
+		recommendationSnapshotRepository.save(
+				new RecommendationSnapshotEntity(
+						scopeType,
+						scopeId,
+						keyId,
+						response.status(),
+						response.generatedAt(),
+						payloadJson,
+						Instant.now()
+				)
+		);
+	}
+
+	private RecommendationQueryResponse findPersistedRecommendation(
+			RecommendationScopeType scopeType,
+			String scopeId,
+			String keyId
+	) {
+		return recommendationSnapshotRepository
+				.findFirstByScopeTypeAndScopeIdAndKeyIdOrderByGeneratedAtDesc(scopeType, scopeId, keyId)
+				.map(this::deserializeSnapshot)
+				.orElse(null);
+	}
+
+	private RecommendationQueryResponse deserializeSnapshot(RecommendationSnapshotEntity entity) {
+		try {
+			return objectMapper.readValue(entity.getPayloadJson(), RecommendationQueryResponse.class);
+		} catch (JsonProcessingException e) {
+			throw new IllegalStateException("RECOMMENDATION_PROJECTION_DESERIALIZATION_FAILED", e);
+		}
 	}
 
 	private static BigDecimal calculateUtilizationPercent(BigDecimal spendUsd, BigDecimal budgetUsd) {
@@ -617,13 +669,16 @@ public class PolicyRecommendationAgentService {
 						request.scopeType().name(),
 						request.scopeId()
 				);
-		if (rollupSummary.totalInputTokens() > 0 || rollupSummary.totalOutputTokens() > 0) {
+		if (rollupSummary.totalInputTokens() > 0
+				|| rollupSummary.totalOutputTokens() > 0
+				|| rollupSummary.totalReasoningTokens() > 0) {
 			RecommendationConfidenceLevel confidence = rollupSummary.totalRequests() >= 5
 					? RecommendationConfidenceLevel.MEDIUM
 					: RecommendationConfidenceLevel.LOW;
+			long totalOutputTokens = rollupSummary.totalOutputTokens() + rollupSummary.totalReasoningTokens();
 			return new UsageProfile(
 					rollupSummary.totalInputTokens(),
-					rollupSummary.totalOutputTokens(),
+					totalOutputTokens,
 					rollupSummary.averageLatencyMs(),
 					confidence,
 					rollupSummary.totalRequests()
@@ -837,13 +892,6 @@ public class PolicyRecommendationAgentService {
 				.orElse(null);
 	}
 
-	private record RecommendationCacheKey(
-			RecommendationScopeType scopeType,
-			String scopeId,
-			String keyId
-	) {
-	}
-
 	private record CandidateCost(
 			String provider,
 			String modelName,
@@ -875,6 +923,13 @@ public class PolicyRecommendationAgentService {
 			String reasonMessage,
 			RecommendationConfidenceLevel confidenceLevel,
 			String disclaimer
+	) {
+	}
+
+	private record RecommendationCacheKey(
+			RecommendationScopeType scopeType,
+			String scopeId,
+			String keyId
 	) {
 	}
 

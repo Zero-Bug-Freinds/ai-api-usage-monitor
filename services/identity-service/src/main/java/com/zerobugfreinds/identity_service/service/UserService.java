@@ -1,7 +1,10 @@
 package com.zerobugfreinds.identity_service.service;
 
+import com.zerobugfreinds.identity_service.dto.InternalUserPrincipalResponse;
+import com.zerobugfreinds.identity_service.dto.ProfileUpdateResponse;
 import com.zerobugfreinds.identity_service.dto.SignupRequest;
 import com.zerobugfreinds.identity_service.dto.SignupResponse;
+import com.zerobugfreinds.identity_service.dto.UpdateProfileRequest;
 import com.zerobugfreinds.identity_service.dto.LoginRequest;
 import com.zerobugfreinds.identity_service.dto.TokenResponse;
 import com.zerobugfreinds.identity_service.entity.User;
@@ -12,8 +15,10 @@ import com.zerobugfreinds.identity_service.exception.InvalidSignupRequestExcepti
 import com.zerobugfreinds.identity_service.repository.RefreshTokenRepository;
 import com.zerobugfreinds.identity_service.repository.UserRepository;
 import com.zerobugfreinds.identity_service.security.JwtTokenProvider;
+import com.zerobugfreinds.identity_service.mq.IdentityUserSyncEventPublisher;
+import com.zerobugfreinds.identity.events.IdentityUserSyncEvent;
+import com.zerobugfreinds.identity.events.IdentityUserSyncEventTypes;
 import com.zerobugfreinds.identity.events.UserContextChangedEvent;
-import io.jsonwebtoken.Claims;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -25,6 +30,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import jakarta.mail.internet.AddressException;
+import jakarta.mail.internet.InternetAddress;
+
 import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -45,6 +53,7 @@ public class UserService {
 	private final JwtTokenProvider jwtTokenProvider;
 	private final TeamMembershipVerificationClient teamMembershipVerificationClient;
 	private final ApplicationEventPublisher applicationEventPublisher;
+	private final IdentityUserSyncEventPublisher identityUserSyncEventPublisher;
 
 	public UserService(
 			UserRepository userRepository,
@@ -52,7 +61,8 @@ public class UserService {
 			PasswordEncoder passwordEncoder,
 			JwtTokenProvider jwtTokenProvider,
 			TeamMembershipVerificationClient teamMembershipVerificationClient,
-			ApplicationEventPublisher applicationEventPublisher
+			ApplicationEventPublisher applicationEventPublisher,
+			IdentityUserSyncEventPublisher identityUserSyncEventPublisher
 	) {
 		this.userRepository = userRepository;
 		this.refreshTokenRepository = refreshTokenRepository;
@@ -60,6 +70,7 @@ public class UserService {
 		this.jwtTokenProvider = jwtTokenProvider;
 		this.teamMembershipVerificationClient = teamMembershipVerificationClient;
 		this.applicationEventPublisher = applicationEventPublisher;
+		this.identityUserSyncEventPublisher = identityUserSyncEventPublisher;
 	}
 
 	/**
@@ -86,7 +97,78 @@ public class UserService {
 		} catch (DataIntegrityViolationException ex) {
 			throw new DuplicateEmailException("이미 사용 중인 이메일입니다");
 		}
+		identityUserSyncEventPublisher.publishAfterCommit(
+				IdentityUserSyncEvent.of(
+						IdentityUserSyncEventTypes.USER_REGISTERED,
+						saved.getId(),
+						saved.getEmail(),
+						saved.getName(),
+						Instant.now()
+				)
+		);
 		return new SignupResponse(saved.getId(), saved.getEmail(), saved.getName(), saved.getRole());
+	}
+
+	/**
+	 * 이메일·표시 이름 갱신 후 team-service 동기화용 {@code USER_PROFILE_UPDATED} 를 커밋 이후 발행한다.
+	 */
+	@Transactional
+	public ProfileUpdateResponse updateProfile(Long userId, UpdateProfileRequest request) {
+		String rawEmail = request.email() != null ? request.email().trim() : "";
+		String rawName = request.name() != null ? request.name().trim() : "";
+		if (rawEmail.isEmpty() && rawName.isEmpty()) {
+			throw new InvalidSignupRequestException("변경할 이메일 또는 이름을 입력해 주세요");
+		}
+
+		User user = userRepository.findById(userId)
+				.orElseThrow(() -> new InvalidCredentialsException("사용자 정보를 찾을 수 없습니다"));
+
+		boolean changed = false;
+		if (!rawEmail.isEmpty()) {
+			String normalizedEmail = normalizeEmail(rawEmail);
+			assertValidProfileEmail(normalizedEmail);
+			if (!normalizedEmail.equalsIgnoreCase(user.getEmail())) {
+				userRepository.findByEmailIgnoreCase(normalizedEmail)
+						.filter(other -> !other.getId().equals(userId))
+						.ifPresent(other -> {
+							throw new DuplicateEmailException("이미 사용 중인 이메일입니다");
+						});
+				user.setEmail(normalizedEmail);
+				changed = true;
+			}
+		}
+		if (!rawName.isEmpty() && !rawName.equals(user.getName())) {
+			user.setName(rawName);
+			changed = true;
+		}
+
+		if (changed) {
+			try {
+				userRepository.save(user);
+			} catch (DataIntegrityViolationException ex) {
+				throw new DuplicateEmailException("이미 사용 중인 이메일입니다");
+			}
+			identityUserSyncEventPublisher.publishAfterCommit(
+					IdentityUserSyncEvent.of(
+							IdentityUserSyncEventTypes.USER_PROFILE_UPDATED,
+							user.getId(),
+							user.getEmail(),
+							user.getName(),
+							Instant.now()
+					)
+			);
+		}
+
+		return new ProfileUpdateResponse(user.getId(), user.getEmail(), user.getName(), user.getRole());
+	}
+
+	private static void assertValidProfileEmail(String normalizedEmail) {
+		try {
+			InternetAddress addr = new InternetAddress(normalizedEmail, false);
+			addr.validate();
+		} catch (AddressException ex) {
+			throw new InvalidSignupRequestException("유효한 이메일 형식이 아닙니다");
+		}
 	}
 
 	private void validateSignupRequest(SignupRequest request) {
@@ -149,6 +231,28 @@ public class UserService {
 		return userRepository.existsByEmailIgnoreCase(normalizeEmail(email));
 	}
 
+	/**
+	 * 내부 서비스(team 프록시 멤버십 등)용: 이메일 또는 숫자 user id 문자열로 동일 사용자의 id·이메일을 조회한다.
+	 */
+	@Transactional(readOnly = true)
+	public Optional<InternalUserPrincipalResponse> resolvePrincipalForInternalLookup(String raw) {
+		if (raw == null || raw.isBlank()) {
+			return Optional.empty();
+		}
+		String t = raw.trim();
+		if (t.contains("@")) {
+			return userRepository.findByEmailIgnoreCase(normalizeEmail(t))
+					.map(u -> new InternalUserPrincipalResponse(String.valueOf(u.getId()), normalizeEmail(u.getEmail())));
+		}
+		try {
+			Long id = Long.parseLong(t);
+			return userRepository.findById(id)
+					.map(u -> new InternalUserPrincipalResponse(String.valueOf(u.getId()), normalizeEmail(u.getEmail())));
+		} catch (NumberFormatException ex) {
+			return Optional.empty();
+		}
+	}
+
 	@Transactional(readOnly = true)
 	public Set<String> findExistingUserIds(List<String> rawUserIds) {
 		if (rawUserIds == null || rawUserIds.isEmpty()) {
@@ -207,12 +311,24 @@ public class UserService {
 	}
 
 	private TokenResponse issueTokenPair(User user, Long activeTeamId) {
+		boolean firstSession = refreshTokenRepository.countByUserId(user.getId()) == 0;
 		String accessToken = jwtTokenProvider.createAccessToken(user, activeTeamId);
 		String refreshToken = jwtTokenProvider.createRefreshToken(user, activeTeamId);
 		replaceRefreshToken(user.getId(), refreshToken, activeTeamId);
 		applicationEventPublisher.publishEvent(
 				UserContextChangedEvent.of(user.getId(), activeTeamId, user.getRole().name())
 		);
+		if (firstSession) {
+			identityUserSyncEventPublisher.publishAfterCommit(
+					IdentityUserSyncEvent.of(
+							IdentityUserSyncEventTypes.USER_FIRST_LOGIN_RECORDED,
+							user.getId(),
+							user.getEmail(),
+							user.getName(),
+							Instant.now()
+					)
+			);
+		}
 		return new TokenResponse(
 				accessToken,
 				refreshToken,

@@ -23,9 +23,9 @@ function asApiResponse(json: unknown): ApiResponse<unknown> | null {
 }
 
 function providerLabel(provider: ExternalKeyProvider) {
-  if (provider === "OPENAI") return "OpenAI"
-  if (provider === "GOOGLE") return "Google"
-  return "Anthropic"
+  if (provider === "OPENAI") return "OPENAI"
+  if (provider === "GOOGLE") return "GOOGLE"
+  return "ANTHROPIC"
 }
 
 function defaultAlias(provider: ExternalKeyProvider) {

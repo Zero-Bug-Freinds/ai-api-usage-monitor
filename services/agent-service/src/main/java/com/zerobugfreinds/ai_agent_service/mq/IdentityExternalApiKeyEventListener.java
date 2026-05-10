@@ -30,9 +30,7 @@ import java.util.Map;
 public class IdentityExternalApiKeyEventListener {
 
 	private static final Logger log = LoggerFactory.getLogger(IdentityExternalApiKeyEventListener.class);
-	private static final String EXTERNAL_API_KEY_STATUS_CHANGED = "EXTERNAL_API_KEY_STATUS_CHANGED";
 	private static final String EXTERNAL_API_KEY_BUDGET_CHANGED = "EXTERNAL_API_KEY_BUDGET_CHANGED";
-	private static final String EXTERNAL_API_KEY_DELETED = "EXTERNAL_API_KEY_DELETED";
 
 	private final ObjectMapper objectMapper;
 	private final IdentityApiKeySnapshotService snapshotService;
@@ -54,49 +52,39 @@ public class IdentityExternalApiKeyEventListener {
 			String json = new String(message.getBody(), StandardCharsets.UTF_8);
 			JsonNode root = objectMapper.readTree(json);
 			Map<String, String> headers = toStringHeaders(message);
-			JsonNode payloadNode = extractPayloadNode(root);
-			// 리스너에서 한 줄 추가 예시: eventDebugService.record(eventType, headers, json);
-			if (root.has("eventType")) {
-				String eventType = root.get("eventType").asText("");
-				eventDebugService.record(eventType, headers, json);
-				if (EXTERNAL_API_KEY_STATUS_CHANGED.equals(eventType)) {
-					ExternalApiKeyStatusChangedEvent changed =
-							objectMapper.treeToValue(payloadNode, ExternalApiKeyStatusChangedEvent.class);
-					snapshotService.upsertStatus(changed);
-					return;
-				}
-				if (isDeletedEventType(eventType)) {
-					ExternalApiKeyDeletedEvent deleted = parseDeletedEvent(payloadNode);
-					snapshotService.delete(deleted);
-					return;
-				}
-				if (isBudgetChangedEventType(eventType)) {
-					ExternalApiKeyBudgetChangedEvent budgetChanged = parseBudgetChangedEvent(payloadNode);
-					snapshotService.upsertBudget(budgetChanged);
-					return;
-				}
-			}
-			if (payloadNode.has("monthlyBudgetUsd") && payloadNode.has("keyId")) {
-				eventDebugService.record("ExternalApiKeyBudgetChangedEvent", headers, json);
-				ExternalApiKeyBudgetChangedEvent budgetChanged = parseBudgetChangedEvent(payloadNode);
-				snapshotService.upsertBudget(budgetChanged);
-				return;
-			}
-			if ((payloadNode.has("apiKeyId") || payloadNode.has("keyId")) && payloadNode.has("userId") && payloadNode.has("retainLogs")) {
-				eventDebugService.record("ExternalApiKeyDeletedEvent", headers, json);
-				ExternalApiKeyDeletedEvent deleted = parseDeletedEvent(payloadNode);
+
+			// 1) Physical delete — mirror usage-service ExternalApiKeyStatusChangedEventListener
+			if (root.has("eventType")
+					&& IdentityExternalApiKeyEventTypes.EXTERNAL_API_KEY_DELETED.equals(root.get("eventType").asText())) {
+				eventDebugService.record(IdentityExternalApiKeyEventTypes.EXTERNAL_API_KEY_DELETED, headers, json);
+				ExternalApiKeyDeletedEvent deleted = parseDeletedEvent(root);
 				snapshotService.delete(deleted);
 				return;
 			}
-			if (payloadNode.has("schemaVersion") && payloadNode.has("keyId")) {
+
+			// 2) Budget — agent snapshots persist monthlyBudgetUsd (usage metadata does not). Must precede schemaVersion
+			// because budget payloads also include schemaVersion.
+			if (root.has("eventType") && isBudgetChangedEventType(root.get("eventType").asText())) {
+				eventDebugService.record(root.get("eventType").asText(), headers, json);
+				ExternalApiKeyBudgetChangedEvent budgetChanged =
+						objectMapper.readValue(json, ExternalApiKeyBudgetChangedEvent.class);
+				snapshotService.upsertBudget(budgetChanged);
+				return;
+			}
+
+			// 3) Status / alias — same branch as usage-service (flat ExternalApiKeyStatusChangedEvent from Identity)
+			if (root.has("schemaVersion")) {
 				eventDebugService.record("ExternalApiKeyStatusChangedEvent", headers, json);
 				ExternalApiKeyStatusChangedEvent changed =
-						objectMapper.treeToValue(payloadNode, ExternalApiKeyStatusChangedEvent.class);
+						objectMapper.readValue(json, ExternalApiKeyStatusChangedEvent.class);
 				snapshotService.upsertStatus(changed);
 				return;
 			}
+
 			eventDebugService.record("UNKNOWN_IDENTITY_EVENT", headers, json);
-			log.warn("Unrecognized identity external API key event payload");
+			log.warn(
+					"Unrecognized identity external API key event payload (expected eventType={} or schemaVersion)",
+					IdentityExternalApiKeyEventTypes.EXTERNAL_API_KEY_DELETED);
 		} catch (Exception ex) {
 			String messageId = message.getMessageProperties().getMessageId();
 			log.error("Failed to handle identity external API key event. messageId={}", messageId, ex);
@@ -110,24 +98,10 @@ public class IdentityExternalApiKeyEventListener {
 		return headers;
 	}
 
-	private static JsonNode extractPayloadNode(JsonNode root) {
-		JsonNode data = root.get("data");
-		if (data != null && data.isObject()) {
-			return data;
-		}
-		return root;
-	}
-
 	private static boolean isBudgetChangedEventType(String eventType) {
 		return IdentityExternalApiKeyEventTypes.EXTERNAL_API_KEY_BUDGET_CHANGED.equals(eventType)
 				|| EXTERNAL_API_KEY_BUDGET_CHANGED.equals(eventType)
 				|| "ExternalApiKeyBudgetChangedEvent".equals(eventType);
-	}
-
-	private static boolean isDeletedEventType(String eventType) {
-		return IdentityExternalApiKeyEventTypes.EXTERNAL_API_KEY_DELETED.equals(eventType)
-				|| EXTERNAL_API_KEY_DELETED.equals(eventType)
-				|| "ExternalApiKeyDeletedEvent".equals(eventType);
 	}
 
 	private ExternalApiKeyDeletedEvent parseDeletedEvent(JsonNode payloadNode) throws Exception {
@@ -137,9 +111,5 @@ public class IdentityExternalApiKeyEventListener {
 			}
 		}
 		return objectMapper.treeToValue(payloadNode, ExternalApiKeyDeletedEvent.class);
-	}
-
-	private ExternalApiKeyBudgetChangedEvent parseBudgetChangedEvent(JsonNode payloadNode) throws Exception {
-		return objectMapper.treeToValue(payloadNode, ExternalApiKeyBudgetChangedEvent.class);
 	}
 }

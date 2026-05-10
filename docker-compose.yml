@@ -142,6 +142,28 @@ services:
       retries: 10
       start_period: 10s
 
+  postgres-agent:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+      AGENT_POSTGRES_DB: ${AGENT_POSTGRES_DB:-agent_db}
+      AGENT_POSTGRES_USER: ${AGENT_POSTGRES_USER:-agent_app}
+      AGENT_POSTGRES_PASSWORD: ${AGENT_POSTGRES_PASSWORD:-agent_app}
+    ports:
+      - "${AGENT_POSTGRES_PORT:-5437}:5432"
+    volumes:
+      - postgres_agent_data:/var/lib/postgresql/data
+      - ./docker/postgres/init/05-create-agent-db.sh:/docker-entrypoint-initdb.d/05-create-agent-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
   rabbitmq:
     image: rabbitmq:3-management-alpine
     restart: unless-stopped
@@ -213,6 +235,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-app}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
       JWT_SECRET: ${GATEWAY_JWT_SECRET:-change-this-secret-key-to-at-least-32-bytes}
+      TEAM_SERVICE_INTERNAL_URL: ${TEAM_SERVICE_INTERNAL_URL:-http://team-service:8093}
+      # team-service `team.internal.api-token` 과 동일 값 권장 (루트 .env 의 PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN)
+      IDENTITY_TEAM_SERVICE_INTERNAL_API_TOKEN: ${PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN:-change-this-team-internal-api-token}
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_PORT: 5672
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
@@ -228,10 +253,17 @@ services:
       context: .
       dockerfile: services/agent-service/Dockerfile
     depends_on:
+      postgres-agent:
+        condition: service_healthy
       rabbitmq:
         condition: service_healthy
     environment:
       AI_AGENT_SERVICE_PORT: 8096
+      AGENT_POSTGRES_HOST: postgres-agent
+      AGENT_POSTGRES_PORT: 5432
+      AGENT_POSTGRES_DB: ${AGENT_POSTGRES_DB:-agent_db}
+      AGENT_POSTGRES_USER: ${AGENT_POSTGRES_USER:-agent_app}
+      AGENT_POSTGRES_PASSWORD: ${AGENT_POSTGRES_PASSWORD:-agent_app}
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_PORT: 5672
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
@@ -311,7 +343,8 @@ services:
       SPRING_PROFILES_ACTIVE: docker
       PROXY_KEY_SERVICE_BASE_URL: ${PROXY_KEY_SERVICE_BASE_URL:-http://identity-service:8080}
       PROXY_TEAM_KEY_SERVICE_BASE_URL: ${PROXY_TEAM_KEY_SERVICE_BASE_URL:-http://team-service:8093}
-      PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN: ${PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN:-}
+      # proxy.jar 수정 없이 Spring 이 기존 설정으로 읽음 — team-service 내부 토큰과 동일해야 함
+      PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN: ${PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN:-change-this-team-internal-api-token}
       PROXY_OPENAI_TEST_API_KEY: ${PROXY_OPENAI_TEST_API_KEY:-}
       PROXY_GOOGLE_TEST_API_KEY: ${PROXY_GOOGLE_TEST_API_KEY:-}
       PROXY_MOCK_KEY_FALLBACK: ${PROXY_MOCK_KEY_FALLBACK:-}
@@ -493,7 +526,7 @@ services:
       IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
       SECURITY_JWT_SECRET: ${JWT_SECRET:-change-this-secret-key-to-at-least-32-bytes}
       TEAM_API_KEY_ENCRYPTION_SECRET: ${TEAM_API_KEY_ENCRYPTION_SECRET:-change-this-team-api-key-encryption-secret-min-32-chars}
-      PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN: ${PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN:-}
+      PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN: ${PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN:-change-this-team-internal-api-token}
       TEAM_SERVICE_PORT: 8093
     depends_on:
       postgres-team:
@@ -560,3 +593,4 @@ volumes:
   postgres_usage_data:
   postgres_billing_data:
   postgres_notification_data:
+  postgres_agent_data:

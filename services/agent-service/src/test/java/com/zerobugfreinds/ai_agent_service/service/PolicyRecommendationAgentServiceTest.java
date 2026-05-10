@@ -1,8 +1,10 @@
 package com.zerobugfreinds.ai_agent_service.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zerobugfreinds.ai_agent_service.dto.PolicyRecommendationRequest;
 import com.zerobugfreinds.ai_agent_service.dto.PolicyRecommendationResponse;
 import com.zerobugfreinds.ai_agent_service.dto.RecommendationLevel;
+import com.zerobugfreinds.ai_agent_service.repository.RecommendationSnapshotRepository;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -20,7 +22,9 @@ class PolicyRecommendationAgentServiceTest {
 				mock(DailyCumulativeTokenSnapshotService.class),
 				mock(UsagePredictionSignalSnapshotService.class),
 				mock(UsageRecordedTokenRollupService.class),
-				mock(RecommendationGeminiService.class)
+				mock(RecommendationGeminiService.class),
+				mock(RecommendationSnapshotRepository.class),
+				new ObjectMapper()
 		);
 		PolicyRecommendationRequest request = new PolicyRecommendationRequest(
 				"user@test.com",

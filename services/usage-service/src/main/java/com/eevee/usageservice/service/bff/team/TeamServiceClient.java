@@ -69,6 +69,12 @@ public class TeamServiceClient {
         if (cached != null) {
             return cached;
         }
+        log.debug(
+                "fetchUserTeams primaryUserId={} fallbackUserId={} cacheKey={}",
+                primaryRequester,
+                fallbackRequester,
+                cacheKey
+        );
         List<TeamSummaryClientItem> result = List.of();
         try {
             result = callWithCircuitBreaker(() -> fetchUserTeamsInternal(primaryRequester));
@@ -155,6 +161,7 @@ public class TeamServiceClient {
     }
 
     private List<TeamSummaryClientItem> fetchUserTeamsInternal(String requesterUserId) {
+        log.debug("team-service request GET /internal/v1/users/{}/teams", requesterUserId);
         JsonNode root = restClient.get()
                 .uri("/internal/v1/users/{userId}/teams", requesterUserId)
                 .accept(MediaType.APPLICATION_JSON)

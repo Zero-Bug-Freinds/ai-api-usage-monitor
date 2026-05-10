@@ -76,6 +76,7 @@ public class TeamApiKeyStatusEventListener {
 							asText(root, "provider"),
 							asText(root, "status"),
 							asBoolean(root, "retainLogs"),
+							asText(root, "keyHash"),
 							occurredAt
 					)
 			);

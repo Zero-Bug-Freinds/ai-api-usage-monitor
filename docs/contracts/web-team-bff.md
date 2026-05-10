@@ -1,7 +1,7 @@
 # Web(Next.js) ↔ Team Service BFF 계약
 
-버전: 0.13  
-관련: [web-split-boundary.md](./web-split-boundary.md), [web-identity-bff.md](./web-identity-bff.md) — `/teams` UI 소유·경로: §2.3
+버전: 0.15  
+관련: [web-split-boundary.md](./web-split-boundary.md), [web-identity-bff.md](./web-identity-bff.md) — `/teams` UI 소유·경로: §2.3, [identity-auth-api-contract.md](../identity-auth-api-contract.md) §14(Identity → Team 사용자 동기화 MQ)
 
 ---
 
@@ -64,7 +64,7 @@
   - `PUT /api/v1/teams/{teamId}/api-keys/{keyId}` (별칭·예산 등 수정)
   - `POST /api/v1/teams/{teamId}/api-keys/{keyId}/deletion/cancel` (삭제 예정 해제)
 - 팀원 초대 시 Team Service는 아래 순서로 사용자 존재 여부를 확인한다.
-  1) `identity_user_sync` 로컬 캐시(`IdentityUserSyncListener`가 RabbitMQ로 수신한 사용자 동기화 이벤트 기반)
+  1) `identity_user_sync` 로컬 캐시(identity-service가 RabbitMQ로 발행한 사용자 동기화 이벤트를 `IdentityUserSyncListener`가 수신해 반영)
   2) Identity 내부 API fallback (`GET /internal/users/exists?email=...` 또는 user-id 일괄 확인)
   → 둘 다 실패/미존재면 초대를 거부한다.
 - 팀 API Key는 Team Service DB에 **평문 저장하지 않고 암호화 저장**한다.
@@ -80,17 +80,6 @@
 - 존재하지 않는 아이디(이메일)이면 Team Service는 초대를 거부한다.
 - Identity 연동 실패(네트워크/5xx/비정상 응답) 시 안전하게 초대를 거부한다.
 - Team Service는 사용자 전체 프로필을 복제하지 않고, 존재성 판단에 필요한 최소 필드만 `identity_user_sync` 테이블에 저장한다(`userId`, `email`, `displayName`, `lastEventType`, `updatedAt`).
-
-### 5.2 identity → team 사용자 동기화 이벤트
-
-- Queue/Binding 설정 정본:
-  - `identity.user-sync.exchange` (기본 `identity.events`)
-  - `identity.user-sync.routing-key` (기본 `identity.user.sync`)
-  - `identity.user-sync.queue` (기본 `team.identity.user-sync.queue`)
-- 리스너: `IdentityUserSyncListener` (`@RabbitListener`)
-- DTO: `IdentityUserSyncEvent`
-  - `@JsonAlias`로 필드명 변형(`eventType/type`, `userId/identityUserId/id`, `email/userEmail`, `name/displayName/username`, `occurredAt/createdAt/updatedAt`)을 허용한다.
-- 장애 분석을 위해 리스너는 실패 시 payload 원문과 stacktrace를 함께 기록한다.
 
 ### 5.1 실패 응답 예시
 
@@ -109,7 +98,28 @@
   - `409` (`success=false`): 팀 API Key가 남아 있어 삭제 선행조건 미충족
   - `404` (`success=false`): 대상 팀이 존재하지 않는 경우
 
-### 5.2 팀 초대·수락/거절/만료 (현행 구현)
+### 5.2 identity → team 사용자 동기화 (RabbitMQ)
+
+- **목적:** 숫자 플랫폼 `userId`와 이메일 식별자를 team 도메인에서 동일 사용자로 해석할 수 있도록 `identity_user_sync` 행을 유지한다.
+- **발행(identity-service)**
+  - Exchange: Topic **`identity.events`** (기본값).
+  - Routing key: **`identity.user.sync`** (`libs/identity-events`의 `IdentityUserSyncRoutingKeys.USER_SYNC`).
+  - Spring 설정 키(기본값이 team-service와 동일해야 한다):
+    - `identity.user-sync.exchange` → 환경 변수 **`IDENTITY_USER_SYNC_EVENT_EXCHANGE`**
+    - `identity.user-sync.routing-key` → 환경 변수 **`IDENTITY_USER_SYNC_EVENT_ROUTING_KEY`**
+  - 구현: `IdentityUserSyncEventPublisher` — 일반 경로는 DB 커밋 후 RabbitMQ로 전송(`@TransactionalEventListener` AFTER_COMMIT, 비트랜잭션 시 `fallbackExecution=true`). 백필·운영 재처리는 **`publishImmediately()`** 로 동일 exchange/routing key에 JSON을 보낸다.
+  - **페이로드 정본:** `libs/identity-events`의 **`IdentityUserSyncEvent`** (JSON: `eventType`, `userId`, `email`, `name`, `occurredAt`). 수신 측 호환을 위해 `@JsonAlias`로 `type`, `identityUserId`/`id`, `userEmail`, `displayName`/`username`, `createdAt`/`updatedAt` 등 변형 필드명을 허용한다.
+  - **`IdentityUserSyncEventTypes`:** `USER_REGISTERED`(가입 완료), `USER_FIRST_LOGIN_RECORDED`(해당 사용자의 **첫** 리프레시 토큰 발급·첫 세션에 해당), `USER_PROFILE_UPDATED`(이메일·표시명 변경용; identity에 프로필 변경 API가 붙으면 동일 스키마로 발행), `USER_SYNC_BACKFILL`(일괄 백필·재발행).
+- **소비(team-service)**
+  - Queue/Binding 정본:
+    - `identity.user-sync.exchange` (기본 `identity.events`)
+    - `identity.user-sync.routing-key` (기본 `identity.user.sync`)
+    - `identity.user-sync.queue` (기본 `team.identity.user-sync.queue`)
+  - `IdentityUserSyncListener` (`@RabbitListener`) → `IdentityUserSyncService`가 payload를 역직렬화해 `identity_user_sync`를 upsert한다.
+- **기존 사용자 백필:** 타 DB에 JDBC로 직접 이관하지 않고, identity가 MQ로 이벤트를 재발행해 team이 적재하는 방식을 권장한다. **`POST /internal/users/sync-events/publish-all`** (identity-service)가 전 사용자에 대해 `USER_SYNC_BACKFILL`을 `publishImmediately`로 발행한다. 응답 `data`는 발행 건수(정수). 이 경로는 **`/internal/users/**`** 노출 정책에 포함되므로 운영에서는 네트워크·게이트웨이에서 내부 전용으로 제한할 것(`SecurityConfig`는 로컬 편의상 해당 패턴을 허용할 수 있음).
+- 장애 분석을 위해 리스너는 실패 시 payload 원문과 stacktrace를 함께 기록한다.
+
+### 5.3 팀 초대·수락/거절/만료 (현행 구현)
 
 - `POST /api/team/v1/teams/{id}/members` 호출 시 Team Service는 **PENDING 초대 행**을 만들고 RabbitMQ로 초대 이벤트(`TEAM_INVITE_CREATED`)를 발행한다. 이 단계에서는 **팀 멤버를 추가하지 않는다**.
 - `GET /api/team/v1/me/team-invitations` 로 내 초대 목록을 조회한다. 기본은 **대기(PENDING)**만 반환한다.
@@ -130,7 +140,7 @@
   - `team.invitation.lifecycle-initial-delay-ms` (기본 60000)
   - `team.invitation.cleanup-retention-days` (기본 30): `ACCEPTED`/`REJECTED`/`EXPIRED` 상태 중 `respondedAt`이 보존 기간을 지난 행 삭제
 
-### 5.3 팀 API Key 등록/조회/수정·삭제 예정
+### 5.4 팀 API Key 등록/조회/수정·삭제 예정
 
 #### 팀 API Key 요약 객체 (`data` 및 목록 항목)
 
@@ -149,7 +159,7 @@
   - 요청 본문: `provider` (`OPENAI`/`GOOGLE`/`ANTHROPIC`), `alias`, `externalKey`, `monthlyBudgetUsd` (0 이상, USD 월 예산 한도 — identity-service 외부 키와 동일 개념)
   - 성공: `201`, `data`에 등록된 키 요약(위 표의 활성 키에 해당하는 필드)
   - 실패:
-    - `400` (`success=false`): 필수값 누락, alias 중복, 동일 provider+키 값(해시)이 **이미 활성**인 경우 `이미 등록된 API Key입니다`, 동일 해시가 **삭제 예정** 행에 있으면 `삭제 예정키와 중복입니다`
+    - `400` (`success=false`): 필수값 누락, alias 중복, 동일 provider+키 값(해시)이 **이미 활성**인 경우 `이미 등록된 API Key입니다`, 또는 동일 키가 Identity 개인 키로 이미 등록된 경우 `Identity에 이미 등록된 API Key입니다`
     - `403` (`success=false`): 팀장이 아닌 경우(팀 멤버만인 경우 등)
     - `404` (`success=false`): 대상 팀이 존재하지 않는 경우
 
@@ -157,7 +167,7 @@
   - 요청 본문: `alias`, `monthlyBudgetUsd` (필수). Identity `/teams`·team `web` UI는 별칭·예산만 보낸다. 서버는 `externalKey`가 비어 있지 않을 때에만 키 값·provider 갱신을 허용한다(내부·다른 클라이언트용).
   - 권한: **팀 멤버**(팀장 아님 포함).
   - 성공: `200`, 수정된 키 요약
-  - 실패: `400` (검증/중복/대상 없음, **삭제 예정인 키는 수정 불가**), `403`, `404`
+  - 실패: `400` (검증/중복/대상 없음, **삭제 예정인 키는 수정 불가**, Identity 개인 키와의 해시 중복), `403`, `404`
 
 - `DELETE /api/team/v1/teams/{teamId}/api-keys/{keyId}`
   - 선택 쿼리: `gracePeriodDays` (정수, 생략 시 **기본 7일**). 허용 범위는 **0~365일**.
@@ -266,7 +276,7 @@
 1. **삭제 예약/즉시 삭제** — 활성 키 행에서 **`삭제`** → 모달에서 유예 기간(일) 입력(기본 7일, **0이면 즉시 삭제**) 및 로그 보존 여부 선택 후 `DELETE .../api-keys/{keyId}?gracePeriodDays=...&retainLogs=...` 호출.
 2. **삭제 예정 표시** — 해당 행에 `(삭제 예정)` 안내, **영구 삭제 예정 시각**·유예 일수 표시, **`수정` 비활성**.
 3. **삭제 취소** — **`삭제 취소`** → 확인 후 `POST .../api-keys/{keyId}/deletion/cancel`. 성공 시 다시 활성 키로 표시.
-4. **동일 키 재등록** — 삭제 예정 중인 키와 같은 provider+키 값으로 등록 시 서버 메시지 `삭제 예정키와 중복입니다`.
+4. **동일 키 재등록** — 삭제 예정 중인 키와 같은 provider+키 값으로 등록하면 실패하지 않고, 기존 삭제 예정 키를 ACTIVE로 복구(재활성화)한다.
 
 ### 7.5 Team `web` (`services/team-service/web/`) 보완 설명
 
