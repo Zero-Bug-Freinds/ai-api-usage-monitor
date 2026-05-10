@@ -5,6 +5,7 @@ import com.eevee.usageservice.api.dto.DailyUsagePoint;
 import com.eevee.usageservice.api.dto.HourlyUsagePoint;
 import com.eevee.usageservice.api.dto.ModelUsageAggregate;
 import com.eevee.usageservice.api.dto.MonthlyUsagePoint;
+import com.eevee.usageservice.api.dto.UsageDataContext;
 import com.eevee.usageservice.api.dto.UsageSummaryResponse;
 import com.eevee.usageservice.api.dto.UsageTeamUserSlice;
 import com.eevee.usageservice.api.dto.ProviderModelCostTokenRow;
@@ -32,6 +33,8 @@ public class UsageAnalyticsJdbcRepository {
     private static final String PROVIDER_FILTER = " AND ((?::text) IS NULL OR provider::text = ?::text)";
     private static final String PERSONAL_SCOPE_FILTER_SUMMARY = " AND team_id = ''";
     private static final String PERSONAL_SCOPE_FILTER_LOGS = " AND COALESCE(team_id, '') = ''";
+    private static final String TEAM_MEMBER_ONLY_SCOPE_FILTER_SUMMARY = " AND team_id <> ''";
+    private static final String TEAM_MEMBER_ONLY_SCOPE_FILTER_LOGS = " AND COALESCE(team_id, '') <> ''";
 
     /** Must match {@code UsageDashboardService} date-range zone (KST). */
     private static final String BUCKET_ZONE = "Asia/Seoul";
@@ -145,6 +148,40 @@ public class UsageAnalyticsJdbcRepository {
         );
     }
 
+    public UsageSummaryResponse aggregateSummaryTeamMemberOnly(
+            String userId,
+            Instant from,
+            Instant toExclusive,
+            AiProvider provider
+    ) {
+        String sql = """
+                SELECT COALESCE(SUM(request_count), 0)::bigint,
+                       COALESCE(SUM(error_count), 0)::bigint,
+                       COALESCE(SUM(prompt_tokens), 0)::bigint,
+                       COALESCE(SUM(total_cost), 0)
+                FROM daily_usage_summary
+                WHERE user_id = ?
+                %s
+                  AND usage_date >= ((? AT TIME ZONE '%s')::date)
+                  AND usage_date < ((? AT TIME ZONE '%s')::date)%s
+                """.formatted(TEAM_MEMBER_ONLY_SCOPE_FILTER_SUMMARY, BUCKET_ZONE, BUCKET_ZONE, PROVIDER_FILTER);
+        String p1 = provider == null ? null : provider.name();
+        return jdbc.queryForObject(
+                sql,
+                (rs, rowNum) -> new UsageSummaryResponse(
+                        rs.getLong(1),
+                        rs.getLong(2),
+                        rs.getLong(3),
+                        rs.getBigDecimal(4) != null ? rs.getBigDecimal(4) : BigDecimal.ZERO
+                ),
+                userId,
+                Timestamp.from(from),
+                Timestamp.from(toExclusive),
+                p1,
+                p1
+        );
+    }
+
     /**
      * Sum of {@code estimated_cost} over {@code [from, toExclusive)} with optional provider filter.
      */
@@ -162,6 +199,33 @@ public class UsageAnalyticsJdbcRepository {
                   AND usage_date >= ((? AT TIME ZONE '%s')::date)
                   AND usage_date < ((? AT TIME ZONE '%s')::date)%s
                 """.formatted(PERSONAL_SCOPE_FILTER_SUMMARY, BUCKET_ZONE, BUCKET_ZONE, PROVIDER_FILTER);
+        String p1 = provider == null ? null : provider.name();
+        BigDecimal v = jdbc.queryForObject(
+                sql,
+                BigDecimal.class,
+                userId,
+                Timestamp.from(from),
+                Timestamp.from(toExclusive),
+                p1,
+                p1
+        );
+        return v != null ? v : BigDecimal.ZERO;
+    }
+
+    public BigDecimal sumEstimatedCostTeamMemberOnly(
+            String userId,
+            Instant from,
+            Instant toExclusive,
+            AiProvider provider
+    ) {
+        String sql = """
+                SELECT COALESCE(SUM(total_cost), 0)
+                FROM daily_usage_summary
+                WHERE user_id = ?
+                %s
+                  AND usage_date >= ((? AT TIME ZONE '%s')::date)
+                  AND usage_date < ((? AT TIME ZONE '%s')::date)%s
+                """.formatted(TEAM_MEMBER_ONLY_SCOPE_FILTER_SUMMARY, BUCKET_ZONE, BUCKET_ZONE, PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         BigDecimal v = jdbc.queryForObject(
                 sql,
@@ -195,6 +259,47 @@ public class UsageAnalyticsJdbcRepository {
                 GROUP BY usage_date
                 ORDER BY d
                 """.formatted(PERSONAL_SCOPE_FILTER_SUMMARY, BUCKET_ZONE, BUCKET_ZONE, PROVIDER_FILTER);
+        String p1 = provider == null ? null : provider.name();
+        return jdbc.query(
+                sql,
+                (rs, rowNum) -> {
+                    LocalDate day = rs.getDate("d").toLocalDate();
+                    return new DailyUsagePoint(
+                            day,
+                            rs.getLong(2),
+                            rs.getLong(3),
+                            rs.getLong(4),
+                            rs.getBigDecimal(5) != null ? rs.getBigDecimal(5) : BigDecimal.ZERO
+                    );
+                },
+                userId,
+                Timestamp.from(from),
+                Timestamp.from(toExclusive),
+                p1,
+                p1
+        );
+    }
+
+    public List<DailyUsagePoint> aggregateDailyTeamMemberOnly(
+            String userId,
+            Instant from,
+            Instant toExclusive,
+            AiProvider provider
+    ) {
+        String sql = """
+                SELECT usage_date AS d,
+                       COALESCE(SUM(request_count), 0)::bigint,
+                       COALESCE(SUM(error_count), 0)::bigint,
+                       COALESCE(SUM(prompt_tokens), 0)::bigint,
+                       COALESCE(SUM(total_cost), 0)
+                FROM daily_usage_summary
+                WHERE user_id = ?
+                %s
+                  AND usage_date >= ((? AT TIME ZONE '%s')::date)
+                  AND usage_date < ((? AT TIME ZONE '%s')::date)%s
+                GROUP BY usage_date
+                ORDER BY d
+                """.formatted(TEAM_MEMBER_ONLY_SCOPE_FILTER_SUMMARY, BUCKET_ZONE, BUCKET_ZONE, PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         return jdbc.query(
                 sql,
@@ -331,6 +436,44 @@ public class UsageAnalyticsJdbcRepository {
         );
     }
 
+    public List<MonthlyUsagePoint> aggregateMonthlyTeamMemberOnly(
+            String userId,
+            Instant from,
+            Instant toExclusive,
+            AiProvider provider
+    ) {
+        String sql = """
+                SELECT to_char(usage_date, 'YYYY-MM') AS ym,
+                       COALESCE(SUM(request_count), 0)::bigint,
+                       COALESCE(SUM(error_count), 0)::bigint,
+                       COALESCE(SUM(prompt_tokens), 0)::bigint,
+                       COALESCE(SUM(total_cost), 0)
+                FROM daily_usage_summary
+                WHERE user_id = ?
+                %s
+                  AND usage_date >= ((? AT TIME ZONE '%s')::date)
+                  AND usage_date < ((? AT TIME ZONE '%s')::date)%s
+                GROUP BY to_char(usage_date, 'YYYY-MM')
+                ORDER BY ym
+                """.formatted(TEAM_MEMBER_ONLY_SCOPE_FILTER_SUMMARY, BUCKET_ZONE, BUCKET_ZONE, PROVIDER_FILTER);
+        String p1 = provider == null ? null : provider.name();
+        return jdbc.query(
+                sql,
+                (rs, rowNum) -> new MonthlyUsagePoint(
+                        rs.getString("ym"),
+                        rs.getLong(2),
+                        rs.getLong(3),
+                        rs.getLong(4),
+                        rs.getBigDecimal(5) != null ? rs.getBigDecimal(5) : BigDecimal.ZERO
+                ),
+                userId,
+                Timestamp.from(from),
+                Timestamp.from(toExclusive),
+                p1,
+                p1
+        );
+    }
+
     public List<MonthlyUsagePoint> aggregateMonthlyByTeam(
             String teamId,
             Instant from,
@@ -448,6 +591,46 @@ public class UsageAnalyticsJdbcRepository {
         );
     }
 
+    public List<ModelUsageAggregate> aggregateByModelTeamMemberOnly(
+            String userId,
+            Instant from,
+            Instant toExclusive,
+            AiProvider provider
+    ) {
+        String sql = """
+                SELECT model AS m,
+                       provider,
+                       COALESCE(SUM(request_count), 0)::bigint,
+                       COALESCE(SUM(prompt_tokens), 0)::bigint,
+                       COALESCE(SUM(reasoning_tokens), 0)::bigint,
+                       COALESCE(SUM(completion_tokens), 0)::bigint
+                FROM daily_usage_summary
+                WHERE user_id = ?
+                %s
+                  AND usage_date >= ((? AT TIME ZONE '%s')::date)
+                  AND usage_date < ((? AT TIME ZONE '%s')::date)%s
+                GROUP BY model, provider
+                ORDER BY SUM(request_count) DESC
+                """.formatted(TEAM_MEMBER_ONLY_SCOPE_FILTER_SUMMARY, BUCKET_ZONE, BUCKET_ZONE, PROVIDER_FILTER);
+        String p1 = provider == null ? null : provider.name();
+        return jdbc.query(
+                sql,
+                (rs, rowNum) -> new ModelUsageAggregate(
+                        rs.getString("m"),
+                        rs.getString("provider"),
+                        rs.getLong(3),
+                        rs.getLong(4),
+                        rs.getLong(5),
+                        rs.getLong(6)
+                ),
+                userId,
+                Timestamp.from(from),
+                Timestamp.from(toExclusive),
+                p1,
+                p1
+        );
+    }
+
     public List<ModelUsageAggregate> aggregateByModelForTeam(
             String teamId,
             Instant from,
@@ -529,6 +712,212 @@ public class UsageAnalyticsJdbcRepository {
         );
     }
 
+    private static String userScopeLogsFragment(UsageDataContext scope) {
+        return scope == UsageDataContext.TEAM_MEMBER_ONLY ? TEAM_MEMBER_ONLY_SCOPE_FILTER_LOGS : PERSONAL_SCOPE_FILTER_LOGS;
+    }
+
+    public UsageSummaryResponse aggregateSummaryForUserFromLogs(
+            String userId,
+            Instant from,
+            Instant toExclusive,
+            AiProvider provider,
+            String apiKeyFilter,
+            UsageDataContext scope
+    ) {
+        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        String scopeFrag = userScopeLogsFragment(scope);
+        String sql = """
+                SELECT COUNT(*)::bigint,
+                       COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0)::bigint,
+                       COALESCE(SUM(prompt_tokens), 0)::bigint,
+                       COALESCE(SUM(estimated_cost), 0)
+                FROM usage_recorded_log
+                WHERE user_id = ?
+                  AND occurred_at >= ? AND occurred_at < ?
+                  %s%s%s
+                """.formatted(ERR_PRED, scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+        String p1 = provider == null ? null : provider.name();
+        return jdbc.queryForObject(
+                sql,
+                (rs, rowNum) -> new UsageSummaryResponse(
+                        rs.getLong(1),
+                        rs.getLong(2),
+                        rs.getLong(3),
+                        rs.getBigDecimal(4) != null ? rs.getBigDecimal(4) : BigDecimal.ZERO
+                ),
+                userId,
+                Timestamp.from(from),
+                Timestamp.from(toExclusive),
+                af,
+                af,
+                p1,
+                p1
+        );
+    }
+
+    public List<DailyUsagePoint> aggregateDailyForUserFromLogs(
+            String userId,
+            Instant from,
+            Instant toExclusive,
+            AiProvider provider,
+            String apiKeyFilter,
+            UsageDataContext scope
+    ) {
+        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        String scopeFrag = userScopeLogsFragment(scope);
+        String sql = """
+                SELECT ((occurred_at AT TIME ZONE '%s'))::date AS d,
+                       COUNT(*)::bigint,
+                       COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0)::bigint,
+                       COALESCE(SUM(prompt_tokens), 0)::bigint,
+                       COALESCE(SUM(estimated_cost), 0)
+                FROM usage_recorded_log
+                WHERE user_id = ?
+                  AND occurred_at >= ? AND occurred_at < ?
+                  %s%s%s
+                GROUP BY 1
+                ORDER BY 1
+                """.formatted(BUCKET_ZONE, ERR_PRED, scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+        String p1 = provider == null ? null : provider.name();
+        return jdbc.query(
+                sql,
+                (rs, rowNum) -> new DailyUsagePoint(
+                        rs.getDate("d").toLocalDate(),
+                        rs.getLong(2),
+                        rs.getLong(3),
+                        rs.getLong(4),
+                        rs.getBigDecimal(5) != null ? rs.getBigDecimal(5) : BigDecimal.ZERO
+                ),
+                userId,
+                Timestamp.from(from),
+                Timestamp.from(toExclusive),
+                af,
+                af,
+                p1,
+                p1
+        );
+    }
+
+    public List<MonthlyUsagePoint> aggregateMonthlyForUserFromLogs(
+            String userId,
+            Instant from,
+            Instant toExclusive,
+            AiProvider provider,
+            String apiKeyFilter,
+            UsageDataContext scope
+    ) {
+        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        String scopeFrag = userScopeLogsFragment(scope);
+        String sql = """
+                SELECT to_char((occurred_at AT TIME ZONE '%s'), 'YYYY-MM') AS ym,
+                       COUNT(*)::bigint,
+                       COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0)::bigint,
+                       COALESCE(SUM(prompt_tokens), 0)::bigint,
+                       COALESCE(SUM(estimated_cost), 0)
+                FROM usage_recorded_log
+                WHERE user_id = ?
+                  AND occurred_at >= ? AND occurred_at < ?
+                  %s%s%s
+                GROUP BY 1
+                ORDER BY 1
+                """.formatted(BUCKET_ZONE, ERR_PRED, scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+        String p1 = provider == null ? null : provider.name();
+        return jdbc.query(
+                sql,
+                (rs, rowNum) -> new MonthlyUsagePoint(
+                        rs.getString("ym"),
+                        rs.getLong(2),
+                        rs.getLong(3),
+                        rs.getLong(4),
+                        rs.getBigDecimal(5) != null ? rs.getBigDecimal(5) : BigDecimal.ZERO
+                ),
+                userId,
+                Timestamp.from(from),
+                Timestamp.from(toExclusive),
+                af,
+                af,
+                p1,
+                p1
+        );
+    }
+
+    public List<ModelUsageAggregate> aggregateByModelForUserFromLogs(
+            String userId,
+            Instant from,
+            Instant toExclusive,
+            AiProvider provider,
+            String apiKeyFilter,
+            UsageDataContext scope
+    ) {
+        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        String scopeFrag = userScopeLogsFragment(scope);
+        String sql = """
+                SELECT COALESCE(NULLIF(TRIM(model), ''), LOWER(provider::text) || '_unknown') AS m,
+                       provider::text,
+                       COUNT(*)::bigint,
+                       COALESCE(SUM(prompt_tokens), 0)::bigint,
+                       COALESCE(SUM(estimated_reasoning_tokens), 0)::bigint,
+                       COALESCE(SUM(completion_tokens), 0)::bigint
+                FROM usage_recorded_log
+                WHERE user_id = ?
+                  AND occurred_at >= ? AND occurred_at < ?
+                  %s%s%s
+                GROUP BY model, provider
+                ORDER BY COUNT(*) DESC
+                """.formatted(scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+        String p1 = provider == null ? null : provider.name();
+        return jdbc.query(
+                sql,
+                (rs, rowNum) -> new ModelUsageAggregate(
+                        rs.getString("m"),
+                        rs.getString("provider"),
+                        rs.getLong(3),
+                        rs.getLong(4),
+                        rs.getLong(5),
+                        rs.getLong(6)
+                ),
+                userId,
+                Timestamp.from(from),
+                Timestamp.from(toExclusive),
+                af,
+                af,
+                p1,
+                p1
+        );
+    }
+
+    public BigDecimal sumEstimatedCostForUserFromLogs(
+            String userId,
+            Instant from,
+            Instant toExclusive,
+            AiProvider provider,
+            String apiKeyFilter,
+            UsageDataContext scope
+    ) {
+        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        String scopeFrag = userScopeLogsFragment(scope);
+        String sql = """
+                SELECT COALESCE(SUM(estimated_cost), 0)
+                FROM usage_recorded_log
+                WHERE user_id = ?
+                  AND occurred_at >= ? AND occurred_at < ?
+                  %s%s%s
+                """.formatted(scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+        String p1 = provider == null ? null : provider.name();
+        BigDecimal v = jdbc.queryForObject(
+                sql,
+                BigDecimal.class,
+                userId,
+                Timestamp.from(from),
+                Timestamp.from(toExclusive),
+                af,
+                af,
+                p1,
+                p1
+        );
+        return v != null ? v : BigDecimal.ZERO;
+    }
+
     /**
      * Hour buckets 0–23 for one KST calendar day (§2.2). Missing hours are filled in the service layer.
      */
@@ -538,16 +927,38 @@ public class UsageAnalyticsJdbcRepository {
             Instant kstDayEndExclusiveUtc,
             AiProvider provider
     ) {
+        return aggregateHourlyForKstDayUserScoped(
+                userId,
+                kstDayStartUtc,
+                kstDayEndExclusiveUtc,
+                provider,
+                UsageDataContext.PERSONAL,
+                ""
+        );
+    }
+
+    public List<HourlyUsagePoint> aggregateHourlyForKstDayUserScoped(
+            String userId,
+            Instant kstDayStartUtc,
+            Instant kstDayEndExclusiveUtc,
+            AiProvider provider,
+            UsageDataContext scope,
+            String apiKeyFilter
+    ) {
+        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        String scopeFrag = userScopeLogsFragment(scope);
         String sql = """
                 SELECT (EXTRACT(HOUR FROM (occurred_at AT TIME ZONE '%s')))::int AS h,
                        COUNT(*)::bigint,
                        COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0)::bigint,
                        COALESCE(SUM(estimated_cost), 0)
                 FROM usage_recorded_log
-                WHERE user_id = ?%s AND occurred_at >= ? AND occurred_at < ?%s
+                WHERE user_id = ?
+                  AND occurred_at >= ? AND occurred_at < ?
+                  %s%s%s
                 GROUP BY 1
                 ORDER BY 1
-                """.formatted(BUCKET_ZONE, ERR_PRED, PERSONAL_SCOPE_FILTER_LOGS, PROVIDER_FILTER);
+                """.formatted(BUCKET_ZONE, ERR_PRED, scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         List<HourlyUsagePoint> rows = jdbc.query(
                 sql,
@@ -560,6 +971,8 @@ public class UsageAnalyticsJdbcRepository {
                 userId,
                 Timestamp.from(kstDayStartUtc),
                 Timestamp.from(kstDayEndExclusiveUtc),
+                af,
+                af,
                 p1,
                 p1
         );

@@ -90,11 +90,40 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
                     and u.apiKeyId is not null
                     and trim(u.apiKeyId) <> ''
                     and (:provider is null or u.provider = :provider)
+                    and (u.teamId is null or trim(u.teamId) = '')
                     group by u.apiKeyId, m.alias, m.status
                     order by u.apiKeyId
                     """
     )
-    List<UsageLogApiKeyItemResponse> findDistinctApiKeysForUserInRange(
+    List<UsageLogApiKeyItemResponse> findDistinctApiKeysForUserPersonalInRange(
+            @Param("userId") String userId,
+            @Param("from") Instant from,
+            @Param("toExclusive") Instant toExclusive,
+            @Param("provider") AiProvider provider
+    );
+
+    @Query(
+            """
+                    select new com.eevee.usageservice.api.dto.UsageLogApiKeyItemResponse(
+                        u.apiKeyId,
+                        m.alias,
+                        m.status
+                    )
+                    from UsageRecordedLogEntity u
+                    left join u.apiKeyMetadata m
+                    where u.userId = :userId
+                    and u.occurredAt >= :from
+                    and u.occurredAt < :toExclusive
+                    and u.apiKeyId is not null
+                    and trim(u.apiKeyId) <> ''
+                    and (:provider is null or u.provider = :provider)
+                    and u.teamId is not null
+                    and trim(u.teamId) <> ''
+                    group by u.apiKeyId, m.alias, m.status
+                    order by u.apiKeyId
+                    """
+    )
+    List<UsageLogApiKeyItemResponse> findDistinctApiKeysForUserTeamMemberInRange(
             @Param("userId") String userId,
             @Param("from") Instant from,
             @Param("toExclusive") Instant toExclusive,
