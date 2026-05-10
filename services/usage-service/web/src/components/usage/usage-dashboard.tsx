@@ -4,6 +4,7 @@ import * as React from "react"
 import { useSearchParams } from "next/navigation"
 import { ChevronDown, ChevronUp } from "lucide-react"
 import {
+  Area,
   Bar,
   BarChart,
   CartesianGrid,
@@ -14,6 +15,7 @@ import {
   Line,
   Pie,
   PieChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -35,6 +37,8 @@ import { formatOccurredAtKst } from "@/lib/usage/format-occurred-at-kst"
 import { formatRequestCount, formatTokenCount, formatUsd, toNumber } from "@/lib/usage/format"
 import type {
   DailyUsagePoint,
+  LatencyInsightResponse,
+  LatencyStabilityPoint,
   ModelUsageAggregate,
   MonthlyUsagePoint,
   UsageCostIntradayKpiResponse,
@@ -420,32 +424,101 @@ function TokenAvgLabelList(props: TokenAvgLabelProps) {
   )
 }
 
-type MainStabilityRow = {
+/** 시간별 / 일별 / 월별 총 요청 수 추이 (단일 축). */
+type MainRequestVolumeRow = {
   label: string
   requestCount: number
-  successCount: number
-  errorCount: number
-  successRate: number
-  errorRate: number
 }
 
-type MainStabilityTooltipProps = {
+type RequestVolumeTooltipProps = {
   active?: boolean
   label?: string | number
   payload?: readonly unknown[]
 }
 
-function MainStabilityTooltip({ active, label, payload }: MainStabilityTooltipProps) {
+function RequestVolumeTooltip({ active, label, payload }: RequestVolumeTooltipProps) {
   if (!active || !payload?.length) return null
-  const row = (payload[0] as { payload?: MainStabilityRow }).payload
+  const row = (payload[0] as { payload?: MainRequestVolumeRow }).payload
   if (!row) return null
   return (
     <div className="rounded-md border border-border bg-card px-3 py-2 text-xs shadow-md">
       <p className="font-medium text-foreground">{String(label)}</p>
       <p className="mt-1 text-muted-foreground">총 요청 수: {formatRequestCount(row.requestCount)}</p>
-      <p className="text-muted-foreground">성공 건수: {row.successCount.toLocaleString("en-US")}건</p>
-      <p className="text-muted-foreground">오류 건수: {row.errorCount.toLocaleString("en-US")}건</p>
-      <p className="mt-1 text-foreground tabular-nums">성공률: {row.successRate.toFixed(1)}%</p>
+    </div>
+  )
+}
+
+const LATENCY_MS_THRESHOLD = 2000
+const LATENCY_MAIN_LINE = "rgba(91, 33, 182, 0.85)"
+const LATENCY_BAND_FILL = "rgba(139, 92, 246, 0.09)"
+
+function formatLatencyMsHuman(ms: number | null | undefined): string {
+  if (ms == null || Number.isNaN(ms)) return "—"
+  if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`
+  return `${Math.round(ms)}ms`
+}
+
+function formatLatencyAxisTick(ms: number): string {
+  if (!Number.isFinite(ms)) return ""
+  if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`
+  return `${Math.round(ms)}`
+}
+
+type LatencyChartRow = LatencyStabilityPoint & {
+  label: string
+  bandMin: number
+  bandSpread: number
+}
+
+/** comparePhrase: {@link costCompareLabel} 값 — 예: 「이전 7일 대비」, 「전일 동기 대비」 */
+function latencyInsightBannerText(insight: LatencyInsightResponse | null, comparePhrase: string): string {
+  if (!insight || insight.currentAvgLatencyMs == null) {
+    return "선택 구간에 지연(latency) 데이터가 없거나 부족합니다."
+  }
+  if (insight.previousAvgLatencyMs == null) {
+    return "이전 동일 길이 구간의 평균 지연과 비교할 수 없습니다."
+  }
+  const cp = insight.changePercent
+  if (cp == null) return `평균 응답 지연은 ${formatLatencyMsHuman(insight.currentAvgLatencyMs)}입니다.`
+  const abs = Math.abs(cp).toFixed(1)
+  if (Math.abs(cp) < 0.05) {
+    return `평균 응답 지연이 ${comparePhrase}와 거의 같습니다 (${formatLatencyMsHuman(insight.currentAvgLatencyMs)}).`
+  }
+  const improved = cp < 0
+  if (improved) {
+    return `평균 응답 지연이 ${comparePhrase} ${abs}% 개선되었습니다 (현재 ${formatLatencyMsHuman(insight.currentAvgLatencyMs)}).`
+  }
+  return `평균 응답 지연이 ${comparePhrase} ${abs}% 악화되었습니다 (현재 ${formatLatencyMsHuman(insight.currentAvgLatencyMs)}).`
+}
+
+type LatencyStabilityTooltipProps = {
+  active?: boolean
+  label?: string | number
+  payload?: readonly unknown[]
+}
+
+function LatencyStabilityTooltip({ active, label, payload }: LatencyStabilityTooltipProps) {
+  if (!active || !payload?.length) return null
+  const row = (payload[0] as { payload?: LatencyChartRow }).payload
+  if (!row) return null
+  const modelLabel =
+    row.topModel && row.topModel.trim().length > 0
+      ? `${truncateModelLabel(row.topModel)} (${labelForProviderCode(row.topModelProvider ?? "")})`
+      : "—"
+  return (
+    <div className="max-w-sm rounded-md border border-border bg-card px-3 py-2 text-xs shadow-md">
+      <p className="font-medium text-foreground">{String(label)}</p>
+      <p className="mt-1 text-muted-foreground">주요 모델: {modelLabel}</p>
+      <p className="mt-1 tabular-nums text-foreground">
+        평균 지연: {formatLatencyMsHuman(row.avgLatencyMs)} · P95: {formatLatencyMsHuman(row.p95LatencyMs)} · P99:{" "}
+        {formatLatencyMsHuman(row.p99LatencyMs)}
+      </p>
+      <p className="text-muted-foreground tabular-nums">
+        성공률 {row.successRate.toFixed(1)}% · 오류율 {row.errorRate.toFixed(1)}%
+      </p>
+      <p className="text-muted-foreground">
+        토큰당 지연: {row.latencyPerTokenMs != null ? `${row.latencyPerTokenMs.toFixed(4)} ms/토큰` : "—"}
+      </p>
     </div>
   )
 }
@@ -539,48 +612,25 @@ function MonthlyRequestBarTooltip({ active, label, payload }: MonthlyRequestBarT
   )
 }
 
-function stabilityRateDomain(rows: MainStabilityRow[]): [number, number] {
-  if (rows.length === 0) return [90, 100]
-  const rates = rows
-    .filter((r) => r.requestCount > 0)
-    .flatMap((r) => [r.successRate, r.errorRate])
-  if (rates.length === 0) return [90, 100]
-  const min = Math.min(...rates)
-  const max = Math.max(...rates)
-  const paddedMin = Math.floor((min - 0.5) * 10) / 10
-  const paddedMax = Math.ceil((max + 0.5) * 10) / 10
-  const lower = min >= 90 ? Math.max(90, paddedMin) : Math.max(0, paddedMin)
-  const upper = Math.min(100, Math.max(lower + 1, paddedMax))
-  return [lower, upper]
-}
-
-function emptyHourlyStabilityRows(): MainStabilityRow[] {
-  const rows: MainStabilityRow[] = []
+function emptyHourlyRequestRows(): MainRequestVolumeRow[] {
+  const rows: MainRequestVolumeRow[] = []
   for (let h = 0; h < 24; h++) {
     rows.push({
       label: `${h}시`,
       requestCount: 0,
-      successCount: 0,
-      errorCount: 0,
-      successRate: 0,
-      errorRate: 0,
     })
   }
   return rows
 }
 
-function emptyDailyStabilityRows(fromIso: string, toIso: string): MainStabilityRow[] {
+function emptyDailyRequestRows(fromIso: string, toIso: string): MainRequestVolumeRow[] {
   const n = kstDaysInclusive(fromIso, toIso)
-  const rows: MainStabilityRow[] = []
+  const rows: MainRequestVolumeRow[] = []
   for (let i = 0; i < n; i++) {
     const dateStr = addKstDays(fromIso, i)
     rows.push({
       label: dateStr,
       requestCount: 0,
-      successCount: 0,
-      errorCount: 0,
-      successRate: 0,
-      errorRate: 0,
     })
   }
   return rows
@@ -655,6 +705,9 @@ export function UsageDashboard() {
   const [daily, setDaily] = React.useState<DailyUsagePoint[]>([])
   const [monthly, setMonthly] = React.useState<MonthlyUsagePoint[]>([])
   const [byModel, setByModel] = React.useState<ModelUsageAggregate[]>([])
+  const [latencySeries, setLatencySeries] = React.useState<LatencyStabilityPoint[]>([])
+  const [latencyInsight, setLatencyInsight] = React.useState<LatencyInsightResponse | null>(null)
+  const [latencyLegendHidden, setLatencyLegendHidden] = React.useState<Record<string, boolean>>({})
   const [isOthersExpanded, setIsOthersExpanded] = React.useState(false)
   const [isTokenOthersExpanded, setIsTokenOthersExpanded] = React.useState(false)
 
@@ -758,6 +811,13 @@ export function UsageDashboard() {
           provider: providerParam(dashProvider),
           ...scopeExtra,
         })
+        const qLatencyStability = buildUsageQuery({
+          from: rf,
+          to: rt,
+          unit: seriesUnit,
+          provider: providerParam(dashProvider),
+          ...scopeExtra,
+        })
 
         const fetchPolicy = isCurrentDayRange
           ? { signal, cacheMode: "no-store" as const, clientCacheTtlMs: 0 }
@@ -783,8 +843,16 @@ export function UsageDashboard() {
           fetchPolicy
         )
         const byModelP = fetchUsageJson<ModelUsageAggregate[]>(`dashboard/by-model${qRange}`, fetchPolicy)
+        const latencyStabilityP = fetchUsageJson<LatencyStabilityPoint[]>(
+          `dashboard/series/latency-stability${qLatencyStability}`,
+          fetchPolicy
+        )
+        const latencyInsightP = fetchUsageJson<LatencyInsightResponse>(
+          `dashboard/kpi/latency-insight${qRange}`,
+          fetchPolicy
+        )
 
-        const [cur, prev, seriesRows, d, m, bm, maybeKpi, keys] = await Promise.all([
+        const [cur, prev, seriesRows, d, m, bm, maybeKpi, keys, latRows, latInsight] = await Promise.all([
           summaryP,
           summaryPrevP,
           mainSeriesP,
@@ -795,6 +863,8 @@ export function UsageDashboard() {
             ? fetchUsageJson<UsageCostIntradayKpiResponse>(`dashboard/kpi/cost-intraday${pq}`, fetchPolicy)
             : Promise.resolve(null),
           apiKeysP,
+          latencyStabilityP,
+          latencyInsightP,
         ])
         if (!cancelled) {
           setLoadedRange({ from: rf, to: rt })
@@ -806,6 +876,9 @@ export function UsageDashboard() {
           setMonthly(Array.isArray(m) ? m : [])
           setByModel(Array.isArray(bm) ? bm : [])
           setApiKeyOptions(Array.isArray(keys) ? keys : [])
+          setLatencySeries(Array.isArray(latRows) ? latRows : [])
+          setLatencyInsight(latInsight ?? null)
+          setLatencyLegendHidden({})
         }
       } catch (e) {
         if (isAbortError(e)) return
@@ -823,43 +896,27 @@ export function UsageDashboard() {
   }, [clientReady, mainRefresh, periodMode, customFrom, customTo, dashProvider, dataContext, dashApiKeyId])
 
   const dailyChart = React.useMemo(
-    (): MainStabilityRow[] =>
-      daily.map((row) => {
-        const successCount = Math.max(0, row.requestCount - row.errorCount)
-        const successRate = row.requestCount > 0 ? (100 * successCount) / row.requestCount : 0
-        const errorRate = row.requestCount > 0 ? (100 * row.errorCount) / row.requestCount : 0
-        return {
-          label: row.date,
-          requestCount: row.requestCount,
-          successCount,
-          errorCount: row.errorCount,
-          successRate,
-          errorRate,
-        }
-      }),
+    (): MainRequestVolumeRow[] =>
+      daily.map((row) => ({
+        label: row.date,
+        requestCount: row.requestCount,
+      })),
     [daily]
   )
 
   const mainChartUnit = React.useMemo(() => resolveSeriesUnit(rangeFrom, rangeTo), [rangeFrom, rangeTo])
 
-  const mainStabilitySeries = React.useMemo((): MainStabilityRow[] => {
+  const mainStabilitySeries = React.useMemo((): MainRequestVolumeRow[] => {
     const fromSeries = mainSeries.map((row) => {
-      const successCount = Math.max(0, row.requestCount - row.errorCount)
-      const successRate = row.requestCount > 0 ? (100 * successCount) / row.requestCount : 0
-      const errorRate = row.requestCount > 0 ? (100 * row.errorCount) / row.requestCount : 0
       const label = mainChartUnit === "HOUR" ? row.bucketLabel.replace(":00", "시") : row.bucketLabel
       return {
         label,
         requestCount: row.requestCount,
-        successCount,
-        errorCount: row.errorCount,
-        successRate,
-        errorRate,
       }
     })
     if (fromSeries.length > 0) return fromSeries
-    if (mainChartUnit === "HOUR") return emptyHourlyStabilityRows()
-    if (mainChartUnit === "DAY") return dailyChart.length > 0 ? dailyChart : emptyDailyStabilityRows(rangeFrom, rangeTo)
+    if (mainChartUnit === "HOUR") return emptyHourlyRequestRows()
+    if (mainChartUnit === "DAY") return dailyChart.length > 0 ? dailyChart : emptyDailyRequestRows(rangeFrom, rangeTo)
     return []
   }, [mainSeries, mainChartUnit, dailyChart, rangeFrom, rangeTo])
 
@@ -1171,15 +1228,38 @@ export function UsageDashboard() {
 
   const mainChartTitle =
     mainChartUnit === "HOUR"
-      ? "시간별 요청·성공률·오류율"
+      ? "시간별 총 요청 수"
       : mainChartUnit === "DAY"
-        ? "일별 요청·성공률·오류율"
-        : "월별 요청·성공률·오류율"
+        ? "일별 총 요청 수"
+        : "월별 총 요청 수"
 
-  const rateAxisDomain = React.useMemo(
-    () => stabilityRateDomain(mainStabilitySeries),
-    [mainStabilitySeries]
-  )
+  const latencyChartRows = React.useMemo((): LatencyChartRow[] => {
+    return latencySeries.map((p) => {
+      const label = mainChartUnit === "HOUR" ? p.bucketLabel.replace(":00", "시") : p.bucketLabel
+      const min = p.minLatencyMs ?? 0
+      const max = p.maxLatencyMs != null ? p.maxLatencyMs : min
+      const spread = Math.max(0, max - min)
+      return {
+        ...p,
+        label,
+        bandMin: min,
+        bandSpread: spread,
+      }
+    })
+  }, [latencySeries, mainChartUnit])
+
+  const latencyLegendClick = React.useCallback((o: { id?: string; dataKey?: unknown }) => {
+    let key =
+      typeof o.id === "string"
+        ? o.id
+        : typeof o.dataKey === "string"
+          ? o.dataKey === "bandSpread" || o.dataKey === "bandMin"
+            ? "latencyBand"
+            : o.dataKey
+          : ""
+    if (!key) return
+    setLatencyLegendHidden((prev) => ({ ...prev, [key]: !prev[key] }))
+  }, [])
 
   const errorSubStyle =
     rangeErrors >= 1 ? "text-red-500" : "text-foreground"
@@ -1366,40 +1446,17 @@ export function UsageDashboard() {
                     tick={{ fontSize: 11 }}
                     label={{ value: "요청 수 (건)", angle: -90, position: "insideLeft", offset: 2 }}
                   />
-                  <YAxis
-                    yAxisId="right"
-                    orientation="right"
-                    domain={rateAxisDomain}
-                    tick={{ fontSize: 11 }}
-                    tickFormatter={(v) => `${Number(v).toFixed(1)}%`}
-                    label={{ value: "성공/오류율 (%)", angle: 90, position: "insideRight", offset: 2 }}
-                  />
-                  <Tooltip content={MainStabilityTooltip} />
+                  <Tooltip content={RequestVolumeTooltip} />
                   <AnyLegend />
-                  <Bar
+                  <Line
                     yAxisId="left"
+                    type="monotone"
                     dataKey="requestCount"
                     name="총 요청 수"
-                    fill="#a3a3a3"
-                    radius={[4, 4, 0, 0]}
-                  />
-                  <Line
-                    yAxisId="right"
-                    type="monotone"
-                    dataKey="successRate"
-                    name="성공률"
-                    stroke="#10b981"
+                    stroke="#737373"
                     strokeWidth={2}
                     dot={false}
-                  />
-                  <Line
-                    yAxisId="right"
-                    type="monotone"
-                    dataKey="errorRate"
-                    name="오류율"
-                    stroke="#f43f5e"
-                    strokeWidth={2}
-                    dot={false}
+                    activeDot={{ r: 3 }}
                   />
                 </ComposedChart>
               </ResponsiveContainer>
@@ -1407,6 +1464,124 @@ export function UsageDashboard() {
             {mainStabilityNoRequests ? (
               <p className="mt-2 text-center text-sm text-muted-foreground">집계 데이터 없음</p>
             ) : null}
+          </section>
+
+          <section className="mb-8 rounded-lg border border-border p-4 shadow-sm">
+            <h2 className="mb-3 text-lg font-medium">응답 성능 및 안정성</h2>
+            <div className="mb-4 rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm leading-relaxed text-foreground">
+              {latencyInsightBannerText(latencyInsight, compareCostLabel)}
+            </div>
+            <div className="h-[400px] min-h-[400px] w-full min-w-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={latencyChartRows}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                  <YAxis
+                    yAxisId="lat"
+                    domain={["auto", "auto"]}
+                    tick={{ fontSize: 11 }}
+                    tickFormatter={(v) => formatLatencyAxisTick(Number(v))}
+                    label={{ value: "지연 시간", angle: -90, position: "insideLeft", offset: 2 }}
+                  />
+                  <YAxis
+                    yAxisId="rate"
+                    orientation="right"
+                    domain={[0, 100]}
+                    tick={{ fontSize: 11 }}
+                    tickFormatter={(v) => `${Number(v).toFixed(0)}%`}
+                    label={{ value: "비율 (%)", angle: 90, position: "insideRight", offset: 2 }}
+                  />
+                  <Tooltip content={LatencyStabilityTooltip} />
+                  <AnyLegend onClick={latencyLegendClick} wrapperStyle={{ cursor: "pointer" }} />
+                  <ReferenceLine
+                    yAxisId="lat"
+                    y={LATENCY_MS_THRESHOLD}
+                    stroke="#ef4444"
+                    strokeDasharray="4 4"
+                    strokeWidth={1}
+                  />
+                  <Area
+                    yAxisId="lat"
+                    type="monotone"
+                    dataKey="bandMin"
+                    stackId="latBand"
+                    fill="transparent"
+                    stroke="none"
+                    legendType="none"
+                    hide={!!latencyLegendHidden.latencyBand}
+                  />
+                  <Area
+                    yAxisId="lat"
+                    type="monotone"
+                    dataKey="bandSpread"
+                    stackId="latBand"
+                    fill={LATENCY_BAND_FILL}
+                    stroke="none"
+                    name="Min–Max 분포"
+                    legendType="rect"
+                    hide={!!latencyLegendHidden.latencyBand}
+                  />
+                  <Line
+                    yAxisId="lat"
+                    type="basis"
+                    dataKey="avgLatencyMs"
+                    name="평균 지연"
+                    stroke={LATENCY_MAIN_LINE}
+                    strokeWidth={2.5}
+                    dot={false}
+                    connectNulls
+                    hide={!!latencyLegendHidden.avgLatencyMs}
+                  />
+                  <Line
+                    yAxisId="lat"
+                    type="monotone"
+                    dataKey="p95LatencyMs"
+                    name="P95 지연"
+                    stroke="#818cf8"
+                    strokeWidth={1.25}
+                    strokeDasharray="4 3"
+                    dot={false}
+                    connectNulls
+                    hide={!!latencyLegendHidden.p95LatencyMs}
+                  />
+                  <Line
+                    yAxisId="lat"
+                    type="monotone"
+                    dataKey="p99LatencyMs"
+                    name="P99 지연"
+                    stroke="#93c5fd"
+                    strokeWidth={1.25}
+                    strokeDasharray="2 2"
+                    dot={false}
+                    connectNulls
+                    hide={!!latencyLegendHidden.p99LatencyMs}
+                  />
+                  <Line
+                    yAxisId="rate"
+                    type="monotone"
+                    dataKey="successRate"
+                    name="성공률"
+                    stroke="#10b981"
+                    strokeWidth={1}
+                    dot={false}
+                    hide={!!latencyLegendHidden.successRate}
+                  />
+                  <Line
+                    yAxisId="rate"
+                    type="monotone"
+                    dataKey="errorRate"
+                    name="오류율"
+                    stroke="#f43f5e"
+                    strokeWidth={1}
+                    dot={false}
+                    hide={!!latencyLegendHidden.errorRate}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+            <p className="mt-2 text-center text-[11px] text-muted-foreground">
+              빨간 점선은 {formatLatencyMsHuman(LATENCY_MS_THRESHOLD)} 임계치입니다. 범례를 클릭하면 시리즈를 끄거나 켤 수 있습니다.
+            </p>
           </section>
 
           <div className="mb-8 grid gap-5 lg:grid-cols-3 lg:gap-6">

@@ -57,6 +57,28 @@ export type UsageSeriesPoint = {
   estimatedCost: number | string
 }
 
+export type LatencyStabilityPoint = {
+  bucketLabel: string
+  requestCount: number
+  successRate: number
+  errorRate: number
+  totalTokens: number
+  avgLatencyMs: number | null
+  minLatencyMs: number | null
+  maxLatencyMs: number | null
+  p95LatencyMs: number | null
+  p99LatencyMs: number | null
+  latencyPerTokenMs: number | null
+  topModel: string | null
+  topModelProvider: string | null
+}
+
+export type LatencyInsightResponse = {
+  currentAvgLatencyMs: number | null
+  previousAvgLatencyMs: number | null
+  changePercent: number | null
+}
+
 export type UsageLogApiKeyItemResponse = {
   apiKeyId: string
   alias: string | null
