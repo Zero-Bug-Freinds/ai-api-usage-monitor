@@ -3,6 +3,8 @@ package com.eevee.usageservice.service;
 import com.eevee.usage.events.AiProvider;
 import com.eevee.usageservice.api.dto.DailyUsagePoint;
 import com.eevee.usageservice.api.dto.HourlyUsagePoint;
+import com.eevee.usageservice.api.dto.LatencyInsightResponse;
+import com.eevee.usageservice.api.dto.LatencyStabilityPoint;
 import com.eevee.usageservice.api.dto.ModelUsageAggregate;
 import com.eevee.usageservice.api.dto.MonthlyUsagePoint;
 import com.eevee.usageservice.api.dto.PagedLogsResponse;
@@ -34,6 +36,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -425,6 +428,109 @@ public class UsageDashboardService {
                 .toList();
         log.debug("dashboard.series unit=MONTH dbAndMapMs={} rows={} range={}~{} provider={}", (System.nanoTime() - startedAt) / 1_000_000, rows.size(), from, toInclusive, provider);
         return rows;
+    }
+
+    /**
+     * Latency and success/error rates per bucket from {@code usage_recorded_log} (same scope rules as {@link #series}).
+     */
+    @Transactional(readOnly = true)
+    public List<LatencyStabilityPoint> latencyStabilitySeries(
+            String userId,
+            LocalDate from,
+            LocalDate toInclusive,
+            AiProvider provider,
+            UsageSeriesUnit unit,
+            UsageDataContext dataContext,
+            String apiKeyId
+    ) {
+        Range r = validateRange(from, toInclusive);
+        String key = normalizeApiKey(apiKeyId);
+        String keyFilter = key != null ? key : "";
+        if (unit == UsageSeriesUnit.HOUR) {
+            long days = ChronoUnit.DAYS.between(from, toInclusive) + 1;
+            if (days != 1) {
+                throw new IllegalArgumentException("HOUR unit requires a single-day range");
+            }
+            return analyticsJdbcRepository.aggregateLatencyStabilityHourlyForKstDayUserScoped(
+                    userId,
+                    r.from(),
+                    r.toExclusive(),
+                    provider,
+                    dataContext,
+                    keyFilter
+            );
+        }
+        if (unit == UsageSeriesUnit.DAY) {
+            return analyticsJdbcRepository.aggregateLatencyStabilityDailyForUserFromLogs(
+                    userId,
+                    from,
+                    toInclusive,
+                    r.from(),
+                    r.toExclusive(),
+                    provider,
+                    keyFilter,
+                    dataContext
+            );
+        }
+        YearMonth fromYm = YearMonth.from(from);
+        YearMonth toYm = YearMonth.from(toInclusive);
+        return analyticsJdbcRepository.aggregateLatencyStabilityMonthlyForUserFromLogs(
+                userId,
+                fromYm,
+                toYm,
+                r.from(),
+                r.toExclusive(),
+                provider,
+                keyFilter,
+                dataContext
+        );
+    }
+
+    /**
+     * Average latency for the selected range vs the immediately preceding window of equal length (for dashboard banner).
+     */
+    @Transactional(readOnly = true)
+    public LatencyInsightResponse latencyInsight(
+            String userId,
+            LocalDate from,
+            LocalDate toInclusive,
+            AiProvider provider,
+            UsageDataContext dataContext,
+            String apiKeyId
+    ) {
+        Range r = validateRange(from, toInclusive);
+        long days = ChronoUnit.DAYS.between(from, toInclusive) + 1;
+        LocalDate prevTo = from.minusDays(1);
+        LocalDate prevFrom = prevTo.minusDays(days - 1);
+        Instant prevStart = prevFrom.atStartOfDay(DASHBOARD_ZONE).toInstant();
+        Instant prevEndExclusive = prevTo.plusDays(1).atStartOfDay(DASHBOARD_ZONE).toInstant();
+        String key = normalizeApiKey(apiKeyId);
+        String keyFilter = key != null ? key : "";
+        Double current = analyticsJdbcRepository.aggregateAvgLatencyMsForUserFromLogs(
+                userId,
+                r.from(),
+                r.toExclusive(),
+                provider,
+                keyFilter,
+                dataContext
+        );
+        Double previous = analyticsJdbcRepository.aggregateAvgLatencyMsForUserFromLogs(
+                userId,
+                prevStart,
+                prevEndExclusive,
+                provider,
+                keyFilter,
+                dataContext
+        );
+        Double changePercent = null;
+        if (current != null && previous != null) {
+            if (previous > 0) {
+                changePercent = (current - previous) / previous * 100.0;
+            } else if (current > 0) {
+                changePercent = 100.0;
+            }
+        }
+        return new LatencyInsightResponse(current, previous, changePercent);
     }
 
     /**

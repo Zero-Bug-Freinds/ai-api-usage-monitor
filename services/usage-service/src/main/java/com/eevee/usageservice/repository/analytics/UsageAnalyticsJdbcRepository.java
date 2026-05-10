@@ -3,6 +3,7 @@ package com.eevee.usageservice.repository.analytics;
 import com.eevee.usage.events.AiProvider;
 import com.eevee.usageservice.api.dto.DailyUsagePoint;
 import com.eevee.usageservice.api.dto.HourlyUsagePoint;
+import com.eevee.usageservice.api.dto.LatencyStabilityPoint;
 import com.eevee.usageservice.api.dto.ModelUsageAggregate;
 import com.eevee.usageservice.api.dto.MonthlyUsagePoint;
 import com.eevee.usageservice.api.dto.UsageDataContext;
@@ -17,6 +18,7 @@ import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -1284,5 +1286,521 @@ public class UsageAnalyticsJdbcRepository {
                 Timestamp.from(from),
                 Timestamp.from(toExclusive)
         );
+    }
+
+    /**
+     * Average latency (ms) over rows with non-null {@code latency_ms}, same filters as user-scoped log aggregates.
+     */
+    public Double aggregateAvgLatencyMsForUserFromLogs(
+            String userId,
+            Instant from,
+            Instant toExclusive,
+            AiProvider provider,
+            String apiKeyFilter,
+            UsageDataContext scope
+    ) {
+        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        String scopeFrag = userScopeLogsFragment(scope);
+        String sql = """
+                SELECT AVG(latency_ms)::double precision
+                FROM usage_recorded_log
+                WHERE user_id = ?
+                  AND occurred_at >= ? AND occurred_at < ?
+                  AND latency_ms IS NOT NULL
+                  %s%s%s
+                """.formatted(scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+        String p1 = provider == null ? null : provider.name();
+        Double v = jdbc.query(
+                sql,
+                rs -> {
+                    if (!rs.next()) {
+                        return null;
+                    }
+                    return rs.getObject(1) != null ? rs.getDouble(1) : null;
+                },
+                userId,
+                Timestamp.from(from),
+                Timestamp.from(toExclusive),
+                af,
+                af,
+                p1,
+                p1
+        );
+        return v;
+    }
+
+    /**
+     * Hourly latency stability for one KST day; fills hours 0–23 (missing hours use zeros / null latencies).
+     */
+    public List<LatencyStabilityPoint> aggregateLatencyStabilityHourlyForKstDayUserScoped(
+            String userId,
+            Instant kstDayStartUtc,
+            Instant kstDayEndExclusiveUtc,
+            AiProvider provider,
+            UsageDataContext scope,
+            String apiKeyFilter
+    ) {
+        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        String scopeFrag = userScopeLogsFragment(scope);
+        String sqlStats = """
+                SELECT (EXTRACT(HOUR FROM (occurred_at AT TIME ZONE '%s')))::int AS h,
+                       COUNT(*)::bigint AS req_cnt,
+                       COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0)::bigint AS err_cnt,
+                       COALESCE(SUM(COALESCE(total_tokens, 0)), 0)::bigint AS tok_sum,
+                       (AVG(latency_ms) FILTER (WHERE latency_ms IS NOT NULL))::double precision AS avg_ms,
+                       MIN(latency_ms) FILTER (WHERE latency_ms IS NOT NULL) AS min_ms,
+                       MAX(latency_ms) FILTER (WHERE latency_ms IS NOT NULL) AS max_ms,
+                       (PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY latency_ms))::double precision AS p95,
+                       (PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY latency_ms))::double precision AS p99,
+                       CASE WHEN SUM(COALESCE(total_tokens, 0)) > 0
+                            THEN (COALESCE(SUM(latency_ms) FILTER (WHERE latency_ms IS NOT NULL), 0))::double precision
+                                 / SUM(COALESCE(total_tokens, 0))::double precision
+                            ELSE NULL END AS ms_per_tok
+                FROM usage_recorded_log
+                WHERE user_id = ?
+                  AND occurred_at >= ? AND occurred_at < ?
+                  %s%s%s
+                GROUP BY 1
+                ORDER BY 1
+                """.formatted(BUCKET_ZONE, ERR_PRED, scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+        String p1 = provider == null ? null : provider.name();
+        Map<Integer, LatencyStabilityPoint> byHour = new HashMap<>();
+        jdbc.query(
+                sqlStats,
+                rs -> {
+                    while (rs.next()) {
+                        int h = rs.getInt("h");
+                        long req = rs.getLong("req_cnt");
+                        long err = rs.getLong("err_cnt");
+                        long tok = rs.getLong("tok_sum");
+                        double successRate = req > 0 ? (100.0 * (req - err)) / req : 0.0;
+                        double errorRate = req > 0 ? (100.0 * err) / req : 0.0;
+                        Double avgMs = rs.getObject("avg_ms") != null ? rs.getDouble("avg_ms") : null;
+                        Long minMs = rs.getObject("min_ms") != null ? rs.getLong("min_ms") : null;
+                        Long maxMs = rs.getObject("max_ms") != null ? rs.getLong("max_ms") : null;
+                        Double p95 = rs.getObject("p95") != null ? rs.getDouble("p95") : null;
+                        Double p99 = rs.getObject("p99") != null ? rs.getDouble("p99") : null;
+                        Double msPerTok = rs.getObject("ms_per_tok") != null ? rs.getDouble("ms_per_tok") : null;
+                        String label = String.format("%02d:00", h);
+                        byHour.put(
+                                h,
+                                new LatencyStabilityPoint(
+                                        label,
+                                        req,
+                                        successRate,
+                                        errorRate,
+                                        tok,
+                                        avgMs,
+                                        minMs,
+                                        maxMs,
+                                        p95,
+                                        p99,
+                                        msPerTok,
+                                        null,
+                                        null
+                                )
+                        );
+                    }
+                    return null;
+                },
+                userId,
+                Timestamp.from(kstDayStartUtc),
+                Timestamp.from(kstDayEndExclusiveUtc),
+                af,
+                af,
+                p1,
+                p1
+        );
+
+        String sqlTop = """
+                WITH cnt AS (
+                    SELECT (EXTRACT(HOUR FROM (occurred_at AT TIME ZONE '%s')))::int AS h,
+                           COALESCE(NULLIF(TRIM(model), ''), LOWER(provider::text) || '_unknown') AS m,
+                           provider::text AS p,
+                           COUNT(*)::bigint AS c
+                    FROM usage_recorded_log
+                    WHERE user_id = ?
+                      AND occurred_at >= ? AND occurred_at < ?
+                      %s%s%s
+                    GROUP BY 1, 2, 3
+                )
+                SELECT DISTINCT ON (h) h, m, p
+                FROM cnt
+                ORDER BY h, c DESC
+                """.formatted(BUCKET_ZONE, scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+        Map<Integer, String[]> topByHour = new HashMap<>();
+        jdbc.query(
+                sqlTop,
+                rs -> {
+                    while (rs.next()) {
+                        topByHour.put(rs.getInt("h"), new String[] {rs.getString("m"), rs.getString("p")});
+                    }
+                    return null;
+                },
+                userId,
+                Timestamp.from(kstDayStartUtc),
+                Timestamp.from(kstDayEndExclusiveUtc),
+                af,
+                af,
+                p1,
+                p1
+        );
+
+        List<LatencyStabilityPoint> out = new ArrayList<>(24);
+        for (int h = 0; h < 24; h++) {
+            LatencyStabilityPoint base = byHour.get(h);
+            String[] top = topByHour.get(h);
+            String label = String.format("%02d:00", h);
+            if (base == null) {
+                out.add(new LatencyStabilityPoint(
+                        label,
+                        0L,
+                        0.0,
+                        0.0,
+                        0L,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null
+                ));
+            } else {
+                out.add(new LatencyStabilityPoint(
+                        label,
+                        base.requestCount(),
+                        base.successRate(),
+                        base.errorRate(),
+                        base.totalTokens(),
+                        base.avgLatencyMs(),
+                        base.minLatencyMs(),
+                        base.maxLatencyMs(),
+                        base.p95LatencyMs(),
+                        base.p99LatencyMs(),
+                        base.latencyPerTokenMs(),
+                        top != null ? top[0] : null,
+                        top != null ? top[1] : null
+                ));
+            }
+        }
+        return out;
+    }
+
+    public List<LatencyStabilityPoint> aggregateLatencyStabilityDailyForUserFromLogs(
+            String userId,
+            LocalDate fromInclusive,
+            LocalDate toInclusive,
+            Instant fromUtc,
+            Instant toExclusiveUtc,
+            AiProvider provider,
+            String apiKeyFilter,
+            UsageDataContext scope
+    ) {
+        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        String scopeFrag = userScopeLogsFragment(scope);
+        String sqlStats = """
+                SELECT ((occurred_at AT TIME ZONE '%s'))::date AS d,
+                       COUNT(*)::bigint AS req_cnt,
+                       COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0)::bigint AS err_cnt,
+                       COALESCE(SUM(COALESCE(total_tokens, 0)), 0)::bigint AS tok_sum,
+                       (AVG(latency_ms) FILTER (WHERE latency_ms IS NOT NULL))::double precision AS avg_ms,
+                       MIN(latency_ms) FILTER (WHERE latency_ms IS NOT NULL) AS min_ms,
+                       MAX(latency_ms) FILTER (WHERE latency_ms IS NOT NULL) AS max_ms,
+                       (PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY latency_ms))::double precision AS p95,
+                       (PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY latency_ms))::double precision AS p99,
+                       CASE WHEN SUM(COALESCE(total_tokens, 0)) > 0
+                            THEN (COALESCE(SUM(latency_ms) FILTER (WHERE latency_ms IS NOT NULL), 0))::double precision
+                                 / SUM(COALESCE(total_tokens, 0))::double precision
+                            ELSE NULL END AS ms_per_tok
+                FROM usage_recorded_log
+                WHERE user_id = ?
+                  AND occurred_at >= ? AND occurred_at < ?
+                  %s%s%s
+                GROUP BY 1
+                ORDER BY 1
+                """.formatted(BUCKET_ZONE, ERR_PRED, scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+        String p1 = provider == null ? null : provider.name();
+        Map<LocalDate, LatencyStabilityPoint> byDay = new HashMap<>();
+        jdbc.query(
+                sqlStats,
+                rs -> {
+                    while (rs.next()) {
+                        LocalDate d = rs.getDate("d").toLocalDate();
+                        long req = rs.getLong("req_cnt");
+                        long err = rs.getLong("err_cnt");
+                        long tok = rs.getLong("tok_sum");
+                        double successRate = req > 0 ? (100.0 * (req - err)) / req : 0.0;
+                        double errorRate = req > 0 ? (100.0 * err) / req : 0.0;
+                        Double avgMs = rs.getObject("avg_ms") != null ? rs.getDouble("avg_ms") : null;
+                        Long minMs = rs.getObject("min_ms") != null ? rs.getLong("min_ms") : null;
+                        Long maxMs = rs.getObject("max_ms") != null ? rs.getLong("max_ms") : null;
+                        Double p95 = rs.getObject("p95") != null ? rs.getDouble("p95") : null;
+                        Double p99 = rs.getObject("p99") != null ? rs.getDouble("p99") : null;
+                        Double msPerTok = rs.getObject("ms_per_tok") != null ? rs.getDouble("ms_per_tok") : null;
+                        String label = d.toString();
+                        byDay.put(
+                                d,
+                                new LatencyStabilityPoint(
+                                        label,
+                                        req,
+                                        successRate,
+                                        errorRate,
+                                        tok,
+                                        avgMs,
+                                        minMs,
+                                        maxMs,
+                                        p95,
+                                        p99,
+                                        msPerTok,
+                                        null,
+                                        null
+                                )
+                        );
+                    }
+                    return null;
+                },
+                userId,
+                Timestamp.from(fromUtc),
+                Timestamp.from(toExclusiveUtc),
+                af,
+                af,
+                p1,
+                p1
+        );
+
+        String sqlTop = """
+                WITH cnt AS (
+                    SELECT ((occurred_at AT TIME ZONE '%s'))::date AS d,
+                           COALESCE(NULLIF(TRIM(model), ''), LOWER(provider::text) || '_unknown') AS m,
+                           provider::text AS p,
+                           COUNT(*)::bigint AS c
+                    FROM usage_recorded_log
+                    WHERE user_id = ?
+                      AND occurred_at >= ? AND occurred_at < ?
+                      %s%s%s
+                    GROUP BY 1, 2, 3
+                )
+                SELECT DISTINCT ON (d) d, m, p
+                FROM cnt
+                ORDER BY d, c DESC
+                """.formatted(BUCKET_ZONE, scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+        Map<LocalDate, String[]> topByDay = new HashMap<>();
+        jdbc.query(
+                sqlTop,
+                rs -> {
+                    while (rs.next()) {
+                        LocalDate d = rs.getDate("d").toLocalDate();
+                        topByDay.put(d, new String[] {rs.getString("m"), rs.getString("p")});
+                    }
+                    return null;
+                },
+                userId,
+                Timestamp.from(fromUtc),
+                Timestamp.from(toExclusiveUtc),
+                af,
+                af,
+                p1,
+                p1
+        );
+
+        List<LatencyStabilityPoint> out = new ArrayList<>();
+        for (LocalDate d = fromInclusive; !d.isAfter(toInclusive); d = d.plusDays(1)) {
+            LatencyStabilityPoint base = byDay.get(d);
+            String[] top = topByDay.get(d);
+            String label = d.toString();
+            if (base == null) {
+                out.add(new LatencyStabilityPoint(
+                        label,
+                        0L,
+                        0.0,
+                        0.0,
+                        0L,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null
+                ));
+            } else {
+                out.add(new LatencyStabilityPoint(
+                        label,
+                        base.requestCount(),
+                        base.successRate(),
+                        base.errorRate(),
+                        base.totalTokens(),
+                        base.avgLatencyMs(),
+                        base.minLatencyMs(),
+                        base.maxLatencyMs(),
+                        base.p95LatencyMs(),
+                        base.p99LatencyMs(),
+                        base.latencyPerTokenMs(),
+                        top != null ? top[0] : null,
+                        top != null ? top[1] : null
+                ));
+            }
+        }
+        return out;
+    }
+
+    public List<LatencyStabilityPoint> aggregateLatencyStabilityMonthlyForUserFromLogs(
+            String userId,
+            YearMonth fromYm,
+            YearMonth toYmInclusive,
+            Instant fromUtc,
+            Instant toExclusiveUtc,
+            AiProvider provider,
+            String apiKeyFilter,
+            UsageDataContext scope
+    ) {
+        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        String scopeFrag = userScopeLogsFragment(scope);
+        String sqlStats = """
+                SELECT to_char((occurred_at AT TIME ZONE '%s'), 'YYYY-MM') AS ym,
+                       COUNT(*)::bigint AS req_cnt,
+                       COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0)::bigint AS err_cnt,
+                       COALESCE(SUM(COALESCE(total_tokens, 0)), 0)::bigint AS tok_sum,
+                       (AVG(latency_ms) FILTER (WHERE latency_ms IS NOT NULL))::double precision AS avg_ms,
+                       MIN(latency_ms) FILTER (WHERE latency_ms IS NOT NULL) AS min_ms,
+                       MAX(latency_ms) FILTER (WHERE latency_ms IS NOT NULL) AS max_ms,
+                       (PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY latency_ms))::double precision AS p95,
+                       (PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY latency_ms))::double precision AS p99,
+                       CASE WHEN SUM(COALESCE(total_tokens, 0)) > 0
+                            THEN (COALESCE(SUM(latency_ms) FILTER (WHERE latency_ms IS NOT NULL), 0))::double precision
+                                 / SUM(COALESCE(total_tokens, 0))::double precision
+                            ELSE NULL END AS ms_per_tok
+                FROM usage_recorded_log
+                WHERE user_id = ?
+                  AND occurred_at >= ? AND occurred_at < ?
+                  %s%s%s
+                GROUP BY 1
+                ORDER BY 1
+                """.formatted(BUCKET_ZONE, ERR_PRED, scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+        String p1 = provider == null ? null : provider.name();
+        Map<String, LatencyStabilityPoint> byYm = new HashMap<>();
+        jdbc.query(
+                sqlStats,
+                rs -> {
+                    while (rs.next()) {
+                        String ym = rs.getString("ym");
+                        long req = rs.getLong("req_cnt");
+                        long err = rs.getLong("err_cnt");
+                        long tok = rs.getLong("tok_sum");
+                        double successRate = req > 0 ? (100.0 * (req - err)) / req : 0.0;
+                        double errorRate = req > 0 ? (100.0 * err) / req : 0.0;
+                        Double avgMs = rs.getObject("avg_ms") != null ? rs.getDouble("avg_ms") : null;
+                        Long minMs = rs.getObject("min_ms") != null ? rs.getLong("min_ms") : null;
+                        Long maxMs = rs.getObject("max_ms") != null ? rs.getLong("max_ms") : null;
+                        Double p95 = rs.getObject("p95") != null ? rs.getDouble("p95") : null;
+                        Double p99 = rs.getObject("p99") != null ? rs.getDouble("p99") : null;
+                        Double msPerTok = rs.getObject("ms_per_tok") != null ? rs.getDouble("ms_per_tok") : null;
+                        byYm.put(
+                                ym,
+                                new LatencyStabilityPoint(
+                                        ym,
+                                        req,
+                                        successRate,
+                                        errorRate,
+                                        tok,
+                                        avgMs,
+                                        minMs,
+                                        maxMs,
+                                        p95,
+                                        p99,
+                                        msPerTok,
+                                        null,
+                                        null
+                                )
+                        );
+                    }
+                    return null;
+                },
+                userId,
+                Timestamp.from(fromUtc),
+                Timestamp.from(toExclusiveUtc),
+                af,
+                af,
+                p1,
+                p1
+        );
+
+        String sqlTop = """
+                WITH cnt AS (
+                    SELECT to_char((occurred_at AT TIME ZONE '%s'), 'YYYY-MM') AS ym,
+                           COALESCE(NULLIF(TRIM(model), ''), LOWER(provider::text) || '_unknown') AS m,
+                           provider::text AS p,
+                           COUNT(*)::bigint AS c
+                    FROM usage_recorded_log
+                    WHERE user_id = ?
+                      AND occurred_at >= ? AND occurred_at < ?
+                      %s%s%s
+                    GROUP BY 1, 2, 3
+                )
+                SELECT DISTINCT ON (ym) ym, m, p
+                FROM cnt
+                ORDER BY ym, c DESC
+                """.formatted(BUCKET_ZONE, scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+        Map<String, String[]> topByYm = new HashMap<>();
+        jdbc.query(
+                sqlTop,
+                rs -> {
+                    while (rs.next()) {
+                        topByYm.put(rs.getString("ym"), new String[] {rs.getString("m"), rs.getString("p")});
+                    }
+                    return null;
+                },
+                userId,
+                Timestamp.from(fromUtc),
+                Timestamp.from(toExclusiveUtc),
+                af,
+                af,
+                p1,
+                p1
+        );
+
+        List<LatencyStabilityPoint> out = new ArrayList<>();
+        for (YearMonth ym = fromYm; !ym.isAfter(toYmInclusive); ym = ym.plusMonths(1)) {
+            String label = String.format("%04d-%02d", ym.getYear(), ym.getMonthValue());
+            LatencyStabilityPoint base = byYm.get(label);
+            String[] top = topByYm.get(label);
+            if (base == null) {
+                out.add(new LatencyStabilityPoint(
+                        label,
+                        0L,
+                        0.0,
+                        0.0,
+                        0L,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null
+                ));
+            } else {
+                out.add(new LatencyStabilityPoint(
+                        label,
+                        base.requestCount(),
+                        base.successRate(),
+                        base.errorRate(),
+                        base.totalTokens(),
+                        base.avgLatencyMs(),
+                        base.minLatencyMs(),
+                        base.maxLatencyMs(),
+                        base.p95LatencyMs(),
+                        base.p99LatencyMs(),
+                        base.latencyPerTokenMs(),
+                        top != null ? top[0] : null,
+                        top != null ? top[1] : null
+                ));
+            }
+        }
+        return out;
     }
 }

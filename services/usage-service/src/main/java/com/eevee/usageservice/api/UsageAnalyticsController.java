@@ -3,6 +3,8 @@ package com.eevee.usageservice.api;
 import com.eevee.usage.events.AiProvider;
 import com.eevee.usageservice.api.dto.DailyUsagePoint;
 import com.eevee.usageservice.api.dto.HourlyUsagePoint;
+import com.eevee.usageservice.api.dto.LatencyInsightResponse;
+import com.eevee.usageservice.api.dto.LatencyStabilityPoint;
 import com.eevee.usageservice.api.dto.ModelUsageAggregate;
 import com.eevee.usageservice.api.dto.MonthlyUsagePoint;
 import com.eevee.usageservice.api.dto.PagedLogsResponse;
@@ -102,6 +104,35 @@ public class UsageAnalyticsController {
         String userId = currentUser(request);
         UsageDataContext ctx = parseDataContext(dataContext);
         return dashboardService.series(userId, from, to, provider, unit, ctx, apiKeyId);
+    }
+
+    @GetMapping("/dashboard/series/latency-stability")
+    public List<LatencyStabilityPoint> latencyStabilitySeries(
+            HttpServletRequest request,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam UsageSeriesUnit unit,
+            @RequestParam(required = false) AiProvider provider,
+            @RequestParam(required = false) String dataContext,
+            @RequestParam(required = false) String apiKeyId
+    ) {
+        String userId = currentUser(request);
+        UsageDataContext ctx = parseDataContext(dataContext);
+        return dashboardService.latencyStabilitySeries(userId, from, to, provider, unit, ctx, apiKeyId);
+    }
+
+    @GetMapping("/dashboard/kpi/latency-insight")
+    public LatencyInsightResponse latencyInsight(
+            HttpServletRequest request,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) AiProvider provider,
+            @RequestParam(required = false) String dataContext,
+            @RequestParam(required = false) String apiKeyId
+    ) {
+        String userId = currentUser(request);
+        UsageDataContext ctx = parseDataContext(dataContext);
+        return dashboardService.latencyInsight(userId, from, to, provider, ctx, apiKeyId);
     }
 
     @GetMapping("/dashboard/series/monthly")
