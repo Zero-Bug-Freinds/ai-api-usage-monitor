@@ -222,3 +222,16 @@
 - 예산 예측 경로를 AI-agent 중심으로 전환: deterministic fallback 제거, `AI_INFERENCE_FAILED` 표준 에러(`503`) 도입.
 - 예산 예측 AI 계약 강화: 필수 응답 필드 검증 실패 시 요청 실패 처리(보정/기본값 대체 제거).
 - 프롬프트/스키마 확장: 7일 토큰 배열·모델 사용 분포·24시간 토큰 패턴 입력 및 anomaly/routing 출력 필드 반영.
+
+## 10. 최근 반영 사항 (2026-05-10)
+
+- UI 키 상태 표기 문구를 정리해 삭제 예정 키는 alias 유지 + `(삭제)`로 표시한다.
+- Agent 메인 화면 레이아웃을 조정해 좌측 키 목록 폭을 확장하고, 우측 본문은 `분석`을 `추천`보다 상단에 배치했다.
+- 추천 실행 시 우선순위 선택값(`BALANCED`/`COST`/`QUALITY`/`LATENCY`)을 프론트에서 전달하고, 백엔드 분석 API(`RecommendationAnalyzeRequest`) 입력 필드 `recommendationPriority`로 반영한다.
+- 추천 분석 로직에서 `reasoning tokens`를 input/output과 분리 집계해 근거 코드(`HEAVY_REASONING_RATIO`)와 후보 정렬에 반영한다.
+- 분석 플로우는 `insufficientForForecast` 상태여도 백엔드 분석 호출을 시도하도록 변경했고, 성공 데이터가 있으면 기존 `forecastGaps` 경고 문구를 비워 stale 메시지가 남지 않게 했다.
+- 추천 영역의 중복 빈 상태 메시지(`추천 결과가 없습니다...`)를 제거해 같은 안내가 중첩 렌더링되지 않게 정리했다.
+- 개인 키 추천 생성에서 `userId`(숫자)와 이메일 문자열이 혼재해도 매칭되도록, `PolicyRecommendationAgentService`의 PERSONAL scope billing signal 매칭에 `keyId` 기반 fallback을 추가했다.
+- 이벤트 파싱/조회 안정화:
+  - `IdentityExternalApiKeyEventListener`: status changed payload 역직렬화 전에 `eventType` 필드를 제거해 `UnrecognizedPropertyException`을 방지한다.
+  - `UsagePredictionSignalSnapshotService.findAll()`: `@Transactional(readOnly = true)`를 적용해 LOB 조회 시점 예외를 방지한다.
