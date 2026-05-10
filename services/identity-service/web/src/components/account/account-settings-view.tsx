@@ -640,7 +640,7 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
                         <span className="text-foreground">{row.alias}</span>
                       )}
                       {isPendingDeletion(row) ? (
-                        <span className="ml-1.5 text-amber-700 dark:text-amber-500">(삭제 예정)</span>
+                        <span className="ml-1.5 text-amber-700 dark:text-amber-500">(삭제)</span>
                       ) : null}
                     </div>
                     {isPendingDeletion(row) && row.permanentDeletionAt ? (

@@ -16,6 +16,7 @@ public record RecommendationAnalyzeRequest(
 		@Max(value = 90, message = "windowDays는 90 이하여야 합니다")
 		int windowDays,
 		@NotBlank(message = "triggeredBy는 필수입니다")
-		String triggeredBy
+		String triggeredBy,
+		String recommendationPriority
 ) {
 }
