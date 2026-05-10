@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useSearchParams } from "next/navigation"
 import { ChevronDown, ChevronUp } from "lucide-react"
 import {
   Bar,
@@ -37,6 +38,7 @@ import type {
   ModelUsageAggregate,
   MonthlyUsagePoint,
   UsageCostIntradayKpiResponse,
+  UsageLogApiKeyItemResponse,
   UsageProviderFilter,
   UsageSeriesPoint,
   UsageSeriesUnit,
@@ -65,6 +67,7 @@ const MAX_RANGE_DAYS = 366
 const HISTORY_CACHE_TTL_MS = 60 * 60 * 1000
 
 const DASHBOARD_PROVIDER_ALL = "__ALL__"
+const DASHBOARD_API_KEY_ALL = "__ALL__"
 const DASHBOARD_PROVIDER_STORAGE_KEY = "usage-dashboard:provider:v1"
 const DASHBOARD_PERIOD_STORAGE_KEY = "usage-dashboard:period:v1"
 const MODEL_REQUESTS_TOP_N = 10
@@ -155,6 +158,23 @@ function truncateModelLabel(model: string, max = 36) {
 function providerParam(v: string): UsageProviderFilter | undefined {
   if (v === DASHBOARD_PROVIDER_ALL) return undefined
   return v as UsageProviderFilter
+}
+
+type DashboardDataContext = "PERSONAL" | "TEAM_MEMBER_ONLY"
+
+function parseDashboardDataContext(raw: string | null): DashboardDataContext {
+  if (raw === "TEAM_MEMBER_ONLY") return "TEAM_MEMBER_ONLY"
+  return "PERSONAL"
+}
+
+function scopeQueryParams(
+  dataContext: DashboardDataContext,
+  apiKeyId: string
+): { dataContext?: string; apiKeyId?: string } {
+  const o: { dataContext?: string; apiKeyId?: string } = {}
+  if (dataContext === "TEAM_MEMBER_ONLY") o.dataContext = "TEAM_MEMBER_ONLY"
+  if (apiKeyId !== DASHBOARD_API_KEY_ALL) o.apiKeyId = apiKeyId
+  return o
 }
 
 function presetRangeForMode(mode: PeriodMode, todayKst: string) {
@@ -604,6 +624,10 @@ const TOKEN_CHART_MIN_H = 280
 const TOKEN_CHART_MAX_H = 520
 
 export function UsageDashboard() {
+  const searchParams = useSearchParams()
+  const dataContextParam = searchParams.get("dataContext") ?? ""
+  const dataContext = parseDashboardDataContext(searchParams.get("dataContext"))
+
   const [periodMode, setPeriodMode] = React.useState<PeriodMode>(() => {
     const t = formatKstIsoDate()
     return readStoredDashboardPeriod(t).mode
@@ -617,6 +641,8 @@ export function UsageDashboard() {
     return readStoredDashboardPeriod(t).to
   })
   const [dashProvider, setDashProvider] = React.useState<string>(() => readStoredDashboardProvider())
+  const [dashApiKeyId, setDashApiKeyId] = React.useState<string>(DASHBOARD_API_KEY_ALL)
+  const [apiKeyOptions, setApiKeyOptions] = React.useState<UsageLogApiKeyItemResponse[]>([])
 
   const [mainLoading, setMainLoading] = React.useState(true)
   const [mainError, setMainError] = React.useState<string | null>(null)
@@ -639,6 +665,18 @@ export function UsageDashboard() {
   React.useLayoutEffect(() => {
     setClientReady(true)
   }, [])
+
+  React.useEffect(() => {
+    setDashApiKeyId(DASHBOARD_API_KEY_ALL)
+  }, [dataContextParam])
+
+  React.useEffect(() => {
+    if (dashApiKeyId === DASHBOARD_API_KEY_ALL) return
+    if (apiKeyOptions.length === 0) return
+    if (!apiKeyOptions.some((x: UsageLogApiKeyItemResponse) => x.apiKeyId === dashApiKeyId)) {
+      setDashApiKeyId(DASHBOARD_API_KEY_ALL)
+    }
+  }, [apiKeyOptions, dashApiKeyId])
 
   React.useEffect(() => {
     if (!clientReady || periodMode === "custom") return
@@ -699,39 +737,54 @@ export function UsageDashboard() {
         const isCurrentDayRange = rf === t && rt === t
 
         const fy = addKstDays(t, -MONTHLY_LOOKBACK_DAYS)
-        const pq = buildUsageQuery({ provider: providerParam(dashProvider) })
+        const scopeExtra = scopeQueryParams(dataContext, dashApiKeyId)
+        const pq = buildUsageQuery({ provider: providerParam(dashProvider), ...scopeExtra })
         const qRange = buildUsageQuery({
           from: rf,
           to: rt,
           provider: providerParam(dashProvider),
+          ...scopeExtra,
         })
         const qPrev = buildUsageQuery({
           from: pf,
           to: pt,
           provider: providerParam(dashProvider),
+          ...scopeExtra,
         })
         const qMainSeries = buildUsageQuery({
           from: rf,
           to: rt,
           unit: seriesUnit,
           provider: providerParam(dashProvider),
+          ...scopeExtra,
         })
 
         const fetchPolicy = isCurrentDayRange
           ? { signal, cacheMode: "no-store" as const, clientCacheTtlMs: 0 }
           : { signal, cacheMode: "default" as const, clientCacheTtlMs: HISTORY_CACHE_TTL_MS }
 
+        const keyListQ = buildUsageQuery({
+          provider: providerParam(dashProvider),
+          ...(dataContext === "TEAM_MEMBER_ONLY" ? { dataContext: "TEAM_MEMBER_ONLY" } : {}),
+        })
+        const apiKeysP = fetchUsageJson<UsageLogApiKeyItemResponse[]>(`logs/api-keys${keyListQ}`, fetchPolicy)
+
         const summaryP = fetchUsageJson<UsageSummaryResponse>(`dashboard/summary${qRange}`, fetchPolicy)
         const summaryPrevP = fetchUsageJson<UsageSummaryResponse>(`dashboard/summary${qPrev}`, fetchPolicy)
         const mainSeriesP = fetchUsageJson<UsageSeriesPoint[]>(`dashboard/series${qMainSeries}`, fetchPolicy)
         const dailyP = fetchUsageJson<DailyUsagePoint[]>(`dashboard/series/daily${qRange}`, fetchPolicy)
         const monthlyP = fetchUsageJson<MonthlyUsagePoint[]>(
-          `dashboard/series/monthly${buildUsageQuery({ from: fy, to: rt, provider: providerParam(dashProvider) })}`,
+          `dashboard/series/monthly${buildUsageQuery({
+            from: fy,
+            to: rt,
+            provider: providerParam(dashProvider),
+            ...scopeExtra,
+          })}`,
           fetchPolicy
         )
         const byModelP = fetchUsageJson<ModelUsageAggregate[]>(`dashboard/by-model${qRange}`, fetchPolicy)
 
-        const [cur, prev, seriesRows, d, m, bm, maybeKpi] = await Promise.all([
+        const [cur, prev, seriesRows, d, m, bm, maybeKpi, keys] = await Promise.all([
           summaryP,
           summaryPrevP,
           mainSeriesP,
@@ -741,6 +794,7 @@ export function UsageDashboard() {
           isCurrentDayRange
             ? fetchUsageJson<UsageCostIntradayKpiResponse>(`dashboard/kpi/cost-intraday${pq}`, fetchPolicy)
             : Promise.resolve(null),
+          apiKeysP,
         ])
         if (!cancelled) {
           setLoadedRange({ from: rf, to: rt })
@@ -751,6 +805,7 @@ export function UsageDashboard() {
           setDaily(Array.isArray(d) ? d : [])
           setMonthly(Array.isArray(m) ? m : [])
           setByModel(Array.isArray(bm) ? bm : [])
+          setApiKeyOptions(Array.isArray(keys) ? keys : [])
         }
       } catch (e) {
         if (isAbortError(e)) return
@@ -765,7 +820,7 @@ export function UsageDashboard() {
       cancelled = true
       ac.abort()
     }
-  }, [clientReady, mainRefresh, periodMode, customFrom, customTo, dashProvider])
+  }, [clientReady, mainRefresh, periodMode, customFrom, customTo, dashProvider, dataContext, dashApiKeyId])
 
   const dailyChart = React.useMemo(
     (): MainStabilityRow[] =>
@@ -1066,6 +1121,11 @@ export function UsageDashboard() {
     byModel.some((m) => m.requestCount > 0) ||
     mainSeries.some((r) => r.requestCount > 0)
 
+  const emptyDashboardHint =
+    dataContext === "TEAM_MEMBER_ONLY" && apiKeyOptions.length === 0
+      ? "데이터가 없습니다. 팀 키 사용 기록이 없거나 해당 공급사에 노출할 API Key가 없습니다."
+      : "선택한 기간·공급사에 대한 사용 데이터가 없습니다"
+
   const todayKst = formatKstIsoDate()
   const periodPrefix = kpiPeriodPrefix(rangeFrom, rangeTo, todayKst)
   const compareCostLabel = costCompareLabel(rangeFrom, rangeTo, todayKst)
@@ -1129,9 +1189,11 @@ export function UsageDashboard() {
       <header className="mb-6 flex flex-col gap-4 border-b border-border pb-6 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight">사용량 대시보드</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {dataContext === "TEAM_MEMBER_ONLY" ? "팀별 나의 사용량" : "개인 대시보드"}
+            </h1>
             <span className="rounded-full border border-border bg-muted/50 px-2 py-0.5 text-xs font-medium text-muted-foreground">
-              개인
+              {dataContext === "TEAM_MEMBER_ONLY" ? "팀 키" : "개인"}
             </span>
           </div>
           <p className="text-sm text-muted-foreground">
@@ -1152,6 +1214,38 @@ export function UsageDashboard() {
       </header>
 
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-end">
+        <div className="space-y-2 sm:w-52">
+          <Label htmlFor="dash-provider">공급사</Label>
+          <Select value={dashProvider} onValueChange={setDashProvider}>
+            <SelectTrigger id="dash-provider">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={DASHBOARD_PROVIDER_ALL}>전체</SelectItem>
+              <SelectItem value="GOOGLE">Gemini (Google)</SelectItem>
+              <SelectItem value="OPENAI">OpenAI</SelectItem>
+              <SelectItem value="ANTHROPIC">Anthropic</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2 sm:min-w-[12rem] sm:max-w-[20rem]">
+          <Label htmlFor="dash-api-key">API Key 별칭</Label>
+          <Select value={dashApiKeyId} onValueChange={setDashApiKeyId}>
+            <SelectTrigger id="dash-api-key">
+              <SelectValue placeholder="전체" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={DASHBOARD_API_KEY_ALL}>전체</SelectItem>
+              {apiKeyOptions.map((k: UsageLogApiKeyItemResponse) => (
+                <SelectItem key={k.apiKeyId} value={k.apiKeyId}>
+                  {(k.alias?.trim() ? k.alias : k.apiKeyId).slice(0, 64)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
         <div className="space-y-2 sm:w-44">
           <Label htmlFor="dash-period">기간</Label>
           <Select
@@ -1204,21 +1298,6 @@ export function UsageDashboard() {
             </div>
           </div>
         ) : null}
-
-        <div className="space-y-2 sm:w-52">
-          <Label htmlFor="dash-provider">공급사</Label>
-          <Select value={dashProvider} onValueChange={setDashProvider}>
-            <SelectTrigger id="dash-provider">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={DASHBOARD_PROVIDER_ALL}>전체</SelectItem>
-              <SelectItem value="GOOGLE">Gemini (Google)</SelectItem>
-              <SelectItem value="OPENAI">OpenAI</SelectItem>
-              <SelectItem value="ANTHROPIC">Anthropic</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
       </div>
 
       {mainError ? (
@@ -1272,9 +1351,7 @@ export function UsageDashboard() {
           </section>
 
           {!hasMainData ? (
-            <p className="mb-10 text-center text-sm text-muted-foreground">
-              선택한 기간·공급사에 대한 사용 데이터가 없습니다
-            </p>
+            <p className="mb-10 text-center text-sm text-muted-foreground">{emptyDashboardHint}</p>
           ) : null}
 
           <section className="mb-8 rounded-lg border border-border p-4 shadow-sm">

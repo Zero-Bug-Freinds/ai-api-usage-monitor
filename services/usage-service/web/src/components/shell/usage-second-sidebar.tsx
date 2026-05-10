@@ -17,6 +17,7 @@ export function UsageSecondSidebar() {
   const isTeam = pathname.startsWith("/team")
   const viewMode: ViewMode = isTeam ? "team" : "personal"
   const teamTab = searchParams.get("tab") === "member" ? "member" : "team"
+  const personalContext = searchParams.get("dataContext") === "TEAM_MEMBER_ONLY" ? "teamMember" : "personalKeys"
 
   return (
     <aside className="w-64 min-w-[240px] shrink-0 rounded-lg border border-border bg-zinc-100/70 p-3">
@@ -35,7 +36,15 @@ export function UsageSecondSidebar() {
       <nav className="space-y-1">
         {viewMode === "personal" ? (
           <>
-            <Link href="/" className={navClass(pathname === "/")}>개인 대시보드</Link>
+            <Link href="/?dataContext=PERSONAL" className={navClass(pathname === "/" && personalContext === "personalKeys")}>
+              내 개인 키 사용량
+            </Link>
+            <Link
+              href="/?dataContext=TEAM_MEMBER_ONLY"
+              className={navClass(pathname === "/" && personalContext === "teamMember")}
+            >
+              팀별 나의 사용량
+            </Link>
           </>
         ) : (
           <>
