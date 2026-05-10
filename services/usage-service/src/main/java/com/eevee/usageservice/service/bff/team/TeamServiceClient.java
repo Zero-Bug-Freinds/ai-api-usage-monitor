@@ -31,25 +31,30 @@ public class TeamServiceClient {
     private final Cache<String, List<TeamSummaryClientItem>> userTeamsCache;
     private final int timeoutMs;
     private final CircuitBreaker teamServiceCircuitBreaker;
+    private final boolean cacheEmptyTeamList;
+    private final boolean diagnosticsLogging;
 
     public TeamServiceClient(
             UsageServiceProperties properties,
             @Qualifier("usageBffExecutor") Executor usageBffExecutor
     ) {
+        UsageServiceProperties.Team team = properties.getTeam();
         this.restClient = RestClient.builder()
-                .baseUrl(properties.getTeam().getBaseUrl())
+                .baseUrl(team.getBaseUrl())
                 .build();
         this.usageBffExecutor = usageBffExecutor;
         this.userTeamsCache = Caffeine.newBuilder()
-                .expireAfterWrite(Duration.ofSeconds(Math.max(60, properties.getTeam().getTeamListCacheTtlSeconds())))
+                .expireAfterWrite(Duration.ofSeconds(Math.max(60, team.getTeamListCacheTtlSeconds())))
                 .maximumSize(2_000)
                 .build();
         this.memberCache = Caffeine.newBuilder()
-                .expireAfterWrite(Duration.ofSeconds(Math.max(60, properties.getTeam().getMemberCacheTtlSeconds())))
+                .expireAfterWrite(Duration.ofSeconds(Math.max(60, team.getMemberCacheTtlSeconds())))
                 .maximumSize(1_000)
                 .build();
         this.teamServiceCircuitBreaker = CircuitBreaker.ofDefaults("usage-team-service");
-        this.timeoutMs = properties.getTeam().getTimeoutMs();
+        this.timeoutMs = team.getTimeoutMs();
+        this.cacheEmptyTeamList = team.isCacheEmptyTeamList();
+        this.diagnosticsLogging = team.isDiagnosticsLogging();
     }
 
     public List<TeamSummaryClientItem> fetchUserTeams(String requesterUserId) {
@@ -71,28 +76,100 @@ public class TeamServiceClient {
         }
         List<TeamSummaryClientItem> primary = fetchTeamsForRequester(primaryRequester, "primary");
         List<TeamSummaryClientItem> result;
+        List<TeamSummaryClientItem> fallbackList = null;
         if (fallbackRequester == null) {
             result = primary;
         } else {
-            List<TeamSummaryClientItem> fallback = fetchTeamsForRequester(fallbackRequester, "fallback");
-            result = UserTeamListMerge.unionByTeamId(primary, fallback);
+            fallbackList = fetchTeamsForRequester(fallbackRequester, "fallback");
+            result = UserTeamListMerge.unionByTeamId(primary, fallbackList);
             log.debug(
                     "fetchUserTeams merged primaryCount={} fallbackCount={} total={}",
                     primary.size(),
-                    fallback.size(),
+                    fallbackList.size(),
                     result.size()
             );
         }
+        boolean cachePut = !result.isEmpty() || cacheEmptyTeamList;
+        if (cachePut) {
+            userTeamsCache.put(cacheKey, result);
+        }
+        logTeamListDiagnostics(
+                primaryRequester,
+                fallbackRequester,
+                primary,
+                fallbackList,
+                result,
+                cachePut
+        );
         if (result.isEmpty()) {
             log.warn(
-                    "No teams returned from team-service primaryUserId={} fallbackUserId={} "
+                    "No teams returned from team-service primaryMasked={} primaryKind={} fallbackMasked={} "
                             + "(check JWT subject vs userId claim alignment with team-service memberships)",
-                    primaryRequester,
-                    fallbackRequester != null ? fallbackRequester : "(none)"
+                    maskUserIdForLog(primaryRequester),
+                    userIdKind(primaryRequester),
+                    fallbackRequester != null ? maskUserIdForLog(fallbackRequester) : "(none)"
             );
         }
-        userTeamsCache.put(cacheKey, result);
         return result;
+    }
+
+    private void logTeamListDiagnostics(
+            String primaryRequester,
+            String fallbackRequester,
+            List<TeamSummaryClientItem> primary,
+            List<TeamSummaryClientItem> fallbackList,
+            List<TeamSummaryClientItem> merged,
+            boolean cachePut
+    ) {
+        String fbMasked = fallbackRequester != null ? maskUserIdForLog(fallbackRequester) : "(none)";
+        String fbKind = fallbackRequester != null ? userIdKind(fallbackRequester) : "none";
+        int fbSize = fallbackList != null ? fallbackList.size() : 0;
+        String line = String.format(
+                "teamListFetch primaryKind=%s primaryMasked=%s fallbackKind=%s fallbackMasked=%s "
+                        + "primarySize=%d fallbackSize=%d mergedSize=%d cachePut=%s",
+                userIdKind(primaryRequester),
+                maskUserIdForLog(primaryRequester),
+                fbKind,
+                fbMasked,
+                primary.size(),
+                fbSize,
+                merged.size(),
+                cachePut
+        );
+        if (diagnosticsLogging) {
+            log.info(line);
+        } else {
+            log.debug(line);
+        }
+    }
+
+    /** Minimal PII: email-like → short local prefix + masked domain hint; else prefix of opaque id. */
+    static String maskUserIdForLog(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return "(empty)";
+        }
+        String s = raw.trim();
+        int at = s.indexOf('@');
+        if (at > 0 && at < s.length() - 1) {
+            String local = s.substring(0, at);
+            String domain = s.substring(at + 1).trim();
+            if (!domain.isEmpty()) {
+                String localMask = local.length() <= 2 ? "**" : local.substring(0, Math.min(2, local.length())) + "***";
+                int dot = domain.lastIndexOf('.');
+                String domainMask = dot > 0 && dot < domain.length() - 1
+                        ? domain.charAt(0) + "***." + domain.substring(dot + 1)
+                        : (domain.length() > 0 ? domain.charAt(0) + "***" : "*");
+                return localMask + "@" + domainMask;
+            }
+        }
+        if (s.length() <= 4) {
+            return "***";
+        }
+        return s.substring(0, 4) + "***";
+    }
+
+    static String userIdKind(String raw) {
+        return StringUtils.hasText(raw) && raw.trim().contains("@") ? "EMAIL_LIKE" : "OPAQUE_ID";
     }
 
     private List<TeamSummaryClientItem> fetchTeamsForRequester(String requesterUserId, String roleInLog) {
@@ -100,9 +177,9 @@ public class TeamServiceClient {
             return callWithCircuitBreaker(() -> fetchUserTeamsInternal(requesterUserId));
         } catch (RuntimeException ex) {
             log.warn(
-                    "Failed to fetch teams from team-service role={} requesterUserId={} reason={}",
+                    "Failed to fetch teams from team-service role={} maskedRequester={} reason={}",
                     roleInLog,
-                    requesterUserId,
+                    maskUserIdForLog(requesterUserId),
                     ex.getMessage()
             );
             return List.of();
@@ -173,7 +250,10 @@ public class TeamServiceClient {
     }
 
     private List<TeamSummaryClientItem> fetchUserTeamsInternal(String requesterUserId) {
-        log.debug("team-service request GET /internal/v1/users/{}/teams", requesterUserId);
+        log.debug(
+                "team-service GET /internal/v1/users/*/teams maskedUserId={}",
+                maskUserIdForLog(requesterUserId)
+        );
         JsonNode root = restClient.get()
                 .uri("/internal/v1/users/{userId}/teams", requesterUserId)
                 .accept(MediaType.APPLICATION_JSON)
