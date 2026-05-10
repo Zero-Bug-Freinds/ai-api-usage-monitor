@@ -1,6 +1,9 @@
 package com.zerobugfreinds.team_service.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.zerobugfreinds.identity.events.IdentityUserSyncEvent;
+import com.zerobugfreinds.identity.events.IdentityUserSyncEventTypes;
 import com.zerobugfreinds.team_service.entity.IdentityUserSyncEntity;
 import com.zerobugfreinds.team_service.repository.IdentityUserSyncRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,11 +35,29 @@ class IdentityUserSyncServiceTest {
 
     @BeforeEach
     void setUp() {
+        ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
         identityUserSyncService = new IdentityUserSyncService(
-                new ObjectMapper(),
+                objectMapper,
                 identityUserSyncRepository,
                 identityUserLookupClient
         );
+    }
+
+    @Test
+    void syncUser_acceptsJsonFromIdentityUserSyncEvent() throws Exception {
+        IdentityUserSyncEvent outgoing = IdentityUserSyncEvent.of(
+                IdentityUserSyncEventTypes.USER_REGISTERED,
+                5L,
+                "sync@test.com",
+                "Sync User",
+                Instant.parse("2026-01-02T03:04:05Z")
+        );
+        ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        String json = mapper.writeValueAsString(outgoing);
+
+        identityUserSyncService.syncUser(json);
+
+        verify(identityUserSyncRepository).save(any(IdentityUserSyncEntity.class));
     }
 
     @Test

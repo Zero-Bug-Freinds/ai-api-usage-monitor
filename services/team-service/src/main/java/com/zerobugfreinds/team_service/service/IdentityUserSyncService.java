@@ -2,7 +2,7 @@ package com.zerobugfreinds.team_service.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.zerobugfreinds.team_service.dto.IdentityUserSyncEvent;
+import com.zerobugfreinds.identity.events.IdentityUserSyncEvent;
 import com.zerobugfreinds.team_service.entity.IdentityUserSyncEntity;
 import com.zerobugfreinds.team_service.repository.IdentityUserSyncRepository;
 import org.slf4j.Logger;

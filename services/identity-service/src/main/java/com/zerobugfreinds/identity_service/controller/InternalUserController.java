@@ -3,6 +3,7 @@ package com.zerobugfreinds.identity_service.controller;
 import com.zerobugfreinds.identity_service.common.ApiResponse;
 import com.zerobugfreinds.identity_service.dto.InternalUserIdsExistenceRequest;
 import com.zerobugfreinds.identity_service.dto.InternalUserIdsExistenceResponse;
+import com.zerobugfreinds.identity_service.service.IdentityUserSyncReplayService;
 import com.zerobugfreinds.identity_service.service.UserService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -20,9 +21,14 @@ import java.util.Set;
 @RequestMapping("/internal/users")
 public class InternalUserController {
     private final UserService userService;
+    private final IdentityUserSyncReplayService identityUserSyncReplayService;
 
-    public InternalUserController(UserService userService) {
+    public InternalUserController(
+            UserService userService,
+            IdentityUserSyncReplayService identityUserSyncReplayService
+    ) {
         this.userService = userService;
+        this.identityUserSyncReplayService = identityUserSyncReplayService;
     }
 
     @GetMapping("/exists")
@@ -49,5 +55,14 @@ public class InternalUserController {
         Set<String> existingUserIds = userService.findExistingUserIds(userIds);
         InternalUserIdsExistenceResponse response = new InternalUserIdsExistenceResponse(existingUserIds.stream().toList());
         return ResponseEntity.ok(ApiResponse.ok("사용자 ID 존재 여부 조회에 성공했습니다", response));
+    }
+
+    /**
+     * 기존 사용자 백필: team-service {@code identity_user_sync} 를 MQ 로 채운다. 네트워크에서 내부 경로만 노출할 것.
+     */
+    @PostMapping("/sync-events/publish-all")
+    public ResponseEntity<ApiResponse<Integer>> publishAllUserSyncEvents() {
+        int count = identityUserSyncReplayService.publishSyncEventsForAllUsers();
+        return ResponseEntity.ok(ApiResponse.ok("사용자 동기화 이벤트 발행이 완료되었습니다", count));
     }
 }

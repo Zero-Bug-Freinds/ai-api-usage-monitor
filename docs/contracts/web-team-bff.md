@@ -1,7 +1,7 @@
 # Web(Next.js) ↔ Team Service BFF 계약
 
-버전: 0.14  
-관련: [web-split-boundary.md](./web-split-boundary.md), [web-identity-bff.md](./web-identity-bff.md) — `/teams` UI 소유·경로: §2.3
+버전: 0.15  
+관련: [web-split-boundary.md](./web-split-boundary.md), [web-identity-bff.md](./web-identity-bff.md) — `/teams` UI 소유·경로: §2.3, [identity-auth-api-contract.md](../identity-auth-api-contract.md) §14(Identity → Team 사용자 동기화 MQ)
 
 ---
 
@@ -64,7 +64,7 @@
   - `PUT /api/v1/teams/{teamId}/api-keys/{keyId}` (별칭·예산 등 수정)
   - `POST /api/v1/teams/{teamId}/api-keys/{keyId}/deletion/cancel` (삭제 예정 해제)
 - 팀원 초대 시 Team Service는 아래 순서로 사용자 존재 여부를 확인한다.
-  1) `identity_user_sync` 로컬 캐시(`IdentityUserSyncListener`가 RabbitMQ로 수신한 사용자 동기화 이벤트 기반)
+  1) `identity_user_sync` 로컬 캐시(identity-service가 RabbitMQ로 발행한 사용자 동기화 이벤트를 `IdentityUserSyncListener`가 수신해 반영)
   2) Identity 내부 API fallback (`GET /internal/users/exists?email=...` 또는 user-id 일괄 확인)
   → 둘 다 실패/미존재면 초대를 거부한다.
 - 팀 API Key는 Team Service DB에 **평문 저장하지 않고 암호화 저장**한다.
@@ -80,17 +80,6 @@
 - 존재하지 않는 아이디(이메일)이면 Team Service는 초대를 거부한다.
 - Identity 연동 실패(네트워크/5xx/비정상 응답) 시 안전하게 초대를 거부한다.
 - Team Service는 사용자 전체 프로필을 복제하지 않고, 존재성 판단에 필요한 최소 필드만 `identity_user_sync` 테이블에 저장한다(`userId`, `email`, `displayName`, `lastEventType`, `updatedAt`).
-
-### 5.2 identity → team 사용자 동기화 이벤트
-
-- Queue/Binding 설정 정본:
-  - `identity.user-sync.exchange` (기본 `identity.events`)
-  - `identity.user-sync.routing-key` (기본 `identity.user.sync`)
-  - `identity.user-sync.queue` (기본 `team.identity.user-sync.queue`)
-- 리스너: `IdentityUserSyncListener` (`@RabbitListener`)
-- DTO: `IdentityUserSyncEvent`
-  - `@JsonAlias`로 필드명 변형(`eventType/type`, `userId/identityUserId/id`, `email/userEmail`, `name/displayName/username`, `occurredAt/createdAt/updatedAt`)을 허용한다.
-- 장애 분석을 위해 리스너는 실패 시 payload 원문과 stacktrace를 함께 기록한다.
 
 ### 5.1 실패 응답 예시
 
@@ -109,7 +98,28 @@
   - `409` (`success=false`): 팀 API Key가 남아 있어 삭제 선행조건 미충족
   - `404` (`success=false`): 대상 팀이 존재하지 않는 경우
 
-### 5.2 팀 초대·수락/거절/만료 (현행 구현)
+### 5.2 identity → team 사용자 동기화 (RabbitMQ)
+
+- **목적:** 숫자 플랫폼 `userId`와 이메일 식별자를 team 도메인에서 동일 사용자로 해석할 수 있도록 `identity_user_sync` 행을 유지한다.
+- **발행(identity-service)**
+  - Exchange: Topic **`identity.events`** (기본값).
+  - Routing key: **`identity.user.sync`** (`libs/identity-events`의 `IdentityUserSyncRoutingKeys.USER_SYNC`).
+  - Spring 설정 키(기본값이 team-service와 동일해야 한다):
+    - `identity.user-sync.exchange` → 환경 변수 **`IDENTITY_USER_SYNC_EVENT_EXCHANGE`**
+    - `identity.user-sync.routing-key` → 환경 변수 **`IDENTITY_USER_SYNC_EVENT_ROUTING_KEY`**
+  - 구현: `IdentityUserSyncEventPublisher` — 일반 경로는 DB 커밋 후 RabbitMQ로 전송(`@TransactionalEventListener` AFTER_COMMIT, 비트랜잭션 시 `fallbackExecution=true`). 백필·운영 재처리는 **`publishImmediately()`** 로 동일 exchange/routing key에 JSON을 보낸다.
+  - **페이로드 정본:** `libs/identity-events`의 **`IdentityUserSyncEvent`** (JSON: `eventType`, `userId`, `email`, `name`, `occurredAt`). 수신 측 호환을 위해 `@JsonAlias`로 `type`, `identityUserId`/`id`, `userEmail`, `displayName`/`username`, `createdAt`/`updatedAt` 등 변형 필드명을 허용한다.
+  - **`IdentityUserSyncEventTypes`:** `USER_REGISTERED`(가입 완료), `USER_FIRST_LOGIN_RECORDED`(해당 사용자의 **첫** 리프레시 토큰 발급·첫 세션에 해당), `USER_PROFILE_UPDATED`(이메일·표시명 변경용; identity에 프로필 변경 API가 붙으면 동일 스키마로 발행), `USER_SYNC_BACKFILL`(일괄 백필·재발행).
+- **소비(team-service)**
+  - Queue/Binding 정본:
+    - `identity.user-sync.exchange` (기본 `identity.events`)
+    - `identity.user-sync.routing-key` (기본 `identity.user.sync`)
+    - `identity.user-sync.queue` (기본 `team.identity.user-sync.queue`)
+  - `IdentityUserSyncListener` (`@RabbitListener`) → `IdentityUserSyncService`가 payload를 역직렬화해 `identity_user_sync`를 upsert한다.
+- **기존 사용자 백필:** 타 DB에 JDBC로 직접 이관하지 않고, identity가 MQ로 이벤트를 재발행해 team이 적재하는 방식을 권장한다. **`POST /internal/users/sync-events/publish-all`** (identity-service)가 전 사용자에 대해 `USER_SYNC_BACKFILL`을 `publishImmediately`로 발행한다. 응답 `data`는 발행 건수(정수). 이 경로는 **`/internal/users/**`** 노출 정책에 포함되므로 운영에서는 네트워크·게이트웨이에서 내부 전용으로 제한할 것(`SecurityConfig`는 로컬 편의상 해당 패턴을 허용할 수 있음).
+- 장애 분석을 위해 리스너는 실패 시 payload 원문과 stacktrace를 함께 기록한다.
+
+### 5.3 팀 초대·수락/거절/만료 (현행 구현)
 
 - `POST /api/team/v1/teams/{id}/members` 호출 시 Team Service는 **PENDING 초대 행**을 만들고 RabbitMQ로 초대 이벤트(`TEAM_INVITE_CREATED`)를 발행한다. 이 단계에서는 **팀 멤버를 추가하지 않는다**.
 - `GET /api/team/v1/me/team-invitations` 로 내 초대 목록을 조회한다. 기본은 **대기(PENDING)**만 반환한다.
@@ -130,7 +140,7 @@
   - `team.invitation.lifecycle-initial-delay-ms` (기본 60000)
   - `team.invitation.cleanup-retention-days` (기본 30): `ACCEPTED`/`REJECTED`/`EXPIRED` 상태 중 `respondedAt`이 보존 기간을 지난 행 삭제
 
-### 5.3 팀 API Key 등록/조회/수정·삭제 예정
+### 5.4 팀 API Key 등록/조회/수정·삭제 예정
 
 #### 팀 API Key 요약 객체 (`data` 및 목록 항목)
 

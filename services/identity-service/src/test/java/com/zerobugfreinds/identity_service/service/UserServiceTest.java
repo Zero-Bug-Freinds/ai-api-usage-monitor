@@ -8,6 +8,7 @@ import com.zerobugfreinds.identity_service.exception.DuplicateEmailException;
 import com.zerobugfreinds.identity_service.repository.RefreshTokenRepository;
 import com.zerobugfreinds.identity_service.repository.UserRepository;
 import com.zerobugfreinds.identity_service.security.JwtTokenProvider;
+import com.zerobugfreinds.identity_service.mq.IdentityUserSyncEventPublisher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -42,6 +43,8 @@ class UserServiceTest {
 	private TeamMembershipVerificationClient teamMembershipVerificationClient;
 	@Mock
 	private ApplicationEventPublisher applicationEventPublisher;
+	@Mock
+	private IdentityUserSyncEventPublisher identityUserSyncEventPublisher;
 
 	private UserService userService;
 
@@ -53,7 +56,8 @@ class UserServiceTest {
 				passwordEncoder,
 				jwtTokenProvider,
 				teamMembershipVerificationClient,
-				applicationEventPublisher
+				applicationEventPublisher,
+				identityUserSyncEventPublisher
 		);
 	}
 
@@ -100,13 +104,18 @@ class UserServiceTest {
 		);
 		when(userRepository.existsByEmailIgnoreCase("test@example.com")).thenReturn(false);
 		when(passwordEncoder.encode("abc123!@")).thenReturn("encoded");
-		when(userRepository.save(any(User.class)))
-				.thenReturn(new User("test@example.com", "encoded", "tester", Role.USER));
+		User persisted = mock(User.class);
+		when(persisted.getId()).thenReturn(1L);
+		when(persisted.getEmail()).thenReturn("test@example.com");
+		when(persisted.getName()).thenReturn("tester");
+		when(persisted.getRole()).thenReturn(Role.USER);
+		when(userRepository.save(any(User.class))).thenReturn(persisted);
 
 		userService.signup(request);
 
 		verify(userRepository).existsByEmailIgnoreCase(eq("test@example.com"));
 		verify(userRepository).save(any(User.class));
+		verify(identityUserSyncEventPublisher).publishAfterCommit(any());
 	}
 
 	@Test

@@ -13,6 +13,9 @@ import com.zerobugfreinds.identity_service.exception.InvalidSignupRequestExcepti
 import com.zerobugfreinds.identity_service.repository.RefreshTokenRepository;
 import com.zerobugfreinds.identity_service.repository.UserRepository;
 import com.zerobugfreinds.identity_service.security.JwtTokenProvider;
+import com.zerobugfreinds.identity_service.mq.IdentityUserSyncEventPublisher;
+import com.zerobugfreinds.identity.events.IdentityUserSyncEvent;
+import com.zerobugfreinds.identity.events.IdentityUserSyncEventTypes;
 import com.zerobugfreinds.identity.events.UserContextChangedEvent;
 import io.jsonwebtoken.Claims;
 import org.slf4j.Logger;
@@ -46,6 +49,7 @@ public class UserService {
 	private final JwtTokenProvider jwtTokenProvider;
 	private final TeamMembershipVerificationClient teamMembershipVerificationClient;
 	private final ApplicationEventPublisher applicationEventPublisher;
+	private final IdentityUserSyncEventPublisher identityUserSyncEventPublisher;
 
 	public UserService(
 			UserRepository userRepository,
@@ -53,7 +57,8 @@ public class UserService {
 			PasswordEncoder passwordEncoder,
 			JwtTokenProvider jwtTokenProvider,
 			TeamMembershipVerificationClient teamMembershipVerificationClient,
-			ApplicationEventPublisher applicationEventPublisher
+			ApplicationEventPublisher applicationEventPublisher,
+			IdentityUserSyncEventPublisher identityUserSyncEventPublisher
 	) {
 		this.userRepository = userRepository;
 		this.refreshTokenRepository = refreshTokenRepository;
@@ -61,6 +66,7 @@ public class UserService {
 		this.jwtTokenProvider = jwtTokenProvider;
 		this.teamMembershipVerificationClient = teamMembershipVerificationClient;
 		this.applicationEventPublisher = applicationEventPublisher;
+		this.identityUserSyncEventPublisher = identityUserSyncEventPublisher;
 	}
 
 	/**
@@ -87,6 +93,15 @@ public class UserService {
 		} catch (DataIntegrityViolationException ex) {
 			throw new DuplicateEmailException("이미 사용 중인 이메일입니다");
 		}
+		identityUserSyncEventPublisher.publishAfterCommit(
+				IdentityUserSyncEvent.of(
+						IdentityUserSyncEventTypes.USER_REGISTERED,
+						saved.getId(),
+						saved.getEmail(),
+						saved.getName(),
+						Instant.now()
+				)
+		);
 		return new SignupResponse(saved.getId(), saved.getEmail(), saved.getName(), saved.getRole());
 	}
 
@@ -217,12 +232,24 @@ public class UserService {
 	}
 
 	private TokenResponse issueTokenPair(User user, Long activeTeamId) {
+		boolean firstSession = refreshTokenRepository.countByUserId(user.getId()) == 0;
 		String accessToken = jwtTokenProvider.createAccessToken(user, activeTeamId);
 		String refreshToken = jwtTokenProvider.createRefreshToken(user, activeTeamId);
 		replaceRefreshToken(user.getId(), refreshToken, activeTeamId);
 		applicationEventPublisher.publishEvent(
 				UserContextChangedEvent.of(user.getId(), activeTeamId, user.getRole().name())
 		);
+		if (firstSession) {
+			identityUserSyncEventPublisher.publishAfterCommit(
+					IdentityUserSyncEvent.of(
+							IdentityUserSyncEventTypes.USER_FIRST_LOGIN_RECORDED,
+							user.getId(),
+							user.getEmail(),
+							user.getName(),
+							Instant.now()
+					)
+			);
+		}
 		return new TokenResponse(
 				accessToken,
 				refreshToken,

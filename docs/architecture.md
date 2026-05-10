@@ -214,7 +214,7 @@
 - 책임 범위
   - 팀 도메인의 데이터 소유권을 분리해 관리한다.
   - 팀 멤버십 기준 권한(예: 팀 멤버만 초대 가능)을 서버에서 강제한다.
-  - 팀원 초대 시 Identity 사용자 존재 여부를 검증한다. 우선 RabbitMQ 기반 `identity_user_sync` 캐시를 확인하고, 필요 시 Identity 내부 API로 fallback 조회해 실제 가입된 사용자(이메일 아이디)만 초대되도록 보장한다.
+  - 팀원 초대 시 Identity 사용자 존재 여부를 검증한다. **identity-service**가 RabbitMQ(`identity.events` / `identity.user.sync`)로 사용자 동기화 이벤트를 발행하면 team-service가 `identity_user_sync`에 적재한다(계약·백필: [`docs/contracts/web-team-bff.md`](contracts/web-team-bff.md) §5.2). 캐시 미스 시 Identity 내부 API로 fallback 조회해 실제 가입된 사용자(이메일 아이디)만 초대되도록 보장한다.
   - 팀 API Key는 암호화 저장하고, 조회 시 원문 대신 마스킹된 요약만 제공한다.
   - **Identity 개인 키와 Team 키는 상호 중복 등록을 허용하지 않는다.** Team 키 등록/수정 시 Identity 내부 역조회 API로 동일 해시 키 존재를 확인하며, 이미 개인 키로 등록된 키면 거절한다.
   - 동일 서비스 내에서 삭제 예정 상태의 키를 다시 등록하면 중복 오류로 거절하지 않고 ACTIVE로 복구(재등록)한다.

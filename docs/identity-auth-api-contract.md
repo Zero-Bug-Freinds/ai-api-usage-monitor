@@ -1,7 +1,7 @@
 # Identity 인증 API 계약 (백엔드)
 
-버전: 1.10  
-관련: [architecture.md](./architecture.md) §1.3, [contracts/web-identity-bff.md](./contracts/web-identity-bff.md)
+버전: 1.11  
+관련: [architecture.md](./architecture.md) §1.3, [contracts/web-identity-bff.md](./contracts/web-identity-bff.md), [contracts/web-team-bff.md](./contracts/web-team-bff.md) §5.2
 
 ---
 
@@ -437,3 +437,14 @@
   "provider": "GOOGLE",
   "status": "ACTIVE"
 }
+```
+
+## 14. 사용자 식별자 동기화 이벤트 (team-service)
+
+팀 도메인에서 이메일과 숫자 플랫폼 `userId`를 동일 사용자로 매칭할 수 있도록, **team-service**가 로컬 테이블 `identity_user_sync`를 유지한다. identity-service는 아래 조건에서 RabbitMQ로 upsert 이벤트를 발행한다.
+
+- **Exchange:** `identity.events` (기본값, Spring: `identity.user-sync.exchange` / `IDENTITY_USER_SYNC_EVENT_EXCHANGE`)
+- **Routing Key:** `identity.user.sync` (`IdentityUserSyncRoutingKeys.USER_SYNC`, Spring: `identity.user-sync.routing-key` / `IDENTITY_USER_SYNC_EVENT_ROUTING_KEY`)
+- **페이로드 정본:** `libs/identity-events`의 `IdentityUserSyncEvent` (`eventType`, `userId`, `email`, `name`, `occurredAt` 및 수신 호환용 필드 별칭은 [web-team-bff.md §5.2](./contracts/web-team-bff.md) 참고).
+- **발행 시점(현행 구현):** 회원가입 완료 후(트랜잭션 커밋 뒤); 해당 사용자에 대한 **첫** 리프레시 토큰 발급(첫 로그인 세션) 시. 이메일·표시명 변경 API가 추가되면 동일 스키마로 `USER_PROFILE_UPDATED` 발행을 권장한다.
+- **기존 데이터 백필:** `POST /internal/users/sync-events/publish-all` — 전 사용자에 대해 `USER_SYNC_BACKFILL` 이벤트를 즉시 발행한다. 팀 서비스가 큐를 소비 중이어야 `identity_user_sync`가 채워진다. 내부 전용 경로이므로 운영 네트워크에서 접근을 제한할 것.
