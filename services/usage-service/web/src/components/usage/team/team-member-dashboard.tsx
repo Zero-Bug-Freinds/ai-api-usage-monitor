@@ -22,6 +22,7 @@ import {
 } from "@ai-usage/ui"
 import { formatRequestCount } from "@/lib/usage/format"
 import { formatKstIsoDate, addKstDays } from "@/lib/usage/kst-dates"
+import { EMPTY_MEMBER_MODEL_USAGE_MSG } from "@/lib/usage/team-dashboard-empty"
 import { teamUsageBffBase } from "@/lib/usage/team-usage-bff-base"
 
 type TeamMemberDashboardProps = {
@@ -453,8 +454,20 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
       {!loading && !error && !hasData ? (
         <section className="rounded-lg border border-border p-4 shadow-sm">
           <h2 className="mb-4 text-lg font-medium">팀원별 모델 활용 패턴</h2>
-          <div className="h-[360px] min-h-[360px] w-full rounded-lg border border-dashed border-border bg-muted/20" />
-          <p className="mt-3 text-center text-sm text-muted-foreground">선택한 팀/필터에서 멤버 모델 사용 데이터가 없습니다.</p>
+          <div className="h-[360px] min-h-[360px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={[{ label: "—", model: "—", totalRequests: 0, isOthers: false, provider: "" }]}
+                margin={{ top: 8, right: 16, left: 8, bottom: 24 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                <XAxis dataKey="label" tick={{ fontSize: 11 }} interval={0} angle={-15} textAnchor="end" height={56} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <p className="mt-3 text-center text-sm text-muted-foreground">{EMPTY_MEMBER_MODEL_USAGE_MSG}</p>
         </section>
       ) : null}
 

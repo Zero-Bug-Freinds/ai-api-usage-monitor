@@ -28,6 +28,7 @@ import {
 } from "@ai-usage/ui"
 import { formatKstIsoDate, addKstDays } from "@/lib/usage/kst-dates"
 import { formatRequestCount, formatTokenCount, formatUsd, toNumber } from "@/lib/usage/format"
+import { EMPTY_MEMBER_MODEL_USAGE_MSG } from "@/lib/usage/team-dashboard-empty"
 import { teamUsageBffBase } from "@/lib/usage/team-usage-bff-base"
 
 const PROVIDER_ALL = "__ALL__"
@@ -179,6 +180,7 @@ export default function TeamDashboard({
     [periodMode, customFrom, customTo, todayKst],
   )
   const [teams, setTeams] = React.useState<TeamSummary[]>([])
+  const [teamsLoading, setTeamsLoading] = React.useState(true)
   const [teamsErr, setTeamsErr] = React.useState<string | null>(null)
   const [selectedTeamId, setSelectedTeamId] = React.useState("")
   const [apiKeys, setApiKeys] = React.useState<TeamApiKey[]>([])
@@ -192,9 +194,13 @@ export default function TeamDashboard({
   React.useEffect(() => {
     let cancelled = false
     void (async () => {
+      setTeamsLoading(true)
       const base = teamUsageBffBase()
       if (!base) {
-        if (!cancelled) setTeamsErr("사용량 API 베이스 URL을 확인할 수 없습니다")
+        if (!cancelled) {
+          setTeamsErr("사용량 API 베이스 URL을 확인할 수 없습니다")
+          setTeamsLoading(false)
+        }
         return
       }
       try {
@@ -218,6 +224,8 @@ export default function TeamDashboard({
         setTeamsErr(null)
       } catch {
         if (!cancelled) setTeamsErr("팀 목록을 불러오지 못했습니다")
+      } finally {
+        if (!cancelled) setTeamsLoading(false)
       }
     })()
     return () => {
@@ -374,8 +382,17 @@ export default function TeamDashboard({
     [data?.byModel],
   )
   const hasMainData = (summary?.totalRequests ?? 0) > 0 || (data?.usageSeries ?? []).some((r) => r.requestCount > 0)
-  const hasNoTeams = teams.length === 0
-  const shouldShowNoDataGuide = !hasNoTeams && !!effectiveTeamId && !loading && !error && (!hasMainData || apiKeys.length === 0)
+  const hasTeamMembership = teams.length > 0
+  /** 팀 소속 없음 안내: 목록 로드 완료 후 비었고, 오류가 아닐 때만 */
+  const showNoTeamBanner = !teamsLoading && !hasTeamMembership && !teamsErr
+  /** 필터 비활성화는 팀 미소속일 때만 (사용량·API 키 유무와 무관) */
+  const teamSelectDisabled = teamsLoading || !hasTeamMembership
+  const shouldShowNoDataGuide =
+    hasTeamMembership &&
+    !!effectiveTeamId &&
+    !loading &&
+    !error &&
+    (!hasMainData || apiKeys.length === 0)
 
   return (
     <div className="w-full min-h-full pb-6">
@@ -418,8 +435,18 @@ export default function TeamDashboard({
         ) : null}
         <div className="space-y-2 sm:w-52">
           <Label>팀</Label>
-          <Select value={selectedTeamId} onValueChange={setSelectedTeamId}>
-            <SelectTrigger><SelectValue placeholder="팀 선택" /></SelectTrigger>
+          <Select
+            value={selectedTeamId}
+            onValueChange={setSelectedTeamId}
+            disabled={teamSelectDisabled}
+          >
+            <SelectTrigger>
+              <SelectValue
+                placeholder={
+                  teamsLoading ? "팀 목록 불러오는 중…" : !hasTeamMembership ? "소속 팀 없음" : "팀 선택"
+                }
+              />
+            </SelectTrigger>
             <SelectContent>{teams.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}</SelectContent>
           </Select>
         </div>
@@ -445,7 +472,7 @@ export default function TeamDashboard({
       </div>
 
       {teamsErr ? <p className="mb-4 text-sm text-amber-700">{teamsErr}</p> : null}
-      {hasNoTeams ? (
+      {showNoTeamBanner ? (
         <div className="mb-6 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-950 dark:text-amber-100" role="note">
           팀에 속하게 되면 팀 대시보드 사용이 가능해집니다.
         </div>
@@ -467,13 +494,6 @@ export default function TeamDashboard({
       ) : null}
       {effectiveTeamId && !loading && !error ? (
         <>
-          {!hasMainData ? (
-            <section className="mb-8 rounded-lg border border-border p-4 shadow-sm">
-              <h2 className="mb-4 text-lg font-medium">{mainChartTitle(data?.usageSeriesUnit)}</h2>
-              <div className="h-[360px] min-h-[360px] w-full rounded-lg border border-dashed border-border bg-muted/20" />
-              <p className="mt-3 text-center text-sm text-muted-foreground">등록된 데이터가 없습니다. (선택한 기간·필터에 대한 사용 데이터가 없을 수 있습니다)</p>
-            </section>
-          ) : null}
           <section className="mb-8 w-full min-w-0 rounded-lg border border-border p-4 shadow-sm">
             <h2 className="mb-4 text-lg font-medium">{mainChartTitle(data?.usageSeriesUnit)}</h2>
             <div className="h-[380px] min-h-[380px] w-full min-w-0">
@@ -499,9 +519,14 @@ export default function TeamDashboard({
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
-            <div className="mt-3 text-xs text-muted-foreground">
-              총 요청 {formatRequestCount(rangeRequests)} · 오류 {rangeErrors.toLocaleString("en-US")}건 · 성공률 {successRatePercent.toFixed(1)}% · 총 비용 {formatUsd(rangeCost)} · 총 입력 토큰 {formatTokenCount(rangeTokens)}
-            </div>
+            {!hasMainData ? (
+              <p className="mt-3 text-center text-sm text-muted-foreground">{EMPTY_MEMBER_MODEL_USAGE_MSG}</p>
+            ) : null}
+            {hasMainData ? (
+              <div className="mt-3 text-xs text-muted-foreground">
+                총 요청 {formatRequestCount(rangeRequests)} · 오류 {rangeErrors.toLocaleString("en-US")}건 · 성공률 {successRatePercent.toFixed(1)}% · 총 비용 {formatUsd(rangeCost)} · 총 입력 토큰 {formatTokenCount(rangeTokens)}
+              </div>
+            ) : null}
             {shouldShowNoDataGuide ? (
               <div className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-950 dark:text-amber-100" role="note">
                 Api key를 추가하여 AI를 호출하면 API 데이터가 쌓입니다.
@@ -525,25 +550,33 @@ export default function TeamDashboard({
                   </ResponsiveContainer>
                 </div>
                 <ul className="max-h-[220px] w-full flex-1 space-y-1 overflow-auto text-xs">
-                  {pieData.length === 0 ? <li className="text-muted-foreground">등록된 데이터가 없습니다</li> : pieData.map((p) => <li key={p.fullName} className="flex justify-between gap-2"><span className="truncate text-muted-foreground">{p.name}</span><span className="tabular-nums">{(p.percent * 100).toFixed(1)}%</span></li>)}
+                  {pieData.length === 0 ? <li className="text-muted-foreground">—</li> : pieData.map((p) => <li key={p.fullName} className="flex justify-between gap-2"><span className="truncate text-muted-foreground">{p.name}</span><span className="tabular-nums">{(p.percent * 100).toFixed(1)}%</span></li>)}
                 </ul>
               </div>
+              {pieData.length === 0 ? (
+                <p className="mt-3 text-center text-sm text-muted-foreground">{EMPTY_MEMBER_MODEL_USAGE_MSG}</p>
+              ) : null}
             </section>
             <section className="min-w-0 rounded-lg border border-border p-4 shadow-sm">
               <h2 className="mb-4 text-lg font-medium">모델별 요청 수 (상위)</h2>
               <div className="h-[300px] min-h-[300px] w-full min-w-0">
-                {barModelData.length === 0 ? <p className="flex h-full items-center justify-center text-sm text-muted-foreground">등록된 데이터가 없습니다</p> : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={barModelData} layout="vertical" margin={{ left: 8, right: 8 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                      <XAxis type="number" tick={{ fontSize: 11 }} />
-                      <YAxis type="category" dataKey="label" width={100} tick={{ fontSize: 10 }} />
-                      <Tooltip />
-                      <Bar dataKey="requests" name="요청 수" fill="#64748b" radius={[0, 4, 4, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                )}
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={barModelData.length > 0 ? barModelData : [{ label: "—", fullName: "", provider: "", requests: 0 }]}
+                    layout="vertical"
+                    margin={{ left: 8, right: 8 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                    <XAxis type="number" tick={{ fontSize: 11 }} />
+                    <YAxis type="category" dataKey="label" width={100} tick={{ fontSize: 10 }} />
+                    <Tooltip />
+                    <Bar dataKey="requests" name="요청 수" fill="#64748b" fillOpacity={barModelData.length === 0 ? 0.2 : 1} radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
+              {barModelData.length === 0 ? (
+                <p className="mt-3 text-center text-sm text-muted-foreground">{EMPTY_MEMBER_MODEL_USAGE_MSG}</p>
+              ) : null}
             </section>
           </div>
           {data?.enrichment?.partial ? <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">프로필 일부 결합 실패: {(data.enrichment.warnings ?? []).join(", ")}</div> : null}

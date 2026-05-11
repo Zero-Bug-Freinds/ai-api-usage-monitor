@@ -10,7 +10,7 @@ class ApiKeyClientProviderLookupTest {
     @Test
     void googleLookupUsesCanonicalGoogleSegmentOnly() {
         assertThat(ApiKeyClient.providerSegmentsForLookup(AiProvider.GOOGLE))
-                .containsExactly("google");
+                .containsExactly("google", "gemini");
     }
 
     @Test

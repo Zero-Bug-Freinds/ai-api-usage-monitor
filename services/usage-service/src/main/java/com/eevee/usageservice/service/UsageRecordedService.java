@@ -70,7 +70,13 @@ public class UsageRecordedService {
                 entity.getEstimatedReasoningTokens(),
                 entity.getEstimatedCost()
         ));
-        log.debug("Stored usage event eventId={} userId={}", event.eventId(), event.userId());
+        log.debug(
+                "Stored usage event eventId={} userId={} teamId(raw)={} teamId(normalized)={}",
+                event.eventId(),
+                event.userId(),
+                event.teamId(),
+                entity.getTeamId()
+        );
     }
 
     private static UsageSummaryAggregationMessage toAggregationMessage(UsageRecordedLogEntity entity) {

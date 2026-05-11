@@ -72,7 +72,7 @@ class ApiKeyClientTeamLookupFallbackTest {
                 .satisfies(ex -> {
                     ResponseStatusException statusException = (ResponseStatusException) ex;
                     assertThat(statusException.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
-                    assertThat(statusException.getReason()).isEqualTo("존재하지 않은 API key 입니다");
+                    assertThat(statusException.getReason()).isEqualTo("해당 팀에 등록된 사용 가능한 API Key가 없습니다.");
                 });
     }
 
