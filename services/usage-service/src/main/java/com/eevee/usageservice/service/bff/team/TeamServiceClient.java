@@ -2,11 +2,14 @@ package com.eevee.usageservice.service.bff.team;
 
 import com.eevee.usageservice.api.dto.bff.TeamMemberProfile;
 import com.eevee.usageservice.config.UsageServiceProperties;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -15,17 +18,28 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.event.Level;
 
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.StringJoiner;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 
+/**
+ * HTTP client for team-service internal APIs.
+ * <p>
+ * Response bodies must be read as {@link String} and parsed with {@link ObjectMapper#readTree(String)}.
+ * Calling {@code retrieve().body(JsonNode.class)} on {@link RestClient} fails in many deployments with
+ * {@code Type definition error: JsonNode} because no {@code HttpMessageConverter} is registered for
+ * {@link JsonNode}. Team-service may still log successful {@code getMyTeams} while usage-service sees empty teams.
+ */
 @Component
 public class TeamServiceClient {
     private static final Logger log = LoggerFactory.getLogger(TeamServiceClient.class);
     private final RestClient restClient;
+    private final ObjectMapper objectMapper;
     private final Executor usageBffExecutor;
     private final Cache<String, TeamEnrichmentResult> memberCache;
     private final Cache<String, List<TeamSummaryClientItem>> userTeamsCache;
@@ -34,14 +48,34 @@ public class TeamServiceClient {
     private final boolean cacheEmptyTeamList;
     private final boolean diagnosticsLogging;
 
+    @Autowired
     public TeamServiceClient(
             UsageServiceProperties properties,
-            @Qualifier("usageBffExecutor") Executor usageBffExecutor
+            @Qualifier("usageBffExecutor") Executor usageBffExecutor,
+            ObjectMapper objectMapper
+    ) {
+        this(
+                properties,
+                usageBffExecutor,
+                RestClient.builder()
+                        .baseUrl(properties.getTeam().getBaseUrl())
+                        .build(),
+                objectMapper
+        );
+    }
+
+    /**
+     * Package-private for tests: inject a {@link RestClient} (e.g. bound to {@link org.springframework.test.web.client.MockRestServiceServer}).
+     */
+    TeamServiceClient(
+            UsageServiceProperties properties,
+            Executor usageBffExecutor,
+            RestClient restClient,
+            ObjectMapper objectMapper
     ) {
         UsageServiceProperties.Team team = properties.getTeam();
-        this.restClient = RestClient.builder()
-                .baseUrl(team.getBaseUrl())
-                .build();
+        this.restClient = restClient;
+        this.objectMapper = objectMapper;
         this.usageBffExecutor = usageBffExecutor;
         this.userTeamsCache = Caffeine.newBuilder()
                 .expireAfterWrite(Duration.ofSeconds(Math.max(60, team.getTeamListCacheTtlSeconds())))
@@ -214,11 +248,11 @@ public class TeamServiceClient {
     }
 
     private String fetchTeamName(String teamId) {
-        JsonNode root = callWithCircuitBreaker(() -> restClient.get()
+        JsonNode root = callWithCircuitBreaker(() -> readJsonTree(restClient.get()
                 .uri("/internal/teams/{id}", teamId)
                 .accept(MediaType.APPLICATION_JSON)
                 .retrieve()
-                .body(JsonNode.class));
+                .body(String.class)));
         JsonNode data = root != null ? root.path("data") : null;
         if (data == null || data.isMissingNode()) {
             return null;
@@ -227,14 +261,14 @@ public class TeamServiceClient {
     }
 
     private List<TeamMemberProfile> fetchMemberProfiles(String requesterUserId, String teamId) {
-        JsonNode root = callWithCircuitBreaker(() -> restClient.get()
+        JsonNode root = callWithCircuitBreaker(() -> readJsonTree(restClient.get()
                 .uri("/api/v1/teams/{id}/members", teamId)
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                 .header("X-User-Id", requesterUserId)
                 .header("X-Team-Id", teamId)
                 .accept(MediaType.APPLICATION_JSON)
                 .retrieve()
-                .body(JsonNode.class));
+                .body(String.class)));
         JsonNode data = root != null ? root.path("data") : null;
         if (data == null || !data.isArray()) {
             return List.of();
@@ -250,29 +284,43 @@ public class TeamServiceClient {
     }
 
     private List<TeamSummaryClientItem> fetchUserTeamsInternal(String requesterUserId) {
-        log.debug(
+        Level logLevel = diagnosticsLogging ? Level.INFO : Level.DEBUG;
+        log.atLevel(logLevel).log(
                 "team-service GET /internal/v1/users/*/teams maskedUserId={}",
                 maskUserIdForLog(requesterUserId)
         );
-        JsonNode root = restClient.get()
+        JsonNode root = readJsonTree(restClient.get()
                 .uri("/internal/v1/users/{userId}/teams", requesterUserId)
                 .accept(MediaType.APPLICATION_JSON)
                 .retrieve()
-                .body(JsonNode.class);
-        JsonNode data = root != null ? root.path("data") : null;
-        if (data == null || !data.isArray()) {
+                .body(String.class));
+        JsonNode teamsArray = TeamServiceTeamListJson.resolveTeamListArray(root);
+        if (teamsArray == null) {
+            log.warn(
+                    "team-service user teams response has unexpected JSON shape (expected data as array or "
+                            + "data.teams as array). topLevelKeys={} dataNodeType={} preview={}",
+                    jsonTopLevelKeys(root),
+                    root != null && root.has("data") ? root.get("data").getNodeType().name() : "(no data)",
+                    truncateForLog(root != null ? root.toString() : "null", 900)
+            );
             return List.of();
         }
-        List<TeamSummaryClientItem> teams = new ArrayList<>();
-        for (JsonNode n : data) {
-            String id = extractTeamListItemId(n);
-            String name = extractTeamListItemName(n);
-            if (id == null || name == null) {
-                continue;
-            }
-            teams.add(new TeamSummaryClientItem(id, name, nullIfBlank(n.path("createdAt").asText(null))));
+        TeamServiceTeamListJson.ParsedTeamList parsed = TeamServiceTeamListJson.parseTeamItems(teamsArray);
+        if (parsed.skippedRows() > 0) {
+            log.warn(
+                    "team-service user teams dropped {} row(s) missing id/name after alias resolution "
+                            + "(sourceRows={} kept={})",
+                    parsed.skippedRows(),
+                    parsed.sourceRowCount(),
+                    parsed.items().size()
+            );
         }
-        return teams;
+        log.atLevel(logLevel).log(
+                "team-service user teams parse result kept={} sourceRows={}",
+                parsed.items().size(),
+                parsed.sourceRowCount()
+        );
+        return parsed.items();
     }
 
     private <T> T callWithCircuitBreaker(java.util.function.Supplier<T> supplier) {
@@ -290,20 +338,35 @@ public class TeamServiceClient {
         return v;
     }
 
-    /** Accepts string or numeric {@code id} from team-service JSON. */
-    private static String extractTeamListItemId(JsonNode n) {
-        JsonNode idNode = n.path("id");
-        if (idNode.isMissingNode() || idNode.isNull()) {
+    /** Parses team-service JSON; never use {@code body(JsonNode.class)} on {@link RestClient} for these calls. */
+    private JsonNode readJsonTree(String raw) {
+        if (raw == null || raw.isBlank()) {
             return null;
         }
-        if (idNode.isNumber()) {
-            return Long.toString(idNode.longValue());
+        try {
+            return objectMapper.readTree(raw);
+        } catch (JsonProcessingException ex) {
+            throw new IllegalStateException("team-service returned invalid JSON", ex);
         }
-        return nullIfBlank(idNode.asText(null));
     }
 
-    private static String extractTeamListItemName(JsonNode n) {
-        return nullIfBlank(n.path("name").asText(null));
+    private static String jsonTopLevelKeys(JsonNode root) {
+        if (root == null) {
+            return "(null)";
+        }
+        StringJoiner joiner = new StringJoiner(",");
+        root.fieldNames().forEachRemaining(joiner::add);
+        return joiner.toString();
+    }
+
+    private static String truncateForLog(String s, int maxLen) {
+        if (s == null) {
+            return "null";
+        }
+        if (s.length() <= maxLen) {
+            return s;
+        }
+        return s.substring(0, maxLen) + "…(truncated)";
     }
 
     private static String normalizeFallback(String fallbackRequesterUserId, String primaryRequester) {
