@@ -44,6 +44,14 @@ public class ExternalApiKeyStatusChangedEventListener {
                 apiKeyMetadataSyncService.handleExternalApiKeyDeleted(deleted);
                 return;
             }
+            if (root.has("eventType")) {
+                String eventType = root.get("eventType").asText();
+                if (IdentityExternalApiKeyEventTypes.EXTERNAL_API_KEY_BUDGET_CHANGED.equals(eventType)
+                        || IdentityExternalApiKeyEventTypes.USER_CONTEXT_CHANGED.equals(eventType)) {
+                    log.debug("Ignoring identity message for api_key_metadata eventType={}", eventType);
+                    return;
+                }
+            }
             if (root.has("schemaVersion")) {
                 ExternalApiKeyStatusChangedEvent changed = objectMapper.readValue(json, ExternalApiKeyStatusChangedEvent.class);
                 apiKeyMetadataSyncService.upsertFromIdentity(changed);
