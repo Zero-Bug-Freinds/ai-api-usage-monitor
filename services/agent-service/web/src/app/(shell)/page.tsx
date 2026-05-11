@@ -11,6 +11,7 @@ import {
 import type { AnalysisResult } from "./agent-result-shared"
 import { runBudgetAnalysisFlow } from "./analysis-flow"
 import { runRecommendationFlow } from "./recommendation-flow"
+import type { RecommendationPriority } from "./recommendation-service"
 
 type AnalysisAction = "ANALYSIS" | "RECOMMENDATION"
 
@@ -379,6 +380,7 @@ export default function AgentPage() {
   const [showTeamList, setShowTeamList] = useState<boolean>(true)
   const [bootstrapError, setBootstrapError] = useState<string>("")
   const [currentUserId, setCurrentUserId] = useState<number | null>(null)
+  const [recommendationPriority, setRecommendationPriority] = useState<RecommendationPriority>("BALANCED")
   const [modelCatalog, setModelCatalog] = useState<ModelCatalogSnapshot | null>(null)
   const [resultsHydrated, setResultsHydrated] = useState<boolean>(false)
   const [contextRefreshing, setContextRefreshing] = useState<boolean>(false)
@@ -548,6 +550,7 @@ export default function AgentPage() {
               currentUserId,
               selectedTeamId: teamIdForFlow,
               selectedTeamLabel: teamLabelForFlow,
+              recommendationPriority,
               setLoadingMessage,
             })
 
@@ -579,44 +582,6 @@ export default function AgentPage() {
 
   const isAnyLoading = loadingTarget != null
   const contextActionsDisabled = contextRefreshing || isAnyLoading
-  const resultByKeyId = useMemo(
-    () => new Map<number, AnalysisResult>(results.map((item: AnalysisResult) => [item.keyId, item])),
-    [results],
-  )
-
-  const renderKeyInsightSummary = (result: AnalysisResult | undefined) => {
-    if (!result) return null
-    const metrics = result.recommendation?.metricsContext
-    const details = result.recommendation?.recommendationDetails
-    const candidates = details?.candidates ?? []
-    if (!metrics && candidates.length === 0) return null
-    return (
-      <div className="mt-2 rounded-md border border-dashed bg-muted/30 p-2 text-[11px] text-muted-foreground">
-        <p className="font-medium text-foreground">요약 지표</p>
-        {metrics ? (
-          <div className="mt-1 space-y-0.5">
-            <p>토큰 롤업(윈도우): {metrics.totalTokensUsed ?? 0}</p>
-            <p>입출력 비율: {metrics.inputOutputRatio ?? "N/A"}</p>
-            <p>
-              평균 지연:{" "}
-              {metrics.averageLatencyMs == null || !Number.isFinite(Number(metrics.averageLatencyMs))
-                ? "N/A"
-                : `${Number(metrics.averageLatencyMs).toFixed(0)} ms`}
-            </p>
-          </div>
-        ) : null}
-        {candidates.length > 0 ? (
-          <p className="mt-1">
-            추천 모델: {candidates.slice(0, 2).map((candidate) => candidate.modelName).join(", ")}
-            {candidates.length > 2 ? " ..." : ""}
-          </p>
-        ) : (
-          <p className="mt-1">추천 모델 후보 없음</p>
-        )}
-      </div>
-    )
-  }
-
   return (
     <div className="grid min-h-[70vh] gap-4 p-4 md:grid-cols-12">
       <aside className="space-y-4 rounded-xl border bg-card p-4 md:col-span-3">
@@ -634,6 +599,25 @@ export default function AgentPage() {
             </p>
           </div>
         ) : null}
+        <div className="space-y-1 rounded-md border border-border/70 bg-muted/20 p-2">
+          <label htmlFor="recommendation-priority" className="text-[11px] font-medium text-foreground">
+            모델 추천 우선순위
+          </label>
+          <select
+            id="recommendation-priority"
+            className="h-8 w-full rounded border bg-background px-2 text-xs"
+            value={recommendationPriority}
+            onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+              setRecommendationPriority(event.target.value as RecommendationPriority)
+            }
+            disabled={isAnyLoading}
+          >
+            <option value="BALANCED">균형</option>
+            <option value="COST">비용 절감 우선</option>
+            <option value="QUALITY">품질/추론 우선</option>
+            <option value="LATENCY">응답 속도 우선</option>
+          </select>
+        </div>
 
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2">
@@ -673,7 +657,6 @@ export default function AgentPage() {
                   </p>
                 ) : null}
                 <AgentKeyBudgetSummary monthlyBudgetUsd={item.monthlyBudgetUsd} budgetStats={item.budgetStats} />
-                {renderKeyInsightSummary(resultByKeyId.get(item.keyId))}
                 <div className="mt-1 flex flex-col gap-1 border-t border-border/60 pt-1">
                   <div className="flex items-center justify-between gap-2">
                     <label className="text-[11px] text-muted-foreground" htmlFor={`billing-p-${item.keyId}`}>
@@ -797,7 +780,6 @@ export default function AgentPage() {
                     monthlyBudgetUsd={item.monthlyBudgetUsd ?? 0}
                     budgetStats={item.budgetStats}
                   />
-                  {renderKeyInsightSummary(resultByKeyId.get(item.teamApiKeyId))}
                   <div className="mt-1 flex flex-col gap-1 border-t border-border/60 pt-1">
                     <div className="flex items-center justify-between gap-2">
                       <label
@@ -941,8 +923,8 @@ export default function AgentPage() {
                   </div>
                 ) : null}
 
-                <div className="grid gap-3 lg:grid-cols-2">
-                  <div className="space-y-2 rounded-md border border-dashed bg-muted/20 p-3 lg:order-2">
+                <div className="grid gap-3">
+                  <div className="order-2 space-y-2 rounded-md border border-dashed bg-muted/20 p-3">
                     <p className="text-xs font-medium text-muted-foreground">모델 추천</p>
                     {loadingTarget?.keyId === result.keyId && loadingTarget.action === "RECOMMENDATION" ? (
                       <div className="rounded-md border bg-background p-3 text-xs text-muted-foreground">
@@ -989,20 +971,7 @@ export default function AgentPage() {
                           <p className="text-xs text-amber-700">{result.recommendation.recommendationDetails.disclaimer}</p>
                         ) : null}
                       </div>
-                    ) : result.recommendation?.status === "NO_RECOMMENDATION" ? (
-                      <div className="rounded-md border border-dashed bg-background p-3 text-xs text-muted-foreground">
-                        <p>추천 생성 조건을 만족하지 않아 결과가 비어 있습니다.</p>
-                        <p className="mt-1">
-                          생성 시각:{" "}
-                          {result.recommendation.generatedAt
-                            ? new Date(result.recommendation.generatedAt).toLocaleString()
-                            : "N/A"}
-                        </p>
-                        <p className="mt-1">과금 신호/토큰 지표가 쌓인 뒤 다시 시도해 주세요.</p>
-                      </div>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">추천 결과가 없습니다. 해당 키 옆의 추천을 눌러 주세요.</p>
-                    )}
+                    ) : null}
 
                     {result.recommendation?.metricsContext ? (
                       <div className="space-y-2 rounded-md border border-dashed bg-muted/30 p-2">
@@ -1076,23 +1045,12 @@ export default function AgentPage() {
                           ))}
                         </ul>
                       </div>
-                    ) : result.recommendation?.status === "NO_RECOMMENDATION" ? (
-                      <div className="rounded-md border border-dashed bg-background p-3 text-xs text-muted-foreground">
-                        <p>추천 생성 조건을 만족하지 않아 결과가 비어 있습니다.</p>
-                        <p className="mt-1">
-                          생성 시각:{" "}
-                          {result.recommendation.generatedAt
-                            ? new Date(result.recommendation.generatedAt).toLocaleString()
-                            : "N/A"}
-                        </p>
-                        <p className="mt-1">과금 신호/토큰 지표가 쌓인 뒤 다시 시도해 주세요.</p>
-                      </div>
                     ) : (
                       <p className="text-xs text-muted-foreground">추천 결과가 없습니다. 해당 키 옆의 추천을 눌러 주세요.</p>
                     )}
                   </div>
 
-                  <div className="space-y-2 rounded-md border border-dashed bg-muted/20 p-3 lg:order-1">
+                  <div className="order-1 space-y-2 rounded-md border border-dashed bg-muted/20 p-3">
                     <p className="text-xs font-medium text-muted-foreground">예산 분석</p>
                     {loadingTarget?.keyId === result.keyId && loadingTarget.action === "ANALYSIS" ? (
                       <div className="rounded-md border bg-background p-3 text-xs text-muted-foreground">

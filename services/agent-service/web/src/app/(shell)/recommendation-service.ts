@@ -1,5 +1,7 @@
 import type { AnalysisScope, AvailableKeyContext } from "./agent-key-shared"
 
+export type RecommendationPriority = "BALANCED" | "COST" | "QUALITY" | "LATENCY"
+
 export type RecommendationQueryResponse = {
   keyId: string
   keyType: "PERSONAL" | "TEAM" | string
@@ -40,8 +42,9 @@ export async function requestRecommendation(params: {
   keyItem: AvailableKeyContext
   currentUserId: number | null
   resolvedTeamIdNumber: number
+  recommendationPriority: RecommendationPriority
 }): Promise<RecommendationQueryResponse> {
-  const { scope, keyItem, currentUserId, resolvedTeamIdNumber } = params
+  const { scope, keyItem, currentUserId, resolvedTeamIdNumber, recommendationPriority } = params
   const recommendationScopeType = scope
   const recommendationScopeId = scope === "PERSONAL" ? String(currentUserId) : String(resolvedTeamIdNumber)
 
@@ -54,6 +57,7 @@ export async function requestRecommendation(params: {
       keyId: String(keyItem.keyId),
       windowDays: 7,
       triggeredBy: "WEB_DASHBOARD",
+      recommendationPriority,
     }),
   })
   if (!analyzeResponse.ok) {
@@ -79,8 +83,9 @@ export async function requestRecommendationsBatch(params: {
   keyItems: AvailableKeyContext[]
   currentUserId: number | null
   resolvedTeamIdNumber: number
+  recommendationPriority: RecommendationPriority
 }): Promise<Record<number, RecommendationQueryResponse>> {
-  const { scope, keyItems, currentUserId, resolvedTeamIdNumber } = params
+  const { scope, keyItems, currentUserId, resolvedTeamIdNumber, recommendationPriority } = params
   const recommendationScopeType = scope
   const recommendationScopeId = scope === "PERSONAL" ? String(currentUserId) : String(resolvedTeamIdNumber)
   const analyzeResponse = await fetch("/agent/api/v1/agents/policy-recommendations/analyze/batch", {
@@ -93,6 +98,7 @@ export async function requestRecommendationsBatch(params: {
         keyId: String(keyItem.keyId),
         windowDays: 7,
         triggeredBy: "WEB_DASHBOARD",
+        recommendationPriority,
       })),
     }),
   })

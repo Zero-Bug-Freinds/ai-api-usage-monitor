@@ -31,6 +31,7 @@ public class IdentityExternalApiKeyEventListener {
 
 	private static final Logger log = LoggerFactory.getLogger(IdentityExternalApiKeyEventListener.class);
 	private static final String EXTERNAL_API_KEY_BUDGET_CHANGED = "EXTERNAL_API_KEY_BUDGET_CHANGED";
+	private static final String EVENT_TYPE_FIELD = "eventType";
 
 	private final ObjectMapper objectMapper;
 	private final IdentityApiKeySnapshotService snapshotService;
@@ -54,8 +55,8 @@ public class IdentityExternalApiKeyEventListener {
 			Map<String, String> headers = toStringHeaders(message);
 
 			// 1) Physical delete — mirror usage-service ExternalApiKeyStatusChangedEventListener
-			if (root.has("eventType")
-					&& IdentityExternalApiKeyEventTypes.EXTERNAL_API_KEY_DELETED.equals(root.get("eventType").asText())) {
+			if (root.has(EVENT_TYPE_FIELD)
+					&& IdentityExternalApiKeyEventTypes.EXTERNAL_API_KEY_DELETED.equals(root.get(EVENT_TYPE_FIELD).asText())) {
 				eventDebugService.record(IdentityExternalApiKeyEventTypes.EXTERNAL_API_KEY_DELETED, headers, json);
 				ExternalApiKeyDeletedEvent deleted = parseDeletedEvent(root);
 				snapshotService.delete(deleted);
@@ -64,8 +65,8 @@ public class IdentityExternalApiKeyEventListener {
 
 			// 2) Budget — agent snapshots persist monthlyBudgetUsd (usage metadata does not). Must precede schemaVersion
 			// because budget payloads also include schemaVersion.
-			if (root.has("eventType") && isBudgetChangedEventType(root.get("eventType").asText())) {
-				eventDebugService.record(root.get("eventType").asText(), headers, json);
+			if (root.has(EVENT_TYPE_FIELD) && isBudgetChangedEventType(root.get(EVENT_TYPE_FIELD).asText())) {
+				eventDebugService.record(root.get(EVENT_TYPE_FIELD).asText(), headers, json);
 				ExternalApiKeyBudgetChangedEvent budgetChanged =
 						objectMapper.readValue(json, ExternalApiKeyBudgetChangedEvent.class);
 				snapshotService.upsertBudget(budgetChanged);
@@ -75,8 +76,7 @@ public class IdentityExternalApiKeyEventListener {
 			// 3) Status / alias — same branch as usage-service (flat ExternalApiKeyStatusChangedEvent from Identity)
 			if (root.has("schemaVersion")) {
 				eventDebugService.record("ExternalApiKeyStatusChangedEvent", headers, json);
-				ExternalApiKeyStatusChangedEvent changed =
-						objectMapper.readValue(json, ExternalApiKeyStatusChangedEvent.class);
+				ExternalApiKeyStatusChangedEvent changed = parseStatusChangedEvent(root);
 				snapshotService.upsertStatus(changed);
 				return;
 			}
@@ -111,5 +111,14 @@ public class IdentityExternalApiKeyEventListener {
 			}
 		}
 		return objectMapper.treeToValue(payloadNode, ExternalApiKeyDeletedEvent.class);
+	}
+
+	private ExternalApiKeyStatusChangedEvent parseStatusChangedEvent(JsonNode payloadNode) throws Exception {
+		if (payloadNode instanceof ObjectNode objectNode) {
+			ObjectNode mutable = objectNode.deepCopy();
+			mutable.remove(EVENT_TYPE_FIELD);
+			return objectMapper.treeToValue(mutable, ExternalApiKeyStatusChangedEvent.class);
+		}
+		return objectMapper.treeToValue(payloadNode, ExternalApiKeyStatusChangedEvent.class);
 	}
 }

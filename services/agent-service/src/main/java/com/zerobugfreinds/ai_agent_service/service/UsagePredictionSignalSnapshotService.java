@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zerobugfreinds.ai_agent_service.entity.UsagePredictionSignalSnapshotEntity;
 import com.zerobugfreinds.ai_agent_service.repository.UsagePredictionSignalSnapshotRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -49,6 +50,7 @@ public class UsagePredictionSignalSnapshotService {
 		snapshotRepository.save(entity);
 	}
 
+	@Transactional(readOnly = true)
 	public List<UsagePredictionSignalSnapshot> findAll() {
 		return snapshotRepository.findAllByOrderByPublishedAtDesc().stream()
 				.map(entity -> new UsagePredictionSignalSnapshot(
