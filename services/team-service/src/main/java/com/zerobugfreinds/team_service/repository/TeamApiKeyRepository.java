@@ -47,6 +47,18 @@ public interface TeamApiKeyRepository extends JpaRepository<TeamApiKeyEntity, Lo
             TeamApiKeyProvider provider
     );
 
+    Optional<TeamApiKeyEntity> findByIdAndTeamIdAndProviderAndDeletionRequestedAtIsNull(
+            Long id,
+            Long teamId,
+            TeamApiKeyProvider provider
+    );
+
+    Optional<TeamApiKeyEntity> findFirstByTeamIdAndProviderAndKeyAliasAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(
+            Long teamId,
+            TeamApiKeyProvider provider,
+            String keyAlias
+    );
+
     /**
      * Proxy 등 내부 호출에서 teamId 없이 (provider, keyHash) 만으로 역조회할 때 사용한다.
      * 유일 제약은 (team_id, provider, key_hash) 이므로 서로 다른 팀이 동일한 외부 키를

@@ -17,6 +17,8 @@ resolving **team-scoped** provider keys.
 - Query:
   - `teamId` (required): numeric team id
   - `userId` (required): request user id / subject for membership verification
+  - `apiKeyId` (optional): team API key PK (numeric-string). If present, resolve by exact key id first.
+  - `alias` (optional): key alias. Used when `apiKeyId` is absent.
 - Header:
   - `Authorization: Bearer <internal-token>` (required)
 
@@ -67,7 +69,10 @@ For team requests, `team-service` resolves keys with these fixed rules:
 1. Lookup by `teamId`.
 2. Normalize provider alias (`gemini` -> `google`).
 3. Exclude deletion-pending keys (`deletionRequestedAt IS NULL`).
-4. Select only the newest active key (`createdAt DESC`, first row).
+4. Selection priority:
+   - if `apiKeyId` exists: exact match by `(id, teamId, provider)` (and active state)
+   - else if `alias` exists: newest active key by `(teamId, provider, alias)` + `createdAt DESC`
+   - else: newest active key by `(teamId, provider)` + `createdAt DESC`
 5. If no active key exists, return `404`.
 
 Personal key fallback is not allowed for team requests.

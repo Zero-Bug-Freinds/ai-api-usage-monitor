@@ -50,7 +50,9 @@ public class TeamInternalApiKeyResolveService {
             Long teamId,
             String userId,
             String userEmail,
-            String authorizationHeader
+            String authorizationHeader,
+            String apiKeyId,
+            String alias
     ) {
         validateInternalToken(authorizationHeader);
         validateInputs(teamId, userId);
@@ -77,14 +79,49 @@ public class TeamInternalApiKeyResolveService {
             throw new ForbiddenTeamAccessException("팀 멤버만 팀 API 키를 조회할 수 있습니다");
         }
 
-        TeamApiKeyEntity entity = teamApiKeyRepository
-                .findFirstByTeamIdAndProviderAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(teamId, provider)
-                .orElseThrow(() -> new TeamApiKeyNotFoundException("해당 팀에 활성 상태 API 키가 없습니다"));
+        TeamApiKeyEntity entity = selectTeamInternalKey(teamId, provider, apiKeyId, alias);
 
         String plainKey = encryptionUtil.decryptAes256Gcm(entity.getEncryptedKey());
         log.info("Internal team key lookup success teamId={} provider={} user={} keyId={}",
                 teamId, provider.name(), mask(userId), entity.getId());
         return new InternalTeamApiKeyResponse(plainKey, String.valueOf(entity.getId()));
+    }
+
+    /**
+     * 팀 범위의 활성 API 키만 조회한다. 사용자(개인) 키로의 폴백은 하지 않는다.
+     *
+     * <p>우선순위: {@code apiKeyId}가 있으면 ID 매칭, 없으면 {@code alias} 최신 건, 둘 다 없으면 해당
+     * provider의 최신 활성 키.</p>
+     */
+    private TeamApiKeyEntity selectTeamInternalKey(
+            Long teamId,
+            TeamApiKeyProvider provider,
+            String apiKeyId,
+            String alias
+    ) {
+        if (StringUtils.hasText(apiKeyId)) {
+            long keyId;
+            try {
+                keyId = Long.parseLong(apiKeyId.trim());
+            } catch (NumberFormatException ex) {
+                throw new IllegalArgumentException("apiKeyId는 숫자여야 합니다", ex);
+            }
+            return teamApiKeyRepository
+                    .findByIdAndTeamIdAndProviderAndDeletionRequestedAtIsNull(keyId, teamId, provider)
+                    .orElseThrow(() -> new TeamApiKeyNotFoundException("해당 팀에 활성 상태 API 키가 없습니다"));
+        }
+        if (StringUtils.hasText(alias)) {
+            return teamApiKeyRepository
+                    .findFirstByTeamIdAndProviderAndKeyAliasAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(
+                            teamId,
+                            provider,
+                            alias.trim()
+                    )
+                    .orElseThrow(() -> new TeamApiKeyNotFoundException("해당 팀에 활성 상태 API 키가 없습니다"));
+        }
+        return teamApiKeyRepository
+                .findFirstByTeamIdAndProviderAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(teamId, provider)
+                .orElseThrow(() -> new TeamApiKeyNotFoundException("해당 팀에 활성 상태 API 키가 없습니다"));
     }
 
     private void validateInternalToken(String authorizationHeader) {
@@ -116,7 +153,7 @@ public class TeamInternalApiKeyResolveService {
         return switch (providerRaw.trim().toLowerCase(Locale.ROOT)) {
             case "openai" -> TeamApiKeyProvider.OPENAI;
             case "anthropic" -> TeamApiKeyProvider.ANTHROPIC;
-            case "google" -> TeamApiKeyProvider.GOOGLE;
+            case "google", "gemini" -> TeamApiKeyProvider.GOOGLE;
             default -> throw new IllegalArgumentException("지원하지 않는 provider입니다: " + providerRaw);
         };
     }
