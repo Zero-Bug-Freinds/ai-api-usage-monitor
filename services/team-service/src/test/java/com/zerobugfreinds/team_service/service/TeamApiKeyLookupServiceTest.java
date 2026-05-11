@@ -62,16 +62,16 @@ class TeamApiKeyLookupServiceTest {
     }
 
     @Test
-    void lookupByHashedKey_googleProvider_returnsGoogleResponse() {
+    void lookupByHashedKey_geminiAlias_normalizedToGoogle() {
         TeamApiKeyRepository repository = mock(TeamApiKeyRepository.class);
         TeamApiKeyLookupService service = new TeamApiKeyLookupService(repository, INTERNAL_TOKEN);
 
-        TeamApiKeyEntity entity = newEntity(303L, 9L, "google-team", null, false);
+        TeamApiKeyEntity entity = newEntity(303L, 9L, "gemini-team", null, false);
         when(repository.findAllByProviderAndKeyHash(eq(TeamApiKeyProvider.GOOGLE), eq(SAMPLE_HASH)))
                 .thenReturn(List.of(entity));
 
         InternalTeamApiKeyLookupResponse response =
-                service.lookupByHashedKey("GOOGLE", SAMPLE_HASH.toUpperCase(), "Bearer " + INTERNAL_TOKEN);
+                service.lookupByHashedKey("GEMINI", SAMPLE_HASH.toUpperCase(), "Bearer " + INTERNAL_TOKEN);
 
         assertThat(response.keyId()).isEqualTo("303");
         assertThat(response.ownerUserId()).isNull();

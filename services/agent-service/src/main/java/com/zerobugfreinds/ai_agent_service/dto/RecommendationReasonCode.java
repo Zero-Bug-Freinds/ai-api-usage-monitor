@@ -3,6 +3,7 @@ package com.zerobugfreinds.ai_agent_service.dto;
 public enum RecommendationReasonCode {
 	HEAVY_INPUT_RATIO,
 	HEAVY_OUTPUT_RATIO,
+	HEAVY_REASONING_RATIO,
 	BALANCED_CHAT,
 	HIGH_LATENCY,
 	OVER_SPEC_USAGE,

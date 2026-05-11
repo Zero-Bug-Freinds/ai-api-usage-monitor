@@ -34,7 +34,10 @@ public record ExternalApiKeyStatusChangedEvent(
 		String provider,
 
 		@JsonProperty("status")
-		ExternalApiKeyStatus status
+		ExternalApiKeyStatus status,
+
+		@JsonProperty("keyHash")
+		String keyHash
 ) {
 	public static final int CURRENT_SCHEMA_VERSION = 1;
 
@@ -43,7 +46,8 @@ public record ExternalApiKeyStatusChangedEvent(
 			String alias,
 			Long userId,
 			String provider,
-			ExternalApiKeyStatus status
+			ExternalApiKeyStatus status,
+			String keyHash
 	) {
 		return new ExternalApiKeyStatusChangedEvent(
 				CURRENT_SCHEMA_VERSION,
@@ -53,7 +57,8 @@ public record ExternalApiKeyStatusChangedEvent(
 				userId,
 				"PRIVATE",
 				provider,
-				status
+				status,
+				keyHash
 		);
 	}
 }

@@ -23,9 +23,9 @@ function asApiResponse(json: unknown): ApiResponse<unknown> | null {
 }
 
 function providerLabel(provider: ExternalKeyProvider) {
-  if (provider === "OPENAI") return "OpenAI"
-  if (provider === "GOOGLE") return "Google"
-  return "Anthropic"
+  if (provider === "OPENAI") return "OPENAI"
+  if (provider === "GOOGLE") return "GOOGLE"
+  return "ANTHROPIC"
 }
 
 function defaultAlias(provider: ExternalKeyProvider) {
@@ -640,7 +640,7 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
                         <span className="text-foreground">{row.alias}</span>
                       )}
                       {isPendingDeletion(row) ? (
-                        <span className="ml-1.5 text-amber-700 dark:text-amber-500">(삭제 예정)</span>
+                        <span className="ml-1.5 text-amber-700 dark:text-amber-500">(삭제)</span>
                       ) : null}
                     </div>
                     {isPendingDeletion(row) && row.permanentDeletionAt ? (

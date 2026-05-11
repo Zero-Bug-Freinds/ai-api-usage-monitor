@@ -9,6 +9,10 @@ import com.zerobugfreinds.ai_agent_service.dto.RecommendationQueryResponse;
 import com.zerobugfreinds.ai_agent_service.dto.RecommendationLevel;
 import com.zerobugfreinds.ai_agent_service.dto.RecommendationReasonCode;
 import com.zerobugfreinds.ai_agent_service.dto.RecommendationScopeType;
+import com.zerobugfreinds.ai_agent_service.entity.RecommendationSnapshotEntity;
+import com.zerobugfreinds.ai_agent_service.repository.RecommendationSnapshotRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -34,19 +38,29 @@ public class PolicyRecommendationAgentService {
 	private static final BigDecimal BLOCK_THRESHOLD_PERCENT = BigDecimal.valueOf(100);
 	private static final BigDecimal MILLION = BigDecimal.valueOf(1_000_000);
 	private static final long HIGH_LATENCY_THRESHOLD_MS = 1100L;
+	private static final BigDecimal HEAVY_REASONING_SHARE_THRESHOLD = BigDecimal.valueOf(40);
 	private static final String RECOMMENDATION_AVAILABLE = "RECOMMENDATION_AVAILABLE";
 	private static final String RECOMMENDATION_EMPTY = "NO_RECOMMENDATION";
 	private static final Set<String> TIER_1_PROVIDERS = Set.of(
 			"OPENAI", "ANTHROPIC", "GOOGLE", "META", "MISTRAL", "COHERE"
 	);
 
-	private final Map<RecommendationCacheKey, RecommendationQueryResponse> recommendationStore = new ConcurrentHashMap<>();
+	private enum RecommendationPriority {
+		BALANCED,
+		COST,
+		QUALITY,
+		LATENCY
+	}
+
 	private final BillingSignalSnapshotService billingSignalSnapshotService;
 	private final ExternalModelCatalogService externalModelCatalogService;
 	private final DailyCumulativeTokenSnapshotService dailyCumulativeTokenSnapshotService;
 	private final UsagePredictionSignalSnapshotService usagePredictionSignalSnapshotService;
 	private final UsageRecordedTokenRollupService usageRecordedTokenRollupService;
 	private final RecommendationGeminiService recommendationGeminiService;
+	private final RecommendationSnapshotRepository recommendationSnapshotRepository;
+	private final ObjectMapper objectMapper;
+	private final Map<RecommendationCacheKey, RecommendationQueryResponse> recommendationStore = new ConcurrentHashMap<>();
 
 	public PolicyRecommendationAgentService(
 			BillingSignalSnapshotService billingSignalSnapshotService,
@@ -54,7 +68,9 @@ public class PolicyRecommendationAgentService {
 			DailyCumulativeTokenSnapshotService dailyCumulativeTokenSnapshotService,
 			UsagePredictionSignalSnapshotService usagePredictionSignalSnapshotService,
 			UsageRecordedTokenRollupService usageRecordedTokenRollupService,
-			RecommendationGeminiService recommendationGeminiService
+			RecommendationGeminiService recommendationGeminiService,
+			RecommendationSnapshotRepository recommendationSnapshotRepository,
+			ObjectMapper objectMapper
 	) {
 		this.billingSignalSnapshotService = billingSignalSnapshotService;
 		this.externalModelCatalogService = externalModelCatalogService;
@@ -62,6 +78,8 @@ public class PolicyRecommendationAgentService {
 		this.usagePredictionSignalSnapshotService = usagePredictionSignalSnapshotService;
 		this.usageRecordedTokenRollupService = usageRecordedTokenRollupService;
 		this.recommendationGeminiService = recommendationGeminiService;
+		this.recommendationSnapshotRepository = recommendationSnapshotRepository;
+		this.objectMapper = objectMapper;
 	}
 
 	public PolicyRecommendationResponse recommend(PolicyRecommendationRequest request) {
@@ -110,9 +128,13 @@ public class PolicyRecommendationAgentService {
 		long totalRequests = usageProfile.totalRequests();
 		long totalInputTokens = usageProfile.totalInputTokens();
 		long totalOutputTokens = usageProfile.totalOutputTokens();
+		long totalReasoningTokens = usageProfile.totalReasoningTokens();
+		long totalGeneratedTokens = totalOutputTokens + totalReasoningTokens;
 		BigDecimal ratio = calculateRatio(totalInputTokens, totalOutputTokens);
+		BigDecimal reasoningSharePercent = calculateReasoningSharePercent(totalReasoningTokens, totalGeneratedTokens);
 		Long averageLatencyMs = usageProfile.averageLatencyMs();
-		RecommendationReasonCode reasonCode = resolveReasonCode(request.scopeType(), ratio, averageLatencyMs);
+		RecommendationReasonCode reasonCode = resolveReasonCode(request.scopeType(), ratio, reasoningSharePercent, averageLatencyMs);
+		RecommendationPriority recommendationPriority = resolveRecommendationPriority(request.recommendationPriority(), reasonCode);
 		RecommendationConfidenceLevel confidenceLevel = usageProfile.confidenceLevel();
 
 		if (billingSignal == null || billingSignal.latestEstimatedCostUsd() == null) {
@@ -124,9 +146,9 @@ public class PolicyRecommendationAgentService {
 		List<CandidateCost> rankedCandidates = rankCandidates(
 				currentMonthlyCost,
 				totalInputTokens,
-				totalOutputTokens,
+				totalGeneratedTokens,
 				catalogSnapshot.models(),
-				reasonCode == RecommendationReasonCode.HIGH_LATENCY
+				recommendationPriority
 		);
 		List<CandidateCost> topCandidates = rankedCandidates.stream().limit(3).toList();
 		if (topCandidates.isEmpty()) {
@@ -137,10 +159,12 @@ public class PolicyRecommendationAgentService {
 					request.windowDays(),
 					totalInputTokens,
 					totalOutputTokens,
+					totalReasoningTokens,
 					averageLatencyMs,
 					totalRequests
 			);
 			recommendationStore.put(new RecommendationCacheKey(request.scopeType(), request.scopeId(), request.keyId()), noRecommendation);
+			persistSnapshot(noRecommendation, request.scopeType(), request.scopeId(), request.keyId());
 			return new OptimizationRecommendationIssuedEvent(
 					UUID.randomUUID().toString(),
 					"OPTIMIZATION_RECOMMENDATION_ISSUED",
@@ -181,9 +205,11 @@ public class PolicyRecommendationAgentService {
 		GeminiRecommendationOverride llmOverride = inferRecommendationOverride(
 				request,
 				reasonCode,
+				recommendationPriority,
 				averageLatencyMs,
 				totalInputTokens,
 				totalOutputTokens,
+				totalReasoningTokens,
 				totalRequests,
 				currentMonthlyCost,
 				recommendedMonthlyCost,
@@ -239,7 +265,7 @@ public class PolicyRecommendationAgentService {
 				endAt,
 				new RecommendationQueryResponse.MetricsContext(
 						request.windowDays(),
-						totalInputTokens + totalOutputTokens,
+						totalInputTokens + totalOutputTokens + totalReasoningTokens,
 						totalInputTokens + ":" + totalOutputTokens,
 						averageLatencyMs,
 						totalRequests
@@ -261,7 +287,7 @@ public class PolicyRecommendationAgentService {
 								.toList()
 				)
 		);
-		recommendationStore.put(new RecommendationCacheKey(request.scopeType(), request.scopeId(), request.keyId()), queryResponse);
+		persistSnapshot(queryResponse, request.scopeType(), request.scopeId(), request.keyId());
 		return event;
 	}
 
@@ -279,9 +305,13 @@ public class PolicyRecommendationAgentService {
 			long totalRequests = usageProfile.totalRequests();
 			long totalInputTokens = usageProfile.totalInputTokens();
 			long totalOutputTokens = usageProfile.totalOutputTokens();
+			long totalReasoningTokens = usageProfile.totalReasoningTokens();
+			long totalGeneratedTokens = totalOutputTokens + totalReasoningTokens;
 			BigDecimal ratio = calculateRatio(totalInputTokens, totalOutputTokens);
+			BigDecimal reasoningSharePercent = calculateReasoningSharePercent(totalReasoningTokens, totalGeneratedTokens);
 			Long averageLatencyMs = usageProfile.averageLatencyMs();
-			RecommendationReasonCode reasonCode = resolveReasonCode(request.scopeType(), ratio, averageLatencyMs);
+			RecommendationReasonCode reasonCode = resolveReasonCode(request.scopeType(), ratio, reasoningSharePercent, averageLatencyMs);
+			RecommendationPriority recommendationPriority = resolveRecommendationPriority(request.recommendationPriority(), reasonCode);
 			RecommendationConfidenceLevel confidenceLevel = usageProfile.confidenceLevel();
 			if (billingSignal == null || billingSignal.latestEstimatedCostUsd() == null) {
 				RecommendationQueryResponse noRecommendation = buildNoRecommendationResponse(
@@ -291,6 +321,7 @@ public class PolicyRecommendationAgentService {
 						request.windowDays(),
 						totalInputTokens,
 						totalOutputTokens,
+						totalReasoningTokens,
 						averageLatencyMs,
 						totalRequests
 				);
@@ -298,6 +329,7 @@ public class PolicyRecommendationAgentService {
 						new RecommendationCacheKey(request.scopeType(), request.scopeId(), request.keyId()),
 						noRecommendation
 				);
+				persistSnapshot(noRecommendation, request.scopeType(), request.scopeId(), request.keyId());
 				continue;
 			}
 			BigDecimal currentMonthlyCost = billingSignal.latestEstimatedCostUsd();
@@ -305,9 +337,9 @@ public class PolicyRecommendationAgentService {
 			List<CandidateCost> rankedCandidates = rankCandidates(
 					currentMonthlyCost,
 					totalInputTokens,
-					totalOutputTokens,
+					totalGeneratedTokens,
 					catalogSnapshot.models(),
-					reasonCode == RecommendationReasonCode.HIGH_LATENCY
+					recommendationPriority
 			);
 			List<CandidateCost> topCandidates = rankedCandidates.stream().limit(3).toList();
 			if (topCandidates.isEmpty()) {
@@ -318,6 +350,7 @@ public class PolicyRecommendationAgentService {
 						request.windowDays(),
 						totalInputTokens,
 						totalOutputTokens,
+						totalReasoningTokens,
 						averageLatencyMs,
 						totalRequests
 				);
@@ -325,6 +358,7 @@ public class PolicyRecommendationAgentService {
 						new RecommendationCacheKey(request.scopeType(), request.scopeId(), request.keyId()),
 						noRecommendation
 				);
+				persistSnapshot(noRecommendation, request.scopeType(), request.scopeId(), request.keyId());
 				continue;
 			}
 			CandidateCost bestCandidate = topCandidates.getFirst();
@@ -337,9 +371,11 @@ public class PolicyRecommendationAgentService {
 					totalRequests,
 					totalInputTokens,
 					totalOutputTokens,
+					totalReasoningTokens,
 					ratio,
 					averageLatencyMs,
 					reasonCode,
+					recommendationPriority,
 					confidenceLevel,
 					currentMonthlyCost,
 					recommendedMonthlyCost,
@@ -353,9 +389,11 @@ public class PolicyRecommendationAgentService {
 				.map(draft -> toGeminiPromptRequest(
 						draft.request(),
 						draft.reasonCode(),
+						draft.recommendationPriority(),
 						draft.averageLatencyMs(),
 						draft.totalInputTokens(),
 						draft.totalOutputTokens(),
+						draft.totalReasoningTokens(),
 						draft.totalRequests(),
 						draft.currentMonthlyCost(),
 						draft.recommendedMonthlyCost(),
@@ -400,7 +438,7 @@ public class PolicyRecommendationAgentService {
 					draft.endAt(),
 					new RecommendationQueryResponse.MetricsContext(
 							draft.request().windowDays(),
-							draft.totalInputTokens() + draft.totalOutputTokens(),
+							draft.totalInputTokens() + draft.totalOutputTokens() + draft.totalReasoningTokens(),
 							draft.totalInputTokens() + ":" + draft.totalOutputTokens(),
 							draft.averageLatencyMs(),
 							draft.totalRequests()
@@ -422,10 +460,7 @@ public class PolicyRecommendationAgentService {
 									.toList()
 					)
 			);
-			recommendationStore.put(
-					new RecommendationCacheKey(draft.request().scopeType(), draft.request().scopeId(), draft.request().keyId()),
-					queryResponse
-			);
+			persistSnapshot(queryResponse, draft.request().scopeType(), draft.request().scopeId(), draft.request().keyId());
 			responses.put(draft.request().keyId(), queryResponse);
 		}
 		return responses;
@@ -436,9 +471,9 @@ public class PolicyRecommendationAgentService {
 			String scopeId,
 			String keyId
 	) {
-		RecommendationQueryResponse response = recommendationStore.get(new RecommendationCacheKey(scopeType, scopeId, keyId));
-		if (response != null) {
-			return response;
+		RecommendationQueryResponse persisted = findPersistedRecommendation(scopeType, scopeId, keyId);
+		if (persisted != null) {
+			return persisted;
 		}
 		return new RecommendationQueryResponse(
 				keyId,
@@ -448,6 +483,51 @@ public class PolicyRecommendationAgentService {
 				new RecommendationQueryResponse.MetricsContext(0, 0L, "0:0", 0L, 0L),
 				null
 		);
+	}
+
+	private void persistSnapshot(
+			RecommendationQueryResponse response,
+			RecommendationScopeType scopeType,
+			String scopeId,
+			String keyId
+	) {
+		String payloadJson;
+		try {
+			payloadJson = objectMapper.writeValueAsString(response);
+		} catch (JsonProcessingException e) {
+			throw new IllegalStateException("RECOMMENDATION_PROJECTION_SERIALIZATION_FAILED", e);
+		}
+
+		recommendationSnapshotRepository.save(
+				new RecommendationSnapshotEntity(
+						scopeType,
+						scopeId,
+						keyId,
+						response.status(),
+						response.generatedAt(),
+						payloadJson,
+						Instant.now()
+				)
+		);
+	}
+
+	private RecommendationQueryResponse findPersistedRecommendation(
+			RecommendationScopeType scopeType,
+			String scopeId,
+			String keyId
+	) {
+		return recommendationSnapshotRepository
+				.findFirstByScopeTypeAndScopeIdAndKeyIdOrderByGeneratedAtDesc(scopeType, scopeId, keyId)
+				.map(this::deserializeSnapshot)
+				.orElse(null);
+	}
+
+	private RecommendationQueryResponse deserializeSnapshot(RecommendationSnapshotEntity entity) {
+		try {
+			return objectMapper.readValue(entity.getPayloadJson(), RecommendationQueryResponse.class);
+		} catch (JsonProcessingException e) {
+			throw new IllegalStateException("RECOMMENDATION_PROJECTION_DESERIALIZATION_FAILED", e);
+		}
 	}
 
 	private static BigDecimal calculateUtilizationPercent(BigDecimal spendUsd, BigDecimal budgetUsd) {
@@ -466,6 +546,7 @@ public class PolicyRecommendationAgentService {
 			int windowDays,
 			long totalInputTokens,
 			long totalOutputTokens,
+			long totalReasoningTokens,
 			Long averageLatencyMs,
 			long totalRequests
 	) {
@@ -476,7 +557,7 @@ public class PolicyRecommendationAgentService {
 				generatedAt,
 				new RecommendationQueryResponse.MetricsContext(
 						windowDays,
-						totalInputTokens + totalOutputTokens,
+						totalInputTokens + totalOutputTokens + totalReasoningTokens,
 						totalInputTokens + ":" + totalOutputTokens,
 						averageLatencyMs,
 						totalRequests
@@ -531,16 +612,22 @@ public class PolicyRecommendationAgentService {
 			long totalInputTokens,
 			long totalOutputTokens,
 			List<ExternalModelCatalogService.ModelPricing> modelCatalog,
-			boolean preferHighPerformance
+			RecommendationPriority recommendationPriority
 	) {
-		Comparator<CandidateCost> costOrder = preferHighPerformance
-				? Comparator.comparing(CandidateCost::expectedMonthlyCostUsd).reversed()
-				: Comparator.comparing(CandidateCost::expectedMonthlyCostUsd);
-
-		Comparator<CandidateCost> sortOrder = Comparator
-				.comparing((CandidateCost candidate) -> !candidate.tier1Provider())
-				.thenComparing(costOrder)
-				.thenComparing(Comparator.comparing(CandidateCost::contextWindow).reversed());
+		Comparator<CandidateCost> sortOrder = switch (recommendationPriority) {
+			case COST -> Comparator
+					.comparing((CandidateCost candidate) -> !candidate.tier1Provider())
+					.thenComparing(CandidateCost::expectedMonthlyCostUsd)
+					.thenComparing(Comparator.comparing(CandidateCost::contextWindow).reversed());
+			case QUALITY, LATENCY -> Comparator
+					.comparing((CandidateCost candidate) -> !candidate.tier1Provider())
+					.thenComparing(Comparator.comparing(CandidateCost::contextWindow).reversed())
+					.thenComparing(CandidateCost::expectedMonthlyCostUsd);
+			case BALANCED -> Comparator
+					.comparing((CandidateCost candidate) -> !candidate.tier1Provider())
+					.thenComparing(CandidateCost::expectedMonthlyCostUsd)
+					.thenComparing(Comparator.comparing(CandidateCost::contextWindow).reversed());
+		};
 
 		return modelCatalog.stream()
 				.filter(PolicyRecommendationAgentService::isRecommendationCandidate)
@@ -591,10 +678,14 @@ public class PolicyRecommendationAgentService {
 	private static RecommendationReasonCode resolveReasonCode(
 			RecommendationScopeType scopeType,
 			BigDecimal inputOutputRatio,
+			BigDecimal reasoningSharePercent,
 			Long averageLatencyMs
 	) {
 		if (averageLatencyMs != null && averageLatencyMs >= HIGH_LATENCY_THRESHOLD_MS) {
 			return RecommendationReasonCode.HIGH_LATENCY;
+		}
+		if (reasoningSharePercent.compareTo(HEAVY_REASONING_SHARE_THRESHOLD) >= 0) {
+			return RecommendationReasonCode.HEAVY_REASONING_RATIO;
 		}
 		if (inputOutputRatio.compareTo(BigDecimal.valueOf(10)) >= 0) {
 			return RecommendationReasonCode.HEAVY_INPUT_RATIO;
@@ -607,6 +698,34 @@ public class PolicyRecommendationAgentService {
 				: RecommendationReasonCode.BALANCED_CHAT;
 	}
 
+	private static RecommendationPriority resolveRecommendationPriority(
+			String requestedPriority,
+			RecommendationReasonCode reasonCode
+	) {
+		RecommendationPriority parsed = parseRecommendationPriority(requestedPriority);
+		if (parsed != null) {
+			return parsed;
+		}
+		if (reasonCode == RecommendationReasonCode.HIGH_LATENCY) {
+			return RecommendationPriority.LATENCY;
+		}
+		if (reasonCode == RecommendationReasonCode.HEAVY_REASONING_RATIO) {
+			return RecommendationPriority.QUALITY;
+		}
+		return RecommendationPriority.BALANCED;
+	}
+
+	private static RecommendationPriority parseRecommendationPriority(String requestedPriority) {
+		if (requestedPriority == null || requestedPriority.isBlank()) {
+			return null;
+		}
+		try {
+			return RecommendationPriority.valueOf(requestedPriority.trim().toUpperCase(Locale.ROOT));
+		} catch (IllegalArgumentException ignored) {
+			return null;
+		}
+	}
+
 	private UsageProfile buildUsageProfile(
 			RecommendationAnalyzeRequest request,
 			BillingSignalSnapshotService.BillingKeySignal billingSignal
@@ -617,21 +736,24 @@ public class PolicyRecommendationAgentService {
 						request.scopeType().name(),
 						request.scopeId()
 				);
-		if (rollupSummary.totalInputTokens() > 0 || rollupSummary.totalOutputTokens() > 0) {
+		if (rollupSummary.totalInputTokens() > 0
+				|| rollupSummary.totalOutputTokens() > 0
+				|| rollupSummary.totalReasoningTokens() > 0) {
 			RecommendationConfidenceLevel confidence = rollupSummary.totalRequests() >= 5
 					? RecommendationConfidenceLevel.MEDIUM
 					: RecommendationConfidenceLevel.LOW;
 			return new UsageProfile(
 					rollupSummary.totalInputTokens(),
 					rollupSummary.totalOutputTokens(),
+					rollupSummary.totalReasoningTokens(),
 					rollupSummary.averageLatencyMs(),
 					confidence,
 					rollupSummary.totalRequests()
 			);
 		}
 
-		long dailyTokens = resolveDailyTokensByKey(request);
-		BigDecimal averageDailyTokenUsage = resolveAverageDailyTokenUsage(request);
+		long dailyTokens = resolveDailyTokensByKey(request, billingSignal);
+		BigDecimal averageDailyTokenUsage = resolveAverageDailyTokenUsage(request, billingSignal);
 		long resolvedDailyTokens = dailyTokens > 0
 				? dailyTokens
 				: averageDailyTokenUsage.longValue();
@@ -647,22 +769,28 @@ public class PolicyRecommendationAgentService {
 		RecommendationConfidenceLevel confidence = dailyTokens > 0 || averageDailyTokenUsage.compareTo(BigDecimal.ZERO) > 0
 				? RecommendationConfidenceLevel.MEDIUM
 				: RecommendationConfidenceLevel.LOW;
-		return new UsageProfile(totalInputTokens, totalOutputTokens, profile.avgLatencyMs(), confidence, 0L);
+		return new UsageProfile(totalInputTokens, totalOutputTokens, 0L, profile.avgLatencyMs(), confidence, 0L);
 	}
 
-	private long resolveDailyTokensByKey(RecommendationAnalyzeRequest request) {
+	private long resolveDailyTokensByKey(
+			RecommendationAnalyzeRequest request,
+			BillingSignalSnapshotService.BillingKeySignal billingSignal
+	) {
 		String keyId = request.keyId();
 		return dailyCumulativeTokenSnapshotService.findAll().stream()
 				.filter(snapshot -> Objects.equals(snapshot.apiKeyId(), keyId))
-				.filter(snapshot -> matchesScope(request, snapshot.teamId(), snapshot.userId()))
+				.filter(snapshot -> matchesScope(request, snapshot.teamId(), snapshot.userId(), billingSignal))
 				.mapToLong(DailyCumulativeTokenSnapshotService.DailyCumulativeTokenSnapshot::dailyTotalTokens)
 				.max()
 				.orElse(0L);
 	}
 
-	private BigDecimal resolveAverageDailyTokenUsage(RecommendationAnalyzeRequest request) {
+	private BigDecimal resolveAverageDailyTokenUsage(
+			RecommendationAnalyzeRequest request,
+			BillingSignalSnapshotService.BillingKeySignal billingSignal
+	) {
 		return usagePredictionSignalSnapshotService.findAll().stream()
-				.filter(snapshot -> matchesScope(request, snapshot.teamId(), snapshot.userId()))
+				.filter(snapshot -> matchesScope(request, snapshot.teamId(), snapshot.userId(), billingSignal))
 				.map(UsagePredictionSignalSnapshotService.UsagePredictionSignalSnapshot::averageDailyTokenUsage7d)
 				.filter(Objects::nonNull)
 				.max(Comparator.naturalOrder())
@@ -672,15 +800,19 @@ public class PolicyRecommendationAgentService {
 	private static boolean matchesScope(
 			RecommendationAnalyzeRequest request,
 			String teamId,
-			String userId
+			String userId,
+			BillingSignalSnapshotService.BillingKeySignal billingSignal
 	) {
 		String normalizedTeamId = normalizeId(teamId);
 		String normalizedUserId = normalizeId(userId);
 		String scopeId = normalizeId(request.scopeId());
+		String billingUserId = normalizeId(billingSignal != null ? billingSignal.userId() : null);
 		if (request.scopeType() == RecommendationScopeType.TEAM) {
 			return scopeId.equals(normalizedTeamId);
 		}
-		return normalizedTeamId.isBlank() && scopeId.equals(normalizedUserId);
+		return normalizedTeamId.isBlank()
+				&& (scopeId.equals(normalizedUserId)
+				|| (!billingUserId.isBlank() && billingUserId.equals(normalizedUserId)));
 	}
 
 	private static String normalizeId(String value) {
@@ -721,6 +853,7 @@ public class PolicyRecommendationAgentService {
 		return switch (reasonCode) {
 			case HEAVY_INPUT_RATIO -> "입력 토큰 비중이 높아 입력 단가가 낮은 모델이 유리합니다.";
 			case HEAVY_OUTPUT_RATIO -> "출력 토큰 비중이 높아 출력 단가 최적화가 필요합니다.";
+			case HEAVY_REASONING_RATIO -> "추론 토큰 비중이 높아 장문 추론 효율이 좋은 모델이 유리합니다.";
 			case HIGH_LATENCY -> "응답 지연이 높은 패턴이 감지되어 저지연 모델 전환이 권장됩니다.";
 			case OVER_SPEC_USAGE -> "현재 사용 패턴 대비 과스펙 모델 사용 비중이 높습니다.";
 			case BUDGET_THRESHOLD_REACHED -> "예산 임계치 도달로 비용 최적화가 필요합니다.";
@@ -732,9 +865,11 @@ public class PolicyRecommendationAgentService {
 	private GeminiRecommendationOverride inferRecommendationOverride(
 			RecommendationAnalyzeRequest request,
 			RecommendationReasonCode reasonCode,
+			RecommendationPriority recommendationPriority,
 			Long averageLatencyMs,
 			long totalInputTokens,
 			long totalOutputTokens,
+			long totalReasoningTokens,
 			long totalRequests,
 			BigDecimal currentMonthlyCost,
 			BigDecimal recommendedMonthlyCost,
@@ -755,10 +890,12 @@ public class PolicyRecommendationAgentService {
 						request.scopeId(),
 						request.keyId(),
 						reasonCode.name(),
+						recommendationPriority.name(),
 						averageLatencyMs,
 						totalInputTokens + ":" + totalOutputTokens,
+						totalReasoningTokens,
 						totalRequests,
-						totalInputTokens + totalOutputTokens,
+						totalInputTokens + totalOutputTokens + totalReasoningTokens,
 						currentMonthlyCost.toPlainString(),
 						recommendedMonthlyCost.toPlainString(),
 						estimatedSavingsPct.toPlainString(),
@@ -775,9 +912,11 @@ public class PolicyRecommendationAgentService {
 	private static RecommendationGeminiService.AiRecommendationPromptRequest toGeminiPromptRequest(
 			RecommendationAnalyzeRequest request,
 			RecommendationReasonCode reasonCode,
+			RecommendationPriority recommendationPriority,
 			Long averageLatencyMs,
 			long totalInputTokens,
 			long totalOutputTokens,
+			long totalReasoningTokens,
 			long totalRequests,
 			BigDecimal currentMonthlyCost,
 			BigDecimal recommendedMonthlyCost,
@@ -797,15 +936,26 @@ public class PolicyRecommendationAgentService {
 				request.scopeId(),
 				request.keyId(),
 				reasonCode.name(),
+				recommendationPriority.name(),
 				averageLatencyMs,
 				totalInputTokens + ":" + totalOutputTokens,
+				totalReasoningTokens,
 				totalRequests,
-				totalInputTokens + totalOutputTokens,
+				totalInputTokens + totalOutputTokens + totalReasoningTokens,
 				currentMonthlyCost.toPlainString(),
 				recommendedMonthlyCost.toPlainString(),
 				estimatedSavingsPct.toPlainString(),
 				candidatePayload
 		);
+	}
+
+	private static BigDecimal calculateReasoningSharePercent(long reasoningTokens, long totalGeneratedTokens) {
+		if (totalGeneratedTokens <= 0 || reasoningTokens <= 0) {
+			return BigDecimal.ZERO;
+		}
+		return BigDecimal.valueOf(reasoningTokens)
+				.multiply(HUNDRED)
+				.divide(BigDecimal.valueOf(totalGeneratedTokens), 2, RoundingMode.HALF_UP);
 	}
 
 	private static String buildDedupeKey(
@@ -831,17 +981,19 @@ public class PolicyRecommendationAgentService {
 					.findFirst()
 					.orElse(null);
 		}
-		return billingSignalSnapshotService.findAll().stream()
+		List<BillingSignalSnapshotService.BillingKeySignal> allSignals = billingSignalSnapshotService.findAll();
+		BillingSignalSnapshotService.BillingKeySignal strictPersonalMatch = allSignals.stream()
 				.filter(signal -> keyId.equals(signal.apiKeyId()) && scopeId.equals(signal.userId()))
 				.findFirst()
 				.orElse(null);
-	}
-
-	private record RecommendationCacheKey(
-			RecommendationScopeType scopeType,
-			String scopeId,
-			String keyId
-	) {
+		if (strictPersonalMatch != null) {
+			return strictPersonalMatch;
+		}
+		// userId 포맷(숫자/이메일)이 이력 데이터와 다를 수 있어, 키 ID 기준으로 한 번 더 보정한다.
+		return allSignals.stream()
+				.filter(signal -> keyId.equals(signal.apiKeyId()))
+				.findFirst()
+				.orElse(null);
 	}
 
 	private record CandidateCost(
@@ -864,6 +1016,7 @@ public class PolicyRecommendationAgentService {
 	private record UsageProfile(
 			long totalInputTokens,
 			long totalOutputTokens,
+			long totalReasoningTokens,
 			Long averageLatencyMs,
 			RecommendationConfidenceLevel confidenceLevel,
 			long totalRequests
@@ -878,6 +1031,13 @@ public class PolicyRecommendationAgentService {
 	) {
 	}
 
+	private record RecommendationCacheKey(
+			RecommendationScopeType scopeType,
+			String scopeId,
+			String keyId
+	) {
+	}
+
 	private record BatchDraft(
 			RecommendationAnalyzeRequest request,
 			Instant endAt,
@@ -885,9 +1045,11 @@ public class PolicyRecommendationAgentService {
 			long totalRequests,
 			long totalInputTokens,
 			long totalOutputTokens,
+			long totalReasoningTokens,
 			BigDecimal ratio,
 			Long averageLatencyMs,
 			RecommendationReasonCode reasonCode,
+			RecommendationPriority recommendationPriority,
 			RecommendationConfidenceLevel confidenceLevel,
 			BigDecimal currentMonthlyCost,
 			BigDecimal recommendedMonthlyCost,

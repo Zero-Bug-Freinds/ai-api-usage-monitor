@@ -1,5 +1,6 @@
 package com.zerobugfreinds.ai_agent_service.mq;
 
+import com.eevee.usage.events.AiProvider;
 import com.eevee.usage.events.TokenUsage;
 import com.eevee.usage.events.UsageRecordedEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -69,7 +70,8 @@ public class UsageRecordedEventListener {
 					resolved.scopeId(),
 					event.occurredAt(),
 					tokenUsage.promptTokens(),
-					tokenUsage.completionTokens(),
+					resolveOutputTokens(event.provider(), tokenUsage),
+					resolveReasoningTokens(tokenUsage),
 					event.latencyMs()
 			);
 		} catch (Exception ex) {
@@ -119,6 +121,26 @@ public class UsageRecordedEventListener {
 	}
 
 	record ResolvedScope(String scopeType, String scopeId) {
+	}
+
+	private static Long resolveReasoningTokens(TokenUsage tokenUsage) {
+		if (tokenUsage.completionReasoningTokens() == null || tokenUsage.completionReasoningTokens() < 0) {
+			return 0L;
+		}
+		return tokenUsage.completionReasoningTokens();
+	}
+
+	private static Long resolveOutputTokens(AiProvider provider, TokenUsage tokenUsage) {
+		Long completionTokens = tokenUsage.completionTokens();
+		if (completionTokens == null || completionTokens < 0) {
+			return 0L;
+		}
+		Long reasoningTokens = resolveReasoningTokens(tokenUsage);
+		if (provider != AiProvider.OPENAI) {
+			return completionTokens;
+		}
+		long pureOutput = completionTokens - reasoningTokens;
+		return Math.max(pureOutput, 0L);
 	}
 
 	private static Map<String, String> toStringHeaders(Message message) {

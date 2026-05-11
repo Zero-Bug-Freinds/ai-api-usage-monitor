@@ -58,16 +58,6 @@ export async function runBudgetAnalysisFlow(params: {
   const resultByKeyId: Record<number, AnalysisResult> = {}
   for (const keyItem of targetKeys) {
     const forecast = resolveForecastInputs(keyItem.providerStats, keyItem.monthlyBudgetUsd)
-    if (forecast.insufficientForForecast) {
-      resultByKeyId[keyItem.keyId] = {
-        keyId: keyItem.keyId,
-        keyLabel: keyItem.keyLabel,
-        provider: keyItem.provider,
-        forecastGaps: forecast.gaps.length > 0 ? forecast.gaps : undefined,
-        error: "사용량 데이터가 없어 소진 예측을 계산할 수 없습니다.",
-      }
-      continue
-    }
     const resolvedTeamIdNumber = Number(resolvedTeamId ?? 0)
     const billingLedgerKey =
       scope === "PERSONAL" ? personalLedgerKey(keyItem.keyId) : teamLedgerKey(resolvedTeamIdNumber, keyItem.keyId)
@@ -93,7 +83,7 @@ export async function runBudgetAnalysisFlow(params: {
           keyLabel: keyItem.keyLabel,
           provider: keyItem.provider,
           data,
-          forecastGaps: forecast.gaps.length > 0 ? forecast.gaps : undefined,
+          forecastGaps: data == null && forecast.gaps.length > 0 ? forecast.gaps : [],
           error: data == null ? "분석 결과를 찾을 수 없습니다." : undefined,
         }
       }

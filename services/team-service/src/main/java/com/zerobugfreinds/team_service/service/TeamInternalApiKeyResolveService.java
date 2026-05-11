@@ -57,14 +57,19 @@ public class TeamInternalApiKeyResolveService {
         TeamApiKeyProvider provider = normalizeProvider(providerRaw);
 
         String normalizedUserId = userId.trim();
-        Set<String> candidates = new LinkedHashSet<>(identityUserSyncService.resolveMembershipLookupCandidates(normalizedUserId));
+        Set<String> candidates = new LinkedHashSet<>(
+                identityUserSyncService.resolveMembershipLookupCandidates(normalizedUserId)
+        );
         if (StringUtils.hasText(userEmail)) {
             candidates.add(userEmail.trim().toLowerCase(Locale.ROOT));
         }
         if (candidates.isEmpty()) {
-            candidates = Set.of(normalizedUserId);
+            candidates.add(normalizedUserId);
         }
         boolean isTeamMember = candidates.stream()
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .distinct()
                 .anyMatch(candidate -> teamMemberRepository.existsByTeamIdAndUserId(teamId, candidate));
         if (!isTeamMember) {
             log.warn("Internal team key lookup denied teamId={} provider={} user={}",

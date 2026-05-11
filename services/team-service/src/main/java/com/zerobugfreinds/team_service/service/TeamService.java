@@ -220,9 +220,14 @@ public class TeamService {
 		if (!StringUtils.hasText(userId)) {
 			throw new IllegalArgumentException("userId는 필수입니다");
 		}
-		String normalizedUserId = userId.trim();
-		List<TeamMemberEntity> memberships = teamMemberRepository.findAllByUserId(normalizedUserId);
+		List<String> lookupCandidates = resolveLookupCandidates(userId);
+		List<TeamMemberEntity> memberships = teamMemberRepository.findAllByUserIdIn(lookupCandidates);
 		if (memberships.isEmpty()) {
+			log.info(
+					"getBillingTeamSummariesInternal no team_members rows matched lookupCandidates={} rawUserId={}",
+					lookupCandidates,
+					userId.trim()
+			);
 			return List.of();
 		}
 

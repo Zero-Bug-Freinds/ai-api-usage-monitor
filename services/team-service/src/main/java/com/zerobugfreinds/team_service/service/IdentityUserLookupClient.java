@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.IOException;
@@ -104,6 +105,51 @@ public class IdentityUserLookupClient {
         }
     }
 
+    /**
+     * identity 내부 API로 숫자 userId와 이메일을 한 번에 받아, 멤버십 조회 후보 집합에 합친다.
+     * 동기화 테이블에 행이 없어도 동일 사용자를 id·이메일 어느 쪽으로 저장했든 매칭 가능하게 한다.
+     */
+    public void addResolvedPrincipalIdentifiers(String userIdOrEmail, Set<String> candidates) {
+        if (!StringUtils.hasText(userIdOrEmail) || candidates == null) {
+            return;
+        }
+        URI uri = UriComponentsBuilder
+                .fromUriString(identityServiceBaseUrl + "/internal/users/principal")
+                .queryParam("q", userIdOrEmail.trim())
+                .build(true)
+                .toUri();
+
+        HttpRequest request = HttpRequest.newBuilder(uri)
+                .timeout(Duration.ofSeconds(5))
+                .GET()
+                .header("Accept", "application/json")
+                .build();
+
+        try {
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                return;
+            }
+            JsonNode root = objectMapper.readTree(response.body());
+            JsonNode data = root.path("data");
+            if (data.isMissingNode() || data.isNull()) {
+                return;
+            }
+            JsonNode userIdNode = data.path("userId");
+            JsonNode emailNode = data.path("email");
+            if (userIdNode.isTextual()) {
+                candidates.add(userIdNode.asText().trim());
+            }
+            if (emailNode.isTextual()) {
+                candidates.add(emailNode.asText().trim().toLowerCase());
+            }
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+        } catch (IOException ignored) {
+            // 동일 네트워크 장애 시 로컬 후보만으로 진행
+        }
+    }
+
     public String findEmailByUserId(String userId) {
         if (userId == null || userId.isBlank()) {
             return null;
@@ -113,6 +159,7 @@ public class IdentityUserLookupClient {
                 .queryParam("userId", userId.trim())
                 .build(true)
                 .toUri();
+
         HttpRequest request = HttpRequest.newBuilder(uri)
                 .timeout(Duration.ofSeconds(5))
                 .GET()
