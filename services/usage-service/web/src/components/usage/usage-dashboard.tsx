@@ -72,6 +72,8 @@ const HISTORY_CACHE_TTL_MS = 60 * 60 * 1000
 
 const DASHBOARD_PROVIDER_ALL = "__ALL__"
 const DASHBOARD_API_KEY_ALL = "__ALL__"
+/** 개인 키가 0개일 때 전용(서버에는 apiKeyId 미전달 — ALL과 동일). */
+const DASHBOARD_API_KEY_NONE = "__NONE__"
 const DASHBOARD_PROVIDER_STORAGE_KEY = "usage-dashboard:provider:v1"
 const DASHBOARD_PERIOD_STORAGE_KEY = "usage-dashboard:period:v1"
 /** 개인 대시보드 전용. 팀 대시보드·팀 멤버 뷰와 sessionStorage 충돌 없음. */
@@ -157,6 +159,7 @@ function readStoredPersonalDashboardApiKeyId(): string {
     if (raw == null) return DASHBOARD_API_KEY_ALL
     const trimmed = raw.trim()
     if (trimmed.length === 0 || trimmed === DASHBOARD_API_KEY_ALL) return DASHBOARD_API_KEY_ALL
+    if (trimmed === DASHBOARD_API_KEY_NONE) return DASHBOARD_API_KEY_NONE
     return trimmed
   } catch {
     return DASHBOARD_API_KEY_ALL
@@ -192,7 +195,9 @@ function scopeQueryParams(
 ): { dataContext?: string; apiKeyId?: string } {
   const o: { dataContext?: string; apiKeyId?: string } = {}
   if (dataContext === "TEAM_MEMBER_ONLY") o.dataContext = "TEAM_MEMBER_ONLY"
-  if (apiKeyId !== DASHBOARD_API_KEY_ALL) o.apiKeyId = apiKeyId
+  if (apiKeyId !== DASHBOARD_API_KEY_ALL && apiKeyId !== DASHBOARD_API_KEY_NONE) {
+    o.apiKeyId = apiKeyId
+  }
   return o
 }
 
@@ -769,12 +774,33 @@ export function UsageDashboard() {
   }, [dataContextParam])
 
   React.useEffect(() => {
+    if (dataContext === "PERSONAL") {
+      if (apiKeyOptions.length === 0) {
+        if (dashApiKeyId !== DASHBOARD_API_KEY_NONE) {
+          setDashApiKeyId(DASHBOARD_API_KEY_NONE)
+        }
+        return
+      }
+      if (dashApiKeyId === DASHBOARD_API_KEY_NONE) {
+        setDashApiKeyId(DASHBOARD_API_KEY_ALL)
+        return
+      }
+      if (dashApiKeyId === DASHBOARD_API_KEY_ALL) return
+      if (!apiKeyOptions.some((x: UsageLogApiKeyItemResponse) => x.apiKeyId === dashApiKeyId)) {
+        setDashApiKeyId(DASHBOARD_API_KEY_ALL)
+      }
+      return
+    }
+    if (dashApiKeyId === DASHBOARD_API_KEY_NONE) {
+      setDashApiKeyId(DASHBOARD_API_KEY_ALL)
+      return
+    }
     if (dashApiKeyId === DASHBOARD_API_KEY_ALL) return
     if (apiKeyOptions.length === 0) return
     if (!apiKeyOptions.some((x: UsageLogApiKeyItemResponse) => x.apiKeyId === dashApiKeyId)) {
       setDashApiKeyId(DASHBOARD_API_KEY_ALL)
     }
-  }, [apiKeyOptions, dashApiKeyId])
+  }, [apiKeyOptions, dashApiKeyId, dataContext])
 
   React.useEffect(() => {
     if (!clientReady || typeof sessionStorage === "undefined") return
@@ -930,7 +956,15 @@ export function UsageDashboard() {
           setDaily(Array.isArray(d) ? d : [])
           setMonthly(Array.isArray(m) ? m : [])
           setByModel(Array.isArray(bm) ? bm : [])
-          setApiKeyOptions(Array.isArray(keys) ? keys : [])
+          const keyList = Array.isArray(keys) ? keys : []
+          setApiKeyOptions(keyList)
+          if (dataContext === "PERSONAL") {
+            if (keyList.length === 0) {
+              setDashApiKeyId(DASHBOARD_API_KEY_NONE)
+            } else {
+              setDashApiKeyId((prev) => (prev === DASHBOARD_API_KEY_NONE ? DASHBOARD_API_KEY_ALL : prev))
+            }
+          }
           setLatencySeries(Array.isArray(latRows) ? latRows : [])
           setLatencyInsight(latInsight ?? null)
           setLatencyLegendHidden({})
@@ -1366,17 +1400,31 @@ export function UsageDashboard() {
 
         <div className="space-y-2 sm:min-w-[12rem] sm:max-w-[20rem]">
           <Label htmlFor="dash-api-key">API Key 별칭</Label>
-          <Select value={dashApiKeyId} onValueChange={setDashApiKeyId}>
+          <Select
+            value={dashApiKeyId}
+            onValueChange={setDashApiKeyId}
+            disabled={dataContext === "PERSONAL" && apiKeyOptions.length === 0}
+          >
             <SelectTrigger id="dash-api-key">
-              <SelectValue placeholder="전체" />
+              <SelectValue
+                placeholder={
+                  dataContext === "PERSONAL" && apiKeyOptions.length === 0 ? "없음" : "전체"
+                }
+              />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={DASHBOARD_API_KEY_ALL}>전체</SelectItem>
-              {apiKeyOptions.map((k: UsageLogApiKeyItemResponse) => (
-                <SelectItem key={k.apiKeyId} value={k.apiKeyId}>
-                  {(k.alias?.trim() ? k.alias : k.apiKeyId).slice(0, 64)}
-                </SelectItem>
-              ))}
+              {dataContext === "PERSONAL" && apiKeyOptions.length === 0 ? (
+                <SelectItem value={DASHBOARD_API_KEY_NONE}>없음</SelectItem>
+              ) : (
+                <>
+                  <SelectItem value={DASHBOARD_API_KEY_ALL}>전체</SelectItem>
+                  {apiKeyOptions.map((k: UsageLogApiKeyItemResponse) => (
+                    <SelectItem key={k.apiKeyId} value={k.apiKeyId}>
+                      {(k.alias?.trim() ? k.alias : k.apiKeyId).slice(0, 64)}
+                    </SelectItem>
+                  ))}
+                </>
+              )}
             </SelectContent>
           </Select>
         </div>
