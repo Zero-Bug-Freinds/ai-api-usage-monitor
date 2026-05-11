@@ -1,6 +1,7 @@
 "use client"
 
 import { Suspense, useState, type ReactNode } from "react"
+import { usePathname } from "next/navigation"
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react"
 
 import { Button } from "@ai-usage/ui"
@@ -10,8 +11,19 @@ type UsageShellLayoutClientProps = {
   children: ReactNode
 }
 
+function isUsageLogRoute(pathname: string | null): boolean {
+  if (!pathname) return false
+  return pathname.includes("/usagelog")
+}
+
 export function UsageShellLayoutClient({ children }: UsageShellLayoutClientProps) {
+  const pathname = usePathname()
+  const hideSecondSidebar = isUsageLogRoute(pathname)
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
+
+  if (hideSecondSidebar) {
+    return <div className="min-h-0 min-w-0 w-full flex-1">{children}</div>
+  }
 
   return (
     <div className="flex min-h-full w-full min-w-0 gap-4">
