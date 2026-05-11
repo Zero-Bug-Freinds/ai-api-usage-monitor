@@ -528,6 +528,8 @@ services:
       TEAM_API_KEY_ENCRYPTION_SECRET: ${TEAM_API_KEY_ENCRYPTION_SECRET:-change-this-team-api-key-encryption-secret-min-32-chars}
       PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN: ${PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN:-change-this-team-internal-api-token}
       TEAM_SERVICE_PORT: 8093
+      # team-service → billing (month-rollup BFF). Override on host if billing is not on this URL.
+      TEAM_BILLING_SERVICE_BASE_URL: ${TEAM_BILLING_SERVICE_BASE_URL:-http://billing-service:8095}
     depends_on:
       postgres-team:
         condition: service_healthy

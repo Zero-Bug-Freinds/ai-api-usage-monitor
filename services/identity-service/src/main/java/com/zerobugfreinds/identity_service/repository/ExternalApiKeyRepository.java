@@ -59,6 +59,18 @@ public interface ExternalApiKeyRepository extends JpaRepository<ExternalApiKeyEn
 			ExternalApiKeyProvider provider
 	);
 
+	Optional<ExternalApiKeyEntity> findByIdAndUserIdAndProviderAndDeletionRequestedAtIsNull(
+			Long id,
+			Long userId,
+			ExternalApiKeyProvider provider
+	);
+
+	Optional<ExternalApiKeyEntity> findFirstByUserIdAndProviderAndKeyAliasAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(
+			Long userId,
+			ExternalApiKeyProvider provider,
+			String keyAlias
+	);
+
 	@Query("""
 			select coalesce(sum(e.monthlyBudgetUsd), 0)
 			from ExternalApiKeyEntity e
