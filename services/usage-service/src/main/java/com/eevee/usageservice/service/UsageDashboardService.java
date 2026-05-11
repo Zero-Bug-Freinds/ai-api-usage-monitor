@@ -130,8 +130,7 @@ public class UsageDashboardService {
             response = analyticsJdbcRepository.aggregateSummaryForUserFromLogs(
                     userId, r.from(), r.toExclusive(), provider, key, dataContext, teamScope);
         } else if (dataContext == UsageDataContext.TEAM_MEMBER_ONLY && teamScope != null) {
-            response = analyticsJdbcRepository.aggregateSummaryByTeamAndUser(
-                    teamScope, userId, r.from(), r.toExclusive(), provider);
+            response = summaryByTeamAndUser(teamScope, userId, from, toInclusive, provider);
         } else if (dataContext == UsageDataContext.TEAM_MEMBER_ONLY) {
             response = analyticsJdbcRepository.aggregateSummaryTeamMemberOnly(userId, r.from(), r.toExclusive(), provider);
         } else {
@@ -166,7 +165,17 @@ public class UsageDashboardService {
     @Transactional(readOnly = true)
     public UsageSummaryResponse summaryByTeamAndUser(String teamId, String userId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
         Range r = validateRange(from, toInclusive);
-        return analyticsJdbcRepository.aggregateSummaryByTeamAndUser(teamId, userId, r.from(), r.toExclusive(), provider);
+        UsageSummaryResponse base = analyticsJdbcRepository.aggregateSummaryByTeamAndUser(
+                teamId, userId, r.from(), r.toExclusive(), provider);
+        Double avgLatencyMs = analyticsJdbcRepository.aggregateAvgLatencyMsByTeamAndUser(
+                teamId, userId, r.from(), r.toExclusive(), provider);
+        return new UsageSummaryResponse(
+                base.totalRequests(),
+                base.totalErrors(),
+                base.totalInputTokens(),
+                base.totalEstimatedCost(),
+                avgLatencyMs
+        );
     }
 
     @Transactional(readOnly = true)

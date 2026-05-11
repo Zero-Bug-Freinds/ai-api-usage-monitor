@@ -150,6 +150,43 @@ public class UsageAnalyticsJdbcRepository {
         );
     }
 
+    /**
+     * Average {@code latency_ms} for team-scoped rows for one member (non-null latencies only).
+     */
+    public Double aggregateAvgLatencyMsByTeamAndUser(
+            String teamId,
+            String userId,
+            Instant from,
+            Instant toExclusive,
+            AiProvider provider
+    ) {
+        String sql = """
+                SELECT AVG(latency_ms)::double precision
+                FROM usage_recorded_log
+                WHERE team_id = ?
+                  AND user_id = ?
+                  AND occurred_at >= ? AND occurred_at < ?
+                  AND latency_ms IS NOT NULL
+                """ + PROVIDER_FILTER;
+        String p1 = provider == null ? null : provider.name();
+        return jdbc.query(
+                sql,
+                rs -> {
+                    if (!rs.next()) {
+                        return null;
+                    }
+                    double v = rs.getDouble(1);
+                    return rs.wasNull() ? null : v;
+                },
+                teamId,
+                userId,
+                Timestamp.from(from),
+                Timestamp.from(toExclusive),
+                p1,
+                p1
+        );
+    }
+
     public UsageSummaryResponse aggregateSummaryTeamMemberOnly(
             String userId,
             Instant from,
