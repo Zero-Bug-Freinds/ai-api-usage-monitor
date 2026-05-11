@@ -25,10 +25,19 @@ public class InternalTeamApiKeyController {
             @RequestParam("teamId") Long teamId,
             @RequestParam("userId") String userId,
             @RequestParam(name = "userEmail", required = false) String userEmail,
+            @RequestParam(name = "apiKeyId", required = false) String apiKeyId,
+            @RequestParam(name = "alias", required = false) String alias,
             @RequestHeader(name = "Authorization", required = false) String authorizationHeader
     ) {
-        InternalTeamApiKeyResponse response =
-                teamInternalApiKeyResolveService.resolve(provider, teamId, userId, userEmail, authorizationHeader);
+        InternalTeamApiKeyResponse response = teamInternalApiKeyResolveService.resolve(
+                provider,
+                teamId,
+                userId,
+                userEmail,
+                authorizationHeader,
+                apiKeyId,
+                alias
+        );
         return ResponseEntity.ok(response);
     }
 }
