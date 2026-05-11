@@ -7,12 +7,15 @@ import com.eevee.billingservice.repository.BillingTeamApiKeyRepository;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.ZoneId;
 import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
 
 @Service
 public class TeamApiKeyExpenditureQueryService {
+
+    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
     private final BillingTeamApiKeyRepository teamApiKeyRepository;
     private final TeamApiKeyAggregationJdbc teamApiKeyAggregationJdbc;
@@ -26,15 +29,39 @@ public class TeamApiKeyExpenditureQueryService {
     }
 
     public TeamApiKeyMonthSpendResponse monthSpend(long teamId, LocalDate monthStartDate) {
-        if (monthStartDate == null) {
-            throw new IllegalArgumentException("monthStartDate is required");
-        }
-        if (monthStartDate.getDayOfMonth() != 1) {
-            throw new IllegalArgumentException("monthStartDate must be the first day of a month");
+        return spend(teamId, monthStartDate, null, null);
+    }
+
+    public TeamApiKeyMonthSpendResponse spend(long teamId, LocalDate monthStartDate, LocalDate from, LocalDate to) {
+        LocalDate effectiveFrom;
+        LocalDate effectiveTo;
+        LocalDate effectiveMonthStartDate = null;
+
+        if (from != null || to != null) {
+            if (from == null || to == null) {
+                throw new IllegalArgumentException("from and to must be provided together");
+            }
+            if (to.isBefore(from)) {
+                throw new IllegalArgumentException("to must be on or after from");
+            }
+            effectiveFrom = from;
+            effectiveTo = to;
+        } else if (monthStartDate != null) {
+            if (monthStartDate.getDayOfMonth() != 1) {
+                throw new IllegalArgumentException("monthStartDate must be the first day of a month");
+            }
+            effectiveMonthStartDate = monthStartDate;
+            effectiveFrom = monthStartDate;
+            effectiveTo = monthStartDate.plusMonths(1).minusDays(1);
+        } else {
+            effectiveMonthStartDate = LocalDate.now(KST).withDayOfMonth(1);
+            effectiveFrom = effectiveMonthStartDate;
+            effectiveTo = effectiveMonthStartDate.plusMonths(1).minusDays(1);
         }
 
+        final LocalDate monthStartOrNull = effectiveMonthStartDate;
         BigDecimal teamBudgetUsd = teamApiKeyAggregationJdbc.sumMonthlyBudgetUsdForTeam(teamId);
-        BigDecimal teamSpendUsd = teamApiKeyAggregationJdbc.sumMonthlyCostUsdForTeam(monthStartDate, teamId);
+        BigDecimal teamSpendUsd = resolveTeamSpendUsd(teamId, effectiveFrom, effectiveTo, monthStartOrNull);
 
         List<BillingTeamApiKeyEntity> keys = teamApiKeyRepository.findByTeamId(teamId);
         List<TeamApiKeyMonthSpend> rows = keys.stream()
@@ -44,7 +71,7 @@ public class TeamApiKeyExpenditureQueryService {
                         k.getProvider(),
                         k.getMonthlyBudgetUsd(),
                         k.getStatus(),
-                        teamApiKeyAggregationJdbc.sumMonthlyCostUsdForTeamApiKey(monthStartDate, k.getTeamApiKeyId())
+                        resolveKeySpendUsd(k.getTeamApiKeyId(), effectiveFrom, effectiveTo, monthStartOrNull)
                 ))
                 .sorted(Comparator
                         .comparing(TeamApiKeyMonthSpend::provider, Comparator.nullsLast(String::compareToIgnoreCase))
@@ -52,7 +79,29 @@ public class TeamApiKeyExpenditureQueryService {
                         .thenComparingLong(TeamApiKeyMonthSpend::teamApiKeyId))
                 .toList();
 
-        return new TeamApiKeyMonthSpendResponse(teamId, monthStartDate, teamBudgetUsd, teamSpendUsd, rows);
+        return new TeamApiKeyMonthSpendResponse(
+                teamId,
+                monthStartOrNull,
+                effectiveFrom,
+                effectiveTo,
+                teamBudgetUsd,
+                teamSpendUsd,
+                rows
+        );
+    }
+
+    private BigDecimal resolveTeamSpendUsd(long teamId, LocalDate from, LocalDate to, LocalDate monthStartDateOrNull) {
+        if (monthStartDateOrNull != null && from.equals(monthStartDateOrNull) && to.equals(monthStartDateOrNull.plusMonths(1).minusDays(1))) {
+            return teamApiKeyAggregationJdbc.sumMonthlyCostUsdForTeam(monthStartDateOrNull, teamId);
+        }
+        return teamApiKeyAggregationJdbc.sumDailyCostUsdForTeam(from, to, teamId);
+    }
+
+    private BigDecimal resolveKeySpendUsd(long teamApiKeyId, LocalDate from, LocalDate to, LocalDate monthStartDateOrNull) {
+        if (monthStartDateOrNull != null && from.equals(monthStartDateOrNull) && to.equals(monthStartDateOrNull.plusMonths(1).minusDays(1))) {
+            return teamApiKeyAggregationJdbc.sumMonthlyCostUsdForTeamApiKey(monthStartDateOrNull, teamApiKeyId);
+        }
+        return teamApiKeyAggregationJdbc.sumDailyCostUsdForTeamApiKey(from, to, teamApiKeyId);
     }
 }
 

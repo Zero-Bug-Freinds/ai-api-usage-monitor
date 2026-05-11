@@ -7,6 +7,8 @@ import java.util.List;
 public record TeamApiKeyMonthSpendResponse(
         long teamId,
         LocalDate monthStartDate,
+        LocalDate from,
+        LocalDate to,
         BigDecimal teamMonthlyBudgetUsd,
         BigDecimal teamMonthSpendUsd,
         List<TeamApiKeyMonthSpend> keys

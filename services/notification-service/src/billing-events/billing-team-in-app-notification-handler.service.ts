@@ -22,6 +22,10 @@ export class BillingTeamInAppNotificationHandlerService {
   }): Promise<{ createdCount: number; skippedCount: number }> {
     const { payload } = params;
 
+    const teamName =
+      (await this.teamServiceClient.fetchTeamNameInternal({ teamId: payload.teamId })) ??
+      String(payload.teamId);
+
     const memberUserIds = await this.teamServiceClient.fetchTeamMemberUserIds({
       teamId: payload.teamId,
       requesterUserId: payload.triggerUserId,
@@ -40,6 +44,7 @@ export class BillingTeamInAppNotificationHandlerService {
     for (const targetUserId of memberUserIds) {
       const dedupeKey = buildBillingTeamBudgetInAppDedupeKey({
         teamId: payload.teamId,
+        teamApiKeyId: payload.teamApiKeyId,
         targetUserId,
         monthStart: payload.monthStart,
         thresholdPct: payload.thresholdPct,
@@ -49,9 +54,9 @@ export class BillingTeamInAppNotificationHandlerService {
         continue;
       }
 
-      const title = '팀 예산 임계치 도달';
+      const title = '팀 API 키 예산 임계치 도달';
       const pct = Math.round(payload.thresholdPct * 100);
-      const body = `이번 달 팀 예산의 ${pct}%에 도달했습니다.`;
+      const body = `팀 ${teamName}의 ${payload.provider} API 키(${payload.apiKeyAlias}) 사용량이 월 예산의 ${pct}%를 넘었습니다.`;
 
       try {
         await this.prisma.$transaction(async (tx) => {
@@ -61,8 +66,11 @@ export class BillingTeamInAppNotificationHandlerService {
               channel: IN_APP_CHANNEL,
               status: DELIVERY_STATUS,
               payload: {
-                eventType: 'BILLING_TEAM_BUDGET_THRESHOLD_REACHED',
+                eventType: 'BILLING_TEAM_API_KEY_BUDGET_THRESHOLD_REACHED',
                 teamId: payload.teamId,
+                teamApiKeyId: payload.teamApiKeyId,
+                provider: payload.provider,
+                apiKeyAlias: payload.apiKeyAlias,
                 targetUserId,
                 monthStart: payload.monthStart,
                 thresholdPct: payload.thresholdPct,
@@ -75,7 +83,7 @@ export class BillingTeamInAppNotificationHandlerService {
               userId: targetUserId,
               title,
               body,
-              type: 'billing:team-budget-threshold',
+              type: 'billing:team-api-key-budget-threshold',
             },
           });
         });

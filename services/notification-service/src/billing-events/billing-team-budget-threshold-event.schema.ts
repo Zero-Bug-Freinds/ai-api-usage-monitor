@@ -9,6 +9,9 @@ const billingTeamBudgetThresholdReachedEventSchema = z.object({
   occurredAt: z.union([z.string(), z.coerce.date()]),
   teamId: z.number().int().nonnegative(),
   triggerUserId: z.string(),
+  teamApiKeyId: z.number().int().nonnegative(),
+  provider: z.string(),
+  apiKeyAlias: z.string(),
   monthStart: z.string(), // YYYY-MM-01
   thresholdPct: z.number(),
   monthlyTotalUsd: z.number(),

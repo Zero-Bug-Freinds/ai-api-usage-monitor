@@ -7,9 +7,51 @@ type TeamApiResponse<T> = {
   data: T | null;
 };
 
+type InternalTeamDetailResponse = {
+  id: string;
+  name: string;
+  createdBy: string;
+  createdAt: string;
+};
+
 @Injectable()
 export class TeamServiceClient {
   constructor(private readonly config: ConfigService) {}
+
+  async fetchTeamNameInternal(params: { teamId: number }): Promise<string | null> {
+    const base = this.config.get<string>(
+      'TEAM_SERVICE_BASE_URL',
+      'http://localhost:8093',
+    );
+    const url = `${base.replace(/\/$/, '')}/internal/teams/${encodeURIComponent(String(params.teamId))}`;
+
+    const timeoutMs =
+      Number(this.config.get<string>('TEAM_SERVICE_TIMEOUT_MS', '5000')) || 5000;
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: { accept: 'application/json' },
+        signal: controller.signal,
+      });
+      const text = await res.text();
+      const json: unknown = text ? (JSON.parse(text) as unknown) : null;
+      if (!res.ok) {
+        return null;
+      }
+      if (typeof json !== 'object' || json === null) {
+        return null;
+      }
+      const body = json as TeamApiResponse<InternalTeamDetailResponse>;
+      const name = body?.data?.name;
+      return typeof name === 'string' && name.trim().length > 0 ? name.trim() : null;
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(t);
+    }
+  }
 
   async fetchTeamMemberUserIds(params: {
     teamId: number;

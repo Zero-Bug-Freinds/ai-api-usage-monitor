@@ -44,7 +44,9 @@ export type TeamApiKeyMonthSpend = {
 
 export type TeamApiKeyMonthSpendResponse = {
   teamId: number;
-  monthStartDate: string;
+  monthStartDate: string | null;
+  from: string;
+  to: string;
   teamMonthlyBudgetUsd: number;
   teamMonthSpendUsd: number;
   keys: TeamApiKeyMonthSpend[];

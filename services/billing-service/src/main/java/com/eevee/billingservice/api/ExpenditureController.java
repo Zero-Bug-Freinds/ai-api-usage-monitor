@@ -147,10 +147,12 @@ public class ExpenditureController {
     public TeamApiKeyMonthSpendResponse teamApiKeysMonthSpend(
             HttpServletRequest request,
             @RequestParam long teamId,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate monthStartDate
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate monthStartDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
     ) {
         currentUser(request);
-        return teamApiKeyExpenditureQueryService.monthSpend(teamId, monthStartDate);
+        return teamApiKeyExpenditureQueryService.spend(teamId, monthStartDate, from, to);
     }
 
     private static String currentUser(HttpServletRequest request) {

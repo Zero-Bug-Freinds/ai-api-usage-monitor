@@ -34,6 +34,22 @@ public class TeamApiKeyAggregationJdbc {
         );
     }
 
+    public void upsertDaily(LocalDate aggDate, long teamApiKeyId, BigDecimal costDelta) {
+        jdbcTemplate.update(
+                """
+                        INSERT INTO team_api_key_daily_expenditure_agg
+                            (agg_date, team_api_key_id, total_cost_usd)
+                        VALUES (?, ?, ?)
+                        ON CONFLICT (agg_date, team_api_key_id)
+                        DO UPDATE SET
+                            total_cost_usd = team_api_key_daily_expenditure_agg.total_cost_usd + EXCLUDED.total_cost_usd
+                        """,
+                aggDate,
+                teamApiKeyId,
+                costDelta
+        );
+    }
+
     public BigDecimal sumMonthlyCostUsdForTeam(LocalDate monthStartDate, long teamId) {
         BigDecimal v = jdbcTemplate.queryForObject(
                 """
@@ -46,6 +62,25 @@ public class TeamApiKeyAggregationJdbc {
                         """,
                 BigDecimal.class,
                 monthStartDate,
+                teamId
+        );
+        return v != null ? v : BigDecimal.ZERO;
+    }
+
+    public BigDecimal sumDailyCostUsdForTeam(LocalDate from, LocalDate to, long teamId) {
+        BigDecimal v = jdbcTemplate.queryForObject(
+                """
+                        SELECT coalesce(sum(d.total_cost_usd), 0)
+                        FROM team_api_key_daily_expenditure_agg d
+                        JOIN billing_team_api_key k
+                          ON k.team_api_key_id = d.team_api_key_id
+                        WHERE d.agg_date >= ?
+                          AND d.agg_date <= ?
+                          AND k.team_id = ?
+                        """,
+                BigDecimal.class,
+                from,
+                to,
                 teamId
         );
         return v != null ? v : BigDecimal.ZERO;
@@ -78,6 +113,25 @@ public class TeamApiKeyAggregationJdbc {
                 ps -> {
                     ps.setObject(1, monthStartDate);
                     ps.setLong(2, teamApiKeyId);
+                },
+                rs -> rs.next() ? rs.getBigDecimal(1) : null
+        );
+        return v != null ? v : BigDecimal.ZERO;
+    }
+
+    public BigDecimal sumDailyCostUsdForTeamApiKey(LocalDate from, LocalDate to, long teamApiKeyId) {
+        BigDecimal v = jdbcTemplate.query(
+                """
+                        SELECT coalesce(sum(total_cost_usd), 0)
+                        FROM team_api_key_daily_expenditure_agg
+                        WHERE agg_date >= ?
+                          AND agg_date <= ?
+                          AND team_api_key_id = ?
+                        """,
+                ps -> {
+                    ps.setObject(1, from);
+                    ps.setObject(2, to);
+                    ps.setLong(3, teamApiKeyId);
                 },
                 rs -> rs.next() ? rs.getBigDecimal(1) : null
         );

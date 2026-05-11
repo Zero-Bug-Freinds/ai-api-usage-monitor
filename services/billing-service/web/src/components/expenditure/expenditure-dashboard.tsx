@@ -74,8 +74,8 @@ function parseRegisteredExternalKeys(json: unknown): RegisteredExternalKey[] {
   return out;
 }
 
-async function fetchTeamApiKeyMonthSpend(teamId: string, monthStartDate: string): Promise<TeamApiKeyMonthSpendResponse> {
-  const q = new URLSearchParams({ teamId, monthStartDate });
+async function fetchTeamApiKeySpendRange(teamId: string, from: string, to: string): Promise<TeamApiKeyMonthSpendResponse> {
+  const q = new URLSearchParams({ teamId, from, to });
   return await fetchJson<TeamApiKeyMonthSpendResponse>(expenditureApiPath(`/api/expenditure/team-api-keys/month-spend?${q.toString()}`));
 }
 
@@ -124,7 +124,37 @@ export function ExpenditureDashboard() {
   const [teamSpend, setTeamSpend] = useState<TeamApiKeyMonthSpendResponse | null>(null);
   const [teamLoading, setTeamLoading] = useState(false);
   const [teamsLoading, setTeamsLoading] = useState(false);
-  const [teamMonth, setTeamMonth] = useState<string>(() => currentMonthStartKst().slice(0, 7));
+  const [teamRangePreset, setTeamRangePreset] = useState<"last7" | "last30" | "last90" | "thisMonth" | "custom">("thisMonth");
+  const [teamCustomFrom, setTeamCustomFrom] = useState<string>(() => currentMonthRangeKst().from);
+  const [teamCustomTo, setTeamCustomTo] = useState<string>(() => currentMonthRangeKst().to);
+
+  const teamRange = useMemo(() => {
+    if (teamRangePreset === "last7") return rangeLastDays(7);
+    if (teamRangePreset === "last30") return rangeLastDays(30);
+    if (teamRangePreset === "last90") return rangeLastDays(90);
+    if (teamRangePreset === "thisMonth") return currentMonthRangeKst();
+    return { from: teamCustomFrom, to: teamCustomTo };
+  }, [teamCustomFrom, teamCustomTo, teamRangePreset]);
+
+  const teamRangeUi = useMemo(() => {
+    const iso = /^\d{4}-\d{2}-\d{2}$/;
+    if (!iso.test(teamRange.from) || !iso.test(teamRange.to)) {
+      return { ok: false as const, message: "날짜 형식이 올바르지 않습니다 (YYYY-MM-DD)" };
+    }
+    const fromD = new Date(`${teamRange.from}T00:00:00Z`);
+    const toD = new Date(`${teamRange.to}T00:00:00Z`);
+    if (Number.isNaN(fromD.getTime()) || Number.isNaN(toD.getTime())) {
+      return { ok: false as const, message: "날짜 값이 올바르지 않습니다" };
+    }
+    if (fromD.getTime() > toD.getTime()) {
+      return { ok: false as const, message: "from 날짜가 to 날짜보다 이후입니다" };
+    }
+    const diffDays = Math.floor((toD.getTime() - fromD.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+    if (diffDays > MAX_RANGE_DAYS) {
+      return { ok: false as const, message: `최대 ${MAX_RANGE_DAYS}일 범위까지 조회할 수 있습니다` };
+    }
+    return { ok: true as const, days: diffDays };
+  }, [teamRange.from, teamRange.to]);
 
   const range = useMemo(() => {
     if (rangePreset === "last7") return rangeLastDays(7);
@@ -304,11 +334,15 @@ export function ExpenditureDashboard() {
       setError("팀을 선택하세요.");
       return;
     }
+    if (!teamRangeUi.ok) {
+      setTeamSpend(null);
+      setError(teamRangeUi.message);
+      return;
+    }
     setTeamLoading(true);
     setError(null);
     try {
-      const monthStart = `${teamMonth}-01`;
-      const res = await fetchTeamApiKeyMonthSpend(tid, monthStart);
+      const res = await fetchTeamApiKeySpendRange(tid, teamRange.from, teamRange.to);
       setTeamSpend(res);
     } catch (e: unknown) {
       setTeamSpend(null);
@@ -320,7 +354,7 @@ export function ExpenditureDashboard() {
     } finally {
       setTeamLoading(false);
     }
-  }, [selectedTeamId, teamMonth]);
+  }, [selectedTeamId, teamRange.from, teamRange.to, teamRangeUi]);
 
   const budgetUi = useMemo(() => {
     const total = monthlyBudget?.totalCostUsd ?? null;
@@ -391,6 +425,23 @@ export function ExpenditureDashboard() {
     const remaining = Math.max(0, budget - total);
     const pct = Math.min(100, (total / budget) * 100);
     return { totalCostUsd: total, monthlyBudgetUsd: budget, remainingUsd: remaining, pct };
+  }, [teamSpend]);
+
+  const teamKeyBudgetById = useMemo(() => {
+    const out = new Map<number, { pct: number | null; remainingUsd: number | null }>();
+    for (const k of teamSpend?.keys ?? []) {
+      const spend = Number(k.monthSpendUsd);
+      const budget = Number(k.monthlyBudgetUsd);
+      if (!Number.isFinite(spend)) continue;
+      if (!Number.isFinite(budget) || budget <= 0) {
+        out.set(k.teamApiKeyId, { pct: null, remainingUsd: null });
+        continue;
+      }
+      const remaining = Math.max(0, budget - spend);
+      const pct = Math.min(100, (spend / budget) * 100);
+      out.set(k.teamApiKeyId, { pct, remainingUsd: remaining });
+    }
+    return out;
   }, [teamSpend]);
 
   return (
@@ -505,7 +556,7 @@ export function ExpenditureDashboard() {
 
       {viewMode === "team" ? (
         <section className="space-y-4 rounded-xl border border-border bg-card p-4 shadow-sm">
-          <h2 className="text-sm font-medium">팀 당월 누적 (팀 등록 키 기준)</h2>
+          <h2 className="text-sm font-medium">팀 기간별 누적 (팀 등록 키 기준)</h2>
           <p className="text-xs text-muted-foreground">
             팀 서비스에 등록된 팀 API 키(teamApiKeyId)가 있는 요청만 집계합니다. 집계 월 경계는 KST(Asia/Seoul) 기준입니다.
           </p>
@@ -534,18 +585,80 @@ export function ExpenditureDashboard() {
                 )}
               </select>
             </label>
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-muted-foreground">월</span>
-              <input
-                className="h-9 w-[160px] rounded-md border border-input bg-background px-2 text-sm"
-                type="month"
-                value={teamMonth}
-                onChange={(e) => {
-                  setTeamMonth(e.target.value);
-                  setTeamSpend(null);
-                }}
-              />
-            </label>
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">기간</p>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    className={`h-8 rounded-md border border-border px-2 text-xs ${teamRangePreset === "last7" ? "bg-muted font-medium" : "bg-background hover:bg-muted"}`}
+                    onClick={() => setTeamRangePreset("last7")}
+                  >
+                    최근 7일
+                  </button>
+                  <button
+                    type="button"
+                    className={`h-8 rounded-md border border-border px-2 text-xs ${teamRangePreset === "last30" ? "bg-muted font-medium" : "bg-background hover:bg-muted"}`}
+                    onClick={() => setTeamRangePreset("last30")}
+                  >
+                    최근 30일
+                  </button>
+                  <button
+                    type="button"
+                    className={`h-8 rounded-md border border-border px-2 text-xs ${teamRangePreset === "last90" ? "bg-muted font-medium" : "bg-background hover:bg-muted"}`}
+                    onClick={() => setTeamRangePreset("last90")}
+                  >
+                    최근 90일
+                  </button>
+                  <button
+                    type="button"
+                    className={`h-8 rounded-md border border-border px-2 text-xs ${teamRangePreset === "thisMonth" ? "bg-muted font-medium" : "bg-background hover:bg-muted"}`}
+                    onClick={() => setTeamRangePreset("thisMonth")}
+                  >
+                    이번 달
+                  </button>
+                  <button
+                    type="button"
+                    className={`h-8 rounded-md border border-border px-2 text-xs ${teamRangePreset === "custom" ? "bg-muted font-medium" : "bg-background hover:bg-muted"}`}
+                    onClick={() => setTeamRangePreset("custom")}
+                  >
+                    직접 선택
+                  </button>
+                </div>
+              </div>
+              {teamRangePreset === "custom" ? (
+                <div className="flex flex-wrap items-end gap-2">
+                  <label className="flex flex-col gap-1 text-sm">
+                    <span className="text-xs text-muted-foreground">from</span>
+                    <input
+                      className="h-8 w-[150px] rounded-md border border-input bg-background px-2 text-xs"
+                      type="date"
+                      value={teamCustomFrom}
+                      onChange={(e) => {
+                        setTeamCustomFrom(e.target.value);
+                        setTeamSpend(null);
+                      }}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-sm">
+                    <span className="text-xs text-muted-foreground">to</span>
+                    <input
+                      className="h-8 w-[150px] rounded-md border border-input bg-background px-2 text-xs"
+                      type="date"
+                      value={teamCustomTo}
+                      onChange={(e) => {
+                        setTeamCustomTo(e.target.value);
+                        setTeamSpend(null);
+                      }}
+                    />
+                  </label>
+                </div>
+              ) : null}
+              <div className="text-xs text-muted-foreground">
+                {teamRange.from} ~ {teamRange.to}
+                {teamRangeUi.ok ? ` (${teamRangeUi.days}일)` : ""}
+              </div>
+            </div>
             <button
               type="button"
               className="h-9 rounded-md border border-border bg-background px-3 text-sm hover:bg-muted disabled:opacity-50"
@@ -563,12 +676,11 @@ export function ExpenditureDashboard() {
               {teamLoading ? "불러오는 중…" : "집계"}
             </button>
           </div>
-          <p className="text-xs text-muted-foreground">집계 월 시작일: {teamMonth}-01 (KST 기준 월)</p>
           {teamSpend ? (
             <div className="space-y-4">
               {teamBudgetUi ? (
-                <div className="space-y-1">
-                  <p className="text-lg font-semibold tabular-nums">팀 당월 합계: {formatUsd(teamBudgetUi.totalCostUsd)} USD</p>
+                <div className="space-y-2">
+                  <p className="text-lg font-semibold tabular-nums">팀 기간 합계: {formatUsd(teamBudgetUi.totalCostUsd)} USD</p>
                   {teamBudgetUi.monthlyBudgetUsd != null ? (
                     <p className="text-xs text-muted-foreground">
                       팀 예산 {formatUsd(teamBudgetUi.monthlyBudgetUsd)} / 잔여 {formatUsd(teamBudgetUi.remainingUsd ?? 0)} / 진행률{" "}
@@ -577,6 +689,21 @@ export function ExpenditureDashboard() {
                   ) : (
                     <p className="text-xs text-muted-foreground">팀 예산: 등록된 팀 키 예산 합이 없으면 표시되지 않습니다.</p>
                   )}
+
+                  {teamBudgetUi.pct != null ? (
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>0%</span>
+                        <span>100%</span>
+                      </div>
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-primary transition-[width]"
+                          style={{ width: `${Math.min(100, Math.max(0, teamBudgetUi.pct))}%` }}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -604,22 +731,43 @@ export function ExpenditureDashboard() {
                       <th className="px-3 py-2 text-left font-medium">Alias</th>
                       <th className="px-3 py-2 text-left font-medium">Status</th>
                       <th className="px-3 py-2 text-right font-medium">월 예산 (USD)</th>
-                      <th className="px-3 py-2 text-right font-medium">당월 지출 (USD)</th>
+                      <th className="px-3 py-2 text-right font-medium">기간 지출 (USD)</th>
+                      <th className="px-3 py-2 text-right font-medium">예산 진행</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {teamSpend.keys.map((k) => (
-                      <tr key={k.teamApiKeyId} className="border-t border-border">
-                        <td className="px-3 py-2">{k.provider}</td>
-                        <td className="px-3 py-2">{k.alias}</td>
-                        <td className="px-3 py-2">{k.status}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{formatUsd(Number(k.monthlyBudgetUsd))}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{formatUsd(Number(k.monthSpendUsd))}</td>
-                      </tr>
-                    ))}
+                    {teamSpend.keys.map((k) => {
+                      const b = teamKeyBudgetById.get(k.teamApiKeyId) ?? { pct: null as number | null, remainingUsd: null as number | null };
+                      return (
+                        <tr key={k.teamApiKeyId} className="border-t border-border align-top">
+                          <td className="px-3 py-2">{k.provider}</td>
+                          <td className="px-3 py-2">{k.alias}</td>
+                          <td className="px-3 py-2">{k.status}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">{formatUsd(Number(k.monthlyBudgetUsd))}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">{formatUsd(Number(k.monthSpendUsd))}</td>
+                          <td className="px-3 py-2">
+                            {b.pct != null ? (
+                              <div className="flex min-w-[180px] flex-col items-end gap-1">
+                                <div className="text-right text-xs text-muted-foreground tabular-nums">
+                                  {b.pct.toFixed(1)}%{b.remainingUsd != null ? ` · 잔여 ${formatUsd(b.remainingUsd)}` : ""}
+                                </div>
+                                <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                                  <div
+                                    className="h-full rounded-full bg-primary transition-[width]"
+                                    style={{ width: `${Math.min(100, Math.max(0, b.pct))}%` }}
+                                  />
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="min-w-[180px] text-right text-xs text-muted-foreground">예산 없음</div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                     {teamSpend.keys.length === 0 ? (
                       <tr>
-                        <td className="px-3 py-3 text-muted-foreground" colSpan={5}>
+                        <td className="px-3 py-3 text-muted-foreground" colSpan={6}>
                           등록된 팀 API 키가 없습니다.
                         </td>
                       </tr>
