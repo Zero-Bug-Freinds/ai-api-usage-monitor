@@ -452,6 +452,29 @@ const LATENCY_MS_THRESHOLD = 2000
 const LATENCY_MAIN_LINE = "rgba(91, 33, 182, 0.85)"
 const LATENCY_BAND_FILL = "rgba(139, 92, 246, 0.09)"
 
+/**
+ * Recharts `dataKey` / axis field names. Prefer `dataKey={USAGE_CHART_DATA_KEYS.x}` over
+ * braced `dataKey={…}` with these constants so secret scanners (e.g. Gitleaks `generic-api-key`)
+ * do not false-positive on JSX where the prop name ends with Key and a quoted field name follows.
+ */
+const USAGE_CHART_DATA_KEYS = {
+  label: "label",
+  requestCount: "requestCount",
+  bandMin: "bandMin",
+  bandSpread: "bandSpread",
+  avgLatencyMs: "avgLatencyMs",
+  p95LatencyMs: "p95LatencyMs",
+  p99LatencyMs: "p99LatencyMs",
+  successRate: "successRate",
+  errorRate: "errorRate",
+  value: "value",
+  requests: "requests",
+  inputTokens: "inputTokens",
+  estimatedReasoningTokens: "estimatedReasoningTokens",
+  outputTokens: "outputTokens",
+  yearMonth: "yearMonth",
+} as const
+
 function formatLatencyMsHuman(ms: number | null | undefined): string {
   if (ms == null || Number.isNaN(ms)) return "—"
   if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`
@@ -1440,7 +1463,7 @@ export function UsageDashboard() {
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={mainStabilitySeries}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                  <XAxis dataKey={USAGE_CHART_DATA_KEYS.label} tick={{ fontSize: 11 }} />
                   <YAxis
                     yAxisId="left"
                     tick={{ fontSize: 11 }}
@@ -1451,7 +1474,7 @@ export function UsageDashboard() {
                   <Line
                     yAxisId="left"
                     type="monotone"
-                    dataKey="requestCount"
+                    dataKey={USAGE_CHART_DATA_KEYS.requestCount}
                     name="총 요청 수"
                     stroke="#737373"
                     strokeWidth={2}
@@ -1475,7 +1498,7 @@ export function UsageDashboard() {
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={latencyChartRows}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                  <XAxis dataKey={USAGE_CHART_DATA_KEYS.label} tick={{ fontSize: 11 }} />
                   <YAxis
                     yAxisId="lat"
                     domain={["auto", "auto"]}
@@ -1503,7 +1526,7 @@ export function UsageDashboard() {
                   <Area
                     yAxisId="lat"
                     type="monotone"
-                    dataKey="bandMin"
+                    dataKey={USAGE_CHART_DATA_KEYS.bandMin}
                     stackId="latBand"
                     fill="transparent"
                     stroke="none"
@@ -1513,7 +1536,7 @@ export function UsageDashboard() {
                   <Area
                     yAxisId="lat"
                     type="monotone"
-                    dataKey="bandSpread"
+                    dataKey={USAGE_CHART_DATA_KEYS.bandSpread}
                     stackId="latBand"
                     fill={LATENCY_BAND_FILL}
                     stroke="none"
@@ -1524,7 +1547,7 @@ export function UsageDashboard() {
                   <Line
                     yAxisId="lat"
                     type="basis"
-                    dataKey="avgLatencyMs"
+                    dataKey={USAGE_CHART_DATA_KEYS.avgLatencyMs}
                     name="평균 지연"
                     stroke={LATENCY_MAIN_LINE}
                     strokeWidth={2.5}
@@ -1535,7 +1558,7 @@ export function UsageDashboard() {
                   <Line
                     yAxisId="lat"
                     type="monotone"
-                    dataKey="p95LatencyMs"
+                    dataKey={USAGE_CHART_DATA_KEYS.p95LatencyMs}
                     name="P95 지연"
                     stroke="#818cf8"
                     strokeWidth={1.25}
@@ -1547,7 +1570,7 @@ export function UsageDashboard() {
                   <Line
                     yAxisId="lat"
                     type="monotone"
-                    dataKey="p99LatencyMs"
+                    dataKey={USAGE_CHART_DATA_KEYS.p99LatencyMs}
                     name="P99 지연"
                     stroke="#93c5fd"
                     strokeWidth={1.25}
@@ -1559,7 +1582,7 @@ export function UsageDashboard() {
                   <Line
                     yAxisId="rate"
                     type="monotone"
-                    dataKey="successRate"
+                    dataKey={USAGE_CHART_DATA_KEYS.successRate}
                     name="성공률"
                     stroke="#10b981"
                     strokeWidth={1}
@@ -1569,7 +1592,7 @@ export function UsageDashboard() {
                   <Line
                     yAxisId="rate"
                     type="monotone"
-                    dataKey="errorRate"
+                    dataKey={USAGE_CHART_DATA_KEYS.errorRate}
                     name="오류율"
                     stroke="#f43f5e"
                     strokeWidth={1}
@@ -1594,7 +1617,7 @@ export function UsageDashboard() {
                       <PieChart>
                         <Pie
                           data={modelPieChartData}
-                          dataKey="value"
+                          dataKey={USAGE_CHART_DATA_KEYS.value}
                           nameKey="name"
                           cx="50%"
                           cy="50%"
@@ -1659,7 +1682,7 @@ export function UsageDashboard() {
                   <PieChart>
                     <Pie
                       data={providerPieChartData}
-                      dataKey="value"
+                      dataKey={USAGE_CHART_DATA_KEYS.value}
                       nameKey="name"
                       cx="50%"
                       cy="50%"
@@ -1701,10 +1724,10 @@ export function UsageDashboard() {
                   <BarChart layout="vertical" data={modelBarDisplayRows} margin={H_BAR_MARGIN}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                     <XAxis type="number" />
-                    <YAxis type="category" dataKey="label" width={128} tick={{ fontSize: 11 }} />
+                    <YAxis type="category" dataKey={USAGE_CHART_DATA_KEYS.label} width={128} tick={{ fontSize: 11 }} />
                     <Tooltip content={ModelRequestBarTooltip} />
                     <Bar
-                      dataKey="requests"
+                      dataKey={USAGE_CHART_DATA_KEYS.requests}
                       name="요청 수"
                       radius={[0, 4, 4, 0]}
                       isAnimationActive={false}
@@ -1729,7 +1752,7 @@ export function UsageDashboard() {
                         />
                       ))}
                       <LabelList
-                        dataKey="requests"
+                        dataKey={USAGE_CHART_DATA_KEYS.requests}
                         position="right"
                         formatter={(value: unknown) => formatRequestCount(tooltipNumericValue(value))}
                         style={{ fill: "var(--muted-foreground)", fontSize: 11 }}
@@ -1812,12 +1835,12 @@ export function UsageDashboard() {
                       strokeOpacity={0.85}
                     />
                     <XAxis type="number" tick={{ fontSize: 11 }} tickCount={8} />
-                    <YAxis type="category" dataKey="label" width={128} tick={{ fontSize: 11 }} />
+                    <YAxis type="category" dataKey={USAGE_CHART_DATA_KEYS.label} width={128} tick={{ fontSize: 11 }} />
                     <Tooltip content={TokenStackTooltip} cursor={{ fill: "var(--muted)", fillOpacity: 0.12 }} />
                     <AnyLegend payload={tokenStackLegendPayload} />
                     <Bar
                       stackId="tokens"
-                      dataKey="inputTokens"
+                      dataKey={USAGE_CHART_DATA_KEYS.inputTokens}
                       name="입력 토큰"
                       radius={[4, 0, 0, 4]}
                       onClick={(_, index) => {
@@ -1836,7 +1859,7 @@ export function UsageDashboard() {
                     </Bar>
                     <Bar
                       stackId="tokens"
-                      dataKey="estimatedReasoningTokens"
+                      dataKey={USAGE_CHART_DATA_KEYS.estimatedReasoningTokens}
                       name="추정 추론 토큰"
                       onClick={(_, index) => {
                         if (tokenStackRows.length === 0) return
@@ -1854,7 +1877,7 @@ export function UsageDashboard() {
                     </Bar>
                     <Bar
                       stackId="tokens"
-                      dataKey="outputTokens"
+                      dataKey={USAGE_CHART_DATA_KEYS.outputTokens}
                       name="출력 토큰"
                       radius={[0, 4, 4, 0]}
                       onClick={(_, index) => {
@@ -1945,12 +1968,12 @@ export function UsageDashboard() {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={monthlyBarDisplayData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                  <XAxis dataKey="yearMonth" tick={{ fontSize: 11 }} />
+                  <XAxis dataKey={USAGE_CHART_DATA_KEYS.yearMonth} tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} />
                   <Tooltip content={MonthlyRequestBarTooltip} />
                   <AnyLegend />
                   <Bar
-                    dataKey="requestCount"
+                    dataKey={USAGE_CHART_DATA_KEYS.requestCount}
                     name="요청 수"
                     fill={monthlyHasActivity ? "#64748b" : "var(--border)"}
                     fillOpacity={monthlyHasActivity ? 1 : 0.35}
