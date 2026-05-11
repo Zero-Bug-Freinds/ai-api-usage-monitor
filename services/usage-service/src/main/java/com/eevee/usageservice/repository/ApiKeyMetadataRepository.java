@@ -17,18 +17,23 @@ public interface ApiKeyMetadataRepository extends JpaRepository<ApiKeyMetadataEn
      * optionally filtered by provider string (case-insensitive). Newest metadata updates first
      * (covers newly registered keys; {@link ApiKeyMetadataEntity} has no separate createdAt).
      */
+    /**
+     * {@code providerLower} is {@code null} → no provider filter. Otherwise compares to
+     * {@code lower(trim(m.provider))} only (never applies SQL {@code trim}/{@code lower} to a null bound
+     * parameter), avoiding bad SQL from {@code lower(trim(:param))} when the filter is absent.
+     */
     @Query(
             """
                     select m from ApiKeyMetadataEntity m
                     where m.userId = :userId
                     and (m.teamId is null or trim(m.teamId) = '')
-                    and (:providerStr is null
-                        or lower(trim(coalesce(m.provider, ''))) = lower(trim(:providerStr)))
+                    and (:providerLower is null
+                        or (m.provider is not null and lower(trim(m.provider)) = :providerLower))
                     order by m.updatedAt desc
                     """
     )
     List<ApiKeyMetadataEntity> findPersonalKeysForDashboard(
             @Param("userId") String userId,
-            @Param("providerStr") String providerStr
+            @Param("providerLower") String providerLower
     );
 }

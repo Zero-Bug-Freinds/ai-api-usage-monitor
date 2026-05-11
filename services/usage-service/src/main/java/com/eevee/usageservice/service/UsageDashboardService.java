@@ -43,6 +43,7 @@ import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Locale;
 
 @Service
 public class UsageDashboardService {
@@ -977,7 +978,8 @@ public class UsageDashboardService {
             return logRepository.findDistinctApiKeysForUserTeamMemberInRange(userId, from, to, provider);
         }
         String providerStr = provider == null ? null : provider.name();
-        List<ApiKeyMetadataEntity> rows = apiKeyMetadataRepository.findPersonalKeysForDashboard(userId, providerStr);
+        String providerLower = provider == null ? null : provider.name().toLowerCase(Locale.ROOT);
+        List<ApiKeyMetadataEntity> rows = apiKeyMetadataRepository.findPersonalKeysForDashboard(userId, providerLower);
         List<UsageLogApiKeyItemResponse> out = rows.stream()
                 .map(m -> new UsageLogApiKeyItemResponse(m.getKeyId(), m.getAlias(), m.getStatus()))
                 .toList();

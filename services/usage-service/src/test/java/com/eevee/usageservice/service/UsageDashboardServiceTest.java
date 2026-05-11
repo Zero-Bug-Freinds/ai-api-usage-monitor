@@ -142,14 +142,14 @@ class UsageDashboardServiceTest {
         newer.apply("u1", null, "OPENAI", "beta", ApiKeyStatus.ACTIVE, Instant.parse("2025-06-20T00:00:00Z"));
         ApiKeyMetadataEntity older = ApiKeyMetadataEntity.create("1", "u1");
         older.apply("u1", null, "OPENAI", "alpha", ApiKeyStatus.ACTIVE, Instant.parse("2025-06-10T00:00:00Z"));
-        when(apiKeyMetadataRepository.findPersonalKeysForDashboard("u1", "OPENAI")).thenReturn(List.of(newer, older));
+        when(apiKeyMetadataRepository.findPersonalKeysForDashboard("u1", "openai")).thenReturn(List.of(newer, older));
 
         var keys = service.logApiKeys("u1", AiProvider.OPENAI, UsageDataContext.PERSONAL);
 
         assertThat(keys).hasSize(2);
         assertThat(keys.getFirst().apiKeyId()).isEqualTo("2");
         assertThat(keys.getFirst().alias()).isEqualTo("beta");
-        verify(apiKeyMetadataRepository).findPersonalKeysForDashboard("u1", "OPENAI");
+        verify(apiKeyMetadataRepository).findPersonalKeysForDashboard("u1", "openai");
         verify(logRepository, never()).findDistinctApiKeysForUserPersonalInRange(any(), any(), any(), any());
     }
 
