@@ -16,8 +16,10 @@ import com.eevee.usageservice.api.dto.UsageLogEntryResponse;
 import com.eevee.usageservice.api.dto.UsageDataContext;
 import com.eevee.usageservice.api.dto.UsageSummaryResponse;
 import com.eevee.usageservice.config.UsageServiceProperties;
+import com.eevee.usageservice.domain.ApiKeyMetadataEntity;
 import com.eevee.usageservice.domain.ApiKeyStatus;
 import com.eevee.usageservice.domain.UsageRecordedLogEntity;
+import com.eevee.usageservice.repository.ApiKeyMetadataRepository;
 import com.eevee.usageservice.repository.UsageRecordedLogRepository;
 import com.eevee.usageservice.repository.analytics.UsageAnalyticsJdbcRepository;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -56,6 +58,7 @@ public class UsageDashboardService {
 
     private final UsageAnalyticsJdbcRepository analyticsJdbcRepository;
     private final UsageRecordedLogRepository logRepository;
+    private final ApiKeyMetadataRepository apiKeyMetadataRepository;
     private final UsageServiceProperties properties;
     private final Clock clock;
     private final ObjectMapper objectMapper;
@@ -63,12 +66,14 @@ public class UsageDashboardService {
     public UsageDashboardService(
             UsageAnalyticsJdbcRepository analyticsJdbcRepository,
             UsageRecordedLogRepository logRepository,
+            ApiKeyMetadataRepository apiKeyMetadataRepository,
             UsageServiceProperties properties,
             Clock clock,
             ObjectMapper objectMapper
     ) {
         this.analyticsJdbcRepository = analyticsJdbcRepository;
         this.logRepository = logRepository;
+        this.apiKeyMetadataRepository = apiKeyMetadataRepository;
         this.properties = properties;
         this.clock = clock;
         this.objectMapper = objectMapper;
@@ -759,12 +764,34 @@ public class UsageDashboardService {
 
     @Transactional(readOnly = true)
     public List<UsageLogApiKeyItemResponse> logApiKeys(String userId, AiProvider provider, UsageDataContext dataContext) {
-        Instant to = clock.instant();
-        Instant from = to.minus(LOG_API_KEY_LOOKUP_DAYS, ChronoUnit.DAYS);
         if (dataContext == UsageDataContext.TEAM_MEMBER_ONLY) {
+            Instant to = clock.instant();
+            Instant from = to.minus(LOG_API_KEY_LOOKUP_DAYS, ChronoUnit.DAYS);
             return logRepository.findDistinctApiKeysForUserTeamMemberInRange(userId, from, to, provider);
         }
-        return logRepository.findDistinctApiKeysForUserPersonalInRange(userId, from, to, provider);
+        String providerStr = provider == null ? null : provider.name();
+        List<ApiKeyMetadataEntity> rows = apiKeyMetadataRepository.findPersonalKeysForDashboard(userId, providerStr);
+        List<UsageLogApiKeyItemResponse> out = rows.stream()
+                .map(m -> new UsageLogApiKeyItemResponse(m.getKeyId(), m.getAlias(), m.getStatus()))
+                .toList();
+        if (log.isInfoEnabled()) {
+            log.info(
+                    "Personal dashboard API key alias list loaded userId={} keyCount={} providerFilter={}",
+                    maskUserIdForLog(userId),
+                    out.size(),
+                    providerStr != null ? providerStr : "ALL"
+            );
+        }
+        return out;
+    }
+
+    private static String maskUserIdForLog(String userId) {
+        if (userId == null || userId.isBlank()) {
+            return "-";
+        }
+        String t = userId.trim();
+        int keep = Math.min(4, t.length());
+        return t.substring(0, keep) + "***";
     }
 
     private UsageLogEntryResponse toLogDto(UsageRecordedLogEntity e) {
