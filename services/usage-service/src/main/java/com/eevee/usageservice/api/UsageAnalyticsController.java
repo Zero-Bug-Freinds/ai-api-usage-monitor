@@ -212,8 +212,9 @@ public class UsageAnalyticsController {
             @RequestParam(required = false) String dataContext
     ) {
         String userId = currentUser(request);
+        String alternateSubject = alternatePersonalSubjectUserId(request);
         UsageDataContext ctx = parseDataContext(dataContext);
-        return dashboardService.logApiKeys(userId, provider, ctx);
+        return dashboardService.logApiKeys(userId, alternateSubject, provider, ctx);
     }
 
     private static UsageDataContext parseDataContext(String raw) {
@@ -233,5 +234,14 @@ public class UsageAnalyticsController {
             return s;
         }
         throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing authenticated user");
+    }
+
+    /**
+     * When identity-synced metadata rows use a different subject than {@link #currentUser(HttpServletRequest)}
+     * (e.g. opaque id vs email), merge those keys into the personal alias list.
+     */
+    private static String alternatePersonalSubjectUserId(HttpServletRequest request) {
+        Object p = request.getAttribute(UsageGatewayTrustFilter.ATTR_PLATFORM_USER_ID);
+        return (p instanceof String s && !s.isBlank()) ? s.trim() : null;
     }
 }

@@ -32,6 +32,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -42,8 +43,11 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 @Service
 public class UsageDashboardService {
@@ -967,11 +971,26 @@ public class UsageDashboardService {
 
     @Transactional(readOnly = true)
     public List<UsageLogApiKeyItemResponse> logApiKeys(String userId, AiProvider provider) {
-        return logApiKeys(userId, provider, UsageDataContext.PERSONAL);
+        return logApiKeys(userId, null, provider, UsageDataContext.PERSONAL);
     }
 
     @Transactional(readOnly = true)
     public List<UsageLogApiKeyItemResponse> logApiKeys(String userId, AiProvider provider, UsageDataContext dataContext) {
+        return logApiKeys(userId, null, provider, dataContext);
+    }
+
+    /**
+     * Personal-scope alias list: metadata rows owned by {@code userId}, merged with rows owned by
+     * {@code alternatePersonalSubjectUserId} when non-blank and distinct (e.g. gateway {@code X-User-Id} is email while
+     * identity events keyed metadata by platform subject id).
+     */
+    @Transactional(readOnly = true)
+    public List<UsageLogApiKeyItemResponse> logApiKeys(
+            String userId,
+            String alternatePersonalSubjectUserId,
+            AiProvider provider,
+            UsageDataContext dataContext
+    ) {
         if (dataContext == UsageDataContext.TEAM_MEMBER_ONLY) {
             Instant to = clock.instant();
             Instant from = to.minus(LOG_API_KEY_LOOKUP_DAYS, ChronoUnit.DAYS);
@@ -979,10 +998,24 @@ public class UsageDashboardService {
         }
         String providerStr = provider == null ? null : provider.name();
         String providerLower = provider == null ? null : provider.name().toLowerCase(Locale.ROOT);
-        List<ApiKeyMetadataEntity> rows = apiKeyMetadataRepository.findPersonalKeysForDashboard(userId, providerLower);
-        List<UsageLogApiKeyItemResponse> out = rows.stream()
-                .map(m -> new UsageLogApiKeyItemResponse(m.getKeyId(), m.getAlias(), m.getStatus()))
-                .toList();
+        Map<String, UsageLogApiKeyItemResponse> byApiKeyId = new LinkedHashMap<>();
+        for (ApiKeyMetadataEntity m : personalApiKeyMetadataRowsForAliasList(
+                userId,
+                alternatePersonalSubjectUserId,
+                providerLower
+        )) {
+            byApiKeyId.put(m.getKeyId(), new UsageLogApiKeyItemResponse(m.getKeyId(), m.getAlias(), m.getStatus()));
+        }
+        Instant logTo = clock.instant();
+        Instant logFrom = logTo.minus(LOG_API_KEY_LOOKUP_DAYS, ChronoUnit.DAYS);
+        appendPersonalDistinctLogKeys(byApiKeyId, userId.trim(), logFrom, logTo, provider);
+        if (StringUtils.hasText(alternatePersonalSubjectUserId)) {
+            String alt = alternatePersonalSubjectUserId.trim();
+            if (!alt.equals(userId.trim())) {
+                appendPersonalDistinctLogKeys(byApiKeyId, alt, logFrom, logTo, provider);
+            }
+        }
+        List<UsageLogApiKeyItemResponse> out = List.copyOf(byApiKeyId.values());
         if (log.isInfoEnabled()) {
             log.info(
                     "Personal dashboard API key alias list loaded userId={} keyCount={} providerFilter={}",
@@ -992,6 +1025,60 @@ public class UsageDashboardService {
             );
         }
         return out;
+    }
+
+    private List<ApiKeyMetadataEntity> personalApiKeyMetadataRowsForAliasList(
+            String primaryUserId,
+            String alternatePersonalSubjectUserId,
+            String providerLower
+    ) {
+        String primary = primaryUserId.trim();
+        Map<String, ApiKeyMetadataEntity> byKeyId = new LinkedHashMap<>();
+        appendPersonalMetadataForAliasList(byKeyId, primary, providerLower);
+        if (StringUtils.hasText(alternatePersonalSubjectUserId)) {
+            String alt = alternatePersonalSubjectUserId.trim();
+            if (!alt.equals(primary)) {
+                appendPersonalMetadataForAliasList(byKeyId, alt, providerLower);
+            }
+        }
+        return byKeyId.values().stream()
+                .sorted(Comparator.comparing(ApiKeyMetadataEntity::getUpdatedAt).reversed())
+                .toList();
+    }
+
+    private void appendPersonalMetadataForAliasList(
+            Map<String, ApiKeyMetadataEntity> byKeyId,
+            String userId,
+            String providerLower
+    ) {
+        for (ApiKeyMetadataEntity m : apiKeyMetadataRepository.findPersonalKeysForDashboard(userId, providerLower)) {
+            byKeyId.merge(
+                    m.getKeyId(),
+                    m,
+                    (a, b) -> a.getUpdatedAt().isAfter(b.getUpdatedAt()) ? a : b
+            );
+        }
+    }
+
+    /**
+     * Adds keys seen under the user's personal log scope (same window as team-member key pickers)
+     * when metadata ownership does not match the gateway subject yet.
+     */
+    private void appendPersonalDistinctLogKeys(
+            Map<String, UsageLogApiKeyItemResponse> byApiKeyId,
+            String userId,
+            Instant from,
+            Instant toExclusive,
+            AiProvider provider
+    ) {
+        for (UsageLogApiKeyItemResponse row : logRepository.findDistinctApiKeysForUserPersonalInRange(
+                userId,
+                from,
+                toExclusive,
+                provider
+        )) {
+            byApiKeyId.putIfAbsent(row.apiKeyId(), row);
+        }
     }
 
     private static String maskUserIdForLog(String userId) {

@@ -2,6 +2,7 @@ package com.eevee.usageservice.service;
 
 import com.eevee.usage.events.AiProvider;
 import com.eevee.usageservice.api.dto.UsageDataContext;
+import com.eevee.usageservice.api.dto.UsageLogApiKeyItemResponse;
 import com.eevee.usageservice.api.dto.UsageSeriesUnit;
 import com.eevee.usageservice.config.UsageServiceProperties;
 import com.eevee.usageservice.domain.ApiKeyMetadataEntity;
@@ -143,6 +144,8 @@ class UsageDashboardServiceTest {
         ApiKeyMetadataEntity older = ApiKeyMetadataEntity.create("1", "u1");
         older.apply("u1", null, "OPENAI", "alpha", ApiKeyStatus.ACTIVE, Instant.parse("2025-06-10T00:00:00Z"));
         when(apiKeyMetadataRepository.findPersonalKeysForDashboard("u1", "openai")).thenReturn(List.of(newer, older));
+        when(logRepository.findDistinctApiKeysForUserPersonalInRange(eq("u1"), any(), any(), eq(AiProvider.OPENAI)))
+                .thenReturn(List.of());
 
         var keys = service.logApiKeys("u1", AiProvider.OPENAI, UsageDataContext.PERSONAL);
 
@@ -150,7 +153,47 @@ class UsageDashboardServiceTest {
         assertThat(keys.getFirst().apiKeyId()).isEqualTo("2");
         assertThat(keys.getFirst().alias()).isEqualTo("beta");
         verify(apiKeyMetadataRepository).findPersonalKeysForDashboard("u1", "openai");
-        verify(logRepository, never()).findDistinctApiKeysForUserPersonalInRange(any(), any(), any(), any());
+        verify(logRepository).findDistinctApiKeysForUserPersonalInRange(eq("u1"), any(), any(), eq(AiProvider.OPENAI));
+    }
+
+    @Test
+    void logApiKeys_personal_mergesMetadataForAlternateSubjectWhenPrimaryHasNoRows() {
+        ApiKeyMetadataEntity fromAlt = ApiKeyMetadataEntity.create("k9", "sub-9");
+        fromAlt.apply("sub-9", null, "OPENAI", "from-alt", ApiKeyStatus.ACTIVE, Instant.parse("2025-06-01T00:00:00Z"));
+        when(apiKeyMetadataRepository.findPersonalKeysForDashboard("a@b.com", "openai")).thenReturn(List.of());
+        when(apiKeyMetadataRepository.findPersonalKeysForDashboard("sub-9", "openai")).thenReturn(List.of(fromAlt));
+        when(logRepository.findDistinctApiKeysForUserPersonalInRange(any(), any(), any(), eq(AiProvider.OPENAI)))
+                .thenReturn(List.of());
+
+        var keys = service.logApiKeys("a@b.com", "sub-9", AiProvider.OPENAI, UsageDataContext.PERSONAL);
+
+        assertThat(keys).hasSize(1);
+        assertThat(keys.getFirst().apiKeyId()).isEqualTo("k9");
+        assertThat(keys.getFirst().alias()).isEqualTo("from-alt");
+        verify(apiKeyMetadataRepository).findPersonalKeysForDashboard("a@b.com", "openai");
+        verify(apiKeyMetadataRepository).findPersonalKeysForDashboard("sub-9", "openai");
+    }
+
+    @Test
+    void logApiKeys_personal_skipsSecondMetadataQueryWhenAlternateEqualsPrimary() {
+        when(apiKeyMetadataRepository.findPersonalKeysForDashboard("u1", null)).thenReturn(List.of());
+        when(logRepository.findDistinctApiKeysForUserPersonalInRange(eq("u1"), any(), any(), isNull())).thenReturn(List.of());
+        service.logApiKeys("u1", "u1", null, UsageDataContext.PERSONAL);
+        verify(apiKeyMetadataRepository, times(1)).findPersonalKeysForDashboard("u1", null);
+    }
+
+    @Test
+    void logApiKeys_personal_mergesDistinctLogKeysWhenMetadataEmpty() {
+        when(apiKeyMetadataRepository.findPersonalKeysForDashboard("u1", null)).thenReturn(List.of());
+        when(logRepository.findDistinctApiKeysForUserPersonalInRange(eq("u1"), any(), any(), isNull()))
+                .thenReturn(List.of(new UsageLogApiKeyItemResponse("k1", "from-logs", ApiKeyStatus.ACTIVE)));
+
+        var keys = service.logApiKeys("u1", null, null, UsageDataContext.PERSONAL);
+
+        assertThat(keys).hasSize(1);
+        assertThat(keys.getFirst().apiKeyId()).isEqualTo("k1");
+        assertThat(keys.getFirst().alias()).isEqualTo("from-logs");
+        verify(logRepository).findDistinctApiKeysForUserPersonalInRange(eq("u1"), any(), any(), isNull());
     }
 
     @Test
