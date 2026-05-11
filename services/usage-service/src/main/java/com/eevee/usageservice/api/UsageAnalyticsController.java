@@ -173,11 +173,25 @@ public class UsageAnalyticsController {
             @RequestParam(required = false) Boolean requestSuccessful,
             @RequestParam(required = false) String model,
             @RequestParam(required = false) String reasoningPresence,
+            @RequestParam(required = false) String dataContext,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
         String userId = currentUser(request);
-        return dashboardService.logs(userId, from, to, provider, apiKeyId, requestSuccessful, model, reasoningPresence, page, size);
+        UsageDataContext ctx = parseDataContext(dataContext);
+        return dashboardService.logs(
+                userId,
+                from,
+                to,
+                provider,
+                apiKeyId,
+                requestSuccessful,
+                model,
+                reasoningPresence,
+                page,
+                size,
+                ctx
+        );
     }
 
     @GetMapping("/logs/api-keys")

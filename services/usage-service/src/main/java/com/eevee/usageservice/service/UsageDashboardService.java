@@ -25,6 +25,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -631,7 +632,8 @@ public class UsageDashboardService {
             String modelMask,
             String reasoningPresence,
             int page,
-            int size
+            int size,
+            UsageDataContext dataContext
     ) {
         long startedAt = System.nanoTime();
         Range r = validateRange(from, toInclusive);
@@ -639,17 +641,30 @@ public class UsageDashboardService {
         int pageSize = Math.min(200, Math.max(1, size));
         String keyFilter = apiKeyId != null && apiKeyId.isBlank() ? null : apiKeyId;
         String reasoningFilter = normalizeReasoningPresence(reasoningPresence);
-        Page<UsageRecordedLogEntity> p = logRepository.pageLogs(
-                userId,
-                r.from(),
-                r.toExclusive(),
-                provider,
-                keyFilter,
-                requestSuccessful,
-                modelMask,
-                reasoningFilter,
-                PageRequest.of(pageIndex, pageSize, Sort.by(Sort.Direction.DESC, "occurredAt"))
-        );
+        Pageable pageable = PageRequest.of(pageIndex, pageSize, Sort.by(Sort.Direction.DESC, "occurredAt"));
+        Page<UsageRecordedLogEntity> p = dataContext == UsageDataContext.TEAM_MEMBER_ONLY
+                ? logRepository.pageLogsTeamMember(
+                        userId,
+                        r.from(),
+                        r.toExclusive(),
+                        provider,
+                        keyFilter,
+                        requestSuccessful,
+                        modelMask,
+                        reasoningFilter,
+                        pageable
+                )
+                : logRepository.pageLogsPersonal(
+                        userId,
+                        r.from(),
+                        r.toExclusive(),
+                        provider,
+                        keyFilter,
+                        requestSuccessful,
+                        modelMask,
+                        reasoningFilter,
+                        pageable
+                );
         List<UsageLogEntryResponse> content = p.getContent().stream().map(this::toLogDto).toList();
         log.debug("dashboard.logs totalMs={} page={} size={} rows={} range={}~{} provider={}",
                 (System.nanoTime() - startedAt) / 1_000_000,
