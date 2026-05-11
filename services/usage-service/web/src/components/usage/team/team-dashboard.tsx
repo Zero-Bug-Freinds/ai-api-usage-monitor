@@ -446,6 +446,42 @@ export default function TeamDashboard({
         <Button type="button" variant="outline" size="sm" disabled={loading || teamsLoading} onClick={() => setRefresh((n) => n + 1)}>새로고침</Button>
       </header>
       <div className="mb-6 flex flex-row flex-wrap items-end gap-4">
+        <div className="space-y-2 sm:w-52">
+          <Label htmlFor="team-dash-provider">공급사</Label>
+          <Select value={dashProvider} onValueChange={setDashProvider}>
+            <SelectTrigger id="team-dash-provider"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={PROVIDER_ALL}>전체</SelectItem>
+              <SelectItem value="GOOGLE">Gemini (Google)</SelectItem>
+              <SelectItem value="OPENAI">OpenAI</SelectItem>
+              <SelectItem value="ANTHROPIC">Anthropic</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2 sm:w-52">
+          <Label>팀</Label>
+          <Select
+            value={selectedTeamId}
+            onValueChange={setSelectedTeamId}
+            disabled={teamSelectDisabled}
+          >
+            <SelectTrigger>
+              <SelectValue
+                placeholder={
+                  teamsLoading ? "팀 목록 불러오는 중…" : !hasTeamMembership ? "소속 팀 없음" : "팀 선택"
+                }
+              />
+            </SelectTrigger>
+            <SelectContent>{teams.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2 sm:w-52">
+          <Label>API Key</Label>
+          <Select value={selectedApiKeyId} onValueChange={setSelectedApiKeyId} disabled={keysLoading || apiKeys.length === 0}>
+            <SelectTrigger><SelectValue placeholder={keysLoading ? "불러오는 중…" : "키 선택"} /></SelectTrigger>
+            <SelectContent>{apiKeys.map((k) => <SelectItem key={k.id} value={String(k.id)}>{k.alias} ({k.provider})</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
         <div className="space-y-2 sm:w-44">
           <Label htmlFor="team-dash-period">기간</Label>
           <Select value={periodMode} onValueChange={(v) => {
@@ -472,42 +508,6 @@ export default function TeamDashboard({
             <div className="space-y-2"><Label htmlFor="team-to">종료</Label><Input id="team-to" type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} /></div>
           </div>
         ) : null}
-        <div className="space-y-2 sm:w-52">
-          <Label>팀</Label>
-          <Select
-            value={selectedTeamId}
-            onValueChange={setSelectedTeamId}
-            disabled={teamSelectDisabled}
-          >
-            <SelectTrigger>
-              <SelectValue
-                placeholder={
-                  teamsLoading ? "팀 목록 불러오는 중…" : !hasTeamMembership ? "소속 팀 없음" : "팀 선택"
-                }
-              />
-            </SelectTrigger>
-            <SelectContent>{teams.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}</SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2 sm:w-52">
-          <Label>API Key</Label>
-          <Select value={selectedApiKeyId} onValueChange={setSelectedApiKeyId} disabled={keysLoading || apiKeys.length === 0}>
-            <SelectTrigger><SelectValue placeholder={keysLoading ? "불러오는 중…" : "키 선택"} /></SelectTrigger>
-            <SelectContent>{apiKeys.map((k) => <SelectItem key={k.id} value={String(k.id)}>{k.alias} ({k.provider})</SelectItem>)}</SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2 sm:w-52">
-          <Label htmlFor="team-dash-provider">공급사</Label>
-          <Select value={dashProvider} onValueChange={setDashProvider}>
-            <SelectTrigger id="team-dash-provider"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value={PROVIDER_ALL}>전체</SelectItem>
-              <SelectItem value="GOOGLE">Gemini (Google)</SelectItem>
-              <SelectItem value="OPENAI">OpenAI</SelectItem>
-              <SelectItem value="ANTHROPIC">Anthropic</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
       </div>
 
       {teamsErr ? <p className="mb-4 text-sm text-amber-700">{teamsErr}</p> : null}

@@ -407,14 +407,15 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
   return (
     <div className="w-full min-w-0 space-y-6">
       <div className="flex flex-wrap items-end gap-4">
-        <div className="space-y-2 sm:w-44">
-          <Label htmlFor="member-period">기간</Label>
-          <Select value={periodMode} onValueChange={(v) => setPeriodMode(v as PeriodMode)}>
-            <SelectTrigger id="member-period"><SelectValue /></SelectTrigger>
+        <div className="space-y-2 sm:w-52">
+          <Label>공급사</Label>
+          <Select value={provider} onValueChange={setProvider}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="today">오늘</SelectItem>
-              <SelectItem value="7d">최근 7일</SelectItem>
-              <SelectItem value="30d">최근 30일</SelectItem>
+              <SelectItem value={PROVIDER_ALL}>전체</SelectItem>
+              <SelectItem value="GOOGLE">Gemini (Google)</SelectItem>
+              <SelectItem value="OPENAI">OpenAI</SelectItem>
+              <SelectItem value="ANTHROPIC">Anthropic</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -429,15 +430,14 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-2 sm:w-52">
-          <Label>공급사</Label>
-          <Select value={provider} onValueChange={setProvider}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
+        <div className="space-y-2 sm:w-44">
+          <Label htmlFor="member-period">기간</Label>
+          <Select value={periodMode} onValueChange={(v) => setPeriodMode(v as PeriodMode)}>
+            <SelectTrigger id="member-period"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value={PROVIDER_ALL}>전체</SelectItem>
-              <SelectItem value="GOOGLE">Gemini (Google)</SelectItem>
-              <SelectItem value="OPENAI">OpenAI</SelectItem>
-              <SelectItem value="ANTHROPIC">Anthropic</SelectItem>
+              <SelectItem value="today">오늘</SelectItem>
+              <SelectItem value="7d">최근 7일</SelectItem>
+              <SelectItem value="30d">최근 30일</SelectItem>
             </SelectContent>
           </Select>
         </div>

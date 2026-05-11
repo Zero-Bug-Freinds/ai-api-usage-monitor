@@ -1715,7 +1715,7 @@ export function UsageDashboard() {
         ) : null}
 
         <div className="space-y-2 sm:min-w-[12rem] sm:max-w-[20rem]">
-          <Label htmlFor="dash-api-key">API Key 별칭</Label>
+          <Label htmlFor="dash-api-key">API Key</Label>
           <Select
             value={dashApiKeyId}
             onValueChange={setDashApiKeyId}
