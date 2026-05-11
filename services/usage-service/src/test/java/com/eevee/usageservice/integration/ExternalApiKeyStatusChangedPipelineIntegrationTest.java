@@ -219,4 +219,48 @@ class ExternalApiKeyStatusChangedPipelineIntegrationTest {
                     assertThat(usageRecordedLogRepository.countByApiKeyId("303")).isEqualTo(0L);
                 });
     }
+
+    @Test
+    void budgetChangedEvent_doesNotCreateOrAlterApiKeyMetadata() throws Exception {
+        String budgetJson = """
+                {
+                  "eventType": "EXTERNAL_API_KEY_BUDGET_CHANGED",
+                  "schemaVersion": 1,
+                  "occurredAt": "2026-05-11T10:00:00Z",
+                  "keyId": 777,
+                  "alias": "BudgetPayloadAlias",
+                  "userId": 42,
+                  "visibility": "PRIVATE",
+                  "provider": "GOOGLE",
+                  "status": "ACTIVE",
+                  "monthlyBudgetUsd": 12.50,
+                  "keyHash": "hash-budget"
+                }
+                """;
+        rabbitTemplate.convertAndSend(
+                "identity.events",
+                "identity.external-api-key.status-changed",
+                budgetJson
+        );
+
+        ExternalApiKeyStatusChangedEvent registered = new ExternalApiKeyStatusChangedEvent(
+                1,
+                Instant.parse("2026-05-11T11:00:00Z"),
+                778L,
+                "AfterBudgetControl",
+                5L,
+                "OPENAI",
+                ExternalApiKeyStatus.ACTIVE
+        );
+        rabbitTemplate.convertAndSend(
+                "identity.events",
+                "identity.external-api-key.status-changed",
+                objectMapper.writeValueAsString(registered)
+        );
+
+        await().atMost(30, SECONDS).pollInterval(200, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .until(() -> repository.findById("778").isPresent());
+
+        assertThat(repository.findById("777")).isEmpty();
+    }
 }
