@@ -74,6 +74,8 @@ const DASHBOARD_PROVIDER_ALL = "__ALL__"
 const DASHBOARD_API_KEY_ALL = "__ALL__"
 const DASHBOARD_PROVIDER_STORAGE_KEY = "usage-dashboard:provider:v1"
 const DASHBOARD_PERIOD_STORAGE_KEY = "usage-dashboard:period:v1"
+/** 개인 대시보드 전용. 팀 대시보드·팀 멤버 뷰와 sessionStorage 충돌 없음. */
+const PERSONAL_DASHBOARD_SELECTED_API_KEY_ID = "PERSONAL_DASHBOARD_SELECTED_API_KEY_ID"
 const MODEL_REQUESTS_TOP_N = 10
 const OTHERS_LABEL = "기타 (Others)"
 const OTHERS_BAR_COLOR = "#94a3b8"
@@ -145,6 +147,19 @@ function readStoredDashboardProvider(): string {
     return raw
   } catch {
     return DASHBOARD_PROVIDER_ALL
+  }
+}
+
+function readStoredPersonalDashboardApiKeyId(): string {
+  if (typeof sessionStorage === "undefined") return DASHBOARD_API_KEY_ALL
+  try {
+    const raw = sessionStorage.getItem(PERSONAL_DASHBOARD_SELECTED_API_KEY_ID)
+    if (raw == null) return DASHBOARD_API_KEY_ALL
+    const trimmed = raw.trim()
+    if (trimmed.length === 0 || trimmed === DASHBOARD_API_KEY_ALL) return DASHBOARD_API_KEY_ALL
+    return trimmed
+  } catch {
+    return DASHBOARD_API_KEY_ALL
   }
 }
 
@@ -714,7 +729,9 @@ export function UsageDashboard() {
     return readStoredDashboardPeriod(t).to
   })
   const [dashProvider, setDashProvider] = React.useState<string>(() => readStoredDashboardProvider())
-  const [dashApiKeyId, setDashApiKeyId] = React.useState<string>(DASHBOARD_API_KEY_ALL)
+  const [dashApiKeyId, setDashApiKeyId] = React.useState<string>(() =>
+    dataContext === "PERSONAL" ? readStoredPersonalDashboardApiKeyId() : DASHBOARD_API_KEY_ALL
+  )
   const [apiKeyOptions, setApiKeyOptions] = React.useState<UsageLogApiKeyItemResponse[]>([])
 
   const [mainLoading, setMainLoading] = React.useState(true)
@@ -743,7 +760,12 @@ export function UsageDashboard() {
   }, [])
 
   React.useEffect(() => {
-    setDashApiKeyId(DASHBOARD_API_KEY_ALL)
+    const ctx = parseDashboardDataContext(dataContextParam || null)
+    if (ctx === "PERSONAL") {
+      setDashApiKeyId(readStoredPersonalDashboardApiKeyId())
+    } else {
+      setDashApiKeyId(DASHBOARD_API_KEY_ALL)
+    }
   }, [dataContextParam])
 
   React.useEffect(() => {
@@ -753,6 +775,16 @@ export function UsageDashboard() {
       setDashApiKeyId(DASHBOARD_API_KEY_ALL)
     }
   }, [apiKeyOptions, dashApiKeyId])
+
+  React.useEffect(() => {
+    if (!clientReady || typeof sessionStorage === "undefined") return
+    if (dataContext !== "PERSONAL") return
+    try {
+      sessionStorage.setItem(PERSONAL_DASHBOARD_SELECTED_API_KEY_ID, dashApiKeyId)
+    } catch {
+      /* ignore quota/private mode */
+    }
+  }, [clientReady, dataContext, dashApiKeyId])
 
   React.useEffect(() => {
     if (!clientReady || periodMode === "custom") return
