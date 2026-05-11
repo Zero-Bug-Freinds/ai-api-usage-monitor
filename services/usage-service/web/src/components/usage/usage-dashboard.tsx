@@ -33,6 +33,7 @@ import {
   SelectValue,
 } from "@ai-usage/ui"
 import { buildUsageQuery, fetchUsageJson } from "@/lib/usage/fetch-usage"
+import { teamUsageBffBase } from "@/lib/usage/team-usage-bff-base"
 import { formatOccurredAtKst } from "@/lib/usage/format-occurred-at-kst"
 import { formatRequestCount, formatTokenCount, formatUsd, toNumber } from "@/lib/usage/format"
 import type {
@@ -78,6 +79,11 @@ const DASHBOARD_PROVIDER_STORAGE_KEY = "usage-dashboard:provider:v1"
 const DASHBOARD_PERIOD_STORAGE_KEY = "usage-dashboard:period:v1"
 /** 개인 대시보드 전용. 팀 대시보드·팀 멤버 뷰와 sessionStorage 충돌 없음. */
 const PERSONAL_DASHBOARD_SELECTED_API_KEY_ID = "PERSONAL_DASHBOARD_SELECTED_API_KEY_ID"
+/** 팀별 나의 사용량 전용 (팀 대시보드 `last_team_id` 와 분리). */
+const MY_USAGE_BY_TEAM_LAST_SELECTED_TEAM_ID = "MY_USAGE_BY_TEAM_LAST_SELECTED_TEAM_ID"
+const TEAM_MY_USAGE_PROVIDER_KEY = "TEAM_MY_USAGE_PROVIDER"
+const TEAM_MY_USAGE_PERIOD_KEY = "TEAM_MY_USAGE_PERIOD"
+const TEAM_MY_USAGE_SELECTED_API_KEY_ID_KEY = "TEAM_MY_USAGE_SELECTED_API_KEY_ID"
 const MODEL_REQUESTS_TOP_N = 10
 const OTHERS_LABEL = "기타 (Others)"
 const OTHERS_BAR_COLOR = "#94a3b8"
@@ -166,6 +172,98 @@ function readStoredPersonalDashboardApiKeyId(): string {
   }
 }
 
+function readStoredTeamMyUsagePeriod(todayIso: string): StoredDashboardPeriod {
+  if (typeof sessionStorage === "undefined") {
+    return { mode: "today", from: todayIso, to: todayIso }
+  }
+  try {
+    const raw = sessionStorage.getItem(TEAM_MY_USAGE_PERIOD_KEY)
+    if (!raw) return { mode: "today", from: todayIso, to: todayIso }
+    const parsed = JSON.parse(raw) as Partial<StoredDashboardPeriod>
+    const mode = isPeriodMode(parsed.mode) ? parsed.mode : "today"
+    const from = typeof parsed.from === "string" && parsed.from.length > 0 ? parsed.from : todayIso
+    const to = typeof parsed.to === "string" && parsed.to.length > 0 ? parsed.to : todayIso
+    return { mode, from, to }
+  } catch {
+    return { mode: "today", from: todayIso, to: todayIso }
+  }
+}
+
+function readStoredTeamMyUsageProvider(): string {
+  if (typeof sessionStorage === "undefined") return DASHBOARD_PROVIDER_ALL
+  try {
+    const raw = sessionStorage.getItem(TEAM_MY_USAGE_PROVIDER_KEY)
+    if (!raw) return DASHBOARD_PROVIDER_ALL
+    return raw
+  } catch {
+    return DASHBOARD_PROVIDER_ALL
+  }
+}
+
+function readStoredTeamMyUsageApiKeyId(): string {
+  if (typeof sessionStorage === "undefined") return DASHBOARD_API_KEY_ALL
+  try {
+    const raw = sessionStorage.getItem(TEAM_MY_USAGE_SELECTED_API_KEY_ID_KEY)
+    if (raw == null) return DASHBOARD_API_KEY_ALL
+    const trimmed = raw.trim()
+    if (trimmed.length === 0 || trimmed === DASHBOARD_API_KEY_ALL) return DASHBOARD_API_KEY_ALL
+    return trimmed
+  } catch {
+    return DASHBOARD_API_KEY_ALL
+  }
+}
+
+type MemberTeamSummary = { id: string; name: string; createdAt?: string }
+
+function pickOldestMemberTeamId(list: MemberTeamSummary[]): string {
+  if (list.length === 0) return ""
+  const dated = list.filter((t) => t.createdAt)
+  if (dated.length === 0) return list[0]!.id
+  return [...dated].sort((a, b) => (a.createdAt ?? "").localeCompare(b.createdAt ?? ""))[0]!.id
+}
+
+function pickMemberTeamIdFromSources(list: MemberTeamSummary[]): string {
+  if (list.length === 0) return ""
+  if (typeof window !== "undefined") {
+    const saved = window.localStorage.getItem(MY_USAGE_BY_TEAM_LAST_SELECTED_TEAM_ID)
+    if (saved && list.some((t) => t.id === saved)) {
+      return saved
+    }
+  }
+  return pickOldestMemberTeamId(list)
+}
+
+async function fetchTeamApiKeysForMemberDashboard(
+  teamId: string,
+  provider: UsageProviderFilter | undefined
+): Promise<UsageLogApiKeyItemResponse[]> {
+  const base = teamUsageBffBase()
+  if (!base || !teamId) return []
+  const res = await fetch(`${base}/teams/${encodeURIComponent(teamId)}/api-keys`, {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  })
+  const json = (await res.json()) as { apiKeys?: unknown }
+  if (!res.ok || !Array.isArray(json.apiKeys)) return []
+  type Parsed = { apiKeyId: string; alias: string; sortKey: string }
+  const rows = (json.apiKeys as unknown[])
+    .map((item): Parsed | null => {
+      if (!item || typeof item !== "object") return null
+      const o = item as Record<string, unknown>
+      if ((typeof o.id !== "number" && typeof o.id !== "string") || typeof o.alias !== "string") return null
+      const apiKeyId = String(o.id)
+      const pRaw = typeof o.provider === "string" ? o.provider.toUpperCase() : ""
+      if (provider && pRaw && pRaw !== String(provider)) return null
+      const createdAt = typeof o.createdAt === "string" ? o.createdAt : ""
+      const updatedAt = typeof o.updatedAt === "string" ? o.updatedAt : ""
+      const sortKey = (createdAt || updatedAt || "").trim()
+      return { apiKeyId, alias: o.alias, sortKey }
+    })
+    .filter((x): x is Parsed => x !== null)
+  rows.sort((a, b) => b.sortKey.localeCompare(a.sortKey))
+  return rows.map((r) => ({ apiKeyId: r.apiKeyId, alias: r.alias, status: "ACTIVE" as const }))
+}
+
 function tooltipNumericValue(value: unknown): number {
   if (typeof value === "number") return value
   if (typeof value === "string") return toNumber(value)
@@ -191,10 +289,15 @@ function parseDashboardDataContext(raw: string | null): DashboardDataContext {
 
 function scopeQueryParams(
   dataContext: DashboardDataContext,
-  apiKeyId: string
-): { dataContext?: string; apiKeyId?: string } {
-  const o: { dataContext?: string; apiKeyId?: string } = {}
-  if (dataContext === "TEAM_MEMBER_ONLY") o.dataContext = "TEAM_MEMBER_ONLY"
+  apiKeyId: string,
+  teamId?: string
+): { dataContext?: string; apiKeyId?: string; teamId?: string } {
+  const o: { dataContext?: string; apiKeyId?: string; teamId?: string } = {}
+  if (dataContext === "TEAM_MEMBER_ONLY") {
+    o.dataContext = "TEAM_MEMBER_ONLY"
+    const tid = (teamId ?? "").trim()
+    if (tid.length > 0) o.teamId = tid
+  }
   if (apiKeyId !== DASHBOARD_API_KEY_ALL && apiKeyId !== DASHBOARD_API_KEY_NONE) {
     o.apiKeyId = apiKeyId
   }
@@ -723,21 +826,27 @@ export function UsageDashboard() {
 
   const [periodMode, setPeriodMode] = React.useState<PeriodMode>(() => {
     const t = formatKstIsoDate()
-    return readStoredDashboardPeriod(t).mode
+    return dataContext === "TEAM_MEMBER_ONLY" ? readStoredTeamMyUsagePeriod(t).mode : readStoredDashboardPeriod(t).mode
   })
   const [customFrom, setCustomFrom] = React.useState(() => {
     const t = formatKstIsoDate()
-    return readStoredDashboardPeriod(t).from
+    return dataContext === "TEAM_MEMBER_ONLY" ? readStoredTeamMyUsagePeriod(t).from : readStoredDashboardPeriod(t).from
   })
   const [customTo, setCustomTo] = React.useState(() => {
     const t = formatKstIsoDate()
-    return readStoredDashboardPeriod(t).to
+    return dataContext === "TEAM_MEMBER_ONLY" ? readStoredTeamMyUsagePeriod(t).to : readStoredDashboardPeriod(t).to
   })
-  const [dashProvider, setDashProvider] = React.useState<string>(() => readStoredDashboardProvider())
+  const [dashProvider, setDashProvider] = React.useState<string>(() =>
+    dataContext === "TEAM_MEMBER_ONLY" ? readStoredTeamMyUsageProvider() : readStoredDashboardProvider()
+  )
   const [dashApiKeyId, setDashApiKeyId] = React.useState<string>(() =>
-    dataContext === "PERSONAL" ? readStoredPersonalDashboardApiKeyId() : DASHBOARD_API_KEY_ALL
+    dataContext === "PERSONAL" ? readStoredPersonalDashboardApiKeyId() : readStoredTeamMyUsageApiKeyId()
   )
   const [apiKeyOptions, setApiKeyOptions] = React.useState<UsageLogApiKeyItemResponse[]>([])
+  const [memberTeams, setMemberTeams] = React.useState<MemberTeamSummary[]>([])
+  const [memberTeamsLoading, setMemberTeamsLoading] = React.useState(false)
+  const [memberTeamsErr, setMemberTeamsErr] = React.useState<string | null>(null)
+  const [teamMemberTeamId, setTeamMemberTeamId] = React.useState("")
 
   const [mainLoading, setMainLoading] = React.useState(true)
   const [mainError, setMainError] = React.useState<string | null>(null)
@@ -765,16 +874,45 @@ export function UsageDashboard() {
   }, [])
 
   React.useEffect(() => {
+    if (!clientReady || typeof sessionStorage === "undefined") return
     const ctx = parseDashboardDataContext(dataContextParam || null)
-    if (ctx === "PERSONAL") {
-      setDashApiKeyId(readStoredPersonalDashboardApiKeyId())
+    const t = formatKstIsoDate()
+    if (ctx === "TEAM_MEMBER_ONLY") {
+      const p = readStoredTeamMyUsagePeriod(t)
+      setPeriodMode(p.mode)
+      setCustomFrom(p.from)
+      setCustomTo(p.to)
+      setDashProvider(readStoredTeamMyUsageProvider())
+      setDashApiKeyId(readStoredTeamMyUsageApiKeyId())
     } else {
-      setDashApiKeyId(DASHBOARD_API_KEY_ALL)
+      const p = readStoredDashboardPeriod(t)
+      setPeriodMode(p.mode)
+      setCustomFrom(p.from)
+      setCustomTo(p.to)
+      setDashProvider(readStoredDashboardProvider())
+      setDashApiKeyId(readStoredPersonalDashboardApiKeyId())
     }
-  }, [dataContextParam])
+  }, [clientReady, dataContextParam])
 
   React.useEffect(() => {
     if (dataContext === "PERSONAL") {
+      if (apiKeyOptions.length === 0) {
+        if (dashApiKeyId !== DASHBOARD_API_KEY_NONE) {
+          setDashApiKeyId(DASHBOARD_API_KEY_NONE)
+        }
+        return
+      }
+      if (dashApiKeyId === DASHBOARD_API_KEY_NONE) {
+        setDashApiKeyId(DASHBOARD_API_KEY_ALL)
+        return
+      }
+      if (dashApiKeyId === DASHBOARD_API_KEY_ALL) return
+      if (!apiKeyOptions.some((x: UsageLogApiKeyItemResponse) => x.apiKeyId === dashApiKeyId)) {
+        setDashApiKeyId(DASHBOARD_API_KEY_ALL)
+      }
+      return
+    }
+    if (dataContext === "TEAM_MEMBER_ONLY") {
       if (apiKeyOptions.length === 0) {
         if (dashApiKeyId !== DASHBOARD_API_KEY_NONE) {
           setDashApiKeyId(DASHBOARD_API_KEY_NONE)
@@ -823,11 +961,15 @@ export function UsageDashboard() {
   React.useEffect(() => {
     if (!clientReady || typeof sessionStorage === "undefined") return
     try {
-      sessionStorage.setItem(DASHBOARD_PROVIDER_STORAGE_KEY, dashProvider)
+      if (dataContext === "PERSONAL") {
+        sessionStorage.setItem(DASHBOARD_PROVIDER_STORAGE_KEY, dashProvider)
+      } else if (dataContext === "TEAM_MEMBER_ONLY") {
+        sessionStorage.setItem(TEAM_MY_USAGE_PROVIDER_KEY, dashProvider)
+      }
     } catch {
       /* ignore quota/private mode */
     }
-  }, [clientReady, dashProvider])
+  }, [clientReady, dataContext, dashProvider])
 
   React.useEffect(() => {
     if (!clientReady || typeof sessionStorage === "undefined") return
@@ -837,11 +979,98 @@ export function UsageDashboard() {
         from: customFrom,
         to: customTo,
       }
-      sessionStorage.setItem(DASHBOARD_PERIOD_STORAGE_KEY, JSON.stringify(payload))
+      if (dataContext === "PERSONAL") {
+        sessionStorage.setItem(DASHBOARD_PERIOD_STORAGE_KEY, JSON.stringify(payload))
+      } else if (dataContext === "TEAM_MEMBER_ONLY") {
+        sessionStorage.setItem(TEAM_MY_USAGE_PERIOD_KEY, JSON.stringify(payload))
+      }
     } catch {
       /* ignore quota/private mode */
     }
-  }, [clientReady, periodMode, customFrom, customTo])
+  }, [clientReady, dataContext, periodMode, customFrom, customTo])
+
+  React.useEffect(() => {
+    if (!clientReady || typeof sessionStorage === "undefined") return
+    if (dataContext !== "TEAM_MEMBER_ONLY") return
+    try {
+      sessionStorage.setItem(TEAM_MY_USAGE_SELECTED_API_KEY_ID_KEY, dashApiKeyId)
+    } catch {
+      /* ignore quota/private mode */
+    }
+  }, [clientReady, dataContext, dashApiKeyId])
+
+  React.useEffect(() => {
+    if (dataContext !== "TEAM_MEMBER_ONLY") {
+      setMemberTeams([])
+      setMemberTeamsErr(null)
+      setMemberTeamsLoading(false)
+      setTeamMemberTeamId("")
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      setMemberTeamsLoading(true)
+      setMemberTeamsErr(null)
+      const base = teamUsageBffBase()
+      if (!base) {
+        if (!cancelled) {
+          setMemberTeamsErr("사용량 API 베이스 URL을 확인할 수 없습니다")
+          setMemberTeams([])
+          setMemberTeamsLoading(false)
+        }
+        return
+      }
+      try {
+        const res = await fetch(`${base}/teams`, { credentials: "include", headers: { Accept: "application/json" } })
+        const json = (await res.json()) as { teams?: unknown }
+        if (!res.ok || !Array.isArray(json.teams)) {
+          if (!cancelled) setMemberTeamsErr("팀 목록을 불러오지 못했습니다")
+          return
+        }
+        const list = (json.teams as unknown[])
+          .map((item): MemberTeamSummary | null => {
+            if (!item || typeof item !== "object") return null
+            const o = item as Record<string, unknown>
+            if (typeof o.id !== "string" && typeof o.id !== "number") return null
+            if (typeof o.name !== "string") return null
+            return {
+              id: String(o.id),
+              name: o.name,
+              createdAt: typeof o.createdAt === "string" ? o.createdAt : undefined,
+            }
+          })
+          .filter((x): x is MemberTeamSummary => x !== null)
+        if (!cancelled) {
+          setMemberTeams(list)
+          setMemberTeamsErr(null)
+        }
+      } catch {
+        if (!cancelled) setMemberTeamsErr("팀 목록을 불러오지 못했습니다")
+      } finally {
+        if (!cancelled) setMemberTeamsLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [dataContext])
+
+  React.useEffect(() => {
+    if (dataContext !== "TEAM_MEMBER_ONLY") return
+    setTeamMemberTeamId((prev) => {
+      if (prev && memberTeams.some((t) => t.id === prev)) return prev
+      return pickMemberTeamIdFromSources(memberTeams)
+    })
+  }, [dataContext, memberTeams])
+
+  React.useEffect(() => {
+    if (dataContext !== "TEAM_MEMBER_ONLY" || !teamMemberTeamId || typeof window === "undefined") return
+    try {
+      window.localStorage.setItem(MY_USAGE_BY_TEAM_LAST_SELECTED_TEAM_ID, teamMemberTeamId)
+    } catch {
+      /* ignore quota/private mode */
+    }
+  }, [dataContext, teamMemberTeamId])
 
   const kstTodayFallback = formatKstIsoDate()
   const rangeFrom = loadedRange?.from ?? kstTodayFallback
@@ -849,6 +1078,7 @@ export function UsageDashboard() {
 
   React.useEffect(() => {
     if (!clientReady) return
+    if (dataContext === "TEAM_MEMBER_ONLY" && memberTeamsLoading) return
     const ac = new AbortController()
     const { signal } = ac
     let cancelled = false
@@ -866,12 +1096,33 @@ export function UsageDashboard() {
         if (rangeDays > MAX_RANGE_DAYS) {
           throw new Error("조회 기간은 최대 1년(366일)까지 가능합니다.")
         }
+        if (dataContext === "TEAM_MEMBER_ONLY" && !teamMemberTeamId) {
+          if (!cancelled) {
+            setLoadedRange({ from: rf, to: rt })
+            setCostKpi(null)
+            setMainSeries([])
+            setKpiSummary(null)
+            setPrevPeriodSummary(null)
+            setDaily([])
+            setMonthly([])
+            setByModel([])
+            setApiKeyOptions([])
+            setLatencySeries([])
+            setLatencyInsight(null)
+            setLatencyLegendHidden({})
+          }
+          return
+        }
         const { prevFrom: pf, prevTo: pt } = previousPeriodBounds(rf, rt)
         const seriesUnit = resolveSeriesUnit(rf, rt)
         const isCurrentDayRange = rf === t && rt === t
 
         const fy = addKstDays(t, -MONTHLY_LOOKBACK_DAYS)
-        const scopeExtra = scopeQueryParams(dataContext, dashApiKeyId)
+        const scopeExtra = scopeQueryParams(
+          dataContext,
+          dashApiKeyId,
+          dataContext === "TEAM_MEMBER_ONLY" ? teamMemberTeamId : undefined
+        )
         const pq = buildUsageQuery({ provider: providerParam(dashProvider), ...scopeExtra })
         const qRange = buildUsageQuery({
           from: rf,
@@ -908,7 +1159,10 @@ export function UsageDashboard() {
           provider: providerParam(dashProvider),
           dataContext: dataContext === "TEAM_MEMBER_ONLY" ? "TEAM_MEMBER_ONLY" : "PERSONAL",
         })
-        const apiKeysP = fetchUsageJson<UsageLogApiKeyItemResponse[]>(`logs/api-keys${keyListQ}`, fetchPolicy)
+        const apiKeysP =
+          dataContext === "TEAM_MEMBER_ONLY"
+            ? fetchTeamApiKeysForMemberDashboard(teamMemberTeamId, providerParam(dashProvider))
+            : fetchUsageJson<UsageLogApiKeyItemResponse[]>(`logs/api-keys${keyListQ}`, fetchPolicy)
 
         const summaryP = fetchUsageJson<UsageSummaryResponse>(`dashboard/summary${qRange}`, fetchPolicy)
         const summaryPrevP = fetchUsageJson<UsageSummaryResponse>(`dashboard/summary${qPrev}`, fetchPolicy)
@@ -958,7 +1212,7 @@ export function UsageDashboard() {
           setByModel(Array.isArray(bm) ? bm : [])
           const keyList = Array.isArray(keys) ? keys : []
           setApiKeyOptions(keyList)
-          if (dataContext === "PERSONAL") {
+          if (dataContext === "PERSONAL" || dataContext === "TEAM_MEMBER_ONLY") {
             if (keyList.length === 0) {
               setDashApiKeyId(DASHBOARD_API_KEY_NONE)
             } else {
@@ -982,7 +1236,18 @@ export function UsageDashboard() {
       cancelled = true
       ac.abort()
     }
-  }, [clientReady, mainRefresh, periodMode, customFrom, customTo, dashProvider, dataContext, dashApiKeyId])
+  }, [
+    clientReady,
+    mainRefresh,
+    periodMode,
+    customFrom,
+    customTo,
+    dashProvider,
+    dataContext,
+    dashApiKeyId,
+    teamMemberTeamId,
+    memberTeamsLoading,
+  ])
 
   const dailyChart = React.useMemo(
     (): MainRequestVolumeRow[] =>
@@ -1267,10 +1532,18 @@ export function UsageDashboard() {
     byModel.some((m) => m.requestCount > 0) ||
     mainSeries.some((r) => r.requestCount > 0)
 
+  const memberHasTeams = memberTeams.length > 0
+  const showNoTeamMemberBanner =
+    dataContext === "TEAM_MEMBER_ONLY" && !memberTeamsLoading && !memberHasTeams && !memberTeamsErr
+  const memberDashFiltersDisabled =
+    dataContext === "TEAM_MEMBER_ONLY" && (memberTeamsLoading || !memberHasTeams)
+
   const emptyDashboardHint =
-    dataContext === "TEAM_MEMBER_ONLY" && apiKeyOptions.length === 0
-      ? "데이터가 없습니다. 팀 키 사용 기록이 없거나 해당 공급사에 노출할 API Key가 없습니다."
-      : "선택한 기간·공급사에 대한 사용 데이터가 없습니다"
+    dataContext === "TEAM_MEMBER_ONLY" && !memberHasTeams
+      ? "소속 팀이 있으면 팀을 선택해 팀 키 기준 나의 사용량을 확인할 수 있습니다."
+      : dataContext === "TEAM_MEMBER_ONLY" && apiKeyOptions.length === 0
+        ? "선택한 팀에 등록된 API Key가 없거나, 해당 공급사에 맞는 팀 키가 없습니다."
+        : "선택한 기간·공급사에 대한 사용 데이터가 없습니다"
 
   const todayKst = formatKstIsoDate()
   const periodPrefix = kpiPeriodPrefix(rangeFrom, rangeTo, todayKst)
@@ -1382,10 +1655,24 @@ export function UsageDashboard() {
         </Button>
       </header>
 
+      {memberTeamsErr ? (
+        <p className="mb-4 text-sm text-amber-700" role="alert">
+          {memberTeamsErr}
+        </p>
+      ) : null}
+      {showNoTeamMemberBanner ? (
+        <div
+          className="mb-6 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-950 dark:text-amber-100"
+          role="note"
+        >
+          팀에 속하게 되면 팀 대시보드 사용이 가능해집니다.
+        </div>
+      ) : null}
+
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-end">
         <div className="space-y-2 sm:w-52">
           <Label htmlFor="dash-provider">공급사</Label>
-          <Select value={dashProvider} onValueChange={setDashProvider}>
+          <Select value={dashProvider} onValueChange={setDashProvider} disabled={memberDashFiltersDisabled}>
             <SelectTrigger id="dash-provider">
               <SelectValue />
             </SelectTrigger>
@@ -1398,22 +1685,58 @@ export function UsageDashboard() {
           </Select>
         </div>
 
+        {dataContext === "TEAM_MEMBER_ONLY" ? (
+          <div className="space-y-2 sm:w-52">
+            <Label htmlFor="dash-team-member-team">팀</Label>
+            <Select
+              value={teamMemberTeamId}
+              onValueChange={(v) => {
+                setTeamMemberTeamId(v)
+                setDashApiKeyId(DASHBOARD_API_KEY_ALL)
+              }}
+              disabled={memberDashFiltersDisabled}
+            >
+              <SelectTrigger id="dash-team-member-team">
+                <SelectValue
+                  placeholder={
+                    memberTeamsLoading ? "팀 목록 불러오는 중…" : !memberHasTeams ? "소속 팀 없음" : "팀 선택"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {memberTeams.map((tm) => (
+                  <SelectItem key={tm.id} value={tm.id}>
+                    {tm.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
+
         <div className="space-y-2 sm:min-w-[12rem] sm:max-w-[20rem]">
           <Label htmlFor="dash-api-key">API Key 별칭</Label>
           <Select
             value={dashApiKeyId}
             onValueChange={setDashApiKeyId}
-            disabled={dataContext === "PERSONAL" && apiKeyOptions.length === 0}
+            disabled={
+              memberDashFiltersDisabled ||
+              ((dataContext === "PERSONAL" || dataContext === "TEAM_MEMBER_ONLY") && apiKeyOptions.length === 0)
+            }
           >
             <SelectTrigger id="dash-api-key">
               <SelectValue
                 placeholder={
-                  dataContext === "PERSONAL" && apiKeyOptions.length === 0 ? "없음" : "전체"
+                  (dataContext === "PERSONAL" || dataContext === "TEAM_MEMBER_ONLY") &&
+                  apiKeyOptions.length === 0
+                    ? "없음"
+                    : "전체"
                 }
               />
             </SelectTrigger>
             <SelectContent>
-              {dataContext === "PERSONAL" && apiKeyOptions.length === 0 ? (
+              {(dataContext === "PERSONAL" || dataContext === "TEAM_MEMBER_ONLY") &&
+              apiKeyOptions.length === 0 ? (
                 <SelectItem value={DASHBOARD_API_KEY_NONE}>없음</SelectItem>
               ) : (
                 <>
@@ -1433,6 +1756,7 @@ export function UsageDashboard() {
           <Label htmlFor="dash-period">기간</Label>
           <Select
             value={periodMode}
+            disabled={memberDashFiltersDisabled}
             onValueChange={(v) => {
               const nextMode = v as PeriodMode
               setPeriodMode(nextMode)
@@ -1466,6 +1790,7 @@ export function UsageDashboard() {
                   id="custom-from"
                   type="date"
                   value={customFrom}
+                  disabled={memberDashFiltersDisabled}
                   onChange={(e) => setCustomFrom(e.target.value)}
                 />
               </div>
@@ -1475,6 +1800,7 @@ export function UsageDashboard() {
                   id="custom-to"
                   type="date"
                   value={customTo}
+                  disabled={memberDashFiltersDisabled}
                   onChange={(e) => setCustomTo(e.target.value)}
                 />
               </div>
