@@ -848,7 +848,7 @@ export function UsageDashboard() {
 
         const keyListQ = buildUsageQuery({
           provider: providerParam(dashProvider),
-          ...(dataContext === "TEAM_MEMBER_ONLY" ? { dataContext: "TEAM_MEMBER_ONLY" } : {}),
+          dataContext: dataContext === "TEAM_MEMBER_ONLY" ? "TEAM_MEMBER_ONLY" : "PERSONAL",
         })
         const apiKeysP = fetchUsageJson<UsageLogApiKeyItemResponse[]>(`logs/api-keys${keyListQ}`, fetchPolicy)
 

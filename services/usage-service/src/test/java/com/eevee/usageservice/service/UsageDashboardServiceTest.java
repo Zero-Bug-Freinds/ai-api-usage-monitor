@@ -1,8 +1,12 @@
 package com.eevee.usageservice.service;
 
+import com.eevee.usage.events.AiProvider;
 import com.eevee.usageservice.api.dto.UsageDataContext;
 import com.eevee.usageservice.api.dto.UsageSeriesUnit;
 import com.eevee.usageservice.config.UsageServiceProperties;
+import com.eevee.usageservice.domain.ApiKeyMetadataEntity;
+import com.eevee.usageservice.domain.ApiKeyStatus;
+import com.eevee.usageservice.repository.ApiKeyMetadataRepository;
 import com.eevee.usageservice.repository.UsageRecordedLogRepository;
 import com.eevee.usageservice.repository.analytics.UsageAnalyticsJdbcRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -16,6 +20,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -23,6 +28,7 @@ import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -36,6 +42,9 @@ class UsageDashboardServiceTest {
     @Mock
     private UsageRecordedLogRepository logRepository;
 
+    @Mock
+    private ApiKeyMetadataRepository apiKeyMetadataRepository;
+
     private final UsageServiceProperties properties = new UsageServiceProperties();
 
     private final Clock fixedClock = Clock.fixed(Instant.parse("2025-06-15T08:30:00Z"), ZoneOffset.UTC);
@@ -45,7 +54,13 @@ class UsageDashboardServiceTest {
     @BeforeEach
     void setUp() {
         properties.getAnalytics().setMaxRangeDays(10);
-        service = new UsageDashboardService(analyticsJdbcRepository, logRepository, properties, fixedClock, new ObjectMapper());
+        service = new UsageDashboardService(
+                analyticsJdbcRepository,
+                logRepository,
+                apiKeyMetadataRepository,
+                properties,
+                fixedClock,
+                new ObjectMapper());
     }
 
     @Test
@@ -117,5 +132,31 @@ class UsageDashboardServiceTest {
                 isNull(),
                 eq(""),
                 eq(UsageDataContext.PERSONAL));
+    }
+
+    @Test
+    void logApiKeys_personal_loadsFromMetadata_orderedByUpdatedAtDesc() {
+        ApiKeyMetadataEntity newer = ApiKeyMetadataEntity.create("2", "u1");
+        newer.apply("u1", null, "OPENAI", "beta", ApiKeyStatus.ACTIVE, Instant.parse("2025-06-20T00:00:00Z"));
+        ApiKeyMetadataEntity older = ApiKeyMetadataEntity.create("1", "u1");
+        older.apply("u1", null, "OPENAI", "alpha", ApiKeyStatus.ACTIVE, Instant.parse("2025-06-10T00:00:00Z"));
+        when(apiKeyMetadataRepository.findPersonalKeysForDashboard("u1", "OPENAI")).thenReturn(List.of(newer, older));
+
+        var keys = service.logApiKeys("u1", AiProvider.OPENAI, UsageDataContext.PERSONAL);
+
+        assertThat(keys).hasSize(2);
+        assertThat(keys.getFirst().apiKeyId()).isEqualTo("2");
+        assertThat(keys.getFirst().alias()).isEqualTo("beta");
+        verify(apiKeyMetadataRepository).findPersonalKeysForDashboard("u1", "OPENAI");
+        verify(logRepository, never()).findDistinctApiKeysForUserPersonalInRange(any(), any(), any(), any());
+    }
+
+    @Test
+    void logApiKeys_team_stillUsesUsageLogsDistinct() {
+        when(logRepository.findDistinctApiKeysForUserTeamMemberInRange(eq("u1"), any(), any(), isNull()))
+                .thenReturn(List.of());
+        service.logApiKeys("u1", null, UsageDataContext.TEAM_MEMBER_ONLY);
+        verify(logRepository).findDistinctApiKeysForUserTeamMemberInRange(eq("u1"), any(), any(), isNull());
+        verify(apiKeyMetadataRepository, never()).findPersonalKeysForDashboard(any(), any());
     }
 }
