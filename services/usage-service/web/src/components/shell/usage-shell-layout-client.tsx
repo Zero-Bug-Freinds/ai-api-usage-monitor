@@ -15,6 +15,18 @@ export function UsageShellLayoutClient({ children }: UsageShellLayoutClientProps
 
   return (
     <div className="flex min-h-full w-full min-w-0 gap-4">
+      <div className="flex shrink-0 items-start pt-1">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label={isSidebarOpen ? "사이드바 접기" : "사이드바 펼치기"}
+          onClick={() => setIsSidebarOpen((prev) => !prev)}
+        >
+          {isSidebarOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
+        </Button>
+      </div>
+
       <div
         className={[
           "transition-all duration-300 ease-out overflow-hidden",
@@ -26,20 +38,7 @@ export function UsageShellLayoutClient({ children }: UsageShellLayoutClientProps
         </Suspense>
       </div>
 
-      <div className="flex min-w-0 flex-1 gap-2 min-h-0">
-        <div className="flex shrink-0 items-start pt-1">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label={isSidebarOpen ? "사이드바 접기" : "사이드바 펼치기"}
-            onClick={() => setIsSidebarOpen((prev) => !prev)}
-          >
-            {isSidebarOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
-          </Button>
-        </div>
-        <div className="min-h-0 min-w-0 w-full flex-1">{children}</div>
-      </div>
+      <div className="min-h-0 min-w-0 flex-1">{children}</div>
     </div>
   )
 }

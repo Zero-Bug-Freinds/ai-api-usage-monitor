@@ -1249,7 +1249,7 @@ export function UsageDashboard() {
   }, [latencySeries, mainChartUnit])
 
   const latencyLegendClick = React.useCallback((o: { id?: string; dataKey?: unknown }) => {
-    let key =
+    const key =
       typeof o.id === "string"
         ? o.id
         : typeof o.dataKey === "string"

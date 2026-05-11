@@ -181,6 +181,7 @@ export function UsageLogPanel() {
   }, [
     logsPage,
     modelDraft,
+    appliedModelMask,
     logProvider,
     providerParam,
     apiKeyFilter,
