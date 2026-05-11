@@ -110,7 +110,8 @@ class UsageDashboardServiceTest {
                 any(),
                 isNull(),
                 eq(""),
-                eq(UsageDataContext.PERSONAL)))
+                eq(UsageDataContext.PERSONAL),
+                isNull()))
                 .thenReturn(100.0, 80.0);
 
         var insight = service.latencyInsight(
@@ -131,7 +132,8 @@ class UsageDashboardServiceTest {
                 any(),
                 isNull(),
                 eq(""),
-                eq(UsageDataContext.PERSONAL));
+                eq(UsageDataContext.PERSONAL),
+                isNull());
     }
 
     @Test

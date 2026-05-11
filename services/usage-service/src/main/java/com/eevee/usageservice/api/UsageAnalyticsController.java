@@ -45,11 +45,12 @@ public class UsageAnalyticsController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(required = false) AiProvider provider,
             @RequestParam(required = false) String dataContext,
-            @RequestParam(required = false) String apiKeyId
+            @RequestParam(required = false) String apiKeyId,
+            @RequestParam(required = false) String teamId
     ) {
         String userId = currentUser(request);
         UsageDataContext ctx = parseDataContext(dataContext);
-        return dashboardService.summary(userId, from, to, provider, ctx, apiKeyId);
+        return dashboardService.summary(userId, from, to, provider, ctx, apiKeyId, teamId);
     }
 
     @GetMapping("/dashboard/kpi/cost-intraday")
@@ -57,11 +58,12 @@ public class UsageAnalyticsController {
             HttpServletRequest request,
             @RequestParam(required = false) AiProvider provider,
             @RequestParam(required = false) String dataContext,
-            @RequestParam(required = false) String apiKeyId
+            @RequestParam(required = false) String apiKeyId,
+            @RequestParam(required = false) String teamId
     ) {
         String userId = currentUser(request);
         UsageDataContext ctx = parseDataContext(dataContext);
-        return dashboardService.costIntradayKpi(userId, provider, ctx, apiKeyId);
+        return dashboardService.costIntradayKpi(userId, provider, ctx, apiKeyId, teamId);
     }
 
     @GetMapping("/dashboard/series/hourly")
@@ -70,11 +72,12 @@ public class UsageAnalyticsController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
             @RequestParam(required = false) AiProvider provider,
             @RequestParam(required = false) String dataContext,
-            @RequestParam(required = false) String apiKeyId
+            @RequestParam(required = false) String apiKeyId,
+            @RequestParam(required = false) String teamId
     ) {
         String userId = currentUser(request);
         UsageDataContext ctx = parseDataContext(dataContext);
-        return dashboardService.hourlySeriesForKstDate(userId, date, provider, ctx, apiKeyId);
+        return dashboardService.hourlySeriesForKstDate(userId, date, provider, ctx, apiKeyId, teamId);
     }
 
     @GetMapping("/dashboard/series/daily")
@@ -84,11 +87,12 @@ public class UsageAnalyticsController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(required = false) AiProvider provider,
             @RequestParam(required = false) String dataContext,
-            @RequestParam(required = false) String apiKeyId
+            @RequestParam(required = false) String apiKeyId,
+            @RequestParam(required = false) String teamId
     ) {
         String userId = currentUser(request);
         UsageDataContext ctx = parseDataContext(dataContext);
-        return dashboardService.dailySeries(userId, from, to, provider, ctx, apiKeyId);
+        return dashboardService.dailySeries(userId, from, to, provider, ctx, apiKeyId, teamId);
     }
 
     @GetMapping("/dashboard/series")
@@ -99,11 +103,12 @@ public class UsageAnalyticsController {
             @RequestParam UsageSeriesUnit unit,
             @RequestParam(required = false) AiProvider provider,
             @RequestParam(required = false) String dataContext,
-            @RequestParam(required = false) String apiKeyId
+            @RequestParam(required = false) String apiKeyId,
+            @RequestParam(required = false) String teamId
     ) {
         String userId = currentUser(request);
         UsageDataContext ctx = parseDataContext(dataContext);
-        return dashboardService.series(userId, from, to, provider, unit, ctx, apiKeyId);
+        return dashboardService.series(userId, from, to, provider, unit, ctx, apiKeyId, teamId);
     }
 
     @GetMapping("/dashboard/series/latency-stability")
@@ -114,11 +119,12 @@ public class UsageAnalyticsController {
             @RequestParam UsageSeriesUnit unit,
             @RequestParam(required = false) AiProvider provider,
             @RequestParam(required = false) String dataContext,
-            @RequestParam(required = false) String apiKeyId
+            @RequestParam(required = false) String apiKeyId,
+            @RequestParam(required = false) String teamId
     ) {
         String userId = currentUser(request);
         UsageDataContext ctx = parseDataContext(dataContext);
-        return dashboardService.latencyStabilitySeries(userId, from, to, provider, unit, ctx, apiKeyId);
+        return dashboardService.latencyStabilitySeries(userId, from, to, provider, unit, ctx, apiKeyId, teamId);
     }
 
     @GetMapping("/dashboard/kpi/latency-insight")
@@ -128,11 +134,12 @@ public class UsageAnalyticsController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(required = false) AiProvider provider,
             @RequestParam(required = false) String dataContext,
-            @RequestParam(required = false) String apiKeyId
+            @RequestParam(required = false) String apiKeyId,
+            @RequestParam(required = false) String teamId
     ) {
         String userId = currentUser(request);
         UsageDataContext ctx = parseDataContext(dataContext);
-        return dashboardService.latencyInsight(userId, from, to, provider, ctx, apiKeyId);
+        return dashboardService.latencyInsight(userId, from, to, provider, ctx, apiKeyId, teamId);
     }
 
     @GetMapping("/dashboard/series/monthly")
@@ -142,11 +149,12 @@ public class UsageAnalyticsController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(required = false) AiProvider provider,
             @RequestParam(required = false) String dataContext,
-            @RequestParam(required = false) String apiKeyId
+            @RequestParam(required = false) String apiKeyId,
+            @RequestParam(required = false) String teamId
     ) {
         String userId = currentUser(request);
         UsageDataContext ctx = parseDataContext(dataContext);
-        return dashboardService.monthlySeries(userId, from, to, provider, ctx, apiKeyId);
+        return dashboardService.monthlySeries(userId, from, to, provider, ctx, apiKeyId, teamId);
     }
 
     @GetMapping("/dashboard/by-model")
@@ -156,11 +164,12 @@ public class UsageAnalyticsController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(required = false) AiProvider provider,
             @RequestParam(required = false) String dataContext,
-            @RequestParam(required = false) String apiKeyId
+            @RequestParam(required = false) String apiKeyId,
+            @RequestParam(required = false) String teamId
     ) {
         String userId = currentUser(request);
         UsageDataContext ctx = parseDataContext(dataContext);
-        return dashboardService.byModel(userId, from, to, provider, ctx, apiKeyId);
+        return dashboardService.byModel(userId, from, to, provider, ctx, apiKeyId, teamId);
     }
 
     @GetMapping("/logs")
@@ -174,6 +183,7 @@ public class UsageAnalyticsController {
             @RequestParam(required = false) String model,
             @RequestParam(required = false) String reasoningPresence,
             @RequestParam(required = false) String dataContext,
+            @RequestParam(required = false) String teamId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
@@ -190,7 +200,8 @@ public class UsageAnalyticsController {
                 reasoningPresence,
                 page,
                 size,
-                ctx
+                ctx,
+                teamId
         );
     }
 
