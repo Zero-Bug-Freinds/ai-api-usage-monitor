@@ -13,9 +13,16 @@ import { TeamMemberAvatar } from "@/components/common/team-member-avatar"
 import { formatKstIsoDate, addKstDays } from "@/lib/usage/kst-dates"
 import { EMPTY_MEMBER_MODEL_USAGE_MSG } from "@/lib/usage/team-dashboard-empty"
 import { teamUsageBffBase } from "@/lib/usage/team-usage-bff-base"
-import { DASHBOARD_API_KEY_ALL } from "@/lib/usage/dashboard-api-key-constants"
-import { teamBffKeyToUsageOption } from "@/lib/usage/api-key-options"
+import { DASHBOARD_API_KEY_ALL, DASHBOARD_API_KEY_NONE } from "@/lib/usage/dashboard-api-key-constants"
+import {
+  DASHBOARD_PROVIDER_ALL,
+  type TeamBffApiKeyRow,
+  filterTeamBffRowsByProvider,
+  parseTeamBffApiKeysPayload,
+  teamBffRowsToUsageMenuItems,
+} from "@/lib/usage/dashboard-provider-api-keys"
 import { DashboardApiKeySelectMenu } from "@/components/usage/dashboard-api-key-select-menu"
+import { useDashboardAggregateApiKeySync } from "@/lib/usage/use-dashboard-aggregate-api-key"
 import { MemberAnalyticsCharts, type MemberRow } from "./member-analytics-charts"
 
 type TeamMemberDashboardProps = {
@@ -25,7 +32,6 @@ type TeamMemberDashboardProps = {
 }
 
 type PeriodMode = "today" | "7d" | "30d"
-type TeamApiKeyRow = { id: string; alias: string; provider: string; updatedAt: string; status?: string }
 type TeamMemberProfile = { userId: string; displayName?: string; role?: string }
 type ModelAgg = {
   model: string
@@ -48,8 +54,6 @@ type BffResponse = {
   summary?: BffSummary
 }
 type MemberSeries = { userId: string; displayName: string; requests: number }
-
-const PROVIDER_ALL = "__ALL__"
 
 const memberDashboardCache = new Map<string, BffResponse>()
 
@@ -105,8 +109,8 @@ function rowFromBff(profile: TeamMemberProfile, body: BffResponse): MemberRow {
 export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMemberDashboardProps) {
   const todayKst = formatKstIsoDate()
   const [periodMode, setPeriodMode] = useState<PeriodMode>("7d")
-  const [provider, setProvider] = useState<string>(PROVIDER_ALL)
-  const [apiKeyRows, setApiKeyRows] = useState<TeamApiKeyRow[]>([])
+  const [provider, setProvider] = useState<string>(DASHBOARD_PROVIDER_ALL)
+  const [apiKeyRows, setApiKeyRows] = useState<TeamBffApiKeyRow[]>([])
   const [apiKeyId, setApiKeyId] = useState<string>(DASHBOARD_API_KEY_ALL)
   const [keysLoading, setKeysLoading] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -134,29 +138,13 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
       headers: { Accept: "application/json" },
     })
       .then(async (r) => {
-        const json = (await r.json()) as { apiKeys?: unknown }
-        if (!r.ok || !Array.isArray(json.apiKeys)) return []
-        return (json.apiKeys as unknown[])
-          .map((item): TeamApiKeyRow | null => {
-            if (!item || typeof item !== "object") return null
-            const o = item as Record<string, unknown>
-            if ((typeof o.id !== "number" && typeof o.id !== "string") || typeof o.alias !== "string") return null
-            if (typeof o.provider !== "string") return null
-            const updatedAt = typeof o.updatedAt === "string" ? o.updatedAt : ""
-            const status = typeof o.status === "string" ? o.status : undefined
-            return { id: String(o.id), alias: o.alias, provider: o.provider, updatedAt, status }
-          })
-          .filter((x): x is TeamApiKeyRow => x !== null)
-          .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))
+        const json = await r.json()
+        if (!r.ok) return []
+        return parseTeamBffApiKeysPayload(json)
       })
       .then((rows) => {
         if (cancelled) return
         setApiKeyRows(rows)
-        setApiKeyId((prev) => {
-          if (prev === DASHBOARD_API_KEY_ALL) return DASHBOARD_API_KEY_ALL
-          if (prev && rows.some((x) => x.id === prev)) return prev
-          return DASHBOARD_API_KEY_ALL
-        })
       })
       .catch(() => {
         if (!cancelled) {
@@ -171,6 +159,17 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
       cancelled = true
     }
   }, [teamId, isActive])
+
+  const filteredApiKeyRows = useMemo(
+    () => filterTeamBffRowsByProvider(apiKeyRows, provider),
+    [apiKeyRows, provider],
+  )
+  const apiKeyMenuItems = useMemo(
+    () => teamBffRowsToUsageMenuItems(filteredApiKeyRows),
+    [filteredApiKeyRows],
+  )
+
+  useDashboardAggregateApiKeySync(apiKeyMenuItems, apiKeyId, setApiKeyId, true)
 
   useEffect(() => {
     setMemberRows([])
@@ -195,8 +194,9 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
       teamId,
       from: range.from,
       to: range.to,
-      provider: provider === PROVIDER_ALL ? undefined : provider,
-      apiKeyId: apiKeyId !== DASHBOARD_API_KEY_ALL ? apiKeyId : undefined,
+      provider: provider === DASHBOARD_PROVIDER_ALL ? undefined : provider,
+      apiKeyId:
+        apiKeyId !== DASHBOARD_API_KEY_ALL && apiKeyId !== DASHBOARD_API_KEY_NONE ? apiKeyId : undefined,
     })
 
     fetch(`${base}/dashboard?${qTotal}`, {
@@ -225,7 +225,7 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
               userId: profile.userId,
               from: range.from,
               to: range.to,
-              provider: provider === PROVIDER_ALL ? undefined : provider,
+              provider: provider === DASHBOARD_PROVIDER_ALL ? undefined : provider,
             })
             const r = await fetch(`${base}/dashboard?${qMember}`, {
               credentials: "include",
@@ -287,7 +287,7 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
           <Select value={provider} onValueChange={setProvider}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value={PROVIDER_ALL}>전체</SelectItem>
+              <SelectItem value={DASHBOARD_PROVIDER_ALL}>전체</SelectItem>
               <SelectItem value="GOOGLE">Gemini (Google)</SelectItem>
               <SelectItem value="OPENAI">OpenAI</SelectItem>
               <SelectItem value="ANTHROPIC">Anthropic</SelectItem>
@@ -298,13 +298,15 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
           <Label>API Key</Label>
           <Select value={apiKeyId} onValueChange={setApiKeyId} disabled={keysLoading}>
             <SelectTrigger>
-              <SelectValue placeholder={keysLoading ? "불러오는 중…" : "전체"} />
+              <SelectValue placeholder={keysLoading ? "불러오는 중…" : apiKeyMenuItems.length === 0 ? "없음" : "전체"} />
             </SelectTrigger>
             <SelectContent className="max-h-[min(70vh,26rem)]">
               <DashboardApiKeySelectMenu
-                items={apiKeyRows.map(teamBffKeyToUsageOption)}
+                items={apiKeyMenuItems}
                 allValue={DASHBOARD_API_KEY_ALL}
-                showAllOption
+                showAllOption={apiKeyMenuItems.length > 0}
+                noneValue={DASHBOARD_API_KEY_NONE}
+                showNoneOption={apiKeyMenuItems.length === 0}
               />
             </SelectContent>
           </Select>

@@ -44,13 +44,21 @@ import type {
   MonthlyUsagePoint,
   UsageCostIntradayKpiResponse,
   UsageLogApiKeyItemResponse,
-  UsageProviderFilter,
   UsageSeriesPoint,
   UsageSeriesUnit,
   UsageSummaryResponse,
 } from "@/lib/usage/types"
 import { addKstDays, formatKstIsoDate } from "@/lib/usage/kst-dates"
 import { DASHBOARD_API_KEY_ALL, DASHBOARD_API_KEY_NONE } from "@/lib/usage/dashboard-api-key-constants"
+import {
+  DASHBOARD_PROVIDER_ALL,
+  dashboardProviderQueryParam,
+  filterTeamBffRowsByProvider,
+  parseTeamBffApiKeysPayload,
+  teamBffRowsToUsageMenuItems,
+  type TeamBffApiKeyRow,
+} from "@/lib/usage/dashboard-provider-api-keys"
+import { useDashboardAggregateApiKeySync } from "@/lib/usage/use-dashboard-aggregate-api-key"
 import { DashboardApiKeySelectMenu } from "@/components/usage/dashboard-api-key-select-menu"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -73,7 +81,6 @@ const MONTHLY_LOOKBACK_DAYS = 365
 const MAX_RANGE_DAYS = 366
 const HISTORY_CACHE_TTL_MS = 60 * 60 * 1000
 
-const DASHBOARD_PROVIDER_ALL = "__ALL__"
 const DASHBOARD_PROVIDER_STORAGE_KEY = "usage-dashboard:provider:v1"
 const DASHBOARD_PERIOD_STORAGE_KEY = "usage-dashboard:period:v1"
 /** 개인 대시보드 전용. 팀 대시보드·팀 멤버 뷰와 sessionStorage 충돌 없음. */
@@ -232,40 +239,6 @@ function pickMemberTeamIdFromSources(list: MemberTeamSummary[]): string {
   return pickOldestMemberTeamId(list)
 }
 
-async function fetchTeamApiKeysForMemberDashboard(
-  teamId: string,
-  provider: UsageProviderFilter | undefined
-): Promise<UsageLogApiKeyItemResponse[]> {
-  const base = teamUsageBffBase()
-  if (!base || !teamId) return []
-  const res = await fetch(`${base}/teams/${encodeURIComponent(teamId)}/api-keys`, {
-    credentials: "include",
-    headers: { Accept: "application/json" },
-  })
-  const json = (await res.json()) as { apiKeys?: unknown }
-  if (!res.ok || !Array.isArray(json.apiKeys)) return []
-  type Parsed = { apiKeyId: string; alias: string; sortKey: string; status: UsageLogApiKeyItemResponse["status"] }
-  const rows = (json.apiKeys as unknown[])
-    .map((item): Parsed | null => {
-      if (!item || typeof item !== "object") return null
-      const o = item as Record<string, unknown>
-      if ((typeof o.id !== "number" && typeof o.id !== "string") || typeof o.alias !== "string") return null
-      const apiKeyId = String(o.id)
-      const pRaw = typeof o.provider === "string" ? o.provider.toUpperCase() : ""
-      if (provider && pRaw && pRaw !== String(provider)) return null
-      const createdAt = typeof o.createdAt === "string" ? o.createdAt : ""
-      const updatedAt = typeof o.updatedAt === "string" ? o.updatedAt : ""
-      const sortKey = (createdAt || updatedAt || "").trim()
-      const st = o.status
-      const status: UsageLogApiKeyItemResponse["status"] =
-        st === "DELETED" || st === "DELETION_REQUESTED" || st === "ACTIVE" ? st : "ACTIVE"
-      return { apiKeyId, alias: o.alias, sortKey, status }
-    })
-    .filter((x): x is Parsed => x !== null)
-  rows.sort((a, b) => b.sortKey.localeCompare(a.sortKey))
-  return rows.map((r) => ({ apiKeyId: r.apiKeyId, alias: r.alias, status: r.status }))
-}
-
 function tooltipNumericValue(value: unknown): number {
   if (typeof value === "number") return value
   if (typeof value === "string") return toNumber(value)
@@ -275,11 +248,6 @@ function tooltipNumericValue(value: unknown): number {
 function truncateModelLabel(model: string, max = 36) {
   if (model.length <= max) return model
   return `${model.slice(0, max - 1)}…`
-}
-
-function providerParam(v: string): UsageProviderFilter | undefined {
-  if (v === DASHBOARD_PROVIDER_ALL) return undefined
-  return v as UsageProviderFilter
 }
 
 type DashboardDataContext = "PERSONAL" | "TEAM_MEMBER_ONLY"
@@ -844,11 +812,27 @@ export function UsageDashboard() {
   const [dashApiKeyId, setDashApiKeyId] = React.useState<string>(() =>
     dataContext === "PERSONAL" ? readStoredPersonalDashboardApiKeyId() : readStoredTeamMyUsageApiKeyId()
   )
-  const [apiKeyOptions, setApiKeyOptions] = React.useState<UsageLogApiKeyItemResponse[]>([])
+  const [personalApiKeyOptions, setPersonalApiKeyOptions] = React.useState<UsageLogApiKeyItemResponse[]>([])
+  const [teamMemberRawApiKeyRows, setTeamMemberRawApiKeyRows] = React.useState<TeamBffApiKeyRow[]>([])
+  const [teamMemberKeysLoading, setTeamMemberKeysLoading] = React.useState(false)
   const [memberTeams, setMemberTeams] = React.useState<MemberTeamSummary[]>([])
   const [memberTeamsLoading, setMemberTeamsLoading] = React.useState(false)
   const [memberTeamsErr, setMemberTeamsErr] = React.useState<string | null>(null)
   const [teamMemberTeamId, setTeamMemberTeamId] = React.useState("")
+
+  const apiKeyOptions = React.useMemo(() => {
+    if (dataContext === "TEAM_MEMBER_ONLY") {
+      return teamBffRowsToUsageMenuItems(filterTeamBffRowsByProvider(teamMemberRawApiKeyRows, dashProvider))
+    }
+    return personalApiKeyOptions
+  }, [dataContext, teamMemberRawApiKeyRows, dashProvider, personalApiKeyOptions])
+
+  useDashboardAggregateApiKeySync(
+    apiKeyOptions,
+    dashApiKeyId,
+    setDashApiKeyId,
+    dataContext === "PERSONAL" || dataContext === "TEAM_MEMBER_ONLY",
+  )
 
   const [mainLoading, setMainLoading] = React.useState(true)
   const [mainError, setMainError] = React.useState<string | null>(null)
@@ -895,52 +879,6 @@ export function UsageDashboard() {
       setDashApiKeyId(readStoredPersonalDashboardApiKeyId())
     }
   }, [clientReady, dataContextParam])
-
-  React.useEffect(() => {
-    if (dataContext === "PERSONAL") {
-      if (apiKeyOptions.length === 0) {
-        if (dashApiKeyId !== DASHBOARD_API_KEY_NONE) {
-          setDashApiKeyId(DASHBOARD_API_KEY_NONE)
-        }
-        return
-      }
-      if (dashApiKeyId === DASHBOARD_API_KEY_NONE) {
-        setDashApiKeyId(DASHBOARD_API_KEY_ALL)
-        return
-      }
-      if (dashApiKeyId === DASHBOARD_API_KEY_ALL) return
-      if (!apiKeyOptions.some((x: UsageLogApiKeyItemResponse) => x.apiKeyId === dashApiKeyId)) {
-        setDashApiKeyId(DASHBOARD_API_KEY_ALL)
-      }
-      return
-    }
-    if (dataContext === "TEAM_MEMBER_ONLY") {
-      if (apiKeyOptions.length === 0) {
-        if (dashApiKeyId !== DASHBOARD_API_KEY_NONE) {
-          setDashApiKeyId(DASHBOARD_API_KEY_NONE)
-        }
-        return
-      }
-      if (dashApiKeyId === DASHBOARD_API_KEY_NONE) {
-        setDashApiKeyId(DASHBOARD_API_KEY_ALL)
-        return
-      }
-      if (dashApiKeyId === DASHBOARD_API_KEY_ALL) return
-      if (!apiKeyOptions.some((x: UsageLogApiKeyItemResponse) => x.apiKeyId === dashApiKeyId)) {
-        setDashApiKeyId(DASHBOARD_API_KEY_ALL)
-      }
-      return
-    }
-    if (dashApiKeyId === DASHBOARD_API_KEY_NONE) {
-      setDashApiKeyId(DASHBOARD_API_KEY_ALL)
-      return
-    }
-    if (dashApiKeyId === DASHBOARD_API_KEY_ALL) return
-    if (apiKeyOptions.length === 0) return
-    if (!apiKeyOptions.some((x: UsageLogApiKeyItemResponse) => x.apiKeyId === dashApiKeyId)) {
-      setDashApiKeyId(DASHBOARD_API_KEY_ALL)
-    }
-  }, [apiKeyOptions, dashApiKeyId, dataContext])
 
   React.useEffect(() => {
     if (!clientReady || typeof sessionStorage === "undefined") return
@@ -1074,6 +1012,43 @@ export function UsageDashboard() {
     }
   }, [dataContext, teamMemberTeamId])
 
+  React.useEffect(() => {
+    if (dataContext !== "TEAM_MEMBER_ONLY" || !teamMemberTeamId) {
+      setTeamMemberRawApiKeyRows([])
+      setTeamMemberKeysLoading(false)
+      return
+    }
+    let cancelled = false
+    setTeamMemberKeysLoading(true)
+    const base = teamUsageBffBase()
+    if (!base) {
+      setTeamMemberRawApiKeyRows([])
+      setTeamMemberKeysLoading(false)
+      return
+    }
+    void fetch(`${base}/teams/${encodeURIComponent(teamMemberTeamId)}/api-keys`, {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    })
+      .then(async (r) => {
+        const json = await r.json()
+        if (!r.ok) {
+          if (!cancelled) setTeamMemberRawApiKeyRows([])
+          return
+        }
+        if (!cancelled) setTeamMemberRawApiKeyRows(parseTeamBffApiKeysPayload(json))
+      })
+      .catch(() => {
+        if (!cancelled) setTeamMemberRawApiKeyRows([])
+      })
+      .finally(() => {
+        if (!cancelled) setTeamMemberKeysLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [dataContext, teamMemberTeamId])
+
   const kstTodayFallback = formatKstIsoDate()
   const rangeFrom = loadedRange?.from ?? kstTodayFallback
   const rangeTo = loadedRange?.to ?? kstTodayFallback
@@ -1081,6 +1056,7 @@ export function UsageDashboard() {
   React.useEffect(() => {
     if (!clientReady) return
     if (dataContext === "TEAM_MEMBER_ONLY" && memberTeamsLoading) return
+    if (dataContext === "TEAM_MEMBER_ONLY" && teamMemberTeamId && teamMemberKeysLoading) return
     const ac = new AbortController()
     const { signal } = ac
     let cancelled = false
@@ -1108,7 +1084,6 @@ export function UsageDashboard() {
             setDaily([])
             setMonthly([])
             setByModel([])
-            setApiKeyOptions([])
             setLatencySeries([])
             setLatencyInsight(null)
             setLatencyLegendHidden({})
@@ -1125,31 +1100,31 @@ export function UsageDashboard() {
           dashApiKeyId,
           dataContext === "TEAM_MEMBER_ONLY" ? teamMemberTeamId : undefined
         )
-        const pq = buildUsageQuery({ provider: providerParam(dashProvider), ...scopeExtra })
+        const pq = buildUsageQuery({ provider: dashboardProviderQueryParam(dashProvider), ...scopeExtra })
         const qRange = buildUsageQuery({
           from: rf,
           to: rt,
-          provider: providerParam(dashProvider),
+          provider: dashboardProviderQueryParam(dashProvider),
           ...scopeExtra,
         })
         const qPrev = buildUsageQuery({
           from: pf,
           to: pt,
-          provider: providerParam(dashProvider),
+          provider: dashboardProviderQueryParam(dashProvider),
           ...scopeExtra,
         })
         const qMainSeries = buildUsageQuery({
           from: rf,
           to: rt,
           unit: seriesUnit,
-          provider: providerParam(dashProvider),
+          provider: dashboardProviderQueryParam(dashProvider),
           ...scopeExtra,
         })
         const qLatencyStability = buildUsageQuery({
           from: rf,
           to: rt,
           unit: seriesUnit,
-          provider: providerParam(dashProvider),
+          provider: dashboardProviderQueryParam(dashProvider),
           ...scopeExtra,
         })
 
@@ -1158,13 +1133,13 @@ export function UsageDashboard() {
           : { signal, cacheMode: "default" as const, clientCacheTtlMs: HISTORY_CACHE_TTL_MS }
 
         const keyListQ = buildUsageQuery({
-          provider: providerParam(dashProvider),
+          provider: dashboardProviderQueryParam(dashProvider),
           dataContext: dataContext === "TEAM_MEMBER_ONLY" ? "TEAM_MEMBER_ONLY" : "PERSONAL",
         })
-        const apiKeysP =
-          dataContext === "TEAM_MEMBER_ONLY"
-            ? fetchTeamApiKeysForMemberDashboard(teamMemberTeamId, providerParam(dashProvider))
-            : fetchUsageJson<UsageLogApiKeyItemResponse[]>(`logs/api-keys${keyListQ}`, fetchPolicy)
+        const personalKeysP =
+          dataContext === "PERSONAL"
+            ? fetchUsageJson<UsageLogApiKeyItemResponse[]>(`logs/api-keys${keyListQ}`, fetchPolicy)
+            : Promise.resolve([] as UsageLogApiKeyItemResponse[])
 
         const summaryP = fetchUsageJson<UsageSummaryResponse>(`dashboard/summary${qRange}`, fetchPolicy)
         const summaryPrevP = fetchUsageJson<UsageSummaryResponse>(`dashboard/summary${qPrev}`, fetchPolicy)
@@ -1174,7 +1149,7 @@ export function UsageDashboard() {
           `dashboard/series/monthly${buildUsageQuery({
             from: fy,
             to: rt,
-            provider: providerParam(dashProvider),
+            provider: dashboardProviderQueryParam(dashProvider),
             ...scopeExtra,
           })}`,
           fetchPolicy
@@ -1189,7 +1164,7 @@ export function UsageDashboard() {
           fetchPolicy
         )
 
-        const [cur, prev, seriesRows, d, m, bm, maybeKpi, keys, latRows, latInsight] = await Promise.all([
+        const [cur, prev, seriesRows, d, m, bm, maybeKpi, personalKeys, latRows, latInsight] = await Promise.all([
           summaryP,
           summaryPrevP,
           mainSeriesP,
@@ -1199,7 +1174,7 @@ export function UsageDashboard() {
           isCurrentDayRange
             ? fetchUsageJson<UsageCostIntradayKpiResponse>(`dashboard/kpi/cost-intraday${pq}`, fetchPolicy)
             : Promise.resolve(null),
-          apiKeysP,
+          personalKeysP,
           latencyStabilityP,
           latencyInsightP,
         ])
@@ -1212,14 +1187,8 @@ export function UsageDashboard() {
           setDaily(Array.isArray(d) ? d : [])
           setMonthly(Array.isArray(m) ? m : [])
           setByModel(Array.isArray(bm) ? bm : [])
-          const keyList = Array.isArray(keys) ? keys : []
-          setApiKeyOptions(keyList)
-          if (dataContext === "PERSONAL" || dataContext === "TEAM_MEMBER_ONLY") {
-            if (keyList.length === 0) {
-              setDashApiKeyId(DASHBOARD_API_KEY_NONE)
-            } else {
-              setDashApiKeyId((prev) => (prev === DASHBOARD_API_KEY_NONE ? DASHBOARD_API_KEY_ALL : prev))
-            }
+          if (dataContext === "PERSONAL") {
+            setPersonalApiKeyOptions(Array.isArray(personalKeys) ? personalKeys : [])
           }
           setLatencySeries(Array.isArray(latRows) ? latRows : [])
           setLatencyInsight(latInsight ?? null)
@@ -1249,6 +1218,7 @@ export function UsageDashboard() {
     dashApiKeyId,
     teamMemberTeamId,
     memberTeamsLoading,
+    teamMemberKeysLoading,
   ])
 
   const dailyChart = React.useMemo(
@@ -1538,7 +1508,8 @@ export function UsageDashboard() {
   const showNoTeamMemberBanner =
     dataContext === "TEAM_MEMBER_ONLY" && !memberTeamsLoading && !memberHasTeams && !memberTeamsErr
   const memberDashFiltersDisabled =
-    dataContext === "TEAM_MEMBER_ONLY" && (memberTeamsLoading || !memberHasTeams)
+    dataContext === "TEAM_MEMBER_ONLY" &&
+    (memberTeamsLoading || !memberHasTeams || (Boolean(teamMemberTeamId) && teamMemberKeysLoading))
 
   const emptyDashboardHint =
     dataContext === "TEAM_MEMBER_ONLY" && !memberHasTeams

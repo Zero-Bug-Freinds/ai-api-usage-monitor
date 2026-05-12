@@ -30,11 +30,16 @@ import { formatKstIsoDate, addKstDays } from "@/lib/usage/kst-dates"
 import { formatRequestCount, formatTokenCount, formatUsd, toNumber } from "@/lib/usage/format"
 import { EMPTY_MEMBER_MODEL_USAGE_MSG } from "@/lib/usage/team-dashboard-empty"
 import { teamUsageBffBase } from "@/lib/usage/team-usage-bff-base"
-import { DASHBOARD_API_KEY_ALL } from "@/lib/usage/dashboard-api-key-constants"
-import { teamBffKeyToUsageOption } from "@/lib/usage/api-key-options"
+import { DASHBOARD_API_KEY_ALL, DASHBOARD_API_KEY_NONE } from "@/lib/usage/dashboard-api-key-constants"
+import {
+  DASHBOARD_PROVIDER_ALL,
+  type TeamBffApiKeyRow,
+  filterTeamBffRowsByProvider,
+  parseTeamBffApiKeysPayload,
+  teamBffRowsToUsageMenuItems,
+} from "@/lib/usage/dashboard-provider-api-keys"
 import { DashboardApiKeySelectMenu } from "@/components/usage/dashboard-api-key-select-menu"
-
-const PROVIDER_ALL = "__ALL__"
+import { useDashboardAggregateApiKeySync } from "@/lib/usage/use-dashboard-aggregate-api-key"
 const LAST_TEAM_STORAGE_KEY = "last_team_id"
 
 export type TeamDashboardProps = {
@@ -75,13 +80,6 @@ type BffResponse = {
 }
 
 type TeamSummary = { id: string; name: string; createdAt?: string }
-type TeamApiKeyRow = {
-  id: string
-  alias: string
-  provider: string
-  updatedAt: string
-  status?: string
-}
 type PeriodMode = "today" | "7d" | "30d" | "custom"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -206,7 +204,7 @@ export default function TeamDashboard({
   onEffectiveTeamChange,
 }: TeamDashboardProps) {
   const todayKst = formatKstIsoDate()
-  const [dashProvider, setDashProvider] = React.useState(PROVIDER_ALL)
+  const [dashProvider, setDashProvider] = React.useState(DASHBOARD_PROVIDER_ALL)
   const [periodMode, setPeriodMode] = React.useState<PeriodMode>("today")
   const [customFrom, setCustomFrom] = React.useState(todayKst)
   const [customTo, setCustomTo] = React.useState(todayKst)
@@ -218,7 +216,7 @@ export default function TeamDashboard({
   const [teamsLoading, setTeamsLoading] = React.useState(true)
   const [teamsErr, setTeamsErr] = React.useState<string | null>(null)
   const [selectedTeamId, setSelectedTeamId] = React.useState("")
-  const [apiKeyRows, setApiKeyRows] = React.useState<TeamApiKeyRow[]>([])
+  const [apiKeyRows, setApiKeyRows] = React.useState<TeamBffApiKeyRow[]>([])
   const [keysLoading, setKeysLoading] = React.useState(false)
   const [selectedApiKeyId, setSelectedApiKeyId] = React.useState<string>(DASHBOARD_API_KEY_ALL)
   const [loading, setLoading] = React.useState(false)
@@ -299,29 +297,13 @@ export default function TeamDashboard({
       headers: { Accept: "application/json" },
     })
       .then(async (r) => {
-        const json = (await r.json()) as { apiKeys?: unknown }
-        if (!r.ok || !Array.isArray(json.apiKeys)) return []
-        return (json.apiKeys as unknown[])
-          .map((item): TeamApiKeyRow | null => {
-            if (!item || typeof item !== "object") return null
-            const o = item as Record<string, unknown>
-            if ((typeof o.id !== "number" && typeof o.id !== "string") || typeof o.alias !== "string" || typeof o.provider !== "string")
-              return null
-            const updatedAt = typeof o.updatedAt === "string" ? o.updatedAt : ""
-            const status = typeof o.status === "string" ? o.status : undefined
-            return { id: String(o.id), alias: o.alias, provider: o.provider, updatedAt, status }
-          })
-          .filter((x): x is TeamApiKeyRow => x !== null)
-          .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))
+        const json = await r.json()
+        if (!r.ok) return []
+        return parseTeamBffApiKeysPayload(json)
       })
       .then((sorted) => {
         if (cancelled) return
         setApiKeyRows(sorted)
-        setSelectedApiKeyId((prev) => {
-          if (prev === DASHBOARD_API_KEY_ALL) return DASHBOARD_API_KEY_ALL
-          if (prev && sorted.some((k) => k.id === prev)) return prev
-          return DASHBOARD_API_KEY_ALL
-        })
       })
       .catch(() => {
         if (!cancelled) setApiKeyRows([])
@@ -333,6 +315,17 @@ export default function TeamDashboard({
       cancelled = true
     }
   }, [selectedTeamId])
+
+  const filteredApiKeyRows = React.useMemo(
+    () => filterTeamBffRowsByProvider(apiKeyRows, dashProvider),
+    [apiKeyRows, dashProvider],
+  )
+  const apiKeyMenuItems = React.useMemo(
+    () => teamBffRowsToUsageMenuItems(filteredApiKeyRows),
+    [filteredApiKeyRows],
+  )
+
+  useDashboardAggregateApiKeySync(apiKeyMenuItems, selectedApiKeyId, setSelectedApiKeyId, true)
 
   const effectiveTeamId = selectedTeamId
   React.useEffect(() => {
@@ -357,8 +350,11 @@ export default function TeamDashboard({
       teamId: effectiveTeamId,
       from: range.from,
       to: range.to,
-      provider: dashProvider === PROVIDER_ALL ? undefined : dashProvider,
-      apiKeyId: selectedApiKeyId !== DASHBOARD_API_KEY_ALL ? selectedApiKeyId : undefined,
+      provider: dashProvider === DASHBOARD_PROVIDER_ALL ? undefined : dashProvider,
+      apiKeyId:
+        selectedApiKeyId !== DASHBOARD_API_KEY_ALL && selectedApiKeyId !== DASHBOARD_API_KEY_NONE
+          ? selectedApiKeyId
+          : undefined,
     })
     fetch(`${base}/dashboard?${q}`, { credentials: "include", headers: { Accept: "application/json" } })
       .then(async (r) => {
@@ -466,7 +462,7 @@ export default function TeamDashboard({
           <Select value={dashProvider} onValueChange={setDashProvider}>
             <SelectTrigger id="team-dash-provider"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value={PROVIDER_ALL}>전체</SelectItem>
+              <SelectItem value={DASHBOARD_PROVIDER_ALL}>전체</SelectItem>
               <SelectItem value="GOOGLE">Gemini (Google)</SelectItem>
               <SelectItem value="OPENAI">OpenAI</SelectItem>
               <SelectItem value="ANTHROPIC">Anthropic</SelectItem>
@@ -494,13 +490,15 @@ export default function TeamDashboard({
           <Label>API Key</Label>
           <Select value={selectedApiKeyId} onValueChange={setSelectedApiKeyId} disabled={keysLoading}>
             <SelectTrigger>
-              <SelectValue placeholder={keysLoading ? "불러오는 중…" : "전체"} />
+              <SelectValue placeholder={keysLoading ? "불러오는 중…" : apiKeyMenuItems.length === 0 ? "없음" : "전체"} />
             </SelectTrigger>
             <SelectContent className="max-h-[min(70vh,26rem)]">
               <DashboardApiKeySelectMenu
-                items={apiKeyRows.map(teamBffKeyToUsageOption)}
+                items={apiKeyMenuItems}
                 allValue={DASHBOARD_API_KEY_ALL}
-                showAllOption
+                showAllOption={apiKeyMenuItems.length > 0}
+                noneValue={DASHBOARD_API_KEY_NONE}
+                showNoneOption={apiKeyMenuItems.length === 0}
               />
             </SelectContent>
           </Select>
