@@ -216,9 +216,10 @@ function ModelShareTooltip({ active, payload }: TooltipContentArgs<StackedMember
 }
 
 function MemberYAxisTick(props: {
-  x?: number
-  y?: number
-  payload?: { value?: string }
+  // Recharts tick payload may provide string/number depending on formatter pipeline.
+  x?: number | string
+  y?: number | string
+  payload?: { value?: string | number }
   rowsByUserId: Map<string, StackedMemberRow>
   compact: boolean
 }) {
