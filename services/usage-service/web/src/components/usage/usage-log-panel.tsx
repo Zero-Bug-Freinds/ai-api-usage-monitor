@@ -41,7 +41,6 @@ import {
   readStoredLogDataTab,
   type UsageLogDataTab,
 } from "@/lib/usage/usage-log-tab-storage"
-import { partitionUsageApiKeys } from "@/lib/usage/api-key-options"
 
 const LOGS_PAGE_SIZE = 20
 const LOG_PROVIDER_ALL = "__all__"
