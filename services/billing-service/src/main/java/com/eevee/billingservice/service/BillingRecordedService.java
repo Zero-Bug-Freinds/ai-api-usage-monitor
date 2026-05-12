@@ -22,7 +22,12 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
 @Service
@@ -31,6 +36,10 @@ public class BillingRecordedService {
     private static final Logger log = LoggerFactory.getLogger(BillingRecordedService.class);
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
     private static final Pattern OPENAI_DATED_SNAPSHOT_SUFFIX = Pattern.compile("^(?<base>.+)-\\d{4}-\\d{2}-\\d{2}$");
+    /** Cap distinct (provider, model) keys that emit a one-time WARN; further misses are DEBUG-only. */
+    private static final int MISSING_PRICE_WARN_KEY_CAP = 256;
+
+    private final ConcurrentHashMap<String, Boolean> missingPriceWarnOnceKeys = new ConcurrentHashMap<>();
 
     private final BillingProcessedEventRepository processedEventRepository;
     private final ProviderModelPriceRepository priceRepository;
@@ -258,6 +267,9 @@ public class BillingRecordedService {
         if (price == null) {
             price = resolveAliasedPrice(event.provider(), model, occurredAt);
         }
+        if (price == null) {
+            warnMissingModelPriceOnce(event.provider(), model, event.eventId());
+        }
 
         BigDecimal cost = ExpenditureCostCalculator.compute(event.tokenUsage(), price);
         ExpenditureCostCalculator.NormalizedTokens tokens = ExpenditureCostCalculator.normalizeTokens(event.tokenUsage());
@@ -287,15 +299,44 @@ public class BillingRecordedService {
         return null;
     }
 
+    private void warnMissingModelPriceOnce(AiProvider provider, String model, UUID eventId) {
+        String key = provider.name() + "\0" + model;
+        if (missingPriceWarnOnceKeys.size() < MISSING_PRICE_WARN_KEY_CAP
+                && missingPriceWarnOnceKeys.putIfAbsent(key, Boolean.TRUE) == null) {
+            log.warn(
+                    "Missing provider_model_price; cost counted as zero until catalog/seed covers it. provider={} model={} exampleEventId={}",
+                    provider,
+                    model,
+                    eventId);
+        } else {
+            log.debug("Missing provider_model_price; cost zero. provider={} model={} eventId={}", provider, model, eventId);
+        }
+    }
+
     /**
-     * OpenAI models may include dated snapshot suffixes (ex: {@code gpt-5.4-mini-2026-03-17}).
-     * Billing pricing is keyed by exact (provider, model), so we resolve against the base model
-     * and persist a compatible alias price row for future events.
+     * Resolves catalog prices when usage records a variant string (dated snapshots, API-specific suffixes).
+     * Seeds an alias {@link ProviderModelPriceEntity} row so later exact lookups succeed.
      */
     private ProviderModelPriceEntity resolveAliasedPrice(AiProvider provider, String model, Instant at) {
-        if (provider != AiProvider.OPENAI || model == null || model.isBlank()) {
+        if (model == null || model.isBlank()) {
             return null;
         }
+        if (provider == AiProvider.OPENAI) {
+            return resolveOpenAiDatedSnapshotAlias(model, at);
+        }
+        if (provider == AiProvider.GOOGLE) {
+            return resolveCatalogAliasFromCandidates(provider, model, googlePricingAliasCandidates(model), at);
+        }
+        if (provider == AiProvider.ANTHROPIC) {
+            return resolveCatalogAliasFromCandidates(provider, model, anthropicPricingAliasCandidates(model), at);
+        }
+        return null;
+    }
+
+    /**
+     * OpenAI models may include dated snapshot suffixes (ex: {@code gpt-5.4-mini-2026-03-17}).
+     */
+    private ProviderModelPriceEntity resolveOpenAiDatedSnapshotAlias(String model, Instant at) {
         var m = OPENAI_DATED_SNAPSHOT_SUFFIX.matcher(model);
         if (!m.matches()) {
             return null;
@@ -306,7 +347,7 @@ public class BillingRecordedService {
         }
 
         ProviderModelPriceEntity basePrice = priceRepository
-                .findActivePrices(provider, base, at, PageRequest.of(0, 1))
+                .findActivePrices(AiProvider.OPENAI, base, at, PageRequest.of(0, 1))
                 .stream()
                 .findFirst()
                 .orElse(null);
@@ -314,21 +355,79 @@ public class BillingRecordedService {
             return null;
         }
 
+        seedProviderModelAliasIfMissing(AiProvider.OPENAI, model, base, basePrice);
+        return basePrice;
+    }
+
+    /**
+     * Gemini usage often reports {@code models/...} paths or {@code -001} style API versions while the seed
+     * catalog keys the undecorated id (see proxy / usage samples in this repo).
+     */
+    private static List<String> googlePricingAliasCandidates(String model) {
+        LinkedHashSet<String> out = new LinkedHashSet<>();
+        String t = model.trim();
+        if (t.startsWith("models/")) {
+            out.add(t.substring("models/".length()).trim());
+        }
+        out.add(t.replaceFirst("-\\d{3}$", ""));
+        if (t.startsWith("models/")) {
+            String inner = t.substring("models/".length()).trim();
+            out.add(inner.replaceFirst("-\\d{3}$", ""));
+            var innerDated = OPENAI_DATED_SNAPSHOT_SUFFIX.matcher(inner);
+            if (innerDated.matches()) {
+                out.add(innerDated.group("base"));
+            }
+        }
+        var dated = OPENAI_DATED_SNAPSHOT_SUFFIX.matcher(t);
+        if (dated.matches()) {
+            out.add(dated.group("base"));
+        }
+        return new ArrayList<>(out);
+    }
+
+    /** Anthropic dated releases use an {@code -YYYYMMDD} suffix on the public model id. */
+    private static List<String> anthropicPricingAliasCandidates(String model) {
+        LinkedHashSet<String> out = new LinkedHashSet<>();
+        String t = model.trim();
+        out.add(t.replaceFirst("-\\d{8}$", ""));
+        return new ArrayList<>(out);
+    }
+
+    private ProviderModelPriceEntity resolveCatalogAliasFromCandidates(
+            AiProvider provider, String requestedModel, List<String> candidates, Instant at) {
+        for (String candidate : candidates) {
+            if (candidate == null || candidate.isBlank() || candidate.equals(requestedModel)) {
+                continue;
+            }
+            ProviderModelPriceEntity basePrice = priceRepository
+                    .findActivePrices(provider, candidate, at, PageRequest.of(0, 1))
+                    .stream()
+                    .findFirst()
+                    .orElse(null);
+            if (basePrice != null) {
+                seedProviderModelAliasIfMissing(provider, requestedModel, candidate, basePrice);
+                return basePrice;
+            }
+        }
+        return null;
+    }
+
+    private void seedProviderModelAliasIfMissing(
+            AiProvider provider, String aliasModel, String catalogModel, ProviderModelPriceEntity basePrice) {
         Instant validFrom = basePrice.getValidFrom();
         Instant validTo = basePrice.getValidTo();
-        boolean exists = priceRepository.existsByProviderAndModelAndValidFromAndValidTo(provider, model, validFrom, validTo);
+        boolean exists = priceRepository.existsByProviderAndModelAndValidFromAndValidTo(provider, aliasModel, validFrom, validTo);
         if (!exists) {
             priceRepository.save(new ProviderModelPriceEntity(
                     provider,
-                    model,
+                    aliasModel,
                     validFrom,
                     validTo,
                     basePrice.getInputUsdPerMillionTokens(),
                     basePrice.getOutputUsdPerMillionTokens()
             ));
-            log.info("Seeded OpenAI snapshot model price alias baseModel={} snapshotModel={}", base, model);
+            log.info("Seeded model price alias provider={} catalogModel={} aliasModel={}", provider, catalogModel, aliasModel);
         }
-        return basePrice;
     }
 
     private record BillableComputation(
