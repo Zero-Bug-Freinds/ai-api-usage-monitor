@@ -33,6 +33,7 @@ import com.zerobugfreinds.team_service.exception.TeamNotFoundException;
 import com.zerobugfreinds.team_service.exception.TeamInvitationNotFoundException;
 import com.zerobugfreinds.team_service.repository.TeamApiKeyRepository;
 import com.zerobugfreinds.team_service.repository.TeamInvitationRepository;
+import com.zerobugfreinds.team_service.repository.TeamMemberCountRow;
 import com.zerobugfreinds.team_service.repository.TeamMemberRepository;
 import com.zerobugfreinds.team_service.repository.TeamRepository;
 import org.slf4j.Logger;
@@ -46,9 +47,8 @@ import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.Objects;
-import java.util.Comparator;
 import java.util.HashSet;
+import java.util.Objects;
 import java.util.LinkedHashMap;
 import java.time.Instant;
 import java.util.List;
@@ -155,10 +155,15 @@ public class TeamService {
 		} else {
 			page = teamRepository.findByNameContainingIgnoreCase(keyword.trim(), pageable);
 		}
+		List<Long> teamIdsOnPage = page.getContent().stream().map(TeamEntity::getId).toList();
+		Map<Long, Long> memberCountByTeamId = teamIdsOnPage.isEmpty()
+				? Map.of()
+				: teamMemberRepository.countGroupedByTeamIdIn(teamIdsOnPage).stream()
+						.collect(Collectors.toMap(TeamMemberCountRow::getTeamId, TeamMemberCountRow::getMemberCount));
 		return page.map(team -> new TeamResponse(
 				String.valueOf(team.getId()),
 				team.getName(),
-				teamMemberRepository.countByTeamId(team.getId())
+				memberCountByTeamId.getOrDefault(team.getId(), 0L)
 		));
 	}
 

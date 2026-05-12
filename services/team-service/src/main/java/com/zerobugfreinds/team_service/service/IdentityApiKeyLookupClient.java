@@ -18,14 +18,21 @@ import java.util.Set;
 public class IdentityApiKeyLookupClient {
     private final HttpClient httpClient;
     private final List<String> identityServiceBaseUrls;
+    private final Duration requestTimeout;
 
     public IdentityApiKeyLookupClient(
-            @Value("${identity.service.url:http://host.docker.internal:8090}") String identityServiceBaseUrl
+            @Value("${identity.service.url:http://host.docker.internal:8090}") String identityServiceBaseUrl,
+            @Value("${identity.http.connect-timeout-ms:3000}") int connectTimeoutMs,
+            @Value("${identity.http.read-timeout-ms:5000}") int readTimeoutMs,
+            @Value("${identity.service.lookup.fallback-urls-enabled:true}") boolean fallbackUrlsEnabled
     ) {
         this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(3))
+                .connectTimeout(Duration.ofMillis(Math.max(1, connectTimeoutMs)))
                 .build();
-        this.identityServiceBaseUrls = resolveCandidateBaseUrls(identityServiceBaseUrl);
+        this.requestTimeout = Duration.ofMillis(Math.max(1, readTimeoutMs));
+        this.identityServiceBaseUrls = fallbackUrlsEnabled
+                ? resolveCandidateBaseUrls(identityServiceBaseUrl)
+                : resolveSingleBaseUrl(identityServiceBaseUrl);
     }
 
     public boolean existsByHashedKey(String provider, String hashedKey) {
@@ -43,7 +50,7 @@ public class IdentityApiKeyLookupClient {
                     .build(true)
                     .toUri();
             HttpRequest request = HttpRequest.newBuilder(uri)
-                    .timeout(Duration.ofSeconds(5))
+                    .timeout(requestTimeout)
                     .GET()
                     .header("Accept", "application/json")
                     .build();
@@ -82,6 +89,15 @@ public class IdentityApiKeyLookupClient {
             addCandidate(candidates, "http://identity-service:8090");
         }
         return List.copyOf(candidates);
+    }
+
+    private static List<String> resolveSingleBaseUrl(String configuredBaseUrl) {
+        Set<String> candidates = new LinkedHashSet<>();
+        addCandidate(candidates, configuredBaseUrl);
+        if (candidates.isEmpty()) {
+            addCandidate(candidates, "http://host.docker.internal:8090");
+        }
+        return List.of(candidates.iterator().next());
     }
 
     private static void addCandidate(Set<String> candidates, String baseUrl) {
