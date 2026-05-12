@@ -264,7 +264,7 @@ function MemberModelShareChart({ memberRows }: { memberRows: MemberRow[] }) {
               interval={0}
               tick={(p) => <MemberYAxisTick {...p} rowsByUserId={rowsByUserId} compact={compact} />}
             />
-            <Tooltip content={<ModelShareTooltip />} cursor={{ fill: "hsl(var(--muted) / 0.35)" }} />
+            <Tooltip content={<ModelShareTooltip />} cursor={{ fill: "transparent" }} />
             {stackKeys.map((k) => (
               <Bar
                 key={k}
@@ -369,7 +369,7 @@ function MemberTokenScatterChart({ memberRows }: { memberRows: MemberRow[] }) {
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
             <XAxis type="number" dataKey="totalRequests" name="요청 수" tick={{ fontSize: 11 }} />
             <YAxis type="number" dataKey="avgTokensPerReq" name="평균 토큰" tick={{ fontSize: 11 }} />
-            <Tooltip content={<ScatterTooltip />} cursor={{ strokeDasharray: "3 3" }} />
+            <Tooltip content={<ScatterTooltip />} cursor={{ stroke: "transparent" }} />
             <Scatter data={data} shape={<ScatterShape />} isAnimationActive={false} />
           </ScatterChart>
         </ResponsiveContainer>
@@ -460,7 +460,7 @@ function MemberPerfComboChart({
             <XAxis dataKey="displayName" tick={{ fontSize: 10 }} angle={-90} textAnchor="end" interval={0} height={manyMembers ? 88 : 72} />
             <YAxis yAxisId="left" tick={{ fontSize: 11 }} label={{ value: "ms", angle: -90, position: "insideLeft" }} />
             <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tick={{ fontSize: 11 }} label={{ value: "%", angle: 90, position: "insideRight" }} />
-            <Tooltip content={<ComboTooltip memberNameById={memberNameById} />} />
+            <Tooltip content={<ComboTooltip memberNameById={memberNameById} />} cursor={{ stroke: "transparent", fill: "transparent" }} />
             <ReferenceLine yAxisId="left" y={2000} stroke="#ef4444" strokeDasharray="4 4" />
             {hasAnyLatency ? (
               <Bar

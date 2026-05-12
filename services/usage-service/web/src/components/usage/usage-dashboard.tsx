@@ -1833,7 +1833,7 @@ export function UsageDashboard() {
                     tick={{ fontSize: 11 }}
                     label={{ value: "요청 수 (건)", angle: -90, position: "insideLeft", offset: 2 }}
                   />
-                  <Tooltip content={RequestVolumeTooltip} />
+                  <Tooltip content={RequestVolumeTooltip} cursor={{ stroke: "transparent" }} />
                   <AnyLegend />
                   <Line
                     yAxisId="left"
@@ -1878,7 +1878,7 @@ export function UsageDashboard() {
                     tickFormatter={(v) => `${Number(v).toFixed(0)}%`}
                     label={{ value: "비율 (%)", angle: 90, position: "insideRight", offset: 2 }}
                   />
-                  <Tooltip content={LatencyStabilityTooltip} />
+                  <Tooltip content={LatencyStabilityTooltip} cursor={{ stroke: "transparent", fill: "transparent" }} />
                   <AnyLegend onClick={latencyLegendClick} wrapperStyle={{ cursor: "pointer" }} />
                   <ReferenceLine
                     yAxisId="lat"
@@ -2004,7 +2004,7 @@ export function UsageDashboard() {
                             />
                           ))}
                         </Pie>
-                        <Tooltip content={ModelDonutTooltip} />
+                        <Tooltip content={ModelDonutTooltip} cursor={false} />
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
@@ -2069,7 +2069,7 @@ export function UsageDashboard() {
                         />
                       ))}
                     </Pie>
-                    <Tooltip content={ProviderDonutTooltip} />
+                    <Tooltip content={ProviderDonutTooltip} cursor={false} />
                     {!isProviderPiePlaceholder ? <AnyLegend payload={providerPieLegendPayload} /> : null}
                   </PieChart>
                 </ResponsiveContainer>
@@ -2089,7 +2089,7 @@ export function UsageDashboard() {
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                     <XAxis type="number" />
                     <YAxis type="category" dataKey={USAGE_CHART_DATA_KEYS.label} width={128} tick={{ fontSize: 11 }} />
-                    <Tooltip content={ModelRequestBarTooltip} />
+                    <Tooltip content={ModelRequestBarTooltip} cursor={{ fill: "transparent" }} />
                     <Bar
                       dataKey={USAGE_CHART_DATA_KEYS.requests}
                       name="요청 수"
@@ -2200,7 +2200,7 @@ export function UsageDashboard() {
                     />
                     <XAxis type="number" tick={{ fontSize: 11 }} tickCount={8} />
                     <YAxis type="category" dataKey={USAGE_CHART_DATA_KEYS.label} width={128} tick={{ fontSize: 11 }} />
-                    <Tooltip content={TokenStackTooltip} cursor={{ fill: "var(--muted)", fillOpacity: 0.12 }} />
+                    <Tooltip content={TokenStackTooltip} cursor={{ fill: "transparent" }} />
                     <AnyLegend payload={tokenStackLegendPayload} />
                     <Bar
                       stackId="tokens"
@@ -2334,7 +2334,7 @@ export function UsageDashboard() {
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                   <XAxis dataKey={USAGE_CHART_DATA_KEYS.yearMonth} tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip content={MonthlyRequestBarTooltip} />
+                  <Tooltip content={MonthlyRequestBarTooltip} cursor={{ fill: "transparent" }} />
                   <AnyLegend />
                   <Bar
                     dataKey={USAGE_CHART_DATA_KEYS.requestCount}

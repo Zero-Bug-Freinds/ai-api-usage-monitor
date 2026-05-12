@@ -565,6 +565,7 @@ export default function TeamDashboard({
                     <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
                     <YAxis yAxisId="right" orientation="right" domain={rateDomain} tick={{ fontSize: 11 }} tickFormatter={(v) => `${Number(v).toFixed(1)}%`} />
                     <Tooltip
+                      cursor={{ stroke: "transparent", fill: "transparent" }}
                       formatter={(value, name) => {
                         const label = String(name ?? "")
                         if (typeof value === "number" && label.includes("률")) {
@@ -624,7 +625,7 @@ export default function TeamDashboard({
                               <Cell key={`cell-${entry.fullName}-${i}`} fill={pieData.length === 0 ? "var(--border)" : colorForModel(entry.fullName ?? "", entry.provider ?? "")} fillOpacity={pieData.length === 0 ? 0.35 : 1} />
                             ))}
                           </Pie>
-                          <Tooltip formatter={(value) => formatRequestCount(Number(value ?? 0))} />
+                          <Tooltip formatter={(value) => formatRequestCount(Number(value ?? 0))} cursor={false} />
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
@@ -654,7 +655,7 @@ export default function TeamDashboard({
                         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                         <XAxis type="number" tick={{ fontSize: 11 }} />
                         <YAxis type="category" dataKey="label" width={100} tick={{ fontSize: 10 }} />
-                        <Tooltip />
+                        <Tooltip cursor={{ fill: "transparent" }} />
                         <Bar dataKey="requests" name="요청 수" fill="#64748b" fillOpacity={barModelData.length === 0 ? 0.2 : 1} radius={[0, 4, 4, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
