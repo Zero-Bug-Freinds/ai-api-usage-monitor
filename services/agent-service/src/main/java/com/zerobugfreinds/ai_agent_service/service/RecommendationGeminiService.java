@@ -9,7 +9,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestClient;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -24,28 +23,27 @@ import java.util.concurrent.ExecutorService;
 public class RecommendationGeminiService {
 
 	private static final Logger log = LoggerFactory.getLogger(RecommendationGeminiService.class);
-	private static final String DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
 
 	private final AiAgentGeminiProperties properties;
 	private final ObjectMapper objectMapper;
-	private final RestClient geminiRestClient;
+	private final AgentLlmCompletionClient llmCompletionClient;
 	private final ExecutorService geminiBatchExecutor;
 
 	public RecommendationGeminiService(
 			AiAgentGeminiProperties properties,
 			ObjectMapper objectMapper,
-			@Qualifier(AiAgentGeminiHttpClientConfiguration.GEMINI_REST_CLIENT) RestClient geminiRestClient,
+			AgentLlmCompletionClient llmCompletionClient,
 			@Qualifier(AiAgentGeminiHttpClientConfiguration.GEMINI_BATCH_EXECUTOR) ExecutorService geminiBatchExecutor
 	) {
 		this.properties = properties;
 		this.objectMapper = objectMapper;
-		this.geminiRestClient = geminiRestClient;
+		this.llmCompletionClient = llmCompletionClient;
 		this.geminiBatchExecutor = geminiBatchExecutor;
 	}
 
 	public Optional<AiRecommendationResult> inferRecommendation(AiRecommendationPromptRequest request) {
-		if (properties.apiKey() == null || properties.apiKey().isBlank()) {
-			log.warn("Gemini recommendation skipped: API key missing");
+		if (!llmCompletionClient.geminiConfigured() && !llmCompletionClient.deepseekConfigured()) {
+			log.warn("Recommendation LLM skipped: set AI_AGENT_GEMINI_API_KEY and/or AI_AGENT_DEEPSEEK_API_KEY");
 			return Optional.empty();
 		}
 		String requestId = UUID.randomUUID().toString();
@@ -82,7 +80,7 @@ public class RecommendationGeminiService {
 			String retryPrompt = prompt + "\nDo not omit required keys. Return valid JSON only.";
 			return inferRecommendationByPrompt(requestId, keyId, 2, retryPrompt, usageAggregate);
 		} catch (Exception ex) {
-			log.warn("Gemini recommendation inference failed: {}", ex.getMessage());
+			log.warn("Recommendation LLM inference failed: {}", ex.getMessage());
 			return Optional.empty();
 		} finally {
 			logGeminiUsageSummary(usageAggregate);
@@ -170,7 +168,7 @@ public class RecommendationGeminiService {
 			));
 		} catch (Exception ex) {
 			logGeminiUsage(requestId, keyId, attempt, prompt.length(), null, startedAt, usageAggregate);
-			log.warn("Gemini recommendation attempt failed: {}", ex.getMessage());
+			log.warn("Recommendation LLM attempt failed: {}", ex.getMessage());
 			return Optional.empty();
 		}
 	}
@@ -270,27 +268,7 @@ public class RecommendationGeminiService {
 	}
 
 	private String callGenerateContent(String prompt) {
-		Map<String, Object> body = Map.of(
-				"contents", new Object[]{
-						Map.of("parts", new Object[]{Map.of("text", prompt)})
-				},
-				"generationConfig", Map.of(
-						"responseMimeType", "application/json",
-						"temperature", 0.0
-				)
-		);
-		String configuredModel = (properties.model() == null || properties.model().isBlank())
-				? DEFAULT_GEMINI_MODEL
-				: properties.model().trim();
-		String baseUrl = (properties.baseUrl() == null || properties.baseUrl().isBlank())
-				? "https://generativelanguage.googleapis.com"
-				: properties.baseUrl();
-		String uri = baseUrl + "/v1beta/models/" + configuredModel + ":generateContent?key=" + properties.apiKey();
-		return geminiRestClient.post()
-				.uri(uri)
-				.body(body)
-				.retrieve()
-				.body(String.class);
+		return llmCompletionClient.completeAsGeminiGenerateContentJson(prompt, 0.0);
 	}
 
 	private static String textOrNull(JsonNode n) {
