@@ -304,7 +304,7 @@ X-Gateway-Auth: local-dev-gateway-shared-secret-do-not-use-in-prod
 | 항목 | 내용 |
 |------|------|
 | **설정** | `billing.identity.enabled`, `billing.identity.base-url`, `billing.identity.budget-path-template` (`application.yml` / env). |
-| **호출** | `IdentityBudgetClient`가 `RestClient`로 GET; 경로에 `{userId}` 치환을 지원. Identity 응답은 `monthlyBudgetUsd`(합계)와 `monthlyBudgetsByKey`(키별 예산) 확장을 포함할 수 있다. **지출 요약 API** 등에서는 루트 `monthlyBudgetUsd`를 주로 반영하고, **예산 임계 AMQP**는 `fetchMonthlyBudgetUsdForKey(userId, provider, apiKeyId)`로 `monthlyBudgetsByKey`에서 **해당 외부 키 ID·프로바이더** 행만 매칭한다(`apiKeyId`는 숫자 문자열로 파싱 가능해야 함; billing `AiProvider.GOOGLE`은 Identity JSON의 `GEMINI`와 매칭). |
+| **호출** | `IdentityBudgetClient`가 `RestClient`로 GET; 경로에 `{userId}` 치환을 지원. Identity 응답은 `monthlyBudgetUsd`(합계)와 `monthlyBudgetsByKey`(키별 예산) 확장을 포함할 수 있다. **지출 요약 API** 등에서는 루트 `monthlyBudgetUsd`를 주로 반영하고, **예산 임계 AMQP**는 `fetchMonthlyBudgetUsdForKey(userId, provider, apiKeyId)`로 `monthlyBudgetsByKey`에서 **해당 외부 키 ID·프로바이더** 행만 매칭한다(`apiKeyId`는 숫자 문자열로 파싱 가능해야 함; billing `AiProvider.GOOGLE`은 Identity JSON의 **`GOOGLE`** 행과 매칭하고, 레거시 **`GEMINI`** 행도 호환한다). |
 | **실패 시** | 404 및 기타 오류는 **예산 없음**으로 취급(지출 합계 API는 계속 동작). |
 | **용도** | `GET /expenditure/summary` 응답에 **예산 vs 지출** 표시를 풍부히 하기 위한 선택적 연동이다. |
 

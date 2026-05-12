@@ -10,6 +10,14 @@ spring:
     username: ${BILLING_POSTGRES_USER:billing_app}
     password: ${BILLING_POSTGRES_PASSWORD:billing_app}
     driver-class-name: org.postgresql.Driver
+  flyway:
+    enabled: ${BILLING_FLYWAY_ENABLED:true}
+    locations: classpath:db/migration
+    # Existing local DBs may have tables created by Hibernate or prior runs without Flyway.
+    # Baseline allows Flyway to start managing from this point without dropping data.
+    baseline-on-migrate: true
+    baseline-version: 0
+    validate-on-migrate: true
   jpa:
     hibernate:
       ddl-auto: update
@@ -50,6 +58,10 @@ billing:
       enabled: ${BILLING_RABBIT_BUDGET_OUT_ENABLED:true}
       exchange: ${BILLING_RABBIT_BUDGET_OUT_EXCHANGE:billing.events}
       routing-key: ${BILLING_RABBIT_BUDGET_OUT_ROUTING_KEY:billing.budget.threshold.reached}
+    team-budget-out:
+      enabled: ${BILLING_RABBIT_TEAM_BUDGET_OUT_ENABLED:true}
+      exchange: ${BILLING_RABBIT_TEAM_BUDGET_OUT_EXCHANGE:billing.events}
+      routing-key: ${BILLING_RABBIT_TEAM_BUDGET_OUT_ROUTING_KEY:billing.team.budget.threshold.reached}
     correction-in:
       enabled: ${BILLING_RABBIT_CORRECTION_IN_ENABLED:true}
       exchange: ${BILLING_RABBIT_CORRECTION_IN_EXCHANGE:billing.events}
@@ -59,6 +71,11 @@ billing:
       enabled: ${BILLING_RABBIT_CORRECTION_OUT_ENABLED:true}
       exchange: ${BILLING_RABBIT_CORRECTION_OUT_EXCHANGE:billing.events}
       routing-key: ${BILLING_RABBIT_CORRECTION_OUT_ROUTING_KEY:billing.cost.corrected}
+    team-api-key-in:
+      enabled: ${BILLING_RABBIT_TEAM_API_KEY_IN_ENABLED:true}
+      exchange: ${BILLING_RABBIT_TEAM_API_KEY_IN_EXCHANGE:team.api-key.exchange}
+      routing-key: ${BILLING_RABBIT_TEAM_API_KEY_IN_ROUTING_KEY:team.api-key.status.changed}
+      queue: ${BILLING_RABBIT_TEAM_API_KEY_IN_QUEUE:billing-service.team-api-key.status.changed.queue}
   gateway:
     shared-secret: ${GATEWAY_SHARED_SECRET:local-dev-gateway-shared-secret-do-not-use-in-prod}
   identity:

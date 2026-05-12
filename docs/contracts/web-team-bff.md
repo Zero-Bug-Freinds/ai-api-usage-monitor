@@ -1,6 +1,6 @@
 # Web(Next.js) ↔ Team Service BFF 계약
 
-버전: 0.15  
+버전: 0.16  
 관련: [web-split-boundary.md](./web-split-boundary.md), [web-identity-bff.md](./web-identity-bff.md) — `/teams` UI 소유·경로: §2.3, [identity-auth-api-contract.md](../identity-auth-api-contract.md) §14(Identity → Team 사용자 동기화 MQ)
 
 ---
@@ -28,6 +28,7 @@
 | `POST /api/team/v1/me/team-invitations/{invitationId}/reject` | Team BFF `POST ...` → Gateway `POST ...` → Team Service `POST /api/v1/me/team-invitations/{invitationId}/reject` |
 | `GET /api/team/v1/teams/{id}/api-keys` | Team BFF `GET /api/team/v1/teams/{id}/api-keys` → Gateway `GET ...` → Team Service `GET /api/v1/teams/{id}/api-keys` |
 | `POST /api/team/v1/teams/{id}/api-keys` | Team BFF `POST /api/team/v1/teams/{id}/api-keys` → Gateway `POST ...` → Team Service `POST /api/v1/teams/{id}/api-keys` |
+| `GET /api/team/v1/teams/{id}/expenditure/team-api-keys/month-spend` | Team BFF `GET ...` → Gateway `GET ...` → Team Service `GET /api/v1/teams/{id}/expenditure/team-api-keys/month-spend` → Team Service 내부 Billing 호출 `POST /api/v1/expenditure/team/month-rollup` |
 | `PUT /api/team/v1/teams/{teamId}/api-keys/{keyId}` | Team BFF `PUT ...` → Gateway `PUT ...` → Team Service `PUT /api/v1/teams/{teamId}/api-keys/{keyId}` |
 | `DELETE /api/team/v1/teams/{teamId}/api-keys/{keyId}` | Team BFF `DELETE ...` → Gateway `DELETE ...` → Team Service `DELETE /api/v1/teams/{teamId}/api-keys/{keyId}` (선택 쿼리 `gracePeriodDays`) |
 | `POST /api/team/v1/teams/{teamId}/api-keys/{keyId}/deletion/cancel` | Team BFF `POST ...` → Gateway `POST ...` → Team Service `POST /api/v1/teams/{teamId}/api-keys/{keyId}/deletion/cancel` |
@@ -189,6 +190,16 @@
   - 실패:
     - `403` (`success=false`): 팀 멤버가 아닌 사용자의 조회 시도
     - `404` (`success=false`): 대상 팀이 존재하지 않는 경우
+- `GET /api/team/v1/teams/{id}/expenditure/team-api-keys/month-spend`
+  - 목적: 팀 멤버 집합 기준 월 지출 롤업(`billing-service` `POST /api/v1/expenditure/team/month-rollup`) 조회
+  - 쿼리: `month` (선택, `YYYY-MM-01`). 생략 시 KST 기준 현재 월의 1일 사용
+  - 처리 규칙:
+    - Team Service가 요청 사용자(`X-User-Id`)의 팀 접근 권한을 검증한다.
+    - 전달 월은 **달의 1일만 허용**한다(아니면 `400`).
+    - Team Service가 팀 멤버 userId 목록을 만든 뒤 Billing으로 서버 간 호출한다.
+    - Gateway가 넣은 `X-User-Id`와 `X-Gateway-Auth`를 Billing 호출로 전달한다.
+  - 성공: `200`, `data = { totalCostUsd, byUser[] }`
+  - 실패: `400`(유효하지 않은 month/teamId), `403`(팀 접근 불가), `401`(`X-User-Id` 누락), `502`(Billing 연결 실패)
 - 레거시 호환: 내부 저장값/경로에 `GEMINI`가 남아 있어도 외부 BFF 계약의 provider 표기는 `GOOGLE`로 통일한다.
   - 내부 키 조회 API(`GET /internal/team-api-keys/{provider}`)는 `provider=gemini` 별칭을 입력받아 `GOOGLE`로 정규화한다(코드: `TeamInternalApiKeyResolveService`).
   - 부팅 시 `TeamApiKeyProviderMigrationInitializer`가 `team_api_keys`의 `GEMINI` 값을 `GOOGLE`로 정리한다.
@@ -201,6 +212,8 @@
 ### 6.1 내부 API (notification/billing/agent 등 서비스 간 조회)
 
 - Team Service는 내부 호출용으로 `GET /internal/teams/{id}`를 제공한다.
+- **notification-service(팀 API 키 예산 임계 인앱):** Billing이 `billing.team.budget.threshold.reached`를 발행하면 notification-service가 팀 표시명을 위해 **`GET /internal/teams/{id}`** 를, 수신자 fan-out을 위해 **`GET /api/v1/teams/{teamId}/members`**(`X-User-Id`: 이벤트의 `triggerUserId`)를 호출한다. HTTP 베이스 URL은 notification의 **`TEAM_SERVICE_BASE_URL`**(기본 `http://localhost:8093`)·**`TEAM_SERVICE_TIMEOUT_MS`** 를 쓴다(팀 초대 액션용 `TEAM_SERVICE_INTERNAL_BASE_URL`과는 별도 설정일 수 있다). AMQP 페이로드 정본은 [`docs/billing-outbound-events.md`](../billing-outbound-events.md) §2.1.
+- Team Service는 Billing 월 롤업 내부 호출을 위해 `team.billing.base-url` 설정을 사용한다(환경 변수 `TEAM_BILLING_SERVICE_BASE_URL`, 기본 `http://localhost:8095`).
 - 응답 `data`는 `teamId`, `teamName`, `createdBy`, `createdAt`를 포함한다.
 - 내부 멤버십 검증용으로 `GET /internal/v1/teams/{teamId}/members/{userId}/verify`를 제공한다.
   - 응답 `data`: `teamId`, `userId`, `isValid`

@@ -33,6 +33,24 @@ OpenAI 이벤트의 `model`이 `gpt-5.4-mini-2026-03-17`처럼 **날짜 suffix**
 
 > 운영 환경에서는 가격 정책(스냅샷 모델이 base와 동일 단가인지)을 팀 기준으로 확인하고, 필요하면 별도 row를 명시적으로 관리하는 것을 권장한다.
 
+## Gemini 단가(컨텍스트·오디오 등 조건부 단가) 운영 룰
+
+Gemini API pricing은 동일한 `model`이라도 아래처럼 **조건에 따라 단가가 달라질 수 있다**:
+
+- **프롬프트(컨텍스트) 길이 구간**: 특정 토큰 수(예: 200K) 초과 시 input/output 단가 상승
+- **입력 타입**: Flash/Flash-Lite 계열은 **audio input** 단가가 text/image/video input보다 높을 수 있음
+
+현재 billing의 가격 테이블(`provider_model_price`)은 모델별로 아래 2개 값만 보관한다:
+
+- `input_usd_per_million_tokens`
+- `output_usd_per_million_tokens`
+
+따라서 **옵션 A(대표 단가 1쌍만 유지)** 운영 룰은 다음과 같다:
+
+- billing은 Gemini 비용을 계산할 때 **“대표 단가(기본 구간 + text/image/video input 기준)”** 1쌍으로만 계산한다.
+- 긴 컨텍스트 구간/오디오 입력 등으로 인해 공급사 청구서에서 더 높은 단가가 적용되는 경우가 있어도, billing 계산 결과는 **추정치(estimated)**로 취급한다.
+- 정확한 반영이 필요하면 `provider_model_price`의 스키마 확장(입력 타입/컨텍스트 구간/processing mode 등)과 usage 이벤트 페이로드 확장까지 포함해 설계를 진행한다.
+
 ## 참고
 
 - 집계 일자·월 경계는 **KST**를 사용한다 (`BillingRecordedService`, `MonthlyExpenditureFinalizeScheduler`).

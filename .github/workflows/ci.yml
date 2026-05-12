@@ -461,11 +461,17 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: gradle
-          cache-dependency-path: services/billing-service/build.gradle
+          cache-dependency-path: |
+            services/billing-service/build.gradle
+            libs/usage-events/build.gradle
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
+      # check = compile + test (+ verification); skips bootJar (Dockerfile builds jar separately).
+      # Override repo gradle.properties (parallel/workers tuned for flaky local Windows runs).
       - name: Build and test
-        run: ./gradlew build --no-daemon
+        env:
+          GRADLE_OPTS: -Dorg.gradle.workers.max=4
+        run: ./gradlew check --no-daemon --parallel --build-cache
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -495,7 +501,8 @@ jobs:
           load: true
           push: false
           cache-from: type=gha,scope=billing-service
-          cache-to: type=gha,mode=max,scope=billing-service
+          # NOTE: 무료 티어(10GB)에서 캐시가 커지면 mode=min으로 유지하는 편이 안정적이다.
+          cache-to: type=gha,mode=min,scope=billing-service
       - name: Docker image (billing-web, standalone) (cache gha)
         id: docker_billing_web
         uses: docker/build-push-action@v6

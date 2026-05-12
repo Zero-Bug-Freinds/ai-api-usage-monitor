@@ -1,6 +1,8 @@
 package com.zerobugfreinds.team_service.controller;
 
 import com.zerobugfreinds.team_service.common.ApiResponse;
+import com.zerobugfreinds.team_service.dto.BillingTeamMonthRollupRequest;
+import com.zerobugfreinds.team_service.dto.BillingTeamMonthRollupResponse;
 import com.zerobugfreinds.team_service.dto.CreateTeamRequest;
 import com.zerobugfreinds.team_service.dto.InviteTeamMemberRequest;
 import com.zerobugfreinds.team_service.dto.RegisterTeamApiKeyRequest;
@@ -12,11 +14,14 @@ import com.zerobugfreinds.team_service.dto.UpdateTeamApiKeyRequest;
 import com.zerobugfreinds.team_service.dto.TeamSummaryResponse;
 import com.zerobugfreinds.team_service.security.TeamContextHolder;
 import com.zerobugfreinds.team_service.service.TeamApiKeyService;
+import com.zerobugfreinds.team_service.service.TeamBillingRollupClient;
 import com.zerobugfreinds.team_service.service.TeamService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -29,6 +34,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 
 @RestController
@@ -36,10 +43,16 @@ import java.util.List;
 public class TeamController {
 	private final TeamService teamService;
 	private final TeamApiKeyService teamApiKeyService;
+	private final TeamBillingRollupClient teamBillingRollupClient;
 
-	public TeamController(TeamService teamService, TeamApiKeyService teamApiKeyService) {
+	public TeamController(
+			TeamService teamService,
+			TeamApiKeyService teamApiKeyService,
+			TeamBillingRollupClient teamBillingRollupClient
+	) {
 		this.teamService = teamService;
 		this.teamApiKeyService = teamApiKeyService;
+		this.teamBillingRollupClient = teamBillingRollupClient;
 	}
 
 	@PostMapping("/teams")
@@ -192,6 +205,32 @@ public class TeamController {
 	) {
 		List<TeamApiKeySummaryResponse> apiKeys = teamApiKeyService.getTeamApiKeys(currentUserId(), resolveTeamId(teamId));
 		return ResponseEntity.ok(ApiResponse.ok("팀 API 키 목록 조회에 성공했습니다", apiKeys));
+	}
+
+	/**
+	 * 팀 멤버 기준 월별 지출 합계(billing {@code monthly_expenditure_agg} 롤업). 게이트웨이의 {@code X-User-Id}·
+	 * {@code X-Gateway-Auth}를 billing 호출에 그대로 전달한다.
+	 */
+	@GetMapping("/teams/{id}/expenditure/team-api-keys/month-spend")
+	public ResponseEntity<ApiResponse<BillingTeamMonthRollupResponse>> getTeamApiKeysMonthSpend(
+			HttpServletRequest request,
+			@PathVariable("id") Long teamId,
+			@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate month
+	) {
+		Long resolved = resolveTeamId(teamId);
+		if (resolved <= 0) {
+			throw new IllegalArgumentException("teamId must be positive");
+		}
+		LocalDate monthStart = month != null
+				? month
+				: LocalDate.now(ZoneId.of("Asia/Seoul")).withDayOfMonth(1);
+		if (monthStart.getDayOfMonth() != 1) {
+			throw new IllegalArgumentException("month must be the first day of a calendar month (YYYY-MM-01).");
+		}
+		List<String> members = teamService.getTeamMemberUserIds(currentUserId(), resolved);
+		BillingTeamMonthRollupRequest body = new BillingTeamMonthRollupRequest(members, monthStart);
+		BillingTeamMonthRollupResponse rollup = teamBillingRollupClient.postTeamMonthRollup(request, body);
+		return ResponseEntity.ok(ApiResponse.ok("팀 월 지출 조회에 성공했습니다", rollup));
 	}
 
 	private static String currentUserId() {

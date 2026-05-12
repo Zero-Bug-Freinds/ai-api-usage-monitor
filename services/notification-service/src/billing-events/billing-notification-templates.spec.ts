@@ -14,7 +14,7 @@ describe('buildBillingBudgetThresholdCopy', () => {
     } as BillingBudgetThresholdReachedEventPayload;
 
     const copy = buildBillingBudgetThresholdCopy(
-      { payload: { ...payload, apiKeyAlias: 'Gemini 키 1' }, apiKeyId: '2' },
+      { payload: { ...payload }, apiKeyId: '2', apiKeyAlias: 'Gemini 키 1' },
       'ko',
     );
     expect(copy.title).toBe('예산 임계치 도달');
