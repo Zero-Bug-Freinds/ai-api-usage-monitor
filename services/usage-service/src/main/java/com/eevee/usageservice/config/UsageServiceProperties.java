@@ -50,6 +50,15 @@ public class UsageServiceProperties {
         private int teamListCacheTtlSeconds = 300;
         private int memberCacheTtlSeconds = 300;
         private int timeoutMs = 1500;
+        /**
+         * When true, empty team lists from team-service are cached for TTL (legacy behavior).
+         * Default false: empty lists are not cached so a later successful lookup is not suppressed.
+         */
+        private boolean cacheEmptyTeamList = false;
+        /**
+         * When true, emit masked diagnostic logs at INFO for BFF team-list path; otherwise DEBUG only.
+         */
+        private boolean diagnosticsLogging = false;
 
         public String getBaseUrl() {
             return baseUrl;
@@ -81,6 +90,22 @@ public class UsageServiceProperties {
 
         public void setTimeoutMs(int timeoutMs) {
             this.timeoutMs = timeoutMs;
+        }
+
+        public boolean isCacheEmptyTeamList() {
+            return cacheEmptyTeamList;
+        }
+
+        public void setCacheEmptyTeamList(boolean cacheEmptyTeamList) {
+            this.cacheEmptyTeamList = cacheEmptyTeamList;
+        }
+
+        public boolean isDiagnosticsLogging() {
+            return diagnosticsLogging;
+        }
+
+        public void setDiagnosticsLogging(boolean diagnosticsLogging) {
+            this.diagnosticsLogging = diagnosticsLogging;
         }
     }
 }

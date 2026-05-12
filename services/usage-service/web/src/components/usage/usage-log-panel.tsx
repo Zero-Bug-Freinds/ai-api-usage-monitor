@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { CircleHelp, ChevronDown, ChevronRight, Filter, RotateCcw, X } from "lucide-react"
+import { CircleHelp, ChevronDown, ChevronRight, Filter, Loader2, RotateCcw, X } from "lucide-react"
 
 import {
   Button,
@@ -29,6 +29,12 @@ import type {
   UsageProviderFilter,
 } from "@/lib/usage/types"
 import { addKstDays, formatKstIsoDate } from "@/lib/usage/kst-dates"
+import {
+  logDataTabToDataContext,
+  persistLogDataTab,
+  readStoredLogDataTab,
+  type UsageLogDataTab,
+} from "@/lib/usage/usage-log-tab-storage"
 
 const LOGS_PAGE_SIZE = 20
 const LOG_PROVIDER_ALL = "__all__"
@@ -84,6 +90,7 @@ function outputTokensTooltipContent() {
 }
 
 export function UsageLogPanel() {
+  const [logDataTab, setLogDataTab] = React.useState<UsageLogDataTab>("personal")
   const [logs, setLogs] = React.useState<PagedLogsResponse | null>(null)
   const [logsLoading, setLogsLoading] = React.useState(true)
   const [logsError, setLogsError] = React.useState<string | null>(null)
@@ -99,6 +106,18 @@ export function UsageLogPanel() {
   const [showAdvancedFilters, setShowAdvancedFilters] = React.useState(false)
 
   const appliedModelMask = modelDraft.trim()
+
+  React.useLayoutEffect(() => {
+    setLogDataTab(readStoredLogDataTab())
+  }, [])
+
+  const onLogDataTabChange = React.useCallback((tab: UsageLogDataTab) => {
+    persistLogDataTab(tab)
+    setLogDataTab(tab)
+    setLogsPage(0)
+  }, [])
+
+  const logDataContext = logDataTabToDataContext(logDataTab)
 
   React.useEffect(() => {
     if (!openAiDetailsRow) return
@@ -131,7 +150,7 @@ export function UsageLogPanel() {
     let cancelled = false
     ;(async () => {
       try {
-        const q = buildUsageQuery({ provider: providerParam })
+        const q = buildUsageQuery({ provider: providerParam, dataContext: logDataContext })
         const data = await fetchUsageJson<UsageLogApiKeyItemResponse[]>(`logs/api-keys${q}`)
         if (!cancelled) {
           setApiKeyOptions(Array.isArray(data) ? data : [])
@@ -143,7 +162,7 @@ export function UsageLogPanel() {
     return () => {
       cancelled = true
     }
-  }, [logProvider, providerParam, logRefresh])
+  }, [logProvider, providerParam, logRefresh, logDataContext])
 
   React.useEffect(() => {
     let cancelled = false
@@ -159,6 +178,7 @@ export function UsageLogPanel() {
           page: logsPage,
           size: LOGS_PAGE_SIZE,
           provider: providerParam,
+          dataContext: logDataContext,
           apiKeyId:
             apiKeyFilter !== LOG_API_KEY_ALL && apiKeyFilter ? apiKeyFilter : undefined,
           reasoningPresence: reasoningPresenceParam,
@@ -181,12 +201,14 @@ export function UsageLogPanel() {
   }, [
     logsPage,
     modelDraft,
+    appliedModelMask,
     logProvider,
     providerParam,
     apiKeyFilter,
     reasoningPresenceParam,
     requestSuccessfulParam,
     logRefresh,
+    logDataContext,
   ])
 
   const hasAdvancedReasoning = reasoningFilter !== LOG_REASONING_ALL
@@ -204,7 +226,42 @@ export function UsageLogPanel() {
   }, [])
 
   return (
-    <div className="mx-auto w-full max-w-[86rem] rounded-lg border border-border p-4 shadow-sm">
+    <div className="w-full max-w-none rounded-lg border border-border p-4 shadow-sm">
+      <div
+        className="mb-5 flex gap-0 border-b border-border"
+        role="tablist"
+        aria-label="로그 범위"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={logDataTab === "personal"}
+          className={[
+            "-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
+            logDataTab === "personal"
+              ? "border-primary text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground",
+          ].join(" ")}
+          onClick={() => onLogDataTabChange("personal")}
+        >
+          개인 로그
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={logDataTab === "team"}
+          className={[
+            "-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
+            logDataTab === "team"
+              ? "border-primary text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground",
+          ].join(" ")}
+          onClick={() => onLogDataTabChange("team")}
+        >
+          팀 로그
+        </button>
+      </div>
+
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">발생 시각은 한국 표준시(KST)입니다.</p>
         <Button type="button" variant="outline" size="sm" onClick={() => setLogRefresh((n) => n + 1)}>
@@ -422,7 +479,20 @@ export function UsageLogPanel() {
       ) : null}
 
       {logsLoading ? (
-        <p className="text-sm text-muted-foreground">로그 불러오는 중…</p>
+        <div
+          className="space-y-3 rounded-md border border-border bg-muted/15 p-4"
+          aria-busy="true"
+          aria-label="로그 로딩 중"
+        >
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
+            <span>로그를 불러오는 중입니다…</span>
+          </div>
+          <div className="space-y-2">
+            <div className="h-3 max-w-xs w-[40%] rounded bg-muted animate-pulse" />
+            <div className="h-40 rounded bg-muted/70 animate-pulse" />
+          </div>
+        </div>
       ) : !logs || logs.content.length === 0 ? (
         <p className="text-sm text-muted-foreground">사용 데이터가 없습니다</p>
       ) : (

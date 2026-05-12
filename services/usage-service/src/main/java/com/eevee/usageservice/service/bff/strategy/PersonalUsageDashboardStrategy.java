@@ -1,5 +1,6 @@
 package com.eevee.usageservice.service.bff.strategy;
 
+import com.eevee.usageservice.api.dto.UsageDataContext;
 import com.eevee.usageservice.api.dto.bff.UsageBffDashboardResponse;
 import com.eevee.usageservice.api.dto.bff.UsageDashboardEnrichment;
 import com.eevee.usageservice.api.dto.bff.UsageDashboardMode;
@@ -44,7 +45,8 @@ public class PersonalUsageDashboardStrategy extends BaseUsageDashboardStrategy {
                         null,
                         null,
                         query.page(),
-                        query.size()
+                        query.size(),
+                        UsageDataContext.PERSONAL
                 ),
                 java.util.List.of(),
                 UsageDashboardEnrichment.ok()

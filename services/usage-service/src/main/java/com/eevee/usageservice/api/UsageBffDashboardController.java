@@ -8,6 +8,7 @@ import com.eevee.usageservice.api.dto.bff.UsageDashboardMode;
 import com.eevee.usageservice.security.UsageGatewayTrustFilter;
 import com.eevee.usageservice.service.bff.UsageDashboardContext;
 import com.eevee.usageservice.service.bff.UsageDashboardQuery;
+import com.eevee.usageservice.config.UsageServiceProperties;
 import com.eevee.usageservice.service.bff.team.TeamBffQueryService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -18,21 +19,29 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.LocalDate;
 
 @RestController
 @RequestMapping("/api/v1/usage/bff")
 public class UsageBffDashboardController {
+
+    private static final Logger log = LoggerFactory.getLogger(UsageBffDashboardController.class);
+
     private final UsageDashboardContext dashboardContext;
     private final TeamBffQueryService teamBffQueryService;
+    private final UsageServiceProperties usageServiceProperties;
 
     public UsageBffDashboardController(
             UsageDashboardContext dashboardContext,
-            TeamBffQueryService teamBffQueryService
+            TeamBffQueryService teamBffQueryService,
+            UsageServiceProperties usageServiceProperties
     ) {
         this.dashboardContext = dashboardContext;
         this.teamBffQueryService = teamBffQueryService;
+        this.usageServiceProperties = usageServiceProperties;
     }
 
     @GetMapping("/dashboard")
@@ -67,6 +76,12 @@ public class UsageBffDashboardController {
     @GetMapping("/teams")
     public TeamSummaryOptionResponse teams(HttpServletRequest request) {
         Requester requester = currentRequester(request);
+        if (usageServiceProperties.getTeam().isDiagnosticsLogging()) {
+            log.info(
+                    "bff GET /teams headerDerived hasPlatformUserId={}",
+                    requester.platformUserId() != null
+            );
+        }
         return new TeamSummaryOptionResponse(
                 teamBffQueryService.loadTeams(requester.userId(), requester.platformUserId())
         );

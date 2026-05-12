@@ -19,8 +19,10 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -29,7 +31,7 @@ class TeamInternalApiKeyResolveServiceTest {
     @Test
     void resolve_missingTeamId_throwsBadRequest() {
         TeamInternalApiKeyResolveService service = newService("internal-token");
-        assertThatThrownBy(() -> service.resolve("google", null, "member@test.com", null, "Bearer internal-token"))
+        assertThatThrownBy(() -> service.resolve("google", null, "member@test.com", null, "Bearer internal-token", null, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("teamId");
     }
@@ -44,7 +46,7 @@ class TeamInternalApiKeyResolveServiceTest {
 
         when(teamMemberRepository.existsByTeamIdAndUserId(10L, "outsider@test.com")).thenReturn(false);
 
-        assertThatThrownBy(() -> service.resolve("openai", 10L, "outsider@test.com", null, "Bearer internal-token"))
+        assertThatThrownBy(() -> service.resolve("openai", 10L, "outsider@test.com", null, "Bearer internal-token", null, null))
                 .isInstanceOf(ForbiddenTeamAccessException.class);
     }
 
@@ -61,7 +63,7 @@ class TeamInternalApiKeyResolveServiceTest {
                 15L, TeamApiKeyProvider.GOOGLE
         )).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.resolve("google", 15L, "member@test.com", null, "Bearer internal-token"))
+        assertThatThrownBy(() -> service.resolve("google", 15L, "member@test.com", null, "Bearer internal-token", null, null))
                 .isInstanceOf(TeamApiKeyNotFoundException.class);
     }
 
@@ -91,7 +93,7 @@ class TeamInternalApiKeyResolveServiceTest {
         when(encryptionUtil.decryptAes256Gcm("encrypted-value")).thenReturn("AIza-real-key");
 
         InternalTeamApiKeyResponse response =
-                service.resolve("google", 22L, "member@test.com", null, "Bearer internal-token");
+                service.resolve("google", 22L, "member@test.com", null, "Bearer internal-token", null, null);
 
         assertThat(response.plainKey()).isEqualTo("AIza-real-key");
         assertThat(response.keyId()).isEqualTo("777");
@@ -103,14 +105,14 @@ class TeamInternalApiKeyResolveServiceTest {
     @Test
     void resolve_requiresInternalTokenWhenConfigured() {
         TeamInternalApiKeyResolveService service = newService("internal-token");
-        assertThatThrownBy(() -> service.resolve("openai", 20L, "member@test.com", null, null))
+        assertThatThrownBy(() -> service.resolve("openai", 20L, "member@test.com", null, null, null, null))
                 .isInstanceOf(InternalRequestUnauthorizedException.class);
     }
 
     @Test
     void resolve_withoutConfiguredToken_throwsForbidden() {
         TeamInternalApiKeyResolveService service = newService("");
-        assertThatThrownBy(() -> service.resolve("openai", 30L, "member@test.com", null, "Bearer any"))
+        assertThatThrownBy(() -> service.resolve("openai", 30L, "member@test.com", null, "Bearer any", null, null))
                 .isInstanceOf(InternalRequestUnauthorizedException.class)
                 .hasMessageContaining("서버에 설정되지");
     }
@@ -151,7 +153,7 @@ class TeamInternalApiKeyResolveServiceTest {
         when(encryptionUtil.decryptAes256Gcm("enc")).thenReturn("sk-plain");
 
         InternalTeamApiKeyResponse response =
-                service.resolve("openai", 10L, "42", null, "Bearer internal-token");
+                service.resolve("openai", 10L, "42", null, "Bearer internal-token", null, null);
 
         assertThat(response.plainKey()).isEqualTo("sk-plain");
     }
@@ -169,9 +171,127 @@ class TeamInternalApiKeyResolveServiceTest {
                 45L, TeamApiKeyProvider.OPENAI
         )).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.resolve("openai", 45L, "member@test.com", null, "Bearer internal-token"))
+        assertThatThrownBy(() -> service.resolve("openai", 45L, "member@test.com", null, "Bearer internal-token", null, null))
                 .isInstanceOf(TeamApiKeyNotFoundException.class)
                 .hasMessageContaining("활성 상태 API 키");
+    }
+
+    @Test
+    void resolve_withApiKeyId_usesIdLookupAndSkipsLatestQuery() {
+        TeamMemberRepository teamMemberRepository = mock(TeamMemberRepository.class);
+        TeamApiKeyRepository teamApiKeyRepository = mock(TeamApiKeyRepository.class);
+        EncryptionUtil encryptionUtil = mock(EncryptionUtil.class);
+        TeamInternalApiKeyResolveService service = newService(
+                teamMemberRepository, teamApiKeyRepository, encryptionUtil, "internal-token");
+
+        TeamApiKeyEntity entity = TeamApiKeyEntity.register(
+                22L,
+                TeamApiKeyProvider.GOOGLE,
+                "google-key",
+                "hash",
+                "encrypted-value",
+                BigDecimal.ONE
+        );
+        ReflectionTestUtils.setField(entity, "id", 777L);
+        ReflectionTestUtils.setField(entity, "createdAt", Instant.now());
+
+        when(teamMemberRepository.existsByTeamIdAndUserId(22L, "member@test.com")).thenReturn(true);
+        when(teamApiKeyRepository.findByIdAndTeamIdAndProviderAndDeletionRequestedAtIsNull(
+                777L, 22L, TeamApiKeyProvider.GOOGLE
+        )).thenReturn(Optional.of(entity));
+        when(encryptionUtil.decryptAes256Gcm("encrypted-value")).thenReturn("AIza-real-key");
+
+        InternalTeamApiKeyResponse response = service.resolve(
+                "google", 22L, "member@test.com", null, "Bearer internal-token", "777", null);
+
+        assertThat(response.plainKey()).isEqualTo("AIza-real-key");
+        assertThat(response.keyId()).isEqualTo("777");
+        verify(teamApiKeyRepository).findByIdAndTeamIdAndProviderAndDeletionRequestedAtIsNull(
+                777L, 22L, TeamApiKeyProvider.GOOGLE);
+        verify(teamApiKeyRepository, never()).findFirstByTeamIdAndProviderAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(
+                any(), any());
+    }
+
+    @Test
+    void resolve_withAlias_usesAliasLookup() {
+        TeamMemberRepository teamMemberRepository = mock(TeamMemberRepository.class);
+        TeamApiKeyRepository teamApiKeyRepository = mock(TeamApiKeyRepository.class);
+        EncryptionUtil encryptionUtil = mock(EncryptionUtil.class);
+        TeamInternalApiKeyResolveService service = newService(
+                teamMemberRepository, teamApiKeyRepository, encryptionUtil, "internal-token");
+
+        TeamApiKeyEntity entity = TeamApiKeyEntity.register(
+                22L,
+                TeamApiKeyProvider.GOOGLE,
+                "my-alias",
+                "hash",
+                "encrypted-value",
+                BigDecimal.ONE
+        );
+        ReflectionTestUtils.setField(entity, "id", 888L);
+        ReflectionTestUtils.setField(entity, "createdAt", Instant.now());
+
+        when(teamMemberRepository.existsByTeamIdAndUserId(22L, "member@test.com")).thenReturn(true);
+        when(teamApiKeyRepository.findFirstByTeamIdAndProviderAndKeyAliasAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(
+                22L, TeamApiKeyProvider.GOOGLE, "my-alias"
+        )).thenReturn(Optional.of(entity));
+        when(encryptionUtil.decryptAes256Gcm("encrypted-value")).thenReturn("AIza-alias-key");
+
+        InternalTeamApiKeyResponse response = service.resolve(
+                "google", 22L, "member@test.com", null, "Bearer internal-token", null, "my-alias");
+
+        assertThat(response.plainKey()).isEqualTo("AIza-alias-key");
+        verify(teamApiKeyRepository).findFirstByTeamIdAndProviderAndKeyAliasAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(
+                22L, TeamApiKeyProvider.GOOGLE, "my-alias");
+        verify(teamApiKeyRepository, never()).findByIdAndTeamIdAndProviderAndDeletionRequestedAtIsNull(
+                any(), any(), any());
+    }
+
+    @Test
+    void resolve_invalidApiKeyId_throwsIllegalArgumentException() {
+        TeamMemberRepository teamMemberRepository = mock(TeamMemberRepository.class);
+        TeamApiKeyRepository teamApiKeyRepository = mock(TeamApiKeyRepository.class);
+        EncryptionUtil encryptionUtil = mock(EncryptionUtil.class);
+        TeamInternalApiKeyResolveService service = newService(
+                teamMemberRepository, teamApiKeyRepository, encryptionUtil, "internal-token");
+
+        when(teamMemberRepository.existsByTeamIdAndUserId(22L, "member@test.com")).thenReturn(true);
+
+        assertThatThrownBy(() -> service.resolve(
+                "google", 22L, "member@test.com", null, "Bearer internal-token", "not-a-number", null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("apiKeyId");
+    }
+
+    @Test
+    void resolve_geminiProvider_resolvesAsGoogle() {
+        TeamMemberRepository teamMemberRepository = mock(TeamMemberRepository.class);
+        TeamApiKeyRepository teamApiKeyRepository = mock(TeamApiKeyRepository.class);
+        EncryptionUtil encryptionUtil = mock(EncryptionUtil.class);
+        TeamInternalApiKeyResolveService service = newService(
+                teamMemberRepository, teamApiKeyRepository, encryptionUtil, "internal-token");
+
+        TeamApiKeyEntity entity = TeamApiKeyEntity.register(
+                22L,
+                TeamApiKeyProvider.GOOGLE,
+                "google-key",
+                "hash",
+                "enc",
+                BigDecimal.ONE
+        );
+        ReflectionTestUtils.setField(entity, "id", 1L);
+        ReflectionTestUtils.setField(entity, "createdAt", Instant.now());
+
+        when(teamMemberRepository.existsByTeamIdAndUserId(22L, "member@test.com")).thenReturn(true);
+        when(teamApiKeyRepository.findFirstByTeamIdAndProviderAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(
+                22L, TeamApiKeyProvider.GOOGLE
+        )).thenReturn(Optional.of(entity));
+        when(encryptionUtil.decryptAes256Gcm("enc")).thenReturn("plain");
+
+        service.resolve("gemini", 22L, "member@test.com", null, "Bearer internal-token", null, null);
+
+        verify(teamApiKeyRepository).findFirstByTeamIdAndProviderAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(
+                22L, TeamApiKeyProvider.GOOGLE);
     }
 
     private static TeamInternalApiKeyResolveService newService(String token) {

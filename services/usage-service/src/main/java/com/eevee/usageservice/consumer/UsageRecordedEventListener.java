@@ -30,6 +30,11 @@ public class UsageRecordedEventListener {
     public void onMessage(String json) {
         try {
             UsageRecordedEvent event = objectMapper.readValue(json, UsageRecordedEvent.class);
+            log.debug(
+                    "Consuming UsageRecordedEvent eventId={} teamId(raw)={}",
+                    event.eventId(),
+                    event.teamId()
+            );
             usageRecordedService.persist(event);
         } catch (JsonProcessingException e) {
             log.error("Failed to deserialize UsageRecordedEvent (malformed JSON); message will be acked to avoid requeue loop", e);

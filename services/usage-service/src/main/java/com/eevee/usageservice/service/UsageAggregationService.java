@@ -27,7 +27,12 @@ public class UsageAggregationService {
         }
         aggregationRepository.upsertDailySummary(message);
         long elapsedMs = (System.nanoTime() - startedAt) / 1_000_000;
-        log.debug("Applied summary aggregation eventId={} elapsedMs={}", message.eventId(), elapsedMs);
+        log.debug(
+                "Applied summary aggregation eventId={} teamId={} elapsedMs={}",
+                message.eventId(),
+                message.teamId(),
+                elapsedMs
+        );
     }
 
     @Transactional

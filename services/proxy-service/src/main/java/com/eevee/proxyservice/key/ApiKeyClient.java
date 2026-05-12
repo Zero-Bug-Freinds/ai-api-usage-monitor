@@ -2,6 +2,7 @@ package com.eevee.proxyservice.key;
 
 import com.eevee.proxyservice.config.ProxyProperties;
 import com.eevee.usage.events.AiProvider;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.LoadingCache;
 import org.slf4j.Logger;
@@ -74,24 +75,29 @@ public class ApiKeyClient {
         String normalizedRequestedApiKeyId = normalizeSelector(requestedApiKeyId);
         String normalizedRequestedAlias = normalizeSelector(requestedAlias);
         String normalizedRawApiKey = normalizeSelector(rawApiKey);
-        if (normalizedRequestedApiKeyId != null || normalizedRequestedAlias != null) {
-            return Mono.fromCallable(() -> loadKeyBlocking(
-                            requireLookupUserId(keyLookupUserId),
-                            normalizedTeamId,
-                            provider,
-                            normalizedRequestedApiKeyId,
-                            normalizedRequestedAlias,
-                            null
-                    ))
+        boolean hasSelector = normalizedRequestedApiKeyId != null || normalizedRequestedAlias != null;
+        // Internal-only scope isolation: selector 지정 또는 raw key 미포함 요청에만 적용한다.
+        if (isInternalScopeLookup(hasSelector, normalizedRawApiKey)) {
+            String requiredLookupUserId = requireLookupUserId(keyLookupUserId);
+            if (hasSelector) {
+                return Mono.fromCallable(() -> loadKeyBlocking(
+                                requiredLookupUserId,
+                                normalizedTeamId,
+                                provider,
+                                normalizedRequestedApiKeyId,
+                                normalizedRequestedAlias,
+                                null
+                        ))
+                        .subscribeOn(Schedulers.boundedElastic());
+            }
+            return Mono.fromCallable(() -> cache.get(requiredLookupUserId + ":" + normalizedTeamId + ":" + provider.pathSegment()))
                     .subscribeOn(Schedulers.boundedElastic());
         }
         if (normalizedRawApiKey != null) {
             return Mono.fromCallable(() -> loadByReverseLookup(normalizedRawApiKey, provider))
                     .subscribeOn(Schedulers.boundedElastic());
         }
-        String requiredLookupUserId = requireLookupUserId(keyLookupUserId);
-        return Mono.fromCallable(() -> cache.get(requiredLookupUserId + ":" + normalizedTeamId + ":" + provider.pathSegment()))
-                .subscribeOn(Schedulers.boundedElastic());
+        throw new ResponseStatusException(NOT_FOUND, "존재하지 않은 API key 입니다");
     }
 
     private ResolvedApiKey loadKeyBlocking(String cacheKey) {
@@ -138,7 +144,7 @@ public class ApiKeyClient {
                 throw new ResponseStatusException(BAD_GATEWAY, "Key lookup returned empty key");
             }
             if (!isActiveStatus(body.status())) {
-                throw new ResponseStatusException(NOT_FOUND, "존재하지 않은 API key 입니다");
+                throw new ResponseStatusException(NOT_FOUND, notFoundReason(teamRequest));
             }
             String resolvedAlias = hasText(body.alias()) ? body.alias() : requestedAlias;
             log.info("Resolved API key lookupTarget={} provider={} teamId={} user={} keySource={}",
@@ -163,7 +169,7 @@ public class ApiKeyClient {
             if (statusCode == 404) {
                 log.warn("API key lookup not found lookupTarget={} provider={} teamId={} user={} status={}",
                         lookupTarget, provider.pathSegment(), teamForLog, userForLog, e.getStatusCode().value());
-                throw new ResponseStatusException(NOT_FOUND, "존재하지 않은 API key 입니다", e);
+                throw new ResponseStatusException(NOT_FOUND, notFoundReason(teamRequest), e);
             }
             log.warn("API key lookup failed lookupTarget={} provider={} teamId={} user={} status={}",
                     lookupTarget, provider.pathSegment(), teamForLog, userForLog, e.getStatusCode().value());
@@ -184,40 +190,28 @@ public class ApiKeyClient {
             String requestedAlias
     ) {
         String token = proxyProperties.getKeyService().getInternalToken();
-        String primaryProvider = provider.pathSegment();
-        try {
-            return loadIdentityKeyByProviderSegment(
-                    keyLookupUserId,
-                    primaryProvider,
-                    token,
-                    requestedApiKeyId,
-                    requestedAlias
-            );
-        } catch (WebClientResponseException e) {
-            if (e.getStatusCode().value() != 404 || provider != AiProvider.GOOGLE) {
+        WebClientResponseException last404 = null;
+        for (String providerSegment : providerSegmentsForLookup(provider)) {
+            try {
+                return loadIdentityKeyByProviderSegment(
+                        keyLookupUserId,
+                        providerSegment,
+                        token,
+                        requestedApiKeyId,
+                        requestedAlias
+                );
+            } catch (WebClientResponseException e) {
+                if (e.getStatusCode().value() == 404) {
+                    last404 = e;
+                    continue;
+                }
                 throw e;
             }
         }
-
-        try {
-            return loadIdentityKeyByProviderSegment(
-                    keyLookupUserId,
-                    "gemini",
-                    token,
-                    requestedApiKeyId,
-                    requestedAlias
-            );
-        } catch (WebClientResponseException e) {
-            if (e.getStatusCode().value() == 404) {
-                throw new ResponseStatusException(
-                        NOT_FOUND,
-                        "존재하지 않은 API key 입니다",
-                        e
-                );
-            }
-            throw e;
+        if (last404 != null) {
+            throw new ResponseStatusException(NOT_FOUND, "개인용으로 등록된 API Key가 존재하지 않습니다.", last404);
         }
-
+        throw new ResponseStatusException(BAD_GATEWAY, "Key lookup failed");
     }
 
     private KeyResponse loadIdentityKeyByProviderSegment(
@@ -256,43 +250,30 @@ public class ApiKeyClient {
         ProxyProperties.TeamKeyService teamKeyService = proxyProperties.getTeamKeyService();
         String token = teamKeyService.getInternalToken();
         String pathTemplate = teamKeyService.getPathTemplate();
-        String primaryProvider = provider.pathSegment();
-        try {
-            return loadTeamKeyByProviderSegment(
-                    keyLookupUserId,
-                    teamId,
-                    primaryProvider,
-                    token,
-                    pathTemplate,
-                    requestedApiKeyId,
-                    requestedAlias
-            );
-        } catch (WebClientResponseException e) {
-            if (e.getStatusCode().value() != 404 || provider != AiProvider.GOOGLE) {
+        WebClientResponseException last404 = null;
+        for (String providerSegment : providerSegmentsForLookup(provider)) {
+            try {
+                return loadTeamKeyByProviderSegment(
+                        keyLookupUserId,
+                        teamId,
+                        providerSegment,
+                        token,
+                        pathTemplate,
+                        requestedApiKeyId,
+                        requestedAlias
+                );
+            } catch (WebClientResponseException e) {
+                if (e.getStatusCode().value() == 404) {
+                    last404 = e;
+                    continue;
+                }
                 throw e;
             }
         }
-
-        try {
-            return loadTeamKeyByProviderSegment(
-                    keyLookupUserId,
-                    teamId,
-                    "gemini",
-                    token,
-                    pathTemplate,
-                    requestedApiKeyId,
-                    requestedAlias
-            );
-        } catch (WebClientResponseException e) {
-            if (e.getStatusCode().value() == 404) {
-                throw new ResponseStatusException(
-                        NOT_FOUND,
-                        "존재하지 않은 API key 입니다",
-                        e
-                );
-            }
-            throw e;
+        if (last404 != null) {
+            throw new ResponseStatusException(NOT_FOUND, "해당 팀에 등록된 사용 가능한 API Key가 없습니다.", last404);
         }
+        throw new ResponseStatusException(BAD_GATEWAY, "Key lookup failed");
     }
 
     private KeyResponse loadTeamKeyByProviderSegment(
@@ -361,7 +342,20 @@ public class ApiKeyClient {
     }
 
     static List<String> providerSegmentsForLookup(AiProvider provider) {
+        if (provider == AiProvider.GOOGLE) {
+            return List.of("google", "gemini");
+        }
         return List.of(provider.pathSegment());
+    }
+
+    private static boolean isInternalScopeLookup(boolean hasSelector, String normalizedRawApiKey) {
+        return hasSelector || normalizedRawApiKey == null;
+    }
+
+    private static String notFoundReason(boolean teamRequest) {
+        return teamRequest
+                ? "해당 팀에 등록된 사용 가능한 API Key가 없습니다."
+                : "개인용으로 등록된 API Key가 존재하지 않습니다.";
     }
 
     private static String masked(String value) {
@@ -524,6 +518,7 @@ public class ApiKeyClient {
         }
     }
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
     private record KeyResponse(String plainKey, String keyId, String alias, String status) {
     }
 

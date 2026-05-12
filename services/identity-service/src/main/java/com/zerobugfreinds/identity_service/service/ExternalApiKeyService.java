@@ -308,7 +308,12 @@ public class ExternalApiKeyService {
 	}
 
 	@Transactional(readOnly = true)
-	public InternalApiKeyResponse resolveInternalKey(String userId, ExternalApiKeyProvider provider) {
+	public InternalApiKeyResponse resolveInternalKey(
+			String userId,
+			ExternalApiKeyProvider provider,
+			String apiKeyId,
+			String alias
+	) {
 		Long resolvedUserId = resolveInternalLookupUserId(userId);
 		if (resolvedUserId == null) {
 			throw new IllegalArgumentException("userId는 필수입니다");
@@ -317,11 +322,46 @@ public class ExternalApiKeyService {
 			throw new IllegalArgumentException("provider는 필수입니다");
 		}
 		ExternalApiKeyProvider normalizedProvider = normalizeProvider(provider);
-		ExternalApiKeyEntity entity = externalApiKeyRepository
-				.findTopByUserIdAndProviderAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(resolvedUserId, normalizedProvider)
-				.orElseThrow(() -> new ExternalApiKeyNotFoundException("등록된 API 키를 찾을 수 없습니다"));
+		ExternalApiKeyEntity entity = selectInternalKey(resolvedUserId, normalizedProvider, apiKeyId, alias);
 		String plainKey = encryptionUtil.decryptAes256Gcm(entity.getEncryptedKey());
 		return new InternalApiKeyResponse(plainKey, String.valueOf(entity.getId()));
+	}
+
+	/**
+	 * 사용자 범위의 활성 외부 API 키만 조회한다. 팀 키로의 폴백은 하지 않는다.
+	 *
+	 * <p>우선순위: {@code apiKeyId}가 있으면 ID 매칭, 없으면 {@code alias} 최신 건, 둘 다 없으면 해당
+	 * provider의 최신 활성 키.</p>
+	 */
+	private ExternalApiKeyEntity selectInternalKey(
+			Long userId,
+			ExternalApiKeyProvider provider,
+			String apiKeyId,
+			String alias
+	) {
+		if (StringUtils.hasText(apiKeyId)) {
+			long keyId;
+			try {
+				keyId = Long.parseLong(apiKeyId.trim());
+			} catch (NumberFormatException ex) {
+				throw new IllegalArgumentException("apiKeyId는 숫자여야 합니다", ex);
+			}
+			return externalApiKeyRepository
+					.findByIdAndUserIdAndProviderAndDeletionRequestedAtIsNull(keyId, userId, provider)
+					.orElseThrow(() -> new ExternalApiKeyNotFoundException("등록된 API 키를 찾을 수 없습니다"));
+		}
+		if (StringUtils.hasText(alias)) {
+			return externalApiKeyRepository
+					.findFirstByUserIdAndProviderAndKeyAliasAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(
+							userId,
+							provider,
+							alias.trim()
+					)
+					.orElseThrow(() -> new ExternalApiKeyNotFoundException("등록된 API 키를 찾을 수 없습니다"));
+		}
+		return externalApiKeyRepository
+				.findTopByUserIdAndProviderAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(userId, provider)
+				.orElseThrow(() -> new ExternalApiKeyNotFoundException("등록된 API 키를 찾을 수 없습니다"));
 	}
 
 	private Long resolveInternalLookupUserId(String userIdOrEmail) {
