@@ -19,7 +19,7 @@ public final class OfficialProviderModelPriceCatalog {
     /**
      * Calendar date when the numbers below were checked against the official pages (YYYY-MM-DD).
      */
-    public static final String DOCUMENTED_AS_OF = "2026-04-17";
+    public static final String DOCUMENTED_AS_OF = "2026-05-09";
 
     /** Google AI Gemini API pricing (Korean page). */
     public static final String REFERENCE_URL_GOOGLE_GEMINI = "https://ai.google.dev/gemini-api/docs/pricing?hl=ko";
@@ -127,8 +127,8 @@ public final class OfficialProviderModelPriceCatalog {
                 new CatalogRow(
                         AiProvider.OPENAI,
                         "gpt-4.1",
-                        new BigDecimal("5.00"),
-                        new BigDecimal("15.00"),
+                        new BigDecimal("2.00"),
+                        new BigDecimal("8.00"),
                         DEFAULT_VALID_FROM,
                         REFERENCE_URL_OPENAI,
                         "gpt-4.1: Standard tier, input/output USD per 1M tokens (OpenAI API pricing table)"
@@ -136,8 +136,8 @@ public final class OfficialProviderModelPriceCatalog {
                 new CatalogRow(
                         AiProvider.OPENAI,
                         "gpt-4.1-mini",
-                        new BigDecimal("0.30"),
-                        new BigDecimal("1.20"),
+                        new BigDecimal("0.40"),
+                        new BigDecimal("1.60"),
                         DEFAULT_VALID_FROM,
                         REFERENCE_URL_OPENAI,
                         "gpt-4.1-mini: Standard tier, input/output USD per 1M tokens (OpenAI API pricing table)"
@@ -153,12 +153,39 @@ public final class OfficialProviderModelPriceCatalog {
                 ),
                 new CatalogRow(
                         AiProvider.OPENAI,
+                        "gpt-5.5",
+                        new BigDecimal("5.00"),
+                        new BigDecimal("30.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "gpt-5.5: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "gpt-5.5-pro",
+                        new BigDecimal("30.00"),
+                        new BigDecimal("180.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "gpt-5.5-pro: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
                         "gpt-5.4",
                         new BigDecimal("2.50"),
                         new BigDecimal("15.00"),
                         DEFAULT_VALID_FROM,
                         REFERENCE_URL_OPENAI,
                         "gpt-5.4: Standard tier, input/output USD per 1M tokens (OpenAI API pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "gpt-5.4-pro",
+                        new BigDecimal("30.00"),
+                        new BigDecimal("180.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "gpt-5.4-pro: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
                 ),
                 new CatalogRow(
                         AiProvider.OPENAI,
@@ -179,13 +206,400 @@ public final class OfficialProviderModelPriceCatalog {
                         "gpt-5.4-nano: Standard tier, input/output USD per 1M tokens (OpenAI API pricing table)"
                 ),
                 new CatalogRow(
+                        AiProvider.OPENAI,
+                        "gpt-5.2",
+                        new BigDecimal("1.75"),
+                        new BigDecimal("14.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "gpt-5.2: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "gpt-5.2-pro",
+                        new BigDecimal("21.00"),
+                        new BigDecimal("168.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "gpt-5.2-pro: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "gpt-5.1",
+                        new BigDecimal("1.25"),
+                        new BigDecimal("10.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "gpt-5.1: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "gpt-5",
+                        new BigDecimal("1.25"),
+                        new BigDecimal("10.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "gpt-5: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "gpt-5-mini",
+                        new BigDecimal("0.25"),
+                        new BigDecimal("2.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "gpt-5-mini: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "gpt-5-nano",
+                        new BigDecimal("0.05"),
+                        new BigDecimal("0.40"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "gpt-5-nano: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "gpt-5-pro",
+                        new BigDecimal("15.00"),
+                        new BigDecimal("120.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "gpt-5-pro: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "o1",
+                        new BigDecimal("15.00"),
+                        new BigDecimal("60.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "o1: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "o1-mini",
+                        new BigDecimal("1.10"),
+                        new BigDecimal("4.40"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "o1-mini: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "o1-pro",
+                        new BigDecimal("150.00"),
+                        new BigDecimal("600.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "o1-pro: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "o3",
+                        new BigDecimal("2.00"),
+                        new BigDecimal("8.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "o3: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "o3-mini",
+                        new BigDecimal("1.10"),
+                        new BigDecimal("4.40"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "o3-mini: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "o3-pro",
+                        new BigDecimal("20.00"),
+                        new BigDecimal("80.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "o3-pro: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "o4-mini",
+                        new BigDecimal("1.10"),
+                        new BigDecimal("4.40"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "o4-mini: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "gpt-4o-2024-05-13",
+                        new BigDecimal("5.00"),
+                        new BigDecimal("15.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "gpt-4o-2024-05-13: Standard tier snapshot model, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "gpt-4-turbo-2024-04-09",
+                        new BigDecimal("10.00"),
+                        new BigDecimal("30.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "gpt-4-turbo-2024-04-09: Standard tier snapshot model, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "gpt-4-0125-preview",
+                        new BigDecimal("10.00"),
+                        new BigDecimal("30.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "gpt-4-0125-preview: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "gpt-4-1106-preview",
+                        new BigDecimal("10.00"),
+                        new BigDecimal("30.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "gpt-4-1106-preview: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "gpt-4-1106-vision-preview",
+                        new BigDecimal("10.00"),
+                        new BigDecimal("30.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "gpt-4-1106-vision-preview: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "gpt-4-0613",
+                        new BigDecimal("30.00"),
+                        new BigDecimal("60.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "gpt-4-0613: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "gpt-4-0314",
+                        new BigDecimal("30.00"),
+                        new BigDecimal("60.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "gpt-4-0314: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "gpt-4-32k",
+                        new BigDecimal("60.00"),
+                        new BigDecimal("120.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "gpt-4-32k: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "gpt-3.5-turbo",
+                        new BigDecimal("0.50"),
+                        new BigDecimal("1.50"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "gpt-3.5-turbo: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "gpt-3.5-turbo-0125",
+                        new BigDecimal("0.50"),
+                        new BigDecimal("1.50"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "gpt-3.5-turbo-0125: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "gpt-3.5-turbo-1106",
+                        new BigDecimal("1.00"),
+                        new BigDecimal("2.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "gpt-3.5-turbo-1106: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "gpt-3.5-turbo-0613",
+                        new BigDecimal("1.50"),
+                        new BigDecimal("2.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "gpt-3.5-turbo-0613: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "gpt-3.5-0301",
+                        new BigDecimal("1.50"),
+                        new BigDecimal("2.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "gpt-3.5-0301: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "gpt-3.5-turbo-instruct",
+                        new BigDecimal("1.50"),
+                        new BigDecimal("2.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "gpt-3.5-turbo-instruct: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "gpt-3.5-turbo-16k-0613",
+                        new BigDecimal("3.00"),
+                        new BigDecimal("4.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "gpt-3.5-turbo-16k-0613: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "davinci-002",
+                        new BigDecimal("2.00"),
+                        new BigDecimal("2.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "davinci-002: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.OPENAI,
+                        "babbage-002",
+                        new BigDecimal("0.40"),
+                        new BigDecimal("0.40"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_OPENAI_PLATFORM_DOCS,
+                        "babbage-002: Standard tier, input/output USD per 1M tokens (OpenAI API pricing docs)"
+                ),
+                new CatalogRow(
+                        AiProvider.ANTHROPIC,
+                        "claude-opus-4-7",
+                        new BigDecimal("5.00"),
+                        new BigDecimal("25.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_ANTHROPIC,
+                        "Claude Opus 4.7 — Base input $5/MTok, Output $25/MTok (Anthropic pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.ANTHROPIC,
+                        "claude-opus-4-6",
+                        new BigDecimal("5.00"),
+                        new BigDecimal("25.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_ANTHROPIC,
+                        "Claude Opus 4.6 — Base input $5/MTok, Output $25/MTok (Anthropic pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.ANTHROPIC,
+                        "claude-opus-4-5-20251101",
+                        new BigDecimal("5.00"),
+                        new BigDecimal("25.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_ANTHROPIC,
+                        "Claude Opus 4.5 (dated id) — Base input $5/MTok, Output $25/MTok (Anthropic pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.ANTHROPIC,
+                        "claude-opus-4-1-20250805",
+                        new BigDecimal("15.00"),
+                        new BigDecimal("75.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_ANTHROPIC,
+                        "Claude Opus 4.1 (dated id) — Base input $15/MTok, Output $75/MTok (Anthropic pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.ANTHROPIC,
+                        "claude-sonnet-4-6",
+                        new BigDecimal("3.00"),
+                        new BigDecimal("15.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_ANTHROPIC,
+                        "Claude Sonnet 4.6 — Base input $3/MTok, Output $15/MTok (Anthropic pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.ANTHROPIC,
+                        "claude-sonnet-4-5",
+                        new BigDecimal("3.00"),
+                        new BigDecimal("15.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_ANTHROPIC,
+                        "Claude Sonnet 4.5 (alias) — Base input $3/MTok, Output $15/MTok (Anthropic pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.ANTHROPIC,
+                        "claude-sonnet-4-5-20250929",
+                        new BigDecimal("3.00"),
+                        new BigDecimal("15.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_ANTHROPIC,
+                        "Claude Sonnet 4.5 (dated id) — Base input $3/MTok, Output $15/MTok (Anthropic pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.ANTHROPIC,
+                        "claude-sonnet-4",
+                        new BigDecimal("3.00"),
+                        new BigDecimal("15.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_ANTHROPIC,
+                        "Claude Sonnet 4 (alias) — Base input $3/MTok, Output $15/MTok (Anthropic pricing table)"
+                ),
+                new CatalogRow(
                         AiProvider.ANTHROPIC,
                         "claude-sonnet-4-20250514",
                         new BigDecimal("3.00"),
                         new BigDecimal("15.00"),
                         DEFAULT_VALID_FROM,
                         REFERENCE_URL_ANTHROPIC,
-                        "Claude Sonnet 4.x — Base input $3/MTok, Output $15/MTok (API model id may vary; add rows for other IDs if needed)"
+                        "Claude Sonnet 4 (dated id) — Base input $3/MTok, Output $15/MTok (Anthropic pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.ANTHROPIC,
+                        "claude-haiku-4-5",
+                        new BigDecimal("1.00"),
+                        new BigDecimal("5.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_ANTHROPIC,
+                        "Claude Haiku 4.5 (alias) — Base input $1/MTok, Output $5/MTok (Anthropic pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.ANTHROPIC,
+                        "claude-haiku-4-5-20251001",
+                        new BigDecimal("1.00"),
+                        new BigDecimal("5.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_ANTHROPIC,
+                        "Claude Haiku 4.5 (dated id) — Base input $1/MTok, Output $5/MTok (Anthropic pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.ANTHROPIC,
+                        "claude-haiku-3-5",
+                        new BigDecimal("0.80"),
+                        new BigDecimal("4.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_ANTHROPIC,
+                        "Claude Haiku 3.5 — Base input $0.80/MTok, Output $4/MTok (Anthropic pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.ANTHROPIC,
+                        "claude-haiku-3",
+                        new BigDecimal("0.25"),
+                        new BigDecimal("1.25"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_ANTHROPIC,
+                        "Claude Haiku 3 — Base input $0.25/MTok, Output $1.25/MTok (Anthropic pricing table)"
                 ),
                 new CatalogRow(
                         AiProvider.ANTHROPIC,

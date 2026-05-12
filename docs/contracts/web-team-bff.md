@@ -212,6 +212,7 @@
 ### 6.1 내부 API (notification/billing/agent 등 서비스 간 조회)
 
 - Team Service는 내부 호출용으로 `GET /internal/teams/{id}`를 제공한다.
+- **notification-service(팀 API 키 예산 임계 인앱):** Billing이 `billing.team.budget.threshold.reached`를 발행하면 notification-service가 팀 표시명을 위해 **`GET /internal/teams/{id}`** 를, 수신자 fan-out을 위해 **`GET /api/v1/teams/{teamId}/members`**(`X-User-Id`: 이벤트의 `triggerUserId`)를 호출한다. HTTP 베이스 URL은 notification의 **`TEAM_SERVICE_BASE_URL`**(기본 `http://localhost:8093`)·**`TEAM_SERVICE_TIMEOUT_MS`** 를 쓴다(팀 초대 액션용 `TEAM_SERVICE_INTERNAL_BASE_URL`과는 별도 설정일 수 있다). AMQP 페이로드 정본은 [`docs/billing-outbound-events.md`](../billing-outbound-events.md) §2.1.
 - Team Service는 Billing 월 롤업 내부 호출을 위해 `team.billing.base-url` 설정을 사용한다(환경 변수 `TEAM_BILLING_SERVICE_BASE_URL`, 기본 `http://localhost:8095`).
 - 응답 `data`는 `teamId`, `teamName`, `createdBy`, `createdAt`를 포함한다.
 - 내부 멤버십 검증용으로 `GET /internal/v1/teams/{teamId}/members/{userId}/verify`를 제공한다.

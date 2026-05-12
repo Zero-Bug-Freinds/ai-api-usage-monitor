@@ -7,12 +7,14 @@ import com.eevee.billingservice.api.dto.ExpenditureSummaryResponse;
 import com.eevee.billingservice.api.dto.MonthlyBudgetAuthorityResponse;
 import com.eevee.billingservice.api.dto.MonthlyBudgetStatusResponse;
 import com.eevee.billingservice.api.dto.MonthlyExpenditurePoint;
+import com.eevee.billingservice.api.dto.TeamApiKeyMonthSpendResponse;
 import com.eevee.billingservice.api.dto.TeamMonthRollupRequest;
 import com.eevee.billingservice.api.dto.TeamMonthRollupResponse;
 import com.eevee.billingservice.security.BillingGatewayTrustFilter;
 import com.eevee.billingservice.service.BudgetAuthorityService;
 import com.eevee.billingservice.service.ExpenditureQueryService;
 import com.eevee.billingservice.service.ExpenditureTeamRollupService;
+import com.eevee.billingservice.service.TeamApiKeyExpenditureQueryService;
 import com.eevee.usage.events.AiProvider;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -37,15 +39,18 @@ public class ExpenditureController {
     private final ExpenditureQueryService expenditureQueryService;
     private final ExpenditureTeamRollupService expenditureTeamRollupService;
     private final BudgetAuthorityService budgetAuthorityService;
+    private final TeamApiKeyExpenditureQueryService teamApiKeyExpenditureQueryService;
 
     public ExpenditureController(
             ExpenditureQueryService expenditureQueryService,
             ExpenditureTeamRollupService expenditureTeamRollupService,
-            BudgetAuthorityService budgetAuthorityService
+            BudgetAuthorityService budgetAuthorityService,
+            TeamApiKeyExpenditureQueryService teamApiKeyExpenditureQueryService
     ) {
         this.expenditureQueryService = expenditureQueryService;
         this.expenditureTeamRollupService = expenditureTeamRollupService;
         this.budgetAuthorityService = budgetAuthorityService;
+        this.teamApiKeyExpenditureQueryService = teamApiKeyExpenditureQueryService;
     }
 
     @GetMapping("/summary")
@@ -133,6 +138,21 @@ public class ExpenditureController {
     public TeamMonthRollupResponse teamMonthRollup(HttpServletRequest request, @RequestBody TeamMonthRollupRequest body) {
         currentUser(request);
         return expenditureTeamRollupService.rollup(body);
+    }
+
+    /**
+     * Team registered keys only (based on teamApiKeyId aggregation and team-service synced read model).
+     */
+    @GetMapping("/team-api-keys/month-spend")
+    public TeamApiKeyMonthSpendResponse teamApiKeysMonthSpend(
+            HttpServletRequest request,
+            @RequestParam long teamId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate monthStartDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
+    ) {
+        currentUser(request);
+        return teamApiKeyExpenditureQueryService.spend(teamId, monthStartDate, from, to);
     }
 
     private static String currentUser(HttpServletRequest request) {

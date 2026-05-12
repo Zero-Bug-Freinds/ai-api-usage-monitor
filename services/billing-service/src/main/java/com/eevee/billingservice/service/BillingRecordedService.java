@@ -4,6 +4,7 @@ import com.eevee.billingservice.config.BillingRabbitProperties;
 import com.eevee.billingservice.domain.BillingProcessedEventEntity;
 import com.eevee.billingservice.domain.ProviderModelPriceEntity;
 import com.eevee.billingservice.integration.IdentityBudgetClient;
+import com.eevee.billingservice.repository.BillingTeamApiKeyRepository;
 import com.eevee.billingservice.repository.BillingProcessedEventRepository;
 import com.eevee.billingservice.repository.ProviderModelPriceRepository;
 import com.eevee.usage.events.TokenUsage;
@@ -34,30 +35,39 @@ public class BillingRecordedService {
     private final BillingProcessedEventRepository processedEventRepository;
     private final ProviderModelPriceRepository priceRepository;
     private final BillingAggregationJdbc aggregationJdbc;
+    private final TeamApiKeyAggregationJdbc teamApiKeyAggregationJdbc;
     private final UsageCostFinalizedEventPublisher costFinalizedPublisher;
     private final BudgetThresholdEventPublisher budgetThresholdPublisher;
     private final BillingProcessedEventLifecycle processedEventLifecycle;
     private final BillingRabbitProperties rabbitProperties;
     private final IdentityBudgetClient identityBudgetClient;
+    private final BillingTeamApiKeyRepository teamApiKeyRepository;
+    private final TeamApiKeyBudgetThresholdEventPublisher teamApiKeyBudgetThresholdEventPublisher;
 
     public BillingRecordedService(
             BillingProcessedEventRepository processedEventRepository,
             ProviderModelPriceRepository priceRepository,
             BillingAggregationJdbc aggregationJdbc,
+            TeamApiKeyAggregationJdbc teamApiKeyAggregationJdbc,
             UsageCostFinalizedEventPublisher costFinalizedPublisher,
             BudgetThresholdEventPublisher budgetThresholdPublisher,
             BillingProcessedEventLifecycle processedEventLifecycle,
             BillingRabbitProperties rabbitProperties,
-            IdentityBudgetClient identityBudgetClient
+            IdentityBudgetClient identityBudgetClient,
+            BillingTeamApiKeyRepository teamApiKeyRepository,
+            TeamApiKeyBudgetThresholdEventPublisher teamApiKeyBudgetThresholdEventPublisher
     ) {
         this.processedEventRepository = processedEventRepository;
         this.priceRepository = priceRepository;
         this.aggregationJdbc = aggregationJdbc;
+        this.teamApiKeyAggregationJdbc = teamApiKeyAggregationJdbc;
         this.costFinalizedPublisher = costFinalizedPublisher;
         this.budgetThresholdPublisher = budgetThresholdPublisher;
         this.processedEventLifecycle = processedEventLifecycle;
         this.rabbitProperties = rabbitProperties;
         this.identityBudgetClient = identityBudgetClient;
+        this.teamApiKeyRepository = teamApiKeyRepository;
+        this.teamApiKeyBudgetThresholdEventPublisher = teamApiKeyBudgetThresholdEventPublisher;
     }
 
     @Transactional
@@ -120,6 +130,59 @@ public class BillingRecordedService {
                     monthlyBudgetUsd
             ));
         }
+
+        // Team API key spend aggregation + team budget threshold events ("registered team keys only").
+        maybeProcessTeamKeyBudgetThreshold(event, bc);
+    }
+
+    private void maybeProcessTeamKeyBudgetThreshold(UsageRecordedEvent event, BillableComputation bc) {
+        if (!"team".equalsIgnoreCase(event.apiKeySource())) {
+            return;
+        }
+        String teamIdRaw = bc.teamId();
+        String teamApiKeyIdRaw = event.teamApiKeyId();
+        if (teamIdRaw == null || teamIdRaw.isBlank() || teamApiKeyIdRaw == null || teamApiKeyIdRaw.isBlank()) {
+            return;
+        }
+        long teamId;
+        long teamApiKeyId;
+        try {
+            teamId = Long.parseLong(teamIdRaw.trim());
+            teamApiKeyId = Long.parseLong(teamApiKeyIdRaw.trim());
+        } catch (NumberFormatException ignored) {
+            return;
+        }
+
+        BigDecimal keyMonthlyBefore = teamApiKeyAggregationJdbc.sumMonthlyCostUsdForTeamApiKey(bc.monthStart(), teamApiKeyId);
+
+        teamApiKeyAggregationJdbc.upsertDaily(bc.aggDate(), teamApiKeyId, bc.cost());
+        teamApiKeyAggregationJdbc.upsertMonthly(bc.monthStart(), teamApiKeyId, bc.cost());
+
+        BigDecimal keyMonthlyAfter = teamApiKeyAggregationJdbc.sumMonthlyCostUsdForTeamApiKey(bc.monthStart(), teamApiKeyId);
+
+        var keyRow = teamApiKeyRepository.findById(teamApiKeyId).orElse(null);
+        BigDecimal keyMonthlyBudgetUsd = keyRow != null ? keyRow.getMonthlyBudgetUsd() : null;
+        String provider = keyRow != null ? keyRow.getProvider() : null;
+        String apiKeyAlias = keyRow != null ? keyRow.getAlias() : null;
+
+        boolean keyBudgetPositive = keyMonthlyBudgetUsd != null && keyMonthlyBudgetUsd.compareTo(BigDecimal.ZERO) > 0;
+        if (!rabbitProperties.getTeamBudgetOut().isEnabled()) {
+            return;
+        }
+        if (!keyBudgetPositive) {
+            return;
+        }
+        scheduleAfterCommit(() -> teamApiKeyBudgetThresholdEventPublisher.publishIfCrossed(
+                bc.userId(),
+                teamId,
+                teamApiKeyId,
+                provider,
+                apiKeyAlias,
+                bc.monthStart(),
+                keyMonthlyBefore,
+                keyMonthlyAfter,
+                keyMonthlyBudgetUsd
+        ));
     }
 
     private void handleAlreadyProcessed(UsageRecordedEvent event, BillingProcessedEventEntity row) {
