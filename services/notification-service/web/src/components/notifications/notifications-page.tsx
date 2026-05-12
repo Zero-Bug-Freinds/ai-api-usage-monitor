@@ -63,6 +63,8 @@ async function markAllRead(): Promise<void> {
 type TeamInviteActionMeta = {
   invitationId?: string
   actions?: { acceptPath?: string; rejectPath?: string }
+  staleReason?: string
+  actionedAt?: string
 }
 
 function normalizeNotificationServicePath(path: string): string {
@@ -76,6 +78,8 @@ function normalizeNotificationServicePath(path: string): string {
 function getTeamInviteActions(meta: unknown): { acceptPath: string; rejectPath: string } | null {
   if (typeof meta !== "object" || meta === null) return null
   const m = meta as TeamInviteActionMeta
+  if (typeof m.staleReason === "string" && m.staleReason.trim().length > 0) return null
+  if (typeof m.actionedAt === "string" && m.actionedAt.trim().length > 0) return null
   const acceptRaw = m.actions?.acceptPath
   const rejectRaw = m.actions?.rejectPath
   if (typeof acceptRaw !== "string" || acceptRaw.length === 0) return null
@@ -117,6 +121,8 @@ function formatKoreanDate(iso: string): string {
 
 export function NotificationsPage() {
   const [items, setItems] = useState<InAppNotification[]>([])
+  const [includeReadNotifications, setIncludeReadNotifications] = useState(false)
+  const [locallyResolvedInviteIds, setLocallyResolvedInviteIds] = useState<Set<string>>(() => new Set())
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -124,6 +130,11 @@ export function NotificationsPage() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [busyActionId, setBusyActionId] = useState<string | null>(null)
   const [busyAll, setBusyAll] = useState(false)
+
+  const displayItems = useMemo(() => {
+    if (includeReadNotifications) return items
+    return items.filter((n) => !n.readAt)
+  }, [items, includeReadNotifications])
 
   const hasMarkAllReadTargets = useMemo(
     () => items.some((n) => !n.readAt && !isPendingTeamInviteRow(n)),
@@ -193,8 +204,19 @@ export function NotificationsPage() {
       setError(null)
       try {
         await postAction(path)
+        setLocallyResolvedInviteIds((prev) => new Set(prev).add(notificationId))
         await loadFirst({ silent: true })
+        setLocallyResolvedInviteIds((prev) => {
+          const next = new Set(prev)
+          next.delete(notificationId)
+          return next
+        })
       } catch (e) {
+        setLocallyResolvedInviteIds((prev) => {
+          const next = new Set(prev)
+          next.delete(notificationId)
+          return next
+        })
         setError(e instanceof Error ? e.message : "요청에 실패했습니다")
       } finally {
         setBusyActionId(null)
@@ -229,7 +251,15 @@ export function NotificationsPage() {
           <h1 className="text-2xl font-semibold tracking-tight">알림</h1>
           <p className="mt-1 text-sm text-muted-foreground">새 알림은 우측 하단 토스트로도 표시됩니다.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant={includeReadNotifications ? "default" : "secondary"}
+            onClick={() => setIncludeReadNotifications((v) => !v)}
+            disabled={loading || loadingMore}
+          >
+            {includeReadNotifications ? "읽지 않은 알림만" : "읽음 알림 포함"}
+          </Button>
           <Button variant="secondary" onClick={() => void loadFirst()} disabled={loading || loadingMore}>
             새로고침
           </Button>
@@ -256,14 +286,23 @@ export function NotificationsPage() {
           <MailOpen className="mx-auto size-10 text-muted-foreground" aria-hidden />
           <p className="mt-3 text-sm text-muted-foreground">아직 알림이 없습니다.</p>
         </div>
+      ) : displayItems.length === 0 ? (
+        <div className="rounded-xl border bg-card p-10 text-center">
+          <MailOpen className="mx-auto size-10 text-muted-foreground" aria-hidden />
+          <p className="mt-3 text-sm text-muted-foreground">
+            읽지 않은 알림이 없습니다. 읽은 알림을 보려면 &quot;읽음 알림 포함&quot;을 켜 주세요.
+          </p>
+        </div>
       ) : (
         <div className="space-y-3">
-          {items.map((n) => {
+          {displayItems.map((n) => {
             const unread = !n.readAt
             const busy = busyId === n.id
             const busyAction = busyActionId === n.id
-            const inviteActions =
+            const inviteActionsRaw =
               n.type === "team:TEAM_INVITE_CREATED" ? getTeamInviteActions(n.meta) : null
+            const inviteActions =
+              inviteActionsRaw !== null && !locallyResolvedInviteIds.has(n.id) ? inviteActionsRaw : null
             return (
               <article
                 key={n.id}
@@ -292,7 +331,7 @@ export function NotificationsPage() {
                         <Button
                           size="sm"
                           onClick={() => void onInviteAction(n.id, inviteActions.acceptPath)}
-                          disabled={!unread || busyAction}
+                          disabled={!unread || busyAction || locallyResolvedInviteIds.has(n.id)}
                         >
                           {busyAction ? <Loader2 className="mr-2 size-4 animate-spin" aria-hidden /> : null}
                           수락
@@ -301,7 +340,7 @@ export function NotificationsPage() {
                           size="sm"
                           variant="secondary"
                           onClick={() => void onInviteAction(n.id, inviteActions.rejectPath, { requireConfirm: true })}
-                          disabled={!unread || busyAction}
+                          disabled={!unread || busyAction || locallyResolvedInviteIds.has(n.id)}
                         >
                           {busyAction ? <Loader2 className="mr-2 size-4 animate-spin" aria-hidden /> : null}
                           거절

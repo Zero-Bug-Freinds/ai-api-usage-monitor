@@ -304,24 +304,58 @@ export function ExpenditureDashboard() {
     }
   }, [loadMonthlyBudget, loadRegisteredKeys, loadSeries]);
 
-  const loadTeams = useCallback(async () => {
+  const loadTeams = useCallback(async (): Promise<string> => {
     setTeamsLoading(true);
     setError(null);
+    let nextSelected = "";
     try {
       const list = await fetchMyTeams();
       setTeams(list);
       setSelectedTeamId((prev) => {
-        if (prev && list.some((t) => t.id === prev)) return prev;
-        return list[0]?.id ?? "";
+        nextSelected = prev && list.some((t) => t.id === prev) ? prev : list[0]?.id ?? "";
+        return nextSelected;
       });
+      return nextSelected;
     } catch (e: unknown) {
       setTeams([]);
       setSelectedTeamId("");
       setError(e instanceof Error ? e.message : "내 팀 목록을 불러오지 못했습니다");
+      return "";
     } finally {
       setTeamsLoading(false);
     }
   }, []);
+
+  const refreshTeam = useCallback(async () => {
+    setError(null);
+    try {
+      const tid = await loadTeams();
+      if (!tid) {
+        return;
+      }
+      if (!teamRangeUi.ok) {
+        setTeamSpend(null);
+        setError(teamRangeUi.message);
+        return;
+      }
+      setTeamLoading(true);
+      try {
+        const res = await fetchTeamApiKeySpendRange(tid, teamRange.from, teamRange.to);
+        setTeamSpend(res);
+      } catch (e: unknown) {
+        setTeamSpend(null);
+        setError(
+          e instanceof Error
+            ? e.message
+            : "팀 집계를 불러오지 못했습니다 (단일 오리진/권한/게이트웨이 설정을 확인하세요)"
+        );
+      } finally {
+        setTeamLoading(false);
+      }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "새로고침에 실패했습니다");
+    }
+  }, [loadTeams, teamRange.from, teamRange.to, teamRangeUi]);
 
   useEffect(() => {
     if (viewMode !== "team") return;
@@ -535,11 +569,21 @@ export function ExpenditureDashboard() {
           <button
             type="button"
             className="ml-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm hover:bg-muted"
+            disabled={loading}
             onClick={() => void refreshPersonal()}
           >
             새로고침
           </button>
-        ) : null}
+        ) : (
+          <button
+            type="button"
+            className="ml-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
+            disabled={teamsLoading || teamLoading}
+            onClick={() => void refreshTeam()}
+          >
+            새로고침
+          </button>
+        )}
       </div>
 
       {keysLoadError ? (
