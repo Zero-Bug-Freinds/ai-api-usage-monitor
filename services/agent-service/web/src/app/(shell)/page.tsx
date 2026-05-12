@@ -564,9 +564,11 @@ export default function AgentPage() {
           const merged: AnalysisResult = {
             ...previous,
             ...nextResult,
-            data: nextResult.data ?? previous.data,
-            recommendation: nextResult.recommendation ?? previous.recommendation,
-            forecastGaps: nextResult.forecastGaps ?? previous.forecastGaps,
+            data: nextResult.error ? nextResult.data : (nextResult.data ?? previous.data),
+            recommendation: nextResult.recommendationError
+              ? nextResult.recommendation
+              : (nextResult.recommendation ?? previous.recommendation),
+            forecastGaps: nextResult.error ? nextResult.forecastGaps : (nextResult.forecastGaps ?? previous.forecastGaps),
           }
           return [merged]
         })

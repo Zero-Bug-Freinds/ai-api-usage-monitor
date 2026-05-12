@@ -55,7 +55,7 @@ public class GeminiAssistantService {
 	 */
 	public Optional<AiBudgetForecastResult> inferForecast(BudgetForecastRequest request) {
 		if (!llmCompletionClient.geminiConfigured() && !llmCompletionClient.deepseekConfigured()) {
-			log.warn("Budget LLM inference skipped: set AI_AGENT_GEMINI_API_KEY and/or AI_AGENT_DEEPSEEK_API_KEY");
+			log.warn("Budget LLM inference skipped: set AI_AGENT_DEEPSEEK_API_KEY and/or AI_AGENT_GEMINI_API_KEY (or GOOGLE_API_KEY chain for Gemini)");
 			return Optional.empty();
 		}
 		String requestId = UUID.randomUUID().toString();
@@ -348,15 +348,18 @@ public class GeminiAssistantService {
 		LocalDate today = LocalDate.now();
 		long computedDays = Math.max(0, ChronoUnit.DAYS.between(today, predicted));
 
+		if (node.has("daysUntilRunOut") && node.get("daysUntilRunOut").isIntegralNumber()) {
+			long modelDays = node.get("daysUntilRunOut").asLong();
+			if (Math.abs(modelDays - computedDays) > 1) {
+				log.info(
+						"Budget forecast: model daysUntilRunOut={} inconsistent with predictedRunOutDate vs today (derived={}); using derived only",
+						modelDays,
+						computedDays
+				);
+			}
+		}
+
 		long daysUntilRunOut = computedDays;
-		if (!node.has("daysUntilRunOut") || !node.get("daysUntilRunOut").isIntegralNumber()) {
-			return Optional.empty();
-		}
-		long modelDays = node.get("daysUntilRunOut").asLong();
-		if (Math.abs(modelDays - computedDays) > 1) {
-			return Optional.empty();
-		}
-		daysUntilRunOut = modelDays;
 
 		String health = textOrNull(node.get("healthStatus"));
 		if (health == null) {

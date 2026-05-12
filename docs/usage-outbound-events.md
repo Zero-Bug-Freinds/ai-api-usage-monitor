@@ -8,9 +8,9 @@ Inbound streams (proxy `UsageRecordedEvent`, billing `UsageCostFinalizedEvent`, 
 
 ## Step 1 — Agent prediction logic vs usage data (reference)
 
-**Source:** `services/agent-service` `BudgetForecastService` + `BudgetForecastRequest` + `GeminiAssistantService`.
+**Source:** `services/agent-service` `BudgetForecastService` + `BudgetForecastRequest` + `GeminiAssistantService` + **`AgentLlmCompletionClient`** (DeepSeek → Gemini).
 
-**End-to-end behavior today:** `BudgetForecastService` **normalizes** the incoming `BudgetForecastRequest` (for example preferring **usage prediction snapshot** daily spend when present, rolling up **7-day token totals** from usage DB when the caller omits a daily token series). It then calls **Gemini** (`GeminiAssistantService.inferForecast`) with a JSON payload built from that request. The model returns a single JSON object (predicted run-out date, `healthStatus`, Korean copy, **`anomalySummary`**, routing fields, etc.). There is **no** separate Java-side anomaly scorer (no z-score, no fixed “last day ÷ prior-day average ≥ 1.5” threshold in code).
+**End-to-end behavior today:** `BudgetForecastService` **normalizes** the incoming `BudgetForecastRequest` (for example preferring **usage prediction snapshot** daily spend when present, rolling up **7-day token totals** from usage DB when the caller omits a daily token series). It then calls **`GeminiAssistantService.inferForecast`**, which delegates HTTP to **`AgentLlmCompletionClient`**: **DeepSeek** `chat/completions` first, then **Gemini** `generateContent` if needed. The model returns a single JSON object (predicted run-out date, `healthStatus`, Korean copy, **`anomalySummary`**, routing fields, etc.). There is **no** separate Java-side anomaly scorer (no z-score, no fixed “last day ÷ prior-day average ≥ 1.5” threshold in code).
 
 The model prompt instructs it to treat **`hourlyTokenUsage24h`** and **`recentDailyTokenUsage7d`** as the primary basis for **anomaly** narrative, and to consider **`modelUsageDistribution7d`** for routing text; **`recentDailySpendUsd`** and budget fields inform utilization and risk wording (e.g. WARNING when the prompt describes a sudden daily spend spike). Those rules are **prompt-level**, not duplicated as deterministic formulas in `BudgetForecastService`.
 
@@ -25,7 +25,7 @@ The model prompt instructs it to treat **`hourlyTokenUsage24h`** and **`recentDa
 | `recentDailyTokenUsage7d`, `hourlyTokenUsage24h` | Primary series the prompt ties to **anomalySummary** (filled or defaulted in `BudgetForecastService`). |
 | `modelUsageDistribution7d` | Model mix for **routingRecommendation** / savings text in the model output. |
 
-There is no embedded linear regression in agent-service today. **Enriched usage signals** (7d/14d windows from usage, daily series, provider/model breakdown) improve what the model sees; any “spike” or anomaly wording follows from **Gemini** interpretation of those fields, not from a second numeric engine in this repo.
+There is no embedded linear regression in agent-service today. **Enriched usage signals** (7d/14d windows from usage, daily series, provider/model breakdown) improve what the model sees; any “spike” or anomaly wording follows from the **configured LLM** (DeepSeek primary, Gemini fallback) interpretation of those fields, not from a second numeric engine in this repo.
 
 **Fields not owned by usage:** `remainingTokens` and `billingCycleEndDate` are typically sourced from **billing/identity** policy. The usage event includes them as **optional null** so agent (or a facade) can merge with billing data without contradicting those systems.
 

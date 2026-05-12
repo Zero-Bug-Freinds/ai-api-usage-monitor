@@ -43,7 +43,7 @@ public class RecommendationGeminiService {
 
 	public Optional<AiRecommendationResult> inferRecommendation(AiRecommendationPromptRequest request) {
 		if (!llmCompletionClient.geminiConfigured() && !llmCompletionClient.deepseekConfigured()) {
-			log.warn("Recommendation LLM skipped: set AI_AGENT_GEMINI_API_KEY and/or AI_AGENT_DEEPSEEK_API_KEY");
+			log.warn("Recommendation LLM skipped: set AI_AGENT_DEEPSEEK_API_KEY and/or AI_AGENT_GEMINI_API_KEY (or GOOGLE_API_KEY chain for Gemini)");
 			return Optional.empty();
 		}
 		String requestId = UUID.randomUUID().toString();

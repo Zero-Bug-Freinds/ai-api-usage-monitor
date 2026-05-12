@@ -21,7 +21,7 @@
 - `POST /policy-recommendations/analyze`
   - 입력: `RecommendationAnalyzeRequest`
   - 출력: `OptimizationRecommendationIssuedEvent`
-  - 동작: 키/스코프 기준으로 최근 패턴을 분석하고 모델 최적화 추천 결과를 생성·캐시한다.
+  - 동작: 키/스코프 기준으로 최근 패턴을 분석하고 모델 최적화 추천 결과를 생성·캐시한다. LLM 호출은 예산 경로와 동일하게 **`AgentLlmCompletionClient`(DeepSeek → Gemini)** 를 사용한다(`RecommendationGeminiService`).
 - `POST /policy-recommendations/analyze/batch`
   - 입력: `RecommendationAnalyzeBatchRequest`
   - 출력: `RecommendationAnalyzeBatchResponse`
@@ -32,14 +32,14 @@
 - `POST /budget-forecast-assistant`
   - 입력: `BudgetForecastRequest`
   - 출력: `BudgetForecastResponse`
-  - 동작: Gemini 예측을 **필수 호출**한다. AI 결과가 없거나 계약 검증에 실패하면 `503` + `AI_INFERENCE_FAILED`를 반환한다(수식 fallback 없음).
+  - 동작: 외부 LLM을 통해 예측한다. **`AgentLlmCompletionClient`**에서 **DeepSeek를 1순위**, 응답이 없거나 실패·스키마 미충족 시 **Gemini**로 폴백한다. `ai-agent.gemini.api-key`는 `AI_AGENT_GEMINI_API_KEY`뿐 아니라 `PROXY_GOOGLE_TEST_API_KEY`·`GOOGLE_API_KEY` 체인으로도 주입될 수 있다. DeepSeek·Gemini **어느 쪽도 설정되지 않으면** 호출 자체가 스킵된다. AI 결과가 없거나 계약 검증에 실패하면 `503` + `AI_INFERENCE_FAILED`를 반환한다(수식 fallback 없음).
   - 스코프: 개인 키(`PERSONAL`)와 팀 키(`TEAM`) 모두 동일 경로/정책을 사용한다.
   - 입력 확장: `recentDailyTokenUsage7d`, `modelUsageDistribution7d`, `hourlyTokenUsage24h`를 함께 전달해 이상 탐지/라우팅 분석을 강화한다.
   - 출력 확장: `anomalySummary`, `routingRecommendation`, `estimatedRoutingSavingsPercent`, `riskCriteria`, `confidenceLevel`, `confidenceCriteria`.
 - `POST /budget-forecast-assistant/batch`
   - 입력: `BudgetForecastBatchRequest`
   - 출력: `BudgetForecastBatchResponse`
-  - 동작: 여러 키 예측을 배치로 호출한다(개별 항목 실패/성공 포함).
+  - 동작: 여러 키 예측을 배치로 호출한다(개별 항목 실패/성공 포함). 키별 LLM 호출은 `ai-agent.gemini.batch-parallelism`(기본 4, 상한 32)으로 **제한된 병렬**을 사용한다.
 - `GET /identity-api-keys`
   - 설명: 전체 개인 API Key 스냅샷 조회
 - `GET /identity-api-keys/{userId}`
@@ -98,7 +98,7 @@
   - 백엔드 `budget-forecast-assistant` API 프록시
   - 개인 키 분석과 팀 키 분석 모두 동일하게 프록시하며, 동일한 AI 실패 처리(`AI_INFERENCE_FAILED`)와 응답 계약을 적용한다.
   - 세션 이메일을 파싱해 내부 호출 시 `x-user-email` 헤더로 전달한다.
-  - 내부 호출 타임아웃은 45초로 설정되어 Gemini 응답 지연 시 조기 실패를 줄인다.
+  - 내부 호출 타임아웃은 45초로 설정되어 LLM(DeepSeek/Gemini) 응답 지연 시 조기 실패를 줄인다.
 - `POST /agent/api/v1/agents/budget-forecast-assistant/batch`
   - 백엔드 `budget-forecast-assistant/batch` API 프록시
   - 내부 호출 타임아웃은 45초를 사용한다.
@@ -121,16 +121,26 @@
 - 개인 키: `agent.manualBillingCycleEnd.personal.{keyId}`
 - 팀 키: `agent.manualBillingCycleEnd.team.{teamId}.{teamApiKeyId}`
 - DB 저장/동기화 없이 현재 브라우저에서만 유지된다.
+- **분석 결과 상태:** `services/agent-service/web` 메인 화면에서 키별 `분석` 재실행 후 **에러가 나면 이전에 성공했던 예산 `data`를 병합해 두지 않는다.** (`page.tsx` — 실패 시 stale 카드와 오류 문구가 겹쳐 보이던 문제 방지.)
 
 내부 백엔드 오리진은 `AI_AGENT_SERVICE_INTERNAL_ORIGIN` 환경변수로 지정한다.
 
 ## 5. 환경변수 요약
 
-- 포트/LLM
+- 포트 / LLM (예산·추천 공통 HTTP 클라이언트는 `AiAgentGeminiHttpClientConfiguration`·`AiAgentDeepseekHttpClientConfiguration`의 `RestClient` 빈을 사용한다.)
+
   - `AI_AGENT_SERVICE_PORT` (default: `8096`)
-  - `AI_AGENT_GEMINI_API_KEY`
-  - `AI_AGENT_GEMINI_MODEL` (default: `gemini-2.5-flash`)
-  - `AI_AGENT_GEMINI_BASE_URL`
+  - **DeepSeek(1순위, OpenAI 호환 `chat/completions`)**
+    - `AI_AGENT_DEEPSEEK_API_KEY` → `ai-agent.deepseek.api-key`
+    - `AI_AGENT_DEEPSEEK_BASE_URL` (default: `https://api.deepseek.com`)
+    - `AI_AGENT_DEEPSEEK_MODEL` (default: `deepseek-chat`)
+    - `AI_AGENT_DEEPSEEK_CONNECT_TIMEOUT_MS` / `AI_AGENT_DEEPSEEK_READ_TIMEOUT_MS` (기본 5000 / 120000ms)
+  - **Gemini(2순위 폴백)**
+    - `AI_AGENT_GEMINI_API_KEY` (미설정 시 `PROXY_GOOGLE_TEST_API_KEY` → `GOOGLE_API_KEY` 순 폴백으로 `ai-agent.gemini.api-key` 바인딩)
+    - `AI_AGENT_GEMINI_MODEL` (default: `gemini-2.5-flash`)
+    - `AI_AGENT_GEMINI_BASE_URL`
+    - `AI_AGENT_GEMINI_CONNECT_TIMEOUT_MS` / `AI_AGENT_GEMINI_READ_TIMEOUT_MS` (기본 5000 / 120000ms)
+    - `AI_AGENT_GEMINI_BATCH_PARALLELISM` (배치 다중 키 병렬도, 기본 4, 상한 32)
 - RabbitMQ
   - `SPRING_RABBITMQ_HOST`, `SPRING_RABBITMQ_PORT`
   - `SPRING_RABBITMQ_USERNAME`, `SPRING_RABBITMQ_PASSWORD`
@@ -167,9 +177,9 @@
   - Team 내부 키 조회 경로는 `gemini` 별칭을 `GOOGLE`로 정규화할 수 있으므로, Agent 쪽 집계/표시는 대문자 canonical provider 기준으로 처리한다.
   - 레거시 `GEMINI` 이벤트/스냅샷이 유입되더라도 운영 표시·집계 키는 `GOOGLE`로 수렴시키는 것을 권장한다.
 
-- `budget-forecast-assistant`는 AI 의존 경로다. Gemini API key/모델/네트워크 이슈 시 fallback 없이 `503(AI_INFERENCE_FAILED)`가 발생한다.
-- 추천 생성 경로(`policy-recommendations/analyze*`)도 AI 의존이며, 실패 시 `503(AI_RECOMMENDATION_INFERENCE_FAILED)`가 발생할 수 있다.
-- `GeminiAssistantService`는 필수 필드 누락을 보정하지 않는다. `healthStatus`, `assistantMessage`, `recommendedActions`, `anomalySummary`, `routingRecommendation`, `estimatedRoutingSavingsPercent` 중 하나라도 비정상이면 실패 처리된다.
+- `budget-forecast-assistant`·추천 LLM 경로는 **DeepSeek → Gemini** 순으로 시도한다. 둘 다 실패하거나 응답이 스키마 검증을 통과하지 못하면 예산은 `503(AI_INFERENCE_FAILED)`, 추천 분석은 `503(AI_RECOMMENDATION_INFERENCE_FAILED)`가 될 수 있다.
+- **운영 확인 로그:** `AgentLlmCompletionClient`가 DeepSeek 호출 직전에 `[DEEPSEEK] HTTP POST …`를 남긴다. 성공 시 `DeepSeek primary produced a usable response`, Gemini로 넘길 때 `… trying Gemini fallback` / 성공 시 `Gemini fallback produced a usable response`가 각각 찍힌다.
+- `GeminiAssistantService` / `RecommendationGeminiService`는 파싱 단계에서 필수 필드 누락을 보정하지 않는다. `healthStatus`, `assistantMessage`, `recommendedActions`, `anomalySummary`, `routingRecommendation`, `estimatedRoutingSavingsPercent` 등 계약 필드가 비정상이면 실패 처리된다. **예산:** `daysUntilRunOut` 표시값은 **`predictedRunOutDate`와 서버 기준일(오늘)의 차이로만 산출**하며, 모델이 넣은 숫자와 어긋나면 로그만 남기고 파생값을 사용한다(LLM 산술 오류·타임존 혼동 완화).
 - **Billing 비용 신호(`BillingSignalSnapshotService`)**: 메모리 맵에 더해 **Redis Hash**(`ai-agent:billing-signals`)에 직렬화 저장한다. 재시작 후에도 Redis가 살아 있으면 스냅샷이 복구된다. Redis가 없으면 기존처럼 메모리만 사용한다.
 - **보정 잡(`BillingSignalReconciliationService`)**: 애플리케이션 기동 후 및 고정 지연마다, Identity 키 스냅샷에 있는 키에 대해 `billing-service`의 `GET /api/v1/expenditure/summary`를 호출해 비용을 보강한다(기간: **Asia/Seoul** 이번 달 1일 ~ 오늘). 이벤트 유입이 없거나 재시작 직후 `billing-signals`가 비는 구간을 줄인다.
 - Identity/팀/기타 스냅샷은 여전히 메모리 기반이라, 해당 컴포넌트는 재시작 시 초기화될 수 있다(이벤트 재유입 또는 BFF fallback에 의존).
@@ -238,3 +248,13 @@
 - 이벤트 파싱/조회 안정화:
   - `IdentityExternalApiKeyEventListener`: status changed payload 역직렬화 전에 `eventType` 필드를 제거해 `UnrecognizedPropertyException`을 방지한다.
   - `UsagePredictionSignalSnapshotService.findAll()`: `@Transactional(readOnly = true)`를 적용해 LOB 조회 시점 예외를 방지한다.
+
+## 11. 최근 반영 사항 (2026-05-12)
+
+- **다중 LLM:** `AgentLlmCompletionClient`가 예산(`GeminiAssistantService`)·추천(`RecommendationGeminiService`) 공통으로 외부 호출을 수행한다. **DeepSeek `chat/completions`를 1순위**, 실패·무응답·파싱 불가 시 **Gemini `generateContent`로 폴백**한다. DeepSeek 응답은 기존 파서와 호환되도록 **Gemini 형태의 JSON**으로 감싼다.
+- **설정:** `AiAgentDeepseekProperties`, `AiAgentDeepseekHttpClientConfiguration`, `application.properties`의 `ai-agent.deepseek.*` 및 `docker-compose.yml`의 `AI_AGENT_DEEPSEEK_*` 주입. Gemini는 기존 `ai-agent.gemini.*`에 더해 **연결·읽기 타임아웃**(`connect-timeout-ms`, `read-timeout-ms`)과 **배치 병렬도**(`batch-parallelism`)를 추가했다(`AiAgentGeminiHttpClientConfiguration`의 전용 `RestClient` + `ExecutorService`).
+- **가시성:** DeepSeek HTTP 직전 로그 `[DEEPSEEK] HTTP POST …`, 성공/폴백 문구(`DeepSeek primary produced…`, `trying Gemini fallback`, `Gemini fallback produced…`)로 호출 순서를 추적할 수 있다.
+- **API 오류 문구:** `AgentApiExceptionHandler`의 AI 실패 메시지에 DeepSeek·Gemini 병기.
+- **agent-web:** 키별 `분석`/`추천` 재실행 후 `error`·`recommendationError`가 있을 때 **이전 성공 페이로드를 병합하지 않도록** `page.tsx` 병합 규칙을 수정했다.
+- **루트 `.env.example`:** LLM 1순위/2순위 안내와 DeepSeek·Gemini·타임아웃·배치 병렬도 선택 변수를 정리했다.
+- **예산 `daysUntilRunOut`:** 모델 출력과 무관하게 **`predictedRunOutDate`와 서버 로컬 오늘 날짜로만 계산**한다. 과거에는 모델의 `daysUntilRunOut`가 날짜와 1일 이내로 맞지 않으면 전체 파싱을 실패시켰고, 일치 시 모델 숫자를 그대로 썼다.

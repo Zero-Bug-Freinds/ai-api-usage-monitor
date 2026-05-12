@@ -22,8 +22,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Calls Gemini first, then DeepSeek (OpenAI-compatible chat completions) when Gemini
- * returns no usable candidate or fails. Response is shaped like Gemini {@code generateContent} JSON
+ * Tries DeepSeek first (OpenAI-compatible chat completions), then Gemini when DeepSeek
+ * fails or returns no usable candidate. Responses are shaped like Gemini {@code generateContent} JSON
  * so existing parsers stay unchanged.
  */
 @Component
@@ -64,22 +64,33 @@ public class AgentLlmCompletionClient {
 	 * @return Gemini-shaped JSON string, or {@code null} when no provider succeeds
 	 */
 	public String completeAsGeminiGenerateContentJson(String prompt, double temperature) {
+		String deepseekShaped = null;
+		if (deepseekConfigured()) {
+			deepseekShaped = callDeepseekAsGeminiShaped(prompt, temperature);
+			if (deepseekShaped != null && hasNonBlankTextCandidate(deepseekShaped)) {
+				log.info("DeepSeek primary produced a usable response");
+				return deepseekShaped;
+			}
+			if (deepseekShaped != null) {
+				log.info("DeepSeek returned no usable text candidate; trying Gemini fallback");
+			} else {
+				log.info("DeepSeek call failed or empty; trying Gemini fallback");
+			}
+		}
+
 		String geminiResponse = tryGemini(prompt, temperature);
 		if (geminiResponse != null && hasNonBlankTextCandidate(geminiResponse)) {
+			log.info("Gemini fallback produced a usable response");
 			return geminiResponse;
 		}
-		if (geminiResponse != null) {
-			log.info("Gemini returned no usable text candidate; trying DeepSeek fallback");
+
+		if (!deepseekConfigured() && !geminiConfigured()) {
+			log.info("LLM skipped: set AI_AGENT_DEEPSEEK_API_KEY and/or AI_AGENT_GEMINI_API_KEY (or GOOGLE_API_KEY chain for Gemini)");
+		} else if (deepseekConfigured() && !geminiConfigured()) {
+			log.info("Gemini fallback skipped: Gemini API key not configured");
 		}
-		if (!deepseekConfigured()) {
-			return geminiResponse;
-		}
-		String deepseekShaped = callDeepseekAsGeminiShaped(prompt, temperature);
-		if (deepseekShaped != null && hasNonBlankTextCandidate(deepseekShaped)) {
-			log.info("DeepSeek fallback produced a usable response");
-			return deepseekShaped;
-		}
-		return geminiResponse;
+
+		return geminiResponse != null ? geminiResponse : deepseekShaped;
 	}
 
 	private String tryGemini(String prompt, double temperature) {
@@ -130,6 +141,14 @@ public class AgentLlmCompletionClient {
 		body.put("temperature", temperature);
 		body.put("response_format", Map.of("type", "json_object"));
 		String url = deepseekProperties.resolvedBaseUrl() + "/v1/chat/completions";
+		String model = deepseekProperties.resolvedModel();
+		log.info(
+				"[DEEPSEEK] HTTP POST {} model={} promptChars={} temperature={}",
+				url,
+				model,
+				prompt.length(),
+				temperature
+		);
 		try {
 			String raw = deepseekRestClient.post()
 					.uri(url)
