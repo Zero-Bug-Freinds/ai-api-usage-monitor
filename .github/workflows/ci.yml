@@ -591,6 +591,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
+      # Optional: set repo secrets DOCKERHUB_USERNAME + DOCKERHUB_TOKEN to raise Hub pull limits
+      # (fork PRs skip; no secrets → step skipped).
+      - name: Log in to Docker Hub
+        if: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -609,7 +617,8 @@ jobs:
           context: .
           file: services/notification-service/Dockerfile
           tags: notification-service:ci
-          load: true
+          # No follow-up docker run in this job; skipping load avoids slow export/import to the daemon.
+          load: false
           push: false
           cache-from: type=gha,scope=notification-service
           cache-to: type=gha,mode=max,scope=notification-service
@@ -626,11 +635,11 @@ jobs:
           context: .
           file: services/notification-service/web/Dockerfile
           tags: notification-web:ci
-          load: true
+          load: false
           push: false
           cache-from: type=gha,scope=notification-web
-          # NOTE: 무료 티어(10GB)에서 캐시가 커지면 mode=min으로 유지하는 편이 안정적이다.
-          cache-to: type=gha,mode=min,scope=notification-web
+          # mode=max improves layer reuse on cold-ish builds; revert to mode=min if Actions cache stays near 10GB.
+          cache-to: type=gha,mode=max,scope=notification-web
       - name: Notification-web image summary
         if: always()
         run: |
