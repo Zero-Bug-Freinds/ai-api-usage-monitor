@@ -501,7 +501,8 @@ jobs:
           load: true
           push: false
           cache-from: type=gha,scope=billing-service
-          cache-to: type=gha,mode=max,scope=billing-service
+          # NOTE: 무료 티어(10GB)에서 캐시가 커지면 mode=min으로 유지하는 편이 안정적이다.
+          cache-to: type=gha,mode=min,scope=billing-service
       - name: Docker image (billing-web, standalone) (cache gha)
         id: docker_billing_web
         uses: docker/build-push-action@v6
