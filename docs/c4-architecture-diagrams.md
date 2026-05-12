@@ -624,7 +624,7 @@ flowchart TD
 | 항목 | 내용 |
 |------|------|
 | BFF | `src/app/api/expenditure/[[...path]]/route.ts` → `API_GATEWAY_URL` 의 `/api/v1/expenditure/**`(게이트웨이가 `GATEWAY_BILLING_URI` 로 billing-service 전달). 팀 월 롤업은 **`src/app/api/expenditure/team/month-rollup/route.ts`** 에서 `teamId`·팀 멤버 조회(`BILLING_TEAM_BFF_BASE_URL` 등) 후 허용된 `userIds`만 동일 게이트웨이 경로로 **POST** 한다. |
-| UI | `src/components/expenditure/...` (기본 basePath·단일 오리진은 루트 `.env`·Compose와 정합) |
+| UI | `src/components/expenditure/...` (기본 basePath·단일 오리진은 루트 `.env`·Compose와 정합). **팀 모드**에서 상단 **새로고침**으로 팀 목록·현재 기간 집계를 한 번에 갱신한다. |
 | 계약·개요 | `docs/billing-service-overview-20260412.md`, `docs/billing-identity-budget.md` |
 
 ### W7 — Notification Web 요약 (`services/notification-service/web`)
@@ -632,7 +632,7 @@ flowchart TD
 | 항목 | 내용 |
 |------|------|
 | BFF | `src/app/api/notification/[[...path]]/route.ts` 등 → `NOTIFICATION_SERVICE_URL`(또는 환경별) 로 notification-service REST 프록시 |
-| UI | `basePath=/notifications` (web-edge·`docs/architecture.md` §2.3·§12 참고) |
+| UI | `basePath=/notifications` (web-edge·`docs/architecture.md` §2.3·§12 참고). 인앱 목록은 기본 **읽지 않음만** 표시·**읽음 포함** 토글, 팀 초대 `meta` void 시 액션 버튼 비표시. |
 | 계약 | `docs/contracts/web-notification-bff.md` |
 
 ## 저장소 문서·실험 디렉터리 (비애플리케이션 코드)

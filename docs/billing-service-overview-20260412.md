@@ -1,4 +1,4 @@
-# billing-service 개요 (구현 스냅샷, 2026-04-12 · 본문 갱신 2026-05-03)
+# billing-service 개요 (구현 스냅샷, 2026-04-12 · 본문 갱신 2026-05-12)
 
 ## 1) 목적·범위
 
@@ -45,7 +45,7 @@
 - **비용**: `ExpenditureCostCalculator.compute` — prompt/completion 토큰 × 입·출력 USD/1M 토큰(합산). 단가 행이 없으면 비용 `0`.
 - **토큰 정규화**: prompt/completion이 비어 있고 total만 있으면 절반씩 나누어 추정(`normalizeTokens`).
 - **집계**: `BillingAggregationJdbc`로 `daily_expenditure_agg`, `monthly_expenditure_agg` upsert, `billing_user_api_key_seen`에 API Key 노출 정보 반영.
-- **OpenAI 모델 스냅샷 접미사**: 모델 문자열이 `…-YYYY-MM-DD` 형태(공급사 dated snapshot)이면, 카탈로그 단가는 **접미사를 뗀 베이스 모델**로 조회하고, 필요 시 동일 유효기간의 **별칭 `provider_model_price` 행**을 자동 삽입해 이후 이벤트도 동일 단가로 계산한다(`BillingRecordedService.resolveAliasedPrice`).
+- **모델 문자열 별칭(단가 매칭)**: 정확 `(provider, model)` 행이 없을 때, **OPENAI**(dated snapshot `-YYYY-MM-DD`), **GOOGLE**(`models/` 접두·`-NNN` 등), **ANTHROPIC**(`-YYYYMMDD` 접미사)에 대해 베이스 모델을 추가로 조회하고, 찾으면 **별칭 `provider_model_price` 행**을 자동 삽입해 이후 이벤트도 동일 단가로 계산한다(`BillingRecordedService`). 여전히 없으면 비용 `0`이며, 누락 조합은 **한 번 WARN·이후 DEBUG** 로 관측한다.
 - **멱등**: `billing_processed_event`로 `eventId` 단위 중복 처리 방지.
 - **비용 확정 발행(선택)**: `billing.rabbit.cost-out.enabled=true`(기본)일 때, 과금 가능 경로에서 집계·멱등 저장 **커밋 후** `UsageCostFinalizedEvent`를 `billing.events` / `usage.cost.finalized`로 발행하고, `cost_event_published_at`을 기록한다. 비과금·스킵 경로는 `cost_event_applicable=false`로 끝난다.
 - **월 예산 임계 발행(선택)**: `billing.rabbit.budget-out.enabled=true`이고 Identity에서 **해당 사용 이벤트의 키·프로바이더**에 대한 월 예산이 **0보다 클 때만**, KST 달력 월에 대해 `daily_expenditure_agg`를 **프로바이더 한정으로 합산**한 누적 지출이 **임계 단위(기본 10%; 테스트 시 1%)**를 **처음** 넘는 경우마다 트랜잭션 **커밋 후** `BillingBudgetThresholdReachedEvent`를 발행한다. 분자·분모 정의·JSON 계약은 [`docs/billing-outbound-events.md`](billing-outbound-events.md) §2.
@@ -69,6 +69,7 @@
 ### 4.4 웹(BFF)
 
 - `billing-service/web`은 지출 대시보드 UI 및 BFF 패턴으로 Gateway의 billing API를 호출하는 구성을 따른다(세부는 해당 `web` 디렉터리 및 팀 문서 참고).
+- **팀 모드 새로고침**: 지출 화면에서 **개인** 모드의 「새로고침」과 대등하게, **팀** 모드에서도 상단 「새로고침」으로 **내 팀 목록 갱신 + 현재 선택 팀·기간 집계**를 한 번에 다시 불러온다(기존 「팀 목록 새로고침」「집계」 버튼과 병행 가능).
 - **제품 범위(로드맵 대비)**: 개인·팀 모드 지출 UX(예산 게이지, 일별/인당 차트, 비결제 시뮬레이션 고지)는 구현·검증 대상에 포함한다. **조직 단위 집계 UI**는 동일 로드맵에서 범위 밖(취소)으로 두었다.
 
 ### 4.5 이벤트 처리 파이프라인 상세 (`BillingRecordedService`)
@@ -83,7 +84,7 @@
 | Provider 누락 | `event.provider()`가 null이면 집계 스킵. |
 | 모델 결정 | `event.model()`이 있으면 사용, 없으면 `tokenUsage.model()` 사용. 둘 다 없으면 집계 스킵. |
 | 집계 일자 | `occurredAt`을 **Asia/Seoul**로 변환한 **로컬 날짜**를 일 집계 키로 사용. 월 집계는 그 날짜가 속한 달의 **1일**(`monthStart`). |
-| 단가 조회 | `ProviderModelPriceRepository.findActivePrices(provider, model, occurredAt, PageRequest(0,1))` — `validFrom <= occurredAt`이고 `validTo`가 null이거나 `> occurredAt`인 행 중 **가장 최근 `validFrom`**. 없으면 OpenAI **dated snapshot** 모델이면 베이스 모델로 재조회·별칭 시드(§4.1). 그래도 없으면 비용 **0**. |
+| 단가 조회 | `ProviderModelPriceRepository.findActivePrices(provider, model, occurredAt, PageRequest(0,1))` — `validFrom <= occurredAt`이고 `validTo`가 null이거나 `> occurredAt`인 행 중 **가장 최근 `validFrom`**. 없으면 §4.1의 **모델 별칭 규칙**(OPENAI / GOOGLE / ANTHROPIC)으로 베이스 모델 재조회·별칭 시드. 그래도 없으면 비용 **0**(누락은 로그로 관측). |
 | 비용·토큰 | `ExpenditureCostCalculator.compute` 및 `normalizeTokens` 결과로 일·월 upsert. |
 | 예산 임계(선택) | 집계 커밋 전에 `sumDailyCostUsdForKstCalendarMonthAndProvider`(이벤트 적용 전·후)와 `IdentityBudgetClient.fetchMonthlyBudgetUsdForKey`로 비교; `budget-out`이 켜져 있고 키 예산이 양수일 때만 **커밋 후** `BudgetThresholdEventPublisher` 호출. |
 | API Key 시드 | `billing_user_api_key_seen`에 `(userId, apiKeyId, provider)`별 **최초 관측 시각** 유지(`LEAST`로 더 이른 시각 보존). |
