@@ -35,22 +35,16 @@ import {
   readStoredLogDataTab,
   type UsageLogDataTab,
 } from "@/lib/usage/usage-log-tab-storage"
+import {
+  partitionUsageApiKeys,
+  usageApiKeyOptionLabel,
+} from "@/lib/usage/api-key-options"
 
 const LOGS_PAGE_SIZE = 20
 const LOG_PROVIDER_ALL = "__all__"
 const LOG_API_KEY_ALL = "__all__"
 const LOG_REASONING_ALL = "__all__"
 const LOG_SUCCESS_ALL = "__all__"
-
-function toApiKeyLabel(item: UsageLogApiKeyItemResponse): string {
-  const alias = item.alias?.trim()
-  if (!alias) return "별칭 없음"
-  return item.status === "DELETED" ? `${alias} (삭제)` : alias
-}
-
-function isDeletedApiKeyItem(item: UsageLogApiKeyItemResponse): boolean {
-  return item.status === "DELETED"
-}
 
 function toLongOrZero(v: number | null | undefined): number {
   return typeof v === "number" && Number.isFinite(v) ? v : 0
@@ -137,12 +131,8 @@ export function UsageLogPanel() {
   const reasoningPresenceParam =
     reasoningFilter === "present" ? "present" : reasoningFilter === "absent" ? "absent" : undefined
 
-  const activeApiKeyOptions = React.useMemo(
-    () => apiKeyOptions.filter((x) => !isDeletedApiKeyItem(x)),
-    [apiKeyOptions]
-  )
-  const deletedApiKeyOptions = React.useMemo(
-    () => apiKeyOptions.filter((x) => isDeletedApiKeyItem(x)),
+  const { active: activeApiKeyOptions, deleted: deletedApiKeyOptions } = React.useMemo(
+    () => partitionUsageApiKeys(apiKeyOptions),
     [apiKeyOptions]
   )
 
@@ -305,7 +295,7 @@ export function UsageLogPanel() {
                   <SelectLabel>사용 중</SelectLabel>
                   {activeApiKeyOptions.map((item) => (
                     <SelectItem key={item.apiKeyId} value={item.apiKeyId}>
-                      {toApiKeyLabel(item)}
+                      {usageApiKeyOptionLabel(item)}
                     </SelectItem>
                   ))}
                 </SelectGroup>
@@ -317,7 +307,7 @@ export function UsageLogPanel() {
                     <SelectLabel>삭제됨 (로그 보존)</SelectLabel>
                     {deletedApiKeyOptions.map((item) => (
                       <SelectItem key={item.apiKeyId} value={item.apiKeyId}>
-                        {toApiKeyLabel(item)}
+                        {usageApiKeyOptionLabel(item)}
                       </SelectItem>
                     ))}
                   </SelectGroup>
