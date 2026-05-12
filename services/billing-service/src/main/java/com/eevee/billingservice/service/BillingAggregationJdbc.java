@@ -215,4 +215,41 @@ public class BillingAggregationJdbc {
                 java.sql.Timestamp.from(occurredAt)
         );
     }
+
+    /**
+     * Deletes personal-key aggregate rows for a removed Identity external API key.
+     * Matching uses {@code lower(trim(user_id)) = lower(trim(?))} so gateway/Identity casing differences align.
+     *
+     * @return deleted row counts {@code [daily_expenditure_agg, monthly_expenditure_agg, billing_user_api_key_seen]}
+     */
+    public int[] deletePersonalAggregatesForExternalApiKey(String userId, String apiKeyId) {
+        int daily = jdbcTemplate.update(
+                """
+                        DELETE FROM daily_expenditure_agg
+                        WHERE lower(trim(user_id)) = lower(trim(?))
+                          AND api_key_id = ?
+                        """,
+                userId,
+                apiKeyId
+        );
+        int monthly = jdbcTemplate.update(
+                """
+                        DELETE FROM monthly_expenditure_agg
+                        WHERE lower(trim(user_id)) = lower(trim(?))
+                          AND api_key_id = ?
+                        """,
+                userId,
+                apiKeyId
+        );
+        int seen = jdbcTemplate.update(
+                """
+                        DELETE FROM billing_user_api_key_seen
+                        WHERE lower(trim(user_id)) = lower(trim(?))
+                          AND api_key_id = ?
+                        """,
+                userId,
+                apiKeyId
+        );
+        return new int[] {daily, monthly, seen};
+    }
 }

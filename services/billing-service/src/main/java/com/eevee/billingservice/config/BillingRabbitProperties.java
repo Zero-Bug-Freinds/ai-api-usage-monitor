@@ -36,6 +36,12 @@ public class BillingRabbitProperties {
     private final TeamApiKeyIn teamApiKeyIn = new TeamApiKeyIn();
 
     /**
+     * Inbound identity-service personal external API key stream ({@code identity.events} /
+     * {@code identity.external-api-key.status-changed}). Payloads are mixed; billing only purges on delete.
+     */
+    private final IdentityExternalApiKeyIn identityExternalApiKeyIn = new IdentityExternalApiKeyIn();
+
+    /**
      * Outbound billing → usage/analytics (and similar) after a correction is applied.
      */
     private final CorrectionOut correctionOut = new CorrectionOut();
@@ -86,6 +92,10 @@ public class BillingRabbitProperties {
 
     public TeamApiKeyIn getTeamApiKeyIn() {
         return teamApiKeyIn;
+    }
+
+    public IdentityExternalApiKeyIn getIdentityExternalApiKeyIn() {
+        return identityExternalApiKeyIn;
     }
 
     public static class CostOut {
@@ -258,6 +268,46 @@ public class BillingRabbitProperties {
         private String exchange = "team.api-key.exchange";
         private String routingKey = "team.api-key.status.changed";
         private String queue = "billing-service.team-api-key.status.changed.queue";
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getExchange() {
+            return exchange;
+        }
+
+        public void setExchange(String exchange) {
+            this.exchange = exchange;
+        }
+
+        public String getRoutingKey() {
+            return routingKey;
+        }
+
+        public void setRoutingKey(String routingKey) {
+            this.routingKey = routingKey;
+        }
+
+        public String getQueue() {
+            return queue;
+        }
+
+        public void setQueue(String queue) {
+            this.queue = queue;
+        }
+    }
+
+    public static class IdentityExternalApiKeyIn {
+
+        private boolean enabled = true;
+        private String exchange = "identity.events";
+        private String routingKey = "identity.external-api-key.status-changed";
+        private String queue = "billing-service.identity.external-api-key.queue";
 
         public boolean isEnabled() {
             return enabled;

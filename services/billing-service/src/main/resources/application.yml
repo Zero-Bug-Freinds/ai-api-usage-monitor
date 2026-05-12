@@ -76,6 +76,11 @@ billing:
       exchange: ${BILLING_RABBIT_TEAM_API_KEY_IN_EXCHANGE:team.api-key.exchange}
       routing-key: ${BILLING_RABBIT_TEAM_API_KEY_IN_ROUTING_KEY:team.api-key.status.changed}
       queue: ${BILLING_RABBIT_TEAM_API_KEY_IN_QUEUE:billing-service.team-api-key.status.changed.queue}
+    identity-external-api-key-in:
+      enabled: ${BILLING_RABBIT_IDENTITY_EXTERNAL_API_KEY_IN_ENABLED:true}
+      exchange: ${BILLING_RABBIT_IDENTITY_EXTERNAL_API_KEY_IN_EXCHANGE:identity.events}
+      routing-key: ${BILLING_RABBIT_IDENTITY_EXTERNAL_API_KEY_IN_ROUTING_KEY:identity.external-api-key.status-changed}
+      queue: ${BILLING_RABBIT_IDENTITY_EXTERNAL_API_KEY_IN_QUEUE:billing-service.identity.external-api-key.queue}
   gateway:
     shared-secret: ${GATEWAY_SHARED_SECRET:local-dev-gateway-shared-secret-do-not-use-in-prod}
   identity:

@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { BillingEventsModule } from './billing-events/billing-events.module';
+import { IdentityExternalApiKeyEventsModule } from './identity-external-api-key-events/identity-external-api-key-events.module';
 import { InAppNotificationsModule } from './in-app-notifications/in-app-notifications.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { TeamEventsModule } from './team-events/team-events.module';
@@ -19,6 +20,7 @@ import { TeamInvitationActionsModule } from './team-invitation-actions/team-invi
     TeamInvitationActionsModule,
     TeamEventsModule,
     BillingEventsModule,
+    IdentityExternalApiKeyEventsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
