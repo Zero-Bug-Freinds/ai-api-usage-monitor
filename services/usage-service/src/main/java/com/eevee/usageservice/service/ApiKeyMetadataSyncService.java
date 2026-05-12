@@ -2,6 +2,7 @@ package com.eevee.usageservice.service;
 
 import com.eevee.usage.events.UsageRecordedEvent;
 import com.eevee.usageservice.domain.ApiKeyMetadataEntity;
+import com.eevee.usageservice.domain.ApiKeyMetadataEntityId;
 import com.eevee.usageservice.domain.ApiKeyStatus;
 import com.eevee.usageservice.mq.ExternalApiKeyDeletedEvent;
 import com.eevee.usageservice.mq.ExternalApiKeyStatus;
@@ -15,6 +16,9 @@ import com.eevee.usageservice.mq.TeamApiKeyStatusChangedEvent;
 import com.eevee.usageservice.mq.TeamApiKeyUpdatedEvent;
 import com.eevee.usageservice.repository.ApiKeyMetadataRepository;
 import com.eevee.usageservice.repository.UsageRecordedLogRepository;
+import com.eevee.usageservice.service.bff.team.TeamServiceClient;
+import com.eevee.usageservice.usage.UsageRecordedMetadataScope;
+import com.eevee.usageservice.usage.UsageRecordedEventScopeNormalizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -22,6 +26,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 @Service
 public class ApiKeyMetadataSyncService {
@@ -30,13 +36,16 @@ public class ApiKeyMetadataSyncService {
 
     private final ApiKeyMetadataRepository apiKeyMetadataRepository;
     private final UsageRecordedLogRepository usageRecordedLogRepository;
+    private final TeamServiceClient teamServiceClient;
 
     public ApiKeyMetadataSyncService(
             ApiKeyMetadataRepository apiKeyMetadataRepository,
-            UsageRecordedLogRepository usageRecordedLogRepository
+            UsageRecordedLogRepository usageRecordedLogRepository,
+            TeamServiceClient teamServiceClient
     ) {
         this.apiKeyMetadataRepository = apiKeyMetadataRepository;
         this.usageRecordedLogRepository = usageRecordedLogRepository;
+        this.teamServiceClient = teamServiceClient;
     }
 
     @Transactional
@@ -48,52 +57,88 @@ public class ApiKeyMetadataSyncService {
         String userId = String.valueOf(event.userId());
         Instant updatedAt = event.occurredAt() != null ? event.occurredAt() : Instant.now();
 
-        ApiKeyMetadataEntity entity = apiKeyMetadataRepository.findById(keyId)
-                .orElseGet(() -> ApiKeyMetadataEntity.create(keyId, userId));
+        var id = ApiKeyMetadataEntityId.personal(keyId, userId);
+        ApiKeyMetadataEntity entity = apiKeyMetadataRepository.findById(id)
+                .orElseGet(() -> ApiKeyMetadataEntity.createPersonal(keyId, userId));
 
         String alias = StringUtils.hasText(event.alias()) ? event.alias().trim() : entity.getAlias();
-        entity.apply(
-                userId,
-                entity.getTeamId(),
-                event.provider(),
-                alias,
-                mapStatus(event.status()),
-                updatedAt
-        );
+        entity.apply(null, event.provider(), alias, mapStatus(event.status()), updatedAt);
         apiKeyMetadataRepository.save(entity);
     }
 
     @Transactional
     public void upsertFromTeamRegistered(TeamApiKeyRegisteredEvent event) {
-        upsertTeamMetadata(event.apiKeyId(), event.teamId(), event.actorUserId(), event.provider(), event.alias(), ApiKeyStatus.ACTIVE, event.occurredAt());
+        upsertTeamMetadataAllMembers(
+                event.apiKeyId(),
+                event.teamId(),
+                event.actorUserId(),
+                event.recipientUserIds(),
+                event.provider(),
+                event.alias(),
+                ApiKeyStatus.ACTIVE,
+                event.occurredAt()
+        );
     }
 
     @Transactional
     public void upsertFromTeamUpdated(TeamApiKeyUpdatedEvent event) {
-        upsertTeamMetadata(event.apiKeyId(), event.teamId(), event.actorUserId(), event.provider(), event.alias(), ApiKeyStatus.ACTIVE, event.occurredAt());
+        upsertTeamMetadataAllMembers(
+                event.apiKeyId(),
+                event.teamId(),
+                event.actorUserId(),
+                event.recipientUserIds(),
+                event.provider(),
+                event.alias(),
+                ApiKeyStatus.ACTIVE,
+                event.occurredAt()
+        );
     }
 
     @Transactional
     public void handleTeamDeleted(TeamApiKeyDeletedEvent event) {
-        upsertTeamMetadata(event.apiKeyId(), event.teamId(), event.actorUserId(), event.provider(), event.alias(), ApiKeyStatus.DELETED, event.occurredAt());
+        if (event.apiKeyId() == null || event.teamId() == null) {
+            throw new IllegalArgumentException("apiKeyId and teamId are required");
+        }
+        String keyId = String.valueOf(event.apiKeyId());
+        String teamId = String.valueOf(event.teamId());
+        apiKeyMetadataRepository.deleteAllTeamMetadataRowsForKey(keyId, teamId);
     }
 
     @Transactional
     public void handleTeamDeletionScheduled(TeamApiKeyDeletionScheduledEvent event) {
-        upsertTeamMetadata(event.apiKeyId(), event.teamId(), event.actorUserId(), event.provider(), event.alias(), ApiKeyStatus.DELETION_REQUESTED, event.occurredAt());
+        upsertTeamMetadataAllMembers(
+                event.apiKeyId(),
+                event.teamId(),
+                event.actorUserId(),
+                event.recipientUserIds(),
+                event.provider(),
+                event.alias(),
+                ApiKeyStatus.DELETION_REQUESTED,
+                event.occurredAt()
+        );
     }
 
     @Transactional
     public void handleTeamDeletionCancelled(TeamApiKeyDeletionCancelledEvent event) {
-        upsertTeamMetadata(event.apiKeyId(), event.teamId(), event.actorUserId(), event.provider(), event.alias(), ApiKeyStatus.ACTIVE, event.occurredAt());
+        upsertTeamMetadataAllMembers(
+                event.apiKeyId(),
+                event.teamId(),
+                event.actorUserId(),
+                event.recipientUserIds(),
+                event.provider(),
+                event.alias(),
+                ApiKeyStatus.ACTIVE,
+                event.occurredAt()
+        );
     }
 
     @Transactional
     public void upsertFromTeamStatusChanged(TeamApiKeyStatusChangedEvent event) {
-        upsertTeamMetadata(
+        upsertTeamMetadataAllMembers(
                 event.teamApiKeyId(),
                 event.teamId(),
                 event.ownerUserId(),
+                null,
                 event.provider(),
                 event.alias(),
                 mapTeamStatus(event.status()),
@@ -103,23 +148,61 @@ public class ApiKeyMetadataSyncService {
 
     @Transactional
     public void upsertFromUsageRecordedEvent(UsageRecordedEvent event) {
-        if (event == null || !StringUtils.hasText(event.apiKeyId())) {
+        if (event == null) {
             return;
         }
-        String keyId = event.apiKeyId().trim();
-        ApiKeyMetadataEntity entity = apiKeyMetadataRepository.findById(keyId)
-                .orElseGet(() -> ApiKeyMetadataEntity.create(keyId, resolveUserId(event, keyId)));
+        String normalizedTeamId = UsageRecordedEventScopeNormalizer.normalizeTeamId(event.teamId());
+        String normalizedTeamApiKeyId = UsageRecordedEventScopeNormalizer.normalizeTeamApiKeyId(
+                event.teamApiKeyId(),
+                normalizedTeamId
+        );
 
-        String userId = resolveUserId(event, keyId);
-        String alias = StringUtils.hasText(event.apiKeyAlias()) ? event.apiKeyAlias().trim() : entity.getAlias();
-        String provider = resolveProvider(event, entity);
-        String teamId = StringUtils.hasText(event.teamId()) ? event.teamId().trim() : entity.getTeamId();
+        boolean teamMetadata = UsageRecordedMetadataScope.isTeamKeyMetadata(event);
+        String metadataKeyId = resolveMetadataKeyIdFromUsage(event, teamMetadata, normalizedTeamApiKeyId);
+        if (!StringUtils.hasText(metadataKeyId)) {
+            return;
+        }
+
         Instant updatedAt = event.occurredAt() != null ? event.occurredAt() : Instant.now();
 
+        if (teamMetadata) {
+            String teamKeyForMetadata = normalizedTeamApiKeyId != null ? normalizedTeamApiKeyId.trim() : "";
+            if (!StringUtils.hasText(teamKeyForMetadata)) {
+                return;
+            }
+            String memberUserId = resolveUserId(event, teamKeyForMetadata);
+            var id = ApiKeyMetadataEntityId.team(teamKeyForMetadata, memberUserId);
+            ApiKeyMetadataEntity entity = apiKeyMetadataRepository.findById(id)
+                    .orElseGet(() -> ApiKeyMetadataEntity.createTeamRow(
+                            teamKeyForMetadata,
+                            memberUserId,
+                            StringUtils.hasText(normalizedTeamId) ? normalizedTeamId : null
+                    ));
+
+            String alias = StringUtils.hasText(event.apiKeyAlias()) ? event.apiKeyAlias().trim() : entity.getAlias();
+            String teamIdForApply = StringUtils.hasText(normalizedTeamId) ? normalizedTeamId : entity.getTeamId();
+            String resolvedProvider = resolveProviderStringFromUsage(event, entity);
+            entity.apply(
+                    teamIdForApply,
+                    resolvedProvider,
+                    alias,
+                    entity.getStatus() != null ? entity.getStatus() : ApiKeyStatus.ACTIVE,
+                    updatedAt
+            );
+            apiKeyMetadataRepository.save(entity);
+            return;
+        }
+
+        String ownerUserId = resolvePersonalMetadataOwnerUserId(event, metadataKeyId);
+        var id = ApiKeyMetadataEntityId.personal(metadataKeyId.trim(), ownerUserId);
+        ApiKeyMetadataEntity entity = apiKeyMetadataRepository.findById(id)
+                .orElseGet(() -> ApiKeyMetadataEntity.createPersonal(metadataKeyId.trim(), ownerUserId));
+
+        String alias = StringUtils.hasText(event.apiKeyAlias()) ? event.apiKeyAlias().trim() : entity.getAlias();
+        String resolvedProvider = resolveProviderStringFromUsage(event, entity);
         entity.apply(
-                userId,
-                teamId,
-                provider,
+                null,
+                resolvedProvider,
                 alias,
                 entity.getStatus() != null ? entity.getStatus() : ApiKeyStatus.ACTIVE,
                 updatedAt
@@ -127,10 +210,34 @@ public class ApiKeyMetadataSyncService {
         apiKeyMetadataRepository.save(entity);
     }
 
-    /**
-     * 물리 삭제 완료 이벤트: 기본은 메타데이터만 {@link ApiKeyStatus#DELETED} 로 맞추고 사용 로그는 유지한다.
-     * {@code retainLogs == false} 일 때만 해당 키의 사용 로그와 메타데이터 행을 삭제한다.
-     */
+    private static String resolvePersonalMetadataOwnerUserId(UsageRecordedEvent event, String metadataKeyId) {
+        if (StringUtils.hasText(event.metadataOwnerUserId())) {
+            return event.metadataOwnerUserId().trim();
+        }
+        return resolveUserId(event, metadataKeyId);
+    }
+
+    private static String resolveProviderStringFromUsage(UsageRecordedEvent event, ApiKeyMetadataEntity entity) {
+        if (StringUtils.hasText(entity.getProvider())) {
+            return entity.getProvider();
+        }
+        if (event.provider() != null) {
+            return event.provider().name();
+        }
+        return entity.getProvider();
+    }
+
+    private static String resolveMetadataKeyIdFromUsage(
+            UsageRecordedEvent event,
+            boolean teamMetadata,
+            String normalizedTeamApiKeyId
+    ) {
+        if (teamMetadata && StringUtils.hasText(normalizedTeamApiKeyId)) {
+            return normalizedTeamApiKeyId.trim();
+        }
+        return event.apiKeyId() != null ? event.apiKeyId().trim() : "";
+    }
+
     @Transactional
     public void handleExternalApiKeyDeleted(ExternalApiKeyDeletedEvent event) {
         if (event.apiKeyId() == null || event.userId() == null) {
@@ -140,9 +247,11 @@ public class ApiKeyMetadataSyncService {
         String userId = String.valueOf(event.userId());
         boolean retainLogs = event.retainLogs() == null || event.retainLogs();
 
+        var id = ApiKeyMetadataEntityId.personal(keyId, userId);
+
         if (!retainLogs) {
             int removedLogs = usageRecordedLogRepository.deleteByApiKeyId(keyId);
-            apiKeyMetadataRepository.deleteById(keyId);
+            apiKeyMetadataRepository.deleteById(id);
             log.info(
                     "External API key purged from usage (retainLogs=false) keyId={} userId={} removedLogs={}",
                     keyId,
@@ -153,20 +262,13 @@ public class ApiKeyMetadataSyncService {
         }
 
         Instant updatedAt = event.occurredAt() != null ? event.occurredAt() : Instant.now();
-        ApiKeyMetadataEntity entity = apiKeyMetadataRepository.findById(keyId)
-                .orElseGet(() -> ApiKeyMetadataEntity.create(keyId, userId));
+        ApiKeyMetadataEntity entity = apiKeyMetadataRepository.findById(id)
+                .orElseGet(() -> ApiKeyMetadataEntity.createPersonal(keyId, userId));
 
         String alias = StringUtils.hasText(event.alias()) ? event.alias().trim() : entity.getAlias();
         String provider = StringUtils.hasText(event.provider()) ? event.provider().trim() : entity.getProvider();
 
-        entity.apply(
-                userId,
-                entity.getTeamId(),
-                provider,
-                alias,
-                ApiKeyStatus.DELETED,
-                updatedAt
-        );
+        entity.apply(null, provider, alias, ApiKeyStatus.DELETED, updatedAt);
         apiKeyMetadataRepository.save(entity);
     }
 
@@ -189,45 +291,74 @@ public class ApiKeyMetadataSyncService {
         };
     }
 
-    private void upsertTeamMetadata(
+    private void upsertTeamMetadataAllMembers(
             Long keyIdRaw,
             Long teamIdRaw,
-            String ownerUserId,
+            String actorUserId,
+            List<String> recipientsFromEvent,
             String provider,
             String alias,
             ApiKeyStatus status,
             Instant occurredAt
     ) {
-        if (keyIdRaw == null) {
-            throw new IllegalArgumentException("team api key id is required");
+        if (keyIdRaw == null || teamIdRaw == null) {
+            throw new IllegalArgumentException("team api key id and team id are required");
         }
         String keyId = String.valueOf(keyIdRaw);
+        String teamId = String.valueOf(teamIdRaw);
         Instant updatedAt = occurredAt != null ? occurredAt : Instant.now();
-        ApiKeyMetadataEntity entity = apiKeyMetadataRepository.findById(keyId).orElse(null);
 
-        String resolvedUserId = StringUtils.hasText(ownerUserId)
-                ? ownerUserId.trim()
-                : (entity != null ? entity.getUserId() : null);
-        if (!StringUtils.hasText(resolvedUserId)) {
-            log.warn("Skipping team API key metadata upsert due to missing owner userId keyId={}", keyId);
+        String resolvedActor = StringUtils.hasText(actorUserId) ? actorUserId.trim() : null;
+        if (!StringUtils.hasText(resolvedActor)) {
+            log.warn("Skipping team API key metadata upsert due to missing actor userId keyId={}", keyId);
             return;
         }
 
-        ApiKeyMetadataEntity target = entity != null ? entity : ApiKeyMetadataEntity.create(keyId, resolvedUserId);
-        String resolvedTeamId = teamIdRaw != null
-                ? String.valueOf(teamIdRaw)
-                : target.getTeamId();
-        String resolvedAlias = StringUtils.hasText(alias) ? alias.trim() : target.getAlias();
-        String resolvedProvider = StringUtils.hasText(provider) ? provider.trim() : target.getProvider();
-        target.apply(
-                resolvedUserId,
-                resolvedTeamId,
-                resolvedProvider,
-                resolvedAlias,
-                status,
-                updatedAt
-        );
-        apiKeyMetadataRepository.save(target);
+        List<String> members = resolveTeamMemberUserIds(recipientsFromEvent, resolvedActor, teamId);
+        if (members.isEmpty()) {
+            log.warn("Skipping team API key metadata upsert: no members resolved keyId={} teamId={}", keyId, teamId);
+            return;
+        }
+
+        String resolvedProvider = StringUtils.hasText(provider) ? provider.trim() : null;
+        if (!StringUtils.hasText(resolvedProvider)) {
+            String fromExisting = null;
+            for (String memberId : members) {
+                var existing = apiKeyMetadataRepository.findById(ApiKeyMetadataEntityId.team(keyId, memberId));
+                if (existing.isPresent() && StringUtils.hasText(existing.get().getProvider())) {
+                    fromExisting = existing.get().getProvider();
+                    break;
+                }
+            }
+            resolvedProvider = fromExisting;
+        }
+        if (!StringUtils.hasText(resolvedProvider)) {
+            log.warn("Skipping team API key metadata upsert due to missing provider keyId={}", keyId);
+            return;
+        }
+
+        for (String memberUserId : members) {
+            var id = ApiKeyMetadataEntityId.team(keyId, memberUserId);
+            ApiKeyMetadataEntity entity = apiKeyMetadataRepository.findById(id)
+                    .orElseGet(() -> ApiKeyMetadataEntity.createTeamRow(keyId, memberUserId, teamId));
+            String resolvedAlias = StringUtils.hasText(alias) ? alias.trim() : entity.getAlias();
+            entity.apply(teamId, resolvedProvider, resolvedAlias, status, updatedAt);
+            apiKeyMetadataRepository.save(entity);
+        }
+        apiKeyMetadataRepository.deleteTeamMetadataRowsForKeyNotInMemberList(keyId, teamId, members);
+    }
+
+    private List<String> resolveTeamMemberUserIds(List<String> recipientsFromEvent, String actorUserId, String teamId) {
+        if (recipientsFromEvent != null && !recipientsFromEvent.isEmpty()) {
+            List<String> out = new ArrayList<>();
+            for (String id : recipientsFromEvent) {
+                if (StringUtils.hasText(id)) {
+                    out.add(id.trim());
+                }
+            }
+            return out;
+        }
+        return teamServiceClient.fetchTeamMemberUserIds(actorUserId, teamId);
     }
 
     private static String resolveUserId(UsageRecordedEvent event, String keyId) {
@@ -235,12 +366,5 @@ public class ApiKeyMetadataSyncService {
             throw new IllegalArgumentException("usage event userId is required for keyId=" + keyId);
         }
         return event.userId().trim();
-    }
-
-    private static String resolveProvider(UsageRecordedEvent event, ApiKeyMetadataEntity entity) {
-        if (event.provider() != null) {
-            return event.provider().name();
-        }
-        return entity.getProvider();
     }
 }

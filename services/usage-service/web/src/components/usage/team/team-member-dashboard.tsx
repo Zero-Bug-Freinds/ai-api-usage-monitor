@@ -1,17 +1,6 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { ChevronDown, ChevronUp } from "lucide-react"
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts"
 import {
   Label,
   Select,
@@ -20,10 +9,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@ai-usage/ui"
-import { formatRequestCount } from "@/lib/usage/format"
+import { TeamMemberAvatar } from "@/components/common/team-member-avatar"
 import { formatKstIsoDate, addKstDays } from "@/lib/usage/kst-dates"
 import { EMPTY_MEMBER_MODEL_USAGE_MSG } from "@/lib/usage/team-dashboard-empty"
 import { teamUsageBffBase } from "@/lib/usage/team-usage-bff-base"
+import { DASHBOARD_API_KEY_ALL, DASHBOARD_API_KEY_NONE } from "@/lib/usage/dashboard-api-key-constants"
+import {
+  DASHBOARD_PROVIDER_ALL,
+  type TeamBffApiKeyRow,
+  filterTeamBffRowsByProvider,
+  parseTeamBffApiKeysPayload,
+  teamBffRowsToUsageMenuItems,
+} from "@/lib/usage/dashboard-provider-api-keys"
+import { DashboardApiKeySelectMenu } from "@/components/usage/dashboard-api-key-select-menu"
+import { useDashboardAggregateApiKeySync } from "@/lib/usage/use-dashboard-aggregate-api-key"
+import { MemberAnalyticsCharts, type MemberRow } from "./member-analytics-charts"
 
 type TeamMemberDashboardProps = {
   teamId: string
@@ -32,46 +32,28 @@ type TeamMemberDashboardProps = {
 }
 
 type PeriodMode = "today" | "7d" | "30d"
-type TeamApiKey = { id: string; alias: string; provider: string; updatedAt: string }
 type TeamMemberProfile = { userId: string; displayName?: string; role?: string }
-type ModelAgg = { model: string; provider: string; requestCount: number }
+type ModelAgg = {
+  model: string
+  provider: string
+  requestCount: number
+  inputTokens?: number
+  outputTokens?: number
+  estimatedReasoningTokens?: number
+}
+type BffSummary = {
+  totalRequests: number
+  totalErrors: number
+  totalInputTokens: number
+  totalEstimatedCost?: number
+  avgLatencyMs?: number | null
+}
 type BffResponse = {
   byModel?: ModelAgg[]
   memberProfiles?: TeamMemberProfile[]
+  summary?: BffSummary
 }
 type MemberSeries = { userId: string; displayName: string; requests: number }
-type ChartRow = {
-  label: string
-  model: string
-  totalRequests: number
-  isOthers: boolean
-  provider: string
-  [memberKey: string]: string | number | boolean
-}
-type OthersRow = { model: string; provider: string; requests: number }
-
-type TooltipPayloadEntry = {
-  dataKey?: string
-  value?: number | string
-  payload?: ChartRow
-}
-
-const PROVIDER_ALL = "__ALL__"
-const MODEL_REQUESTS_TOP_N = 10
-const OTHERS_LABEL = "기타 (Others)"
-const OTHERS_BAR_COLOR = "#94a3b8"
-const MEMBER_PALETTE = [
-  "#1d4ed8",
-  "#0ea5e9",
-  "#16a34a",
-  "#f97316",
-  "#9333ea",
-  "#dc2626",
-  "#0891b2",
-  "#4f46e5",
-  "#2563eb",
-  "#0f766e",
-]
 
 const memberDashboardCache = new Map<string, BffResponse>()
 
@@ -116,78 +98,38 @@ function teamTotalQuery(params: Record<string, string | undefined>): string {
   return sp.toString()
 }
 
-function hashToUint(str: string): number {
-  let h = 2166136261
-  for (let i = 0; i < str.length; i++) {
-    h ^= str.charCodeAt(i)
-    h = Math.imul(h, 16777619)
+function rowFromBff(profile: TeamMemberProfile, body: BffResponse): MemberRow {
+  return {
+    profile,
+    byModel: (body.byModel ?? []) as MemberRow["byModel"],
+    summary: body.summary,
   }
-  return h >>> 0
-}
-
-function colorForMember(userId: string): string {
-  const idx = hashToUint(userId) % MEMBER_PALETTE.length
-  return MEMBER_PALETTE[idx] ?? "#64748b"
-}
-
-function truncateLabel(v: string, max = 24): string {
-  if (v.length <= max) return v
-  return `${v.slice(0, max - 1)}…`
-}
-
-function MemberModelTooltip({
-  active,
-  payload,
-  memberNameById,
-}: {
-  active?: boolean
-  payload?: readonly unknown[]
-  memberNameById: Record<string, string>
-}) {
-  if (!active || !payload || payload.length === 0) return null
-  const p = payload[0] as TooltipPayloadEntry
-  const row = p.payload
-  const memberKey = p.dataKey
-  if (!row || !memberKey || memberKey === "totalRequests") return null
-  const memberRequests = Number(p.value ?? 0)
-  const total = Number(row.totalRequests ?? 0)
-  const share = total > 0 ? (100 * memberRequests) / total : 0
-  const resolvedName = memberNameById[String(memberKey)] ?? String(memberKey)
-  return (
-    <div className="rounded-md border border-border bg-card px-3 py-2 text-xs shadow-sm">
-      <p className="font-semibold text-foreground">모델: {row.model}</p>
-      <p className="mt-1 text-muted-foreground">팀원명: {resolvedName}</p>
-      <p className="text-muted-foreground">해당 모델 요청 수: {formatRequestCount(memberRequests)}</p>
-      <p className="text-muted-foreground">팀 내 모델 점유율: {share.toFixed(1)}%</p>
-    </div>
-  )
 }
 
 export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMemberDashboardProps) {
   const todayKst = formatKstIsoDate()
   const [periodMode, setPeriodMode] = useState<PeriodMode>("7d")
-  const [provider, setProvider] = useState<string>(PROVIDER_ALL)
-  const [apiKeys, setApiKeys] = useState<TeamApiKey[]>([])
-  const [apiKeyId, setApiKeyId] = useState<string>("")
+  const [provider, setProvider] = useState<string>(DASHBOARD_PROVIDER_ALL)
+  const [apiKeyRows, setApiKeyRows] = useState<TeamBffApiKeyRow[]>([])
+  const [apiKeyId, setApiKeyId] = useState<string>(DASHBOARD_API_KEY_ALL)
   const [keysLoading, setKeysLoading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [memberRows, setMemberRows] = useState<Array<{ profile: TeamMemberProfile; byModel: ModelAgg[] }>>([])
-  const [isOthersExpanded, setIsOthersExpanded] = useState(false)
+  const [memberRows, setMemberRows] = useState<MemberRow[]>([])
   const range = useMemo(() => presetRange(periodMode, todayKst), [periodMode, todayKst])
 
   useEffect(() => {
     if (!teamId || !isActive) {
-      setApiKeys([])
-      setApiKeyId("")
+      setApiKeyRows([])
+      setApiKeyId(DASHBOARD_API_KEY_ALL)
       return
     }
     let cancelled = false
     setKeysLoading(true)
     const base = teamUsageBffBase()
     if (!base) {
-      setApiKeys([])
-      setApiKeyId("")
+      setApiKeyRows([])
+      setApiKeyId(DASHBOARD_API_KEY_ALL)
       setKeysLoading(false)
       return
     }
@@ -196,29 +138,18 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
       headers: { Accept: "application/json" },
     })
       .then(async (r) => {
-        const json = (await r.json()) as { apiKeys?: unknown }
-        if (!r.ok || !Array.isArray(json.apiKeys)) return []
-        return (json.apiKeys as unknown[])
-          .map((item): TeamApiKey | null => {
-            if (!item || typeof item !== "object") return null
-            const o = item as Record<string, unknown>
-            if ((typeof o.id !== "number" && typeof o.id !== "string") || typeof o.alias !== "string") return null
-            if (typeof o.provider !== "string") return null
-            const updatedAt = typeof o.updatedAt === "string" ? o.updatedAt : ""
-            return { id: String(o.id), alias: o.alias, provider: o.provider, updatedAt }
-          })
-          .filter((x): x is TeamApiKey => x !== null)
-          .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))
+        const json = await r.json()
+        if (!r.ok) return []
+        return parseTeamBffApiKeysPayload(json)
       })
       .then((rows) => {
         if (cancelled) return
-        setApiKeys(rows)
-        setApiKeyId((prev) => (prev && rows.some((x) => x.id === prev) ? prev : rows[0] ? rows[0].id : ""))
+        setApiKeyRows(rows)
       })
       .catch(() => {
         if (!cancelled) {
-          setApiKeys([])
-          setApiKeyId("")
+          setApiKeyRows([])
+          setApiKeyId(DASHBOARD_API_KEY_ALL)
         }
       })
       .finally(() => {
@@ -229,9 +160,19 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
     }
   }, [teamId, isActive])
 
+  const filteredApiKeyRows = useMemo(
+    () => filterTeamBffRowsByProvider(apiKeyRows, provider),
+    [apiKeyRows, provider],
+  )
+  const apiKeyMenuItems = useMemo(
+    () => teamBffRowsToUsageMenuItems(filteredApiKeyRows),
+    [filteredApiKeyRows],
+  )
+
+  useDashboardAggregateApiKeySync(apiKeyMenuItems, apiKeyId, setApiKeyId, true)
+
   useEffect(() => {
     setMemberRows([])
-    setIsOthersExpanded(false)
     setError(null)
   }, [teamId])
 
@@ -249,13 +190,13 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
     setLoading(true)
     setError(null)
     setMemberRows([])
-    setIsOthersExpanded(false)
     const qTotal = teamTotalQuery({
       teamId,
       from: range.from,
       to: range.to,
-      provider: provider === PROVIDER_ALL ? undefined : provider,
-      apiKeyId: apiKeyId || undefined,
+      provider: provider === DASHBOARD_PROVIDER_ALL ? undefined : provider,
+      apiKeyId:
+        apiKeyId !== DASHBOARD_API_KEY_ALL && apiKeyId !== DASHBOARD_API_KEY_NONE ? apiKeyId : undefined,
     })
 
     fetch(`${base}/dashboard?${qTotal}`, {
@@ -278,14 +219,13 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
           profiles.map(async (profile) => {
             const cacheKey = [teamId, profile.userId, range.from, range.to, provider, apiKeyId].join("|")
             const cached = memberDashboardCache.get(cacheKey)
-            if (cached) return { profile, byModel: cached.byModel ?? [] }
+            if (cached) return rowFromBff(profile, cached)
             const qMember = usageQuery({
               teamId,
               userId: profile.userId,
               from: range.from,
               to: range.to,
-              provider: provider === PROVIDER_ALL ? undefined : provider,
-              apiKeyId: apiKeyId || undefined,
+              provider: provider === DASHBOARD_PROVIDER_ALL ? undefined : provider,
             })
             const r = await fetch(`${base}/dashboard?${qMember}`, {
               credentials: "include",
@@ -294,7 +234,7 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
             if (!r.ok) throw new Error(memberUsageFetchError(r.status))
             const body = (await r.json()) as BffResponse
             memberDashboardCache.set(cacheKey, body)
-            return { profile, byModel: body.byModel ?? [] }
+            return rowFromBff(profile, body)
           }),
         )
         if (!cancelled) setMemberRows(results)
@@ -321,76 +261,11 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
     [memberRows],
   )
 
-  const modelRows = useMemo(() => {
-    const modelMap = new Map<string, { model: string; provider: string; totalRequests: number; byMember: Map<string, number> }>()
-    for (const { profile, byModel } of memberRows) {
-      for (const m of byModel) {
-        const req = Math.max(0, m.requestCount)
-        if (req <= 0) continue
-        const key = `${m.provider}::${m.model}`
-        const existing = modelMap.get(key)
-        if (!existing) {
-          const byMember = new Map<string, number>()
-          byMember.set(profile.userId, req)
-          modelMap.set(key, { model: m.model, provider: m.provider, totalRequests: req, byMember })
-          continue
-        }
-        existing.totalRequests += req
-        existing.byMember.set(profile.userId, (existing.byMember.get(profile.userId) ?? 0) + req)
-      }
-    }
-    return [...modelMap.values()].sort((a, b) => b.totalRequests - a.totalRequests)
-  }, [memberRows])
-
-  const topRows = useMemo(() => modelRows.slice(0, MODEL_REQUESTS_TOP_N), [modelRows])
-  const othersRaw = useMemo(() => modelRows.slice(MODEL_REQUESTS_TOP_N), [modelRows])
-  const othersTotal = useMemo(() => othersRaw.reduce((s, r) => s + r.totalRequests, 0), [othersRaw])
-  const hasOthers = othersRaw.length > 0
-
-  const chartRows = useMemo<ChartRow[]>(() => {
-    const rows: ChartRow[] = topRows.map((row) => {
-      const base: ChartRow = {
-        label: truncateLabel(row.model),
-        model: row.model,
-        totalRequests: row.totalRequests,
-        isOthers: false,
-        provider: row.provider,
-      }
-      for (const member of memberSeries) {
-        base[member.userId] = row.byMember.get(member.userId) ?? 0
-      }
-      return base
-    })
-
-    if (hasOthers) {
-      const othersByMember = new Map<string, number>()
-      for (const row of othersRaw) {
-        for (const [memberId, req] of row.byMember.entries()) {
-          othersByMember.set(memberId, (othersByMember.get(memberId) ?? 0) + req)
-        }
-      }
-      const othersRow: ChartRow = {
-        label: OTHERS_LABEL,
-        model: OTHERS_LABEL,
-        totalRequests: othersTotal,
-        isOthers: true,
-        provider: "OTHERS",
-      }
-      for (const member of memberSeries) {
-        othersRow[member.userId] = othersByMember.get(member.userId) ?? 0
-      }
-      rows.push(othersRow)
-    }
-    return rows
-  }, [topRows, hasOthers, othersRaw, othersTotal, memberSeries])
-
-  const othersRows = useMemo<OthersRow[]>(
-    () => othersRaw.map((r) => ({ model: r.model, provider: r.provider, requests: r.totalRequests })),
-    [othersRaw],
+  const hasData = useMemo(
+    () => memberRows.some((r) => r.byModel.some((m) => Math.max(0, m.requestCount) > 0)),
+    [memberRows],
   )
-  const othersMax = useMemo(() => Math.max(...othersRows.map((r) => r.requests), 1), [othersRows])
-  const othersRequestSum = useMemo(() => Math.max(othersRows.reduce((s, r) => s + r.requests, 0), 1), [othersRows])
-  const hasData = chartRows.some((r) => r.totalRequests > 0)
+
   const memberNameById = useMemo(
     () => memberSeries.reduce<Record<string, string>>((acc, cur) => ({ ...acc, [cur.userId]: cur.displayName }), {}),
     [memberSeries],
@@ -407,6 +282,35 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
   return (
     <div className="w-full min-w-0 space-y-6">
       <div className="flex flex-wrap items-end gap-4">
+        <div className="space-y-2 sm:w-52">
+          <Label>공급사</Label>
+          <Select value={provider} onValueChange={setProvider}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={DASHBOARD_PROVIDER_ALL}>전체</SelectItem>
+              <SelectItem value="GOOGLE">Gemini (Google)</SelectItem>
+              <SelectItem value="OPENAI">OpenAI</SelectItem>
+              <SelectItem value="ANTHROPIC">Anthropic</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2 sm:w-52">
+          <Label>API Key</Label>
+          <Select value={apiKeyId} onValueChange={setApiKeyId} disabled={keysLoading}>
+            <SelectTrigger>
+              <SelectValue placeholder={keysLoading ? "불러오는 중…" : apiKeyMenuItems.length === 0 ? "없음" : "전체"} />
+            </SelectTrigger>
+            <SelectContent className="max-h-[min(70vh,26rem)]">
+              <DashboardApiKeySelectMenu
+                items={apiKeyMenuItems}
+                allValue={DASHBOARD_API_KEY_ALL}
+                showAllOption={apiKeyMenuItems.length > 0}
+                noneValue={DASHBOARD_API_KEY_NONE}
+                showNoneOption={apiKeyMenuItems.length === 0}
+              />
+            </SelectContent>
+          </Select>
+        </div>
         <div className="space-y-2 sm:w-44">
           <Label htmlFor="member-period">기간</Label>
           <Select value={periodMode} onValueChange={(v) => setPeriodMode(v as PeriodMode)}>
@@ -418,129 +322,44 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-2 sm:w-52">
-          <Label>API Key</Label>
-          <Select value={apiKeyId} onValueChange={setApiKeyId} disabled={keysLoading || apiKeys.length === 0}>
-            <SelectTrigger><SelectValue placeholder={keysLoading ? "불러오는 중…" : "키 선택"} /></SelectTrigger>
-            <SelectContent>
-              {apiKeys.map((k) => (
-                <SelectItem key={k.id} value={String(k.id)}>{k.alias} ({k.provider})</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2 sm:w-52">
-          <Label>공급사</Label>
-          <Select value={provider} onValueChange={setProvider}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value={PROVIDER_ALL}>전체</SelectItem>
-              <SelectItem value="GOOGLE">Gemini (Google)</SelectItem>
-              <SelectItem value="OPENAI">OpenAI</SelectItem>
-              <SelectItem value="ANTHROPIC">Anthropic</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
       </div>
 
       {error ? <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p> : null}
       {loading ? (
         <div className="space-y-4" aria-busy="true">
-          <div className="h-[360px] animate-pulse rounded-lg border border-border bg-muted/40" />
-          <div className="h-[220px] animate-pulse rounded-lg border border-border bg-muted/40" />
+          <div className="h-[320px] animate-pulse rounded-lg border border-border bg-muted/40" />
+          <div className="h-[320px] animate-pulse rounded-lg border border-border bg-muted/40" />
+          <div className="h-[340px] animate-pulse rounded-lg border border-border bg-muted/40" />
         </div>
       ) : null}
 
       {!loading && !error && !hasData ? (
         <section className="rounded-lg border border-border p-4 shadow-sm">
-          <h2 className="mb-4 text-lg font-medium">팀원별 모델 활용 패턴</h2>
-          <div className="h-[360px] min-h-[360px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={[{ label: "—", model: "—", totalRequests: 0, isOthers: false, provider: "" }]}
-                margin={{ top: 8, right: 16, left: 8, bottom: 24 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="label" tick={{ fontSize: 11 }} interval={0} angle={-15} textAnchor="end" height={56} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip />
-              </BarChart>
-            </ResponsiveContainer>
+          <h2 className="mb-4 text-lg font-medium">팀원별 분석</h2>
+          <div className="flex min-h-[240px] items-center justify-center rounded-md border border-dashed border-border bg-muted/20 px-4 py-12">
+            <p className="text-center text-sm text-muted-foreground">{EMPTY_MEMBER_MODEL_USAGE_MSG}</p>
           </div>
-          <p className="mt-3 text-center text-sm text-muted-foreground">{EMPTY_MEMBER_MODEL_USAGE_MSG}</p>
         </section>
       ) : null}
 
       {!loading && !error && hasData ? (
-        <section className="rounded-lg border border-border p-4 shadow-sm">
-          <h2 className="mb-4 text-lg font-medium">팀원별 모델 활용 패턴 및 점유 분석</h2>
-          <div className="h-[360px] min-h-[360px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={chartRows}
-                margin={{ top: 8, right: 16, left: 8, bottom: 24 }}
-                onClick={(state) => {
-                  const payload = (state as { activePayload?: TooltipPayloadEntry[] } | undefined)?.activePayload
-                  const row = payload?.[0]?.payload
-                  if (row?.isOthers) setIsOthersExpanded((prev) => !prev)
-                }}
+        <>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-border/80 bg-muted/15 px-3 py-2">
+            <span className="text-xs font-medium text-muted-foreground">멤버</span>
+            {memberSeries.map((m) => (
+              <span
+                key={m.userId}
+                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2 py-1 text-xs text-foreground shadow-sm"
               >
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="label" tick={{ fontSize: 11 }} interval={0} angle={-15} textAnchor="end" height={56} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip content={<MemberModelTooltip memberNameById={memberNameById} />} shared={false} />
-                {memberSeries.map((member) => (
-                  <Bar key={member.userId} dataKey={member.userId} stackId="modelReq" name={member.displayName} fill={colorForMember(member.userId)} isAnimationActive={false}>
-                    {chartRows.map((row) => (
-                      <Cell
-                        key={`${row.model}:${member.userId}`}
-                        fill={row.isOthers ? OTHERS_BAR_COLOR : colorForMember(member.userId)}
-                        style={{ cursor: row.isOthers ? "pointer" : "default" }}
-                      />
-                    ))}
-                  </Bar>
-                ))}
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground">
-            {memberSeries.map((member) => (
-              <div key={member.userId} className="inline-flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: colorForMember(member.userId) }} />
-                <span>{member.displayName}</span>
-              </div>
+                <TeamMemberAvatar userId={m.userId} size={16} className="ring-0" />
+                <span className="max-w-[12rem] truncate" title={m.displayName}>
+                  {m.displayName}
+                </span>
+              </span>
             ))}
           </div>
-          <p className="mt-3 text-xs text-muted-foreground">상위 {MODEL_REQUESTS_TOP_N}개 모델 + 기타로 표시됩니다. 기타 막대를 클릭하면 상세 미니바가 펼쳐집니다.</p>
-
-          <div className={["mt-3 overflow-hidden rounded-md border border-border/70 bg-muted/20 transition-all duration-300 ease-out", isOthersExpanded ? "max-h-[24rem] opacity-100" : "max-h-0 opacity-0 border-transparent"].join(" ")}>
-            {othersRows.length === 0 ? null : (
-              <div className="p-3">
-                <button type="button" className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-foreground" onClick={() => setIsOthersExpanded((prev) => !prev)}>
-                  {isOthersExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                  기타 모델 상세 내역
-                </button>
-                <div className="space-y-2">
-                  {othersRows.map((row) => {
-                    const widthPct = Math.max(4, Math.round((row.requests / othersMax) * 100))
-                    const sharePct = (row.requests / othersRequestSum) * 100
-                    return (
-                      <div key={`${row.provider}:${row.model}`} className="grid grid-cols-[minmax(0,1fr)_9rem] gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium" title={row.model}>{row.model}</p>
-                          <p className="text-[11px] text-muted-foreground">{row.provider}</p>
-                          <div className="mt-1 h-2 w-full rounded bg-muted"><div className="h-2 rounded bg-slate-500/80" style={{ width: `${widthPct}%` }} /></div>
-                        </div>
-                        <p className="self-end text-right text-xs tabular-nums text-muted-foreground">{formatRequestCount(row.requests)} ({sharePct.toFixed(1)}%)</p>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-        </section>
+          <MemberAnalyticsCharts memberRows={memberRows} memberNameById={memberNameById} />
+        </>
       ) : null}
 
       {!loading && !error && userId ? (

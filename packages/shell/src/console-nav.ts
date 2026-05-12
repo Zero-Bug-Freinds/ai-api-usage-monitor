@@ -275,8 +275,18 @@ export function isConsoleNavActive(profile: ConsoleProfile, pathname: string, id
   }
 
   if (profile === "usage") {
-    if (id === "usageHome") return p === "/" || p === ""
-    if (id === "usageLog") return p === "/usagelog" || p.startsWith("/usagelog/")
+    /*
+     * Usage web uses basePath `/dashboard`; pathname is relative to the app (no prefix).
+     * Personal dashboard is `/`, team dashboard is `/team` — both are still under the same
+     * top-level "사용량" nav item; only 상세 로그 has its own route.
+     */
+    const onUsageLog = p === "/usagelog" || p.startsWith("/usagelog/")
+    if (id === "usageHome") {
+      return !onUsageLog
+    }
+    if (id === "usageLog") {
+      return onUsageLog
+    }
     return false
   }
 

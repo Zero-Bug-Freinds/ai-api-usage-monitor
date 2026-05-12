@@ -32,7 +32,8 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
     @Query(
             value = """
                     select u from UsageRecordedLogEntity u
-                    left join fetch u.apiKeyMetadata m
+                    left join fetch u.personalKeyMetadata pm
+                    left join fetch u.teamKeyMetadata tm
                     where u.userId = :userId
                     and u.occurredAt >= :from
                     and u.occurredAt < :toExclusive
@@ -80,7 +81,8 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
     @Query(
             value = """
                     select u from UsageRecordedLogEntity u
-                    left join fetch u.apiKeyMetadata m
+                    left join fetch u.personalKeyMetadata pm
+                    left join fetch u.teamKeyMetadata tm
                     where u.userId = :userId
                     and u.occurredAt >= :from
                     and u.occurredAt < :toExclusive
@@ -130,21 +132,24 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
     @Query(
             """
                     select new com.eevee.usageservice.api.dto.UsageLogApiKeyItemResponse(
-                        u.apiKeyId,
-                        m.alias,
-                        m.status
+                        coalesce(u.teamApiKeyId, u.apiKeyId),
+                        coalesce(tm.alias, pm.alias),
+                        coalesce(tm.status, pm.status)
                     )
                     from UsageRecordedLogEntity u
-                    left join u.apiKeyMetadata m
+                    left join u.personalKeyMetadata pm
+                    left join u.teamKeyMetadata tm
                     where u.userId = :userId
                     and u.occurredAt >= :from
                     and u.occurredAt < :toExclusive
-                    and u.apiKeyId is not null
-                    and trim(u.apiKeyId) <> ''
+                    and (
+                        (u.apiKeyId is not null and trim(u.apiKeyId) <> '')
+                        or (u.teamApiKeyId is not null and trim(u.teamApiKeyId) <> '')
+                    )
                     and (:provider is null or u.provider = :provider)
                     and (u.teamId is null or trim(u.teamId) = '')
-                    group by u.apiKeyId, m.alias, m.status
-                    order by u.apiKeyId
+                    group by coalesce(u.teamApiKeyId, u.apiKeyId), coalesce(tm.alias, pm.alias), coalesce(tm.status, pm.status)
+                    order by coalesce(u.teamApiKeyId, u.apiKeyId)
                     """
     )
     List<UsageLogApiKeyItemResponse> findDistinctApiKeysForUserPersonalInRange(
@@ -157,22 +162,25 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
     @Query(
             """
                     select new com.eevee.usageservice.api.dto.UsageLogApiKeyItemResponse(
-                        u.apiKeyId,
-                        m.alias,
-                        m.status
+                        coalesce(u.teamApiKeyId, u.apiKeyId),
+                        coalesce(tm.alias, pm.alias),
+                        coalesce(tm.status, pm.status)
                     )
                     from UsageRecordedLogEntity u
-                    left join u.apiKeyMetadata m
+                    left join u.personalKeyMetadata pm
+                    left join u.teamKeyMetadata tm
                     where u.userId = :userId
                     and u.occurredAt >= :from
                     and u.occurredAt < :toExclusive
-                    and u.apiKeyId is not null
-                    and trim(u.apiKeyId) <> ''
+                    and (
+                        (u.apiKeyId is not null and trim(u.apiKeyId) <> '')
+                        or (u.teamApiKeyId is not null and trim(u.teamApiKeyId) <> '')
+                    )
                     and (:provider is null or u.provider = :provider)
                     and u.teamId is not null
                     and trim(u.teamId) <> ''
-                    group by u.apiKeyId, m.alias, m.status
-                    order by u.apiKeyId
+                    group by coalesce(u.teamApiKeyId, u.apiKeyId), coalesce(tm.alias, pm.alias), coalesce(tm.status, pm.status)
+                    order by coalesce(u.teamApiKeyId, u.apiKeyId)
                     """
     )
     List<UsageLogApiKeyItemResponse> findDistinctApiKeysForUserTeamMemberInRange(
@@ -185,7 +193,8 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
     @Query(
             value = """
                     select u from UsageRecordedLogEntity u
-                    left join fetch u.apiKeyMetadata m
+                    left join fetch u.personalKeyMetadata pm
+                    left join fetch u.teamKeyMetadata tm
                     where u.teamId = :teamId
                     and u.occurredAt >= :from
                     and u.occurredAt < :toExclusive
@@ -231,7 +240,8 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
     @Query(
             value = """
                     select u from UsageRecordedLogEntity u
-                    left join fetch u.apiKeyMetadata m
+                    left join fetch u.personalKeyMetadata pm
+                    left join fetch u.teamKeyMetadata tm
                     where u.teamId = :teamId
                     and u.userId = :userId
                     and u.occurredAt >= :from

@@ -1,10 +1,10 @@
 package com.eevee.usageservice.domain;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.EmbeddedId;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
-import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 import java.time.Instant;
@@ -13,13 +13,10 @@ import java.time.Instant;
 @Table(name = "api_key_metadata")
 public class ApiKeyMetadataEntity {
 
-    @Id
-    @Column(name = "key_id")
-    private String keyId;
+    @EmbeddedId
+    private ApiKeyMetadataEntityId id;
 
-    @Column(nullable = false)
-    private String userId;
-
+    @Column(name = "team_id")
     private String teamId;
 
     private String provider;
@@ -36,24 +33,31 @@ public class ApiKeyMetadataEntity {
     protected ApiKeyMetadataEntity() {
     }
 
-    public static ApiKeyMetadataEntity create(String keyId, String userId) {
+    public static ApiKeyMetadataEntity createPersonal(String keyId, String userId) {
         ApiKeyMetadataEntity entity = new ApiKeyMetadataEntity();
-        entity.keyId = keyId;
-        entity.userId = userId;
+        entity.id = ApiKeyMetadataEntityId.personal(keyId, userId);
+        entity.teamId = null;
         entity.updatedAt = Instant.now();
         entity.status = ApiKeyStatus.ACTIVE;
         return entity;
     }
 
-    public void apply(
-            String userId,
-            String teamId,
-            String provider,
-            String alias,
-            ApiKeyStatus status,
-            Instant updatedAt
-    ) {
-        this.userId = userId;
+    /**
+     * One row per team member: {@code userId} in the PK is the member who should see this key in filters.
+     */
+    public static ApiKeyMetadataEntity createTeamRow(String teamApiKeyId, String memberUserId, String teamId) {
+        ApiKeyMetadataEntity entity = new ApiKeyMetadataEntity();
+        entity.id = ApiKeyMetadataEntityId.team(teamApiKeyId, memberUserId);
+        entity.teamId = teamId;
+        entity.updatedAt = Instant.now();
+        entity.status = ApiKeyStatus.ACTIVE;
+        return entity;
+    }
+
+    /**
+     * Updates non-key fields. Does not change {@link #id}; caller must load the correct composite row.
+     */
+    public void apply(String teamId, String provider, String alias, ApiKeyStatus status, Instant updatedAt) {
         this.teamId = teamId;
         this.provider = provider;
         this.alias = alias;
@@ -61,20 +65,28 @@ public class ApiKeyMetadataEntity {
         this.updatedAt = updatedAt;
     }
 
+    public ApiKeyMetadataEntityId getId() {
+        return id;
+    }
+
     public String getKeyId() {
-        return keyId;
+        return id != null ? id.getKeyId() : null;
     }
 
     public String getUserId() {
-        return userId;
+        return id != null ? id.getUserId() : null;
     }
 
-    public String getProvider() {
-        return provider;
+    public ApiKeyMetadataScope getKeyScope() {
+        return id != null ? id.getKeyScope() : null;
     }
 
     public String getTeamId() {
         return teamId;
+    }
+
+    public String getProvider() {
+        return provider;
     }
 
     public String getAlias() {

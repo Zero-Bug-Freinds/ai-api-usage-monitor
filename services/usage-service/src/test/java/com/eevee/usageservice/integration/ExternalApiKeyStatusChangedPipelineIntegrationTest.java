@@ -1,6 +1,7 @@
 package com.eevee.usageservice.integration;
 
 import com.eevee.usage.events.AiProvider;
+import com.eevee.usageservice.domain.ApiKeyMetadataEntityId;
 import com.eevee.usageservice.domain.UsageRecordedLogEntity;
 import com.eevee.usageservice.mq.ExternalApiKeyDeletedEvent;
 import com.eevee.usageservice.mq.ExternalApiKeyStatus;
@@ -98,10 +99,11 @@ class ExternalApiKeyStatusChangedPipelineIntegrationTest {
                 objectMapper.writeValueAsString(registered)
         );
 
+        var id101 = ApiKeyMetadataEntityId.personal("101", "7");
         await().atMost(30, SECONDS).pollInterval(100, java.util.concurrent.TimeUnit.MILLISECONDS)
-                .until(() -> repository.findById("101").isPresent());
+                .until(() -> repository.findById(id101).isPresent());
 
-        var active = repository.findById("101").orElseThrow();
+        var active = repository.findById(id101).orElseThrow();
         assertThat(active.getAlias()).isEqualTo("GoogleTestKey1");
         assertThat(active.getStatus().name()).isEqualTo("ACTIVE");
 
@@ -122,7 +124,7 @@ class ExternalApiKeyStatusChangedPipelineIntegrationTest {
 
         await().atMost(30, SECONDS).pollInterval(100, java.util.concurrent.TimeUnit.MILLISECONDS)
                 .untilAsserted(() -> {
-                    var updated = repository.findById("101").orElseThrow();
+                    var updated = repository.findById(id101).orElseThrow();
                     assertThat(updated.getAlias()).isEqualTo("GoogleTestKey1-Renamed");
                     assertThat(updated.getStatus().name()).isEqualTo("ACTIVE");
                 });
@@ -144,7 +146,7 @@ class ExternalApiKeyStatusChangedPipelineIntegrationTest {
 
         await().atMost(30, SECONDS).pollInterval(100, java.util.concurrent.TimeUnit.MILLISECONDS)
                 .untilAsserted(() -> {
-                    var deletedRow = repository.findById("101").orElseThrow();
+                    var deletedRow = repository.findById(id101).orElseThrow();
                     assertThat(deletedRow.getAlias()).isEqualTo("GoogleTestKey1-Renamed");
                     assertThat(deletedRow.getStatus().name()).isEqualTo("DELETED");
                 });
@@ -166,8 +168,9 @@ class ExternalApiKeyStatusChangedPipelineIntegrationTest {
                 "identity.external-api-key.status-changed",
                 objectMapper.writeValueAsString(registered)
         );
+        var id303 = ApiKeyMetadataEntityId.personal("303", "9");
         await().atMost(30, SECONDS).pollInterval(100, java.util.concurrent.TimeUnit.MILLISECONDS)
-                .until(() -> repository.findById("303").isPresent());
+                .until(() -> repository.findById(id303).isPresent());
 
         UsageRecordedLogEntity log = new UsageRecordedLogEntity(
                 UUID.randomUUID(),
@@ -215,8 +218,53 @@ class ExternalApiKeyStatusChangedPipelineIntegrationTest {
 
         await().atMost(30, SECONDS).pollInterval(100, java.util.concurrent.TimeUnit.MILLISECONDS)
                 .untilAsserted(() -> {
-                    assertThat(repository.findById("303")).isEmpty();
+                    assertThat(repository.findById(id303)).isEmpty();
                     assertThat(usageRecordedLogRepository.countByApiKeyId("303")).isEqualTo(0L);
                 });
+    }
+
+    @Test
+    void budgetChangedEvent_doesNotCreateOrAlterApiKeyMetadata() throws Exception {
+        String budgetJson = """
+                {
+                  "eventType": "EXTERNAL_API_KEY_BUDGET_CHANGED",
+                  "schemaVersion": 1,
+                  "occurredAt": "2026-05-11T10:00:00Z",
+                  "keyId": 777,
+                  "alias": "BudgetPayloadAlias",
+                  "userId": 42,
+                  "visibility": "PRIVATE",
+                  "provider": "GOOGLE",
+                  "status": "ACTIVE",
+                  "monthlyBudgetUsd": 12.50,
+                  "keyHash": "hash-budget"
+                }
+                """;
+        rabbitTemplate.convertAndSend(
+                "identity.events",
+                "identity.external-api-key.status-changed",
+                budgetJson
+        );
+
+        ExternalApiKeyStatusChangedEvent registered = new ExternalApiKeyStatusChangedEvent(
+                1,
+                Instant.parse("2026-05-11T11:00:00Z"),
+                778L,
+                "AfterBudgetControl",
+                5L,
+                "OPENAI",
+                ExternalApiKeyStatus.ACTIVE
+        );
+        rabbitTemplate.convertAndSend(
+                "identity.events",
+                "identity.external-api-key.status-changed",
+                objectMapper.writeValueAsString(registered)
+        );
+
+        var id778 = ApiKeyMetadataEntityId.personal("778", "5");
+        await().atMost(30, SECONDS).pollInterval(200, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .until(() -> repository.findById(id778).isPresent());
+
+        assertThat(repository.findById(ApiKeyMetadataEntityId.personal("777", "42"))).isEmpty();
     }
 }
