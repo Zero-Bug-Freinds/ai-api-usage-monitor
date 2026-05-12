@@ -360,6 +360,16 @@ public class TeamApiKeyService {
                     entity.getKeyAlias(),
                     now
             ));
+            publishTeamApiKeyStatusChanged(
+                    entity.getTeamId(),
+                    entity.getId(),
+                    entity.getKeyAlias(),
+                    entity.getProvider().name(),
+                    entity.getMonthlyBudgetUsd(),
+                    TeamApiKeyStatus.DELETED,
+                    entity.isRetainUsageLogs(),
+                    entity.getKeyHash()
+            );
         }
         teamApiKeyRepository.deleteAll(expired);
         return expired.size();

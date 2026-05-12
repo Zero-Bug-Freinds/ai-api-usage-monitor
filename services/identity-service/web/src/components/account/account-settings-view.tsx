@@ -466,6 +466,7 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
                 ? null
                 : "유예 기간이 지나면 DB에서 키가 영구 삭제됩니다. 유예 중에는 취소할 수 있습니다. 과거 사용량 로그는 usage 쪽 기록에 남을 수 있습니다."}
             </p>
+            <p className="mt-2 text-xs font-medium text-destructive">키 삭제 후 지출내역은 전혀 볼 수 없습니다.</p>
             {deletionModalParsed?.valid && deletionModalParsed.immediate ? (
               <p className="mt-2 text-sm font-medium text-destructive">이 API Key는 즉시 영구 삭제됩니다.</p>
             ) : null}

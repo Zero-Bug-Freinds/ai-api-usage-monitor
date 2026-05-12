@@ -13,4 +13,6 @@ public interface BillingSignalSnapshotRepository extends JpaRepository<BillingSi
 	List<BillingSignalSnapshotEntity> findAllByOrderByLatestFinalizedAtDesc();
 
 	List<BillingSignalSnapshotEntity> findByTeamIdOrderByLatestFinalizedAtDesc(String teamId);
+
+	long deleteByApiKeyId(String apiKeyId);
 }
