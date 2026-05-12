@@ -1,7 +1,7 @@
 # Team API Key Status Changed Event Contract
 
-버전: 1.1  
-대상: Usage Service, Billing Service
+버전: 1.2  
+대상: Usage Service, Billing Service, Agent Service
 
 ---
 
@@ -89,3 +89,5 @@
 - `ACTIVE`: 활성 상태, 사용 가능
 - `DELETION_REQUESTED`: 삭제 예약(유예 기간 진행 중)
 - `DELETED`: 물리 삭제 완료
+  - `retainLogs=false`면 소비자(usage/agent)는 키 기준 지출·사용 로그 프로젝션 삭제를 수행한다.
+  - `retainLogs=true`(또는 null)면 소비자는 키 상태만 `DELETED`로 반영하고 기존 기록은 보존한다.
