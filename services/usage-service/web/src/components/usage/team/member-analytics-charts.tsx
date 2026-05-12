@@ -1,6 +1,6 @@
 "use client"
 
-import { useId, useMemo } from "react"
+import { useMemo } from "react"
 import {
   Bar,
   BarChart,
@@ -17,7 +17,6 @@ import {
 } from "recharts"
 import { TeamMemberAvatar } from "@/components/common/team-member-avatar"
 import { formatRequestCount } from "@/lib/usage/format"
-import { generateAvatarUrl } from "@/lib/usage/avatar-url"
 import { colorForModel } from "@/lib/usage/model-colors"
 
 const MEMBER_MODEL_TOP = 4
@@ -25,6 +24,11 @@ const OTHERS_STACK_KEY = "__OTHERS__"
 const OTHERS_COLOR = "#D1D5DB"
 const MEMBER_AXIS_COMPACT_THRESHOLD = 12
 const CHART_MIN_HEIGHT_PX = 320
+/** Matches YAxis width; foreignObject uses same width and x offset -(width + 8). */
+const MEMBER_Y_AXIS_LABEL_WIDTH_COMPACT_PX = 80
+const MEMBER_Y_AXIS_LABEL_WIDTH_DEFAULT_PX = 100
+/** Avatar 16px + gap + one text line; centered on Recharts category band midpoint. */
+const MEMBER_Y_AXIS_TICK_HEIGHT_PX = 28
 
 export type MemberModelAgg = {
   model: string
@@ -84,10 +88,6 @@ function parseSegmentKey(key: string): { provider: string; model: string } {
   const i = key.indexOf("::")
   if (i < 0) return { provider: "", model: key }
   return { provider: key.slice(0, i), model: key.slice(i + 2) }
-}
-
-function clipSafe(s: string): string {
-  return s.replace(/[^a-zA-Z0-9_-]/g, "_")
 }
 
 type StackedMemberRow = {
@@ -222,18 +222,31 @@ function MemberYAxisTick(props: {
   payload?: { value?: string | number }
   rowsByUserId: Map<string, StackedMemberRow>
   compact: boolean
+  labelWidth: number
 }) {
-  const { x = 0, y = 0, payload, rowsByUserId, compact } = props
+  const { x = 0, y = 0, payload, rowsByUserId, compact, labelWidth } = props
   const userId = String(payload?.value ?? "")
   const row = rowsByUserId.get(userId)
   const label = row?.displayName ?? userId
   const short = compact && label.length > 10 ? `${label.slice(0, 9)}…` : label
+  const foY = -MEMBER_Y_AXIS_TICK_HEIGHT_PX / 2
+  const foX = -(labelWidth + 8)
   return (
     <g transform={`translate(${x},${y})`}>
-      <foreignObject x={-100} y={-10} width={96} height={20} className="overflow-visible">
-        <div className="flex items-center gap-1.5 pr-1" style={{ fontSize: 11 }}>
+      <foreignObject
+        x={foX}
+        y={foY}
+        width={labelWidth}
+        height={MEMBER_Y_AXIS_TICK_HEIGHT_PX}
+        className="overflow-visible"
+      >
+        <div
+          xmlns="http://www.w3.org/1999/xhtml"
+          className="flex h-full w-full items-center gap-1.5 pr-1"
+          style={{ fontSize: 11, lineHeight: 1.2 }}
+        >
           <TeamMemberAvatar userId={userId} size={16} className="ring-0" />
-          <span className="min-w-0 truncate text-foreground" title={label}>
+          <span className="min-w-0 flex-1 truncate text-foreground" title={label}>
             {short}
           </span>
         </div>
@@ -246,6 +259,7 @@ function MemberModelShareChart({ memberRows }: { memberRows: MemberRow[] }) {
   const { rows, stackKeys } = useMemo(() => buildModelShareChartData(memberRows), [memberRows])
   const rowsByUserId = useMemo(() => new Map(rows.map((r) => [r.userId, r])), [rows])
   const compact = memberRows.length > MEMBER_AXIS_COMPACT_THRESHOLD
+  const yAxisLabelWidth = compact ? MEMBER_Y_AXIS_LABEL_WIDTH_COMPACT_PX : MEMBER_Y_AXIS_LABEL_WIDTH_DEFAULT_PX
 
   if (rows.length === 0) return null
 
@@ -260,9 +274,16 @@ function MemberModelShareChart({ memberRows }: { memberRows: MemberRow[] }) {
             <YAxis
               type="category"
               dataKey="userId"
-              width={compact ? 72 : 88}
+              width={yAxisLabelWidth}
               interval={0}
-              tick={(p) => <MemberYAxisTick {...p} rowsByUserId={rowsByUserId} compact={compact} />}
+              tick={(p) => (
+                <MemberYAxisTick
+                  {...p}
+                  rowsByUserId={rowsByUserId}
+                  compact={compact}
+                  labelWidth={yAxisLabelWidth}
+                />
+              )}
             />
             <Tooltip content={<ModelShareTooltip />} cursor={{ fill: "transparent" }} />
             {stackKeys.map((k) => (
@@ -326,29 +347,27 @@ function ScatterTooltip({ active, payload }: TooltipContentArgs<ScatterPoint>) {
   )
 }
 
+function ScatterAvatarShape(props: { cx?: number; cy?: number; payload?: ScatterPoint }) {
+  const { cx, cy, payload } = props
+  if (cx == null || cy == null || !payload) return null
+  const size = 28
+  const half = size / 2
+  return (
+    <g transform={`translate(${cx - half},${cy - half})`}>
+      <foreignObject x={0} y={0} width={size} height={size} className="overflow-visible">
+        <div
+          xmlns="http://www.w3.org/1999/xhtml"
+          className="flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-muted"
+        >
+          <TeamMemberAvatar userId={payload.userId} size={size} className="ring-0" />
+        </div>
+      </foreignObject>
+    </g>
+  )
+}
+
 function MemberTokenScatterChart({ memberRows }: { memberRows: MemberRow[] }) {
   const data = useMemo(() => buildScatterData(memberRows), [memberRows])
-  const clipBase = useId().replace(/:/g, "")
-
-  const ScatterShape = useMemo(() => {
-    return function Shape(props: { cx?: number; cy?: number; payload?: ScatterPoint }) {
-      const { cx, cy, payload } = props
-      if (cx == null || cy == null || !payload) return null
-      const r = 14
-      const href = generateAvatarUrl(payload.userId)
-      const cid = `c-${clipBase}-${clipSafe(payload.userId)}`
-      return (
-        <g transform={`translate(${cx - r},${cy - r})`}>
-          <defs>
-            <clipPath id={cid}>
-              <circle cx={r} cy={r} r={r} />
-            </clipPath>
-          </defs>
-          <image href={href} x={0} y={0} width={r * 2} height={r * 2} clipPath={`url(#${cid})`} preserveAspectRatio="xMidYMid slice" />
-        </g>
-      )
-    }
-  }, [clipBase])
 
   if (data.length === 0) {
     return (
@@ -370,7 +389,7 @@ function MemberTokenScatterChart({ memberRows }: { memberRows: MemberRow[] }) {
             <XAxis type="number" dataKey="totalRequests" name="요청 수" tick={{ fontSize: 11 }} />
             <YAxis type="number" dataKey="avgTokensPerReq" name="평균 토큰" tick={{ fontSize: 11 }} />
             <Tooltip content={<ScatterTooltip />} cursor={{ stroke: "transparent" }} />
-            <Scatter data={data} shape={<ScatterShape />} isAnimationActive={false} />
+            <Scatter data={data} shape={<ScatterAvatarShape />} isAnimationActive={false} />
           </ScatterChart>
         </ResponsiveContainer>
       </div>
