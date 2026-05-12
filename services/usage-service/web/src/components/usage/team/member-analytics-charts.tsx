@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo } from "react"
+import { useMemo, type HTMLAttributes } from "react"
 import {
   Bar,
   BarChart,
@@ -241,9 +241,11 @@ function MemberYAxisTick(props: {
         className="overflow-visible"
       >
         <div
-          xmlns="http://www.w3.org/1999/xhtml"
-          className="flex h-full w-full items-center gap-1.5 pr-1"
-          style={{ fontSize: 11, lineHeight: 1.2 }}
+          {...({
+            xmlns: "http://www.w3.org/1999/xhtml",
+            className: "flex h-full w-full items-center gap-1.5 pr-1",
+            style: { fontSize: 11, lineHeight: 1.2 },
+          } as HTMLAttributes<HTMLDivElement>)}
         >
           <TeamMemberAvatar userId={userId} size={16} className="ring-0" />
           <span className="min-w-0 flex-1 truncate text-foreground" title={label}>
@@ -356,8 +358,10 @@ function ScatterAvatarShape(props: { cx?: number; cy?: number; payload?: Scatter
     <g transform={`translate(${cx - half},${cy - half})`}>
       <foreignObject x={0} y={0} width={size} height={size} className="overflow-visible">
         <div
-          xmlns="http://www.w3.org/1999/xhtml"
-          className="flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-muted"
+          {...({
+            xmlns: "http://www.w3.org/1999/xhtml",
+            className: "flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-muted",
+          } as HTMLAttributes<HTMLDivElement>)}
         >
           <TeamMemberAvatar userId={payload.userId} size={size} className="ring-0" />
         </div>
