@@ -258,3 +258,4 @@
 - **agent-web:** 키별 `분석`/`추천` 재실행 후 `error`·`recommendationError`가 있을 때 **이전 성공 페이로드를 병합하지 않도록** `page.tsx` 병합 규칙을 수정했다.
 - **루트 `.env.example`:** LLM 1순위/2순위 안내와 DeepSeek·Gemini·타임아웃·배치 병렬도 선택 변수를 정리했다.
 - **예산 `daysUntilRunOut`:** 모델 출력과 무관하게 **`predictedRunOutDate`와 서버 로컬 오늘 날짜로만 계산**한다. 과거에는 모델의 `daysUntilRunOut`가 날짜와 1일 이내로 맞지 않으면 전체 파싱을 실패시켰고, 일치 시 모델 숫자를 그대로 썼다.
+- **키 삭제 로그 정책 반영:** `retainLogs=false`인 키 삭제 이벤트(Identity `EXTERNAL_API_KEY_DELETED`, Team `TEAM_API_KEY_STATUS_CHANGED=DELETED`) 수신 시 agent의 키 기준 프로젝션(`billing_signal_projection`, `usage_recorded_token_rollup`, `daily_cumulative_token_projection`, `recommendation_projection`)을 함께 정리한다. `retainLogs=true`면 기존 지출/사용 기록을 유지한다.

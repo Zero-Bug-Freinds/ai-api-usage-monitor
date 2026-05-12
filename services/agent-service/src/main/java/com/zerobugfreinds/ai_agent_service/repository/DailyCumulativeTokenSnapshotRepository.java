@@ -17,4 +17,6 @@ public interface DailyCumulativeTokenSnapshotRepository extends JpaRepository<
 	);
 
 	List<DailyCumulativeTokenSnapshotEntity> findAllByOrderByOccurredAtDesc();
+
+	long deleteByApiKeyId(String apiKeyId);
 }
