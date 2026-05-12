@@ -17,6 +17,7 @@ import com.eevee.usageservice.mq.TeamApiKeyUpdatedEvent;
 import com.eevee.usageservice.repository.ApiKeyMetadataRepository;
 import com.eevee.usageservice.repository.UsageRecordedLogRepository;
 import com.eevee.usageservice.service.bff.team.TeamServiceClient;
+import com.eevee.usageservice.usage.UsageRecordedMetadataScope;
 import com.eevee.usageservice.usage.UsageRecordedEventScopeNormalizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -71,6 +72,7 @@ public class ApiKeyMetadataSyncService {
                 event.apiKeyId(),
                 event.teamId(),
                 event.actorUserId(),
+                event.recipientUserIds(),
                 event.provider(),
                 event.alias(),
                 ApiKeyStatus.ACTIVE,
@@ -84,6 +86,7 @@ public class ApiKeyMetadataSyncService {
                 event.apiKeyId(),
                 event.teamId(),
                 event.actorUserId(),
+                event.recipientUserIds(),
                 event.provider(),
                 event.alias(),
                 ApiKeyStatus.ACTIVE,
@@ -107,6 +110,7 @@ public class ApiKeyMetadataSyncService {
                 event.apiKeyId(),
                 event.teamId(),
                 event.actorUserId(),
+                event.recipientUserIds(),
                 event.provider(),
                 event.alias(),
                 ApiKeyStatus.DELETION_REQUESTED,
@@ -120,6 +124,7 @@ public class ApiKeyMetadataSyncService {
                 event.apiKeyId(),
                 event.teamId(),
                 event.actorUserId(),
+                event.recipientUserIds(),
                 event.provider(),
                 event.alias(),
                 ApiKeyStatus.ACTIVE,
@@ -133,6 +138,7 @@ public class ApiKeyMetadataSyncService {
                 event.teamApiKeyId(),
                 event.teamId(),
                 event.ownerUserId(),
+                null,
                 event.provider(),
                 event.alias(),
                 mapTeamStatus(event.status()),
@@ -151,23 +157,19 @@ public class ApiKeyMetadataSyncService {
                 normalizedTeamId
         );
 
-        String metadataKeyId = resolveMetadataKeyIdFromUsage(event);
+        boolean teamMetadata = UsageRecordedMetadataScope.isTeamKeyMetadata(event);
+        String metadataKeyId = resolveMetadataKeyIdFromUsage(event, teamMetadata, normalizedTeamApiKeyId);
         if (!StringUtils.hasText(metadataKeyId)) {
             return;
         }
 
         Instant updatedAt = event.occurredAt() != null ? event.occurredAt() : Instant.now();
 
-        /*
-         * Team vs personal branch uses the raw event's teamApiKeyId presence, not normalizedTeamApiKeyId.
-         * Deferred: external-system keys and proxy reverse-lookup may send teamApiKeyId without teamId; then the log
-         * stores team_api_key_id as null (see UsageRecordedService.map) while metadata upsert may still follow this
-         * branch. Unifying that edge case is deferred until the full external-key usage pipeline exists.
-         */
-        if (StringUtils.hasText(event.teamApiKeyId())) {
-            String teamKeyForMetadata = normalizedTeamApiKeyId != null
-                    ? normalizedTeamApiKeyId
-                    : metadataKeyId.trim();
+        if (teamMetadata) {
+            String teamKeyForMetadata = normalizedTeamApiKeyId != null ? normalizedTeamApiKeyId.trim() : "";
+            if (!StringUtils.hasText(teamKeyForMetadata)) {
+                return;
+            }
             String memberUserId = resolveUserId(event, teamKeyForMetadata);
             var id = ApiKeyMetadataEntityId.team(teamKeyForMetadata, memberUserId);
             ApiKeyMetadataEntity entity = apiKeyMetadataRepository.findById(id)
@@ -209,14 +211,16 @@ public class ApiKeyMetadataSyncService {
     /**
      * Resolves the logical key id for {@link ApiKeyMetadataEntity} rows from a usage event.
      * <p>
-     * Contract (Step 1): On team traffic, {@link UsageRecordedEvent#apiKeyId()} and {@link UsageRecordedEvent#teamApiKeyId()}
-     * may carry the same value (team key row id). Consumers must treat {@code teamApiKeyId} as the primary identifier
-     * for team-scope metadata when it is non-blank; personal scope uses {@code apiKeyId} only when {@code teamApiKeyId}
-     * is absent.
+     * Team-scope metadata requires {@link UsageRecordedMetadataScope#isTeamKeyMetadata(UsageRecordedEvent)} and uses
+     * the normalized team API key id. Personal scope uses {@link UsageRecordedEvent#apiKeyId()} only.
      */
-    private static String resolveMetadataKeyIdFromUsage(UsageRecordedEvent event) {
-        if (StringUtils.hasText(event.teamApiKeyId())) {
-            return event.teamApiKeyId().trim();
+    private static String resolveMetadataKeyIdFromUsage(
+            UsageRecordedEvent event,
+            boolean teamMetadata,
+            String normalizedTeamApiKeyId
+    ) {
+        if (teamMetadata && StringUtils.hasText(normalizedTeamApiKeyId)) {
+            return normalizedTeamApiKeyId.trim();
         }
         return event.apiKeyId() != null ? event.apiKeyId().trim() : "";
     }
@@ -282,6 +286,7 @@ public class ApiKeyMetadataSyncService {
             Long keyIdRaw,
             Long teamIdRaw,
             String actorUserId,
+            List<String> recipientsFromEvent,
             String provider,
             String alias,
             ApiKeyStatus status,
@@ -300,10 +305,10 @@ public class ApiKeyMetadataSyncService {
             return;
         }
 
-        List<String> members = new ArrayList<>(teamServiceClient.fetchTeamMemberUserIds(resolvedActor, teamId));
+        List<String> members = resolveTeamMemberUserIds(recipientsFromEvent, resolvedActor, teamId);
         if (members.isEmpty()) {
-            log.warn("Team member list empty; falling back to actor only keyId={} teamId={}", keyId, teamId);
-            members.add(resolvedActor);
+            log.warn("Skipping team API key metadata upsert: no members resolved keyId={} teamId={}", keyId, teamId);
+            return;
         }
 
         String resolvedProvider = StringUtils.hasText(provider) ? provider.trim() : null;
@@ -337,6 +342,23 @@ public class ApiKeyMetadataSyncService {
         if (removed > 0) {
             log.debug("Removed {} stale team api_key_metadata rows for keyId={} teamId={}", removed, keyId, teamId);
         }
+    }
+
+    /**
+     * Prefer member ids embedded in the team-domain event; otherwise load from team-service via the actor.
+     */
+    private List<String> resolveTeamMemberUserIds(List<String> recipientsFromEvent, String actorUserId, String teamId) {
+        if (recipientsFromEvent != null && !recipientsFromEvent.isEmpty()) {
+            List<String> distinct = recipientsFromEvent.stream()
+                    .filter(StringUtils::hasText)
+                    .map(String::trim)
+                    .distinct()
+                    .toList();
+            if (!distinct.isEmpty()) {
+                return new ArrayList<>(distinct);
+            }
+        }
+        return new ArrayList<>(teamServiceClient.fetchTeamMemberUserIds(actorUserId, teamId));
     }
 
     private static String resolveUserId(UsageRecordedEvent event, String keyId) {

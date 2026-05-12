@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.time.Instant;
+import java.util.List;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record TeamApiKeyDeletionScheduledEvent(
@@ -22,6 +23,10 @@ public record TeamApiKeyDeletionScheduledEvent(
         @JsonProperty("alias")
         String alias,
         @JsonProperty("actorUserId")
-        String actorUserId
+        String actorUserId,
+        @JsonProperty("teamName")
+        String teamName,
+        @JsonProperty("recipientUserIds")
+        List<String> recipientUserIds
 ) {
 }
