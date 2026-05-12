@@ -2,11 +2,11 @@ package com.eevee.billingservice.integration;
 
 import org.springframework.amqp.AmqpException;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.containers.RabbitMQContainer;
-import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
@@ -18,48 +18,39 @@ import static org.awaitility.Awaitility.await;
 
 /**
  * Shared Testcontainers for billing integration tests.
- *
- * Keeping containers in a single static holder avoids repeated startup per test class,
- * which is a major contributor to CI runtime.
+ * <p>
+ * {@link ServiceConnection} ties container lifecycle to the Spring test context so services start
+ * before auto-configured beans and stop only after context teardown — avoiding JDBC/AMQP
+ * {@code Connection refused} races seen with {@code @DynamicPropertySource} + JUnit-only lifecycle.
  */
 @Testcontainers
 abstract class AbstractBillingIntegrationTest {
 
-    private static final Duration POSTGRES_STARTUP = Duration.ofMinutes(3);
+    private static final Duration POSTGRES_STARTUP = Duration.ofMinutes(2);
     private static final Duration RABBIT_STARTUP = Duration.ofMinutes(2);
 
     @Container
+    @ServiceConnection
     static final RabbitMQContainer rabbit = new RabbitMQContainer("rabbitmq:3.13-alpine")
             .withStartupTimeout(RABBIT_STARTUP);
 
     @Container
+    @ServiceConnection
     static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
             .withDatabaseName("app")
             .withUsername("app")
             .withPassword("app")
-            .withStartupTimeout(POSTGRES_STARTUP)
-            .waitingFor(
-                    Wait.forLogMessage(".*database system is ready to accept connections.*", 2)
-                            .withStartupTimeout(POSTGRES_STARTUP));
+            .withStartupTimeout(POSTGRES_STARTUP);
 
     @DynamicPropertySource
     static void registerProps(DynamicPropertyRegistry r) {
-        r.add("spring.rabbitmq.host", rabbit::getHost);
-        r.add("spring.rabbitmq.port", rabbit::getAmqpPort);
-        r.add("spring.rabbitmq.username", () -> "guest");
-        r.add("spring.rabbitmq.password", () -> "guest");
-        r.add("spring.datasource.url", postgres::getJdbcUrl);
-        r.add("spring.datasource.username", postgres::getUsername);
-        r.add("spring.datasource.password", postgres::getPassword);
-        r.add("spring.datasource.hikari.connection-timeout", () -> "120000");
-        r.add("spring.datasource.hikari.validation-timeout", () -> "10000");
         r.add("spring.jpa.hibernate.ddl-auto", () -> "create-drop");
         r.add("billing.gateway.shared-secret", () -> "test-secret");
     }
 
     /**
      * Publishes when the broker accepts a connection; avoids failing the whole test on a single
-     * {@link AmqpException} during CI cold starts (replaces long {@code AmqpAdmin} queue probes).
+     * {@link AmqpException} during CI cold starts.
      */
     protected static void convertAndSendWhenReady(
             RabbitTemplate rabbitTemplate,
