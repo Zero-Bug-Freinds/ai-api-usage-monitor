@@ -9,10 +9,7 @@ import {
   Label,
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
-  SelectSeparator,
   SelectTrigger,
   SelectValue,
   Tooltip,
@@ -20,7 +17,16 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@ai-usage/ui"
+import { DashboardApiKeySelectMenu } from "@/components/usage/dashboard-api-key-select-menu"
 import { buildUsageQuery, fetchUsageJson } from "@/lib/usage/fetch-usage"
+import { DASHBOARD_API_KEY_ALL, DASHBOARD_API_KEY_NONE } from "@/lib/usage/dashboard-api-key-constants"
+import {
+  DASHBOARD_PROVIDER_ALL,
+  filterTeamBffRowsByProvider,
+  teamBffRowsToUsageMenuItems,
+} from "@/lib/usage/dashboard-provider-api-keys"
+import { useDashboardAggregateApiKeySync } from "@/lib/usage/use-dashboard-aggregate-api-key"
+import { useTeamBffTeamsAndApiKeys } from "@/lib/usage/use-team-bff-teams-and-api-keys"
 import { formatOccurredAtKst } from "@/lib/usage/format-occurred-at-kst"
 import type {
   PagedLogsResponse,
@@ -35,16 +41,18 @@ import {
   readStoredLogDataTab,
   type UsageLogDataTab,
 } from "@/lib/usage/usage-log-tab-storage"
-import {
-  partitionUsageApiKeys,
-  usageApiKeyOptionLabel,
-} from "@/lib/usage/api-key-options"
+import { partitionUsageApiKeys } from "@/lib/usage/api-key-options"
 
 const LOGS_PAGE_SIZE = 20
 const LOG_PROVIDER_ALL = "__all__"
 const LOG_API_KEY_ALL = "__all__"
 const LOG_REASONING_ALL = "__all__"
 const LOG_SUCCESS_ALL = "__all__"
+
+function logProviderToTeamDashboardFilter(provider: string): string {
+  if (provider === LOG_PROVIDER_ALL) return DASHBOARD_PROVIDER_ALL
+  return provider
+}
 
 function toLongOrZero(v: number | null | undefined): number {
   return typeof v === "number" && Number.isFinite(v) ? v : 0
@@ -90,10 +98,11 @@ export function UsageLogPanel() {
   const [logsError, setLogsError] = React.useState<string | null>(null)
   const [logsPage, setLogsPage] = React.useState(0)
   const [logProvider, setLogProvider] = React.useState<string>(LOG_PROVIDER_ALL)
-  const [apiKeyFilter, setApiKeyFilter] = React.useState<string>(LOG_API_KEY_ALL)
+  const [personalApiKeyFilter, setPersonalApiKeyFilter] = React.useState<string>(LOG_API_KEY_ALL)
+  const [teamLogApiKeyFilter, setTeamLogApiKeyFilter] = React.useState<string>(DASHBOARD_API_KEY_ALL)
   const [reasoningFilter, setReasoningFilter] = React.useState<string>(LOG_REASONING_ALL)
   const [successFilter, setSuccessFilter] = React.useState<string>(LOG_SUCCESS_ALL)
-  const [apiKeyOptions, setApiKeyOptions] = React.useState<UsageLogApiKeyItemResponse[]>([])
+  const [personalApiKeyOptions, setPersonalApiKeyOptions] = React.useState<UsageLogApiKeyItemResponse[]>([])
   const [modelDraft, setModelDraft] = React.useState("")
   const [logRefresh, setLogRefresh] = React.useState(0)
   const [openAiDetailsRow, setOpenAiDetailsRow] = React.useState<UsageLogEntryResponse | null>(null)
@@ -109,9 +118,11 @@ export function UsageLogPanel() {
     persistLogDataTab(tab)
     setLogDataTab(tab)
     setLogsPage(0)
+    if (tab === "team") {
+      setLogProvider(LOG_PROVIDER_ALL)
+      setTeamLogApiKeyFilter(DASHBOARD_API_KEY_ALL)
+    }
   }, [])
-
-  const logDataContext = logDataTabToDataContext(logDataTab)
 
   React.useEffect(() => {
     if (!openAiDetailsRow) return
@@ -131,37 +142,99 @@ export function UsageLogPanel() {
   const reasoningPresenceParam =
     reasoningFilter === "present" ? "present" : reasoningFilter === "absent" ? "absent" : undefined
 
-  const { active: activeApiKeyOptions, deleted: deletedApiKeyOptions } = React.useMemo(
-    () => partitionUsageApiKeys(apiKeyOptions),
-    [apiKeyOptions]
+  const logDataContext = logDataTabToDataContext(logDataTab)
+
+  const teamBff = useTeamBffTeamsAndApiKeys(logDataTab === "team")
+
+  const teamApiKeyMenuItems = React.useMemo(() => {
+    if (logDataTab !== "team") return [] as UsageLogApiKeyItemResponse[]
+    return teamBffRowsToUsageMenuItems(
+      filterTeamBffRowsByProvider(
+        teamBff.teamMemberRawApiKeyRows,
+        logProviderToTeamDashboardFilter(logProvider),
+      ),
+    )
+  }, [logDataTab, teamBff.teamMemberRawApiKeyRows, logProvider])
+
+  useDashboardAggregateApiKeySync(
+    teamApiKeyMenuItems,
+    teamLogApiKeyFilter,
+    setTeamLogApiKeyFilter,
+    logDataTab === "team" && Boolean(teamBff.teamMemberTeamId),
   )
 
+  const apiKeyOptions = logDataTab === "team" ? teamApiKeyMenuItems : personalApiKeyOptions
+
   React.useEffect(() => {
+    if (logDataTab !== "personal") return
     let cancelled = false
     ;(async () => {
       try {
         const q = buildUsageQuery({ provider: providerParam, dataContext: logDataContext })
         const data = await fetchUsageJson<UsageLogApiKeyItemResponse[]>(`logs/api-keys${q}`)
         if (!cancelled) {
-          setApiKeyOptions(Array.isArray(data) ? data : [])
+          setPersonalApiKeyOptions(Array.isArray(data) ? data : [])
         }
       } catch {
-        if (!cancelled) setApiKeyOptions([])
+        if (!cancelled) setPersonalApiKeyOptions([])
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [logProvider, providerParam, logRefresh, logDataContext])
+  }, [logDataTab, logProvider, providerParam, logRefresh, logDataContext])
 
   React.useEffect(() => {
     let cancelled = false
+
+    if (logDataTab === "team") {
+      if (teamBff.memberTeamsLoading) {
+        setLogsLoading(true)
+        return () => {
+          cancelled = true
+        }
+      }
+      if (teamBff.memberTeams.length === 0) {
+        if (!cancelled) {
+          setLogsLoading(false)
+          setLogsError(null)
+          setLogs({
+            content: [],
+            page: 0,
+            size: LOGS_PAGE_SIZE,
+            totalElements: 0,
+            totalPages: 1,
+          })
+        }
+        return () => {
+          cancelled = true
+        }
+      }
+      if (!teamBff.teamMemberTeamId || teamBff.teamMemberKeysLoading) {
+        setLogsLoading(true)
+        return () => {
+          cancelled = true
+        }
+      }
+    }
+
     setLogsLoading(true)
     setLogsError(null)
     ;(async () => {
       try {
         const t = formatKstIsoDate()
         const f30 = addKstDays(t, -29)
+        const apiKeyId =
+          logDataTab === "team"
+            ? teamLogApiKeyFilter !== DASHBOARD_API_KEY_ALL &&
+                teamLogApiKeyFilter !== DASHBOARD_API_KEY_NONE
+              ? teamLogApiKeyFilter
+              : undefined
+            : personalApiKeyFilter !== LOG_API_KEY_ALL && personalApiKeyFilter
+              ? personalApiKeyFilter
+              : undefined
+        const teamId =
+          logDataTab === "team" && teamBff.teamMemberTeamId ? teamBff.teamMemberTeamId : undefined
         const q = buildUsageQuery({
           from: f30,
           to: t,
@@ -169,8 +242,8 @@ export function UsageLogPanel() {
           size: LOGS_PAGE_SIZE,
           provider: providerParam,
           dataContext: logDataContext,
-          apiKeyId:
-            apiKeyFilter !== LOG_API_KEY_ALL && apiKeyFilter ? apiKeyFilter : undefined,
+          apiKeyId,
+          teamId,
           reasoningPresence: reasoningPresenceParam,
           requestSuccessful: requestSuccessfulParam,
           model: appliedModelMask || undefined,
@@ -194,7 +267,13 @@ export function UsageLogPanel() {
     appliedModelMask,
     logProvider,
     providerParam,
-    apiKeyFilter,
+    personalApiKeyFilter,
+    teamLogApiKeyFilter,
+    logDataTab,
+    teamBff.memberTeamsLoading,
+    teamBff.memberTeams.length,
+    teamBff.teamMemberTeamId,
+    teamBff.teamMemberKeysLoading,
     reasoningPresenceParam,
     requestSuccessfulParam,
     logRefresh,
@@ -208,7 +287,8 @@ export function UsageLogPanel() {
   const resetAllFilters = React.useCallback(() => {
     setLogsPage(0)
     setLogProvider(LOG_PROVIDER_ALL)
-    setApiKeyFilter(LOG_API_KEY_ALL)
+    setPersonalApiKeyFilter(LOG_API_KEY_ALL)
+    setTeamLogApiKeyFilter(DASHBOARD_API_KEY_ALL)
     setReasoningFilter(LOG_REASONING_ALL)
     setSuccessFilter(LOG_SUCCESS_ALL)
     setModelDraft("")
@@ -260,6 +340,49 @@ export function UsageLogPanel() {
       </div>
 
       <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
+        {logDataTab === "team" ? (
+          <div className="space-y-2 sm:w-52 min-w-[10rem]">
+            <Label htmlFor="log-team">팀</Label>
+            <Select
+              value={
+                teamBff.teamMemberTeamId &&
+                teamBff.memberTeams.some((x) => x.id === teamBff.teamMemberTeamId)
+                  ? teamBff.teamMemberTeamId
+                  : undefined
+              }
+              onValueChange={(id) => {
+                setLogsPage(0)
+                teamBff.setTeamMemberTeamId(id)
+                setLogProvider(LOG_PROVIDER_ALL)
+                setTeamLogApiKeyFilter(DASHBOARD_API_KEY_ALL)
+              }}
+              disabled={teamBff.memberTeamsLoading || teamBff.memberTeams.length === 0}
+            >
+              <SelectTrigger id="log-team" className="w-full">
+                <SelectValue
+                  placeholder={
+                    teamBff.memberTeamsLoading
+                      ? "불러오는 중…"
+                      : teamBff.memberTeams.length === 0
+                        ? "소속 팀 없음"
+                        : "팀 선택"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {teamBff.memberTeams.map((tm) => (
+                  <SelectItem key={tm.id} value={tm.id}>
+                    {tm.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {teamBff.memberTeamsErr ? (
+              <p className="text-xs text-destructive">{teamBff.memberTeamsErr}</p>
+            ) : null}
+          </div>
+        ) : null}
+
         <div className="space-y-2 sm:w-40">
           <Label htmlFor="log-provider">공급자</Label>
           <Select
@@ -267,7 +390,11 @@ export function UsageLogPanel() {
             onValueChange={(v) => {
               setLogsPage(0)
               setLogProvider(v)
-              setApiKeyFilter(LOG_API_KEY_ALL)
+              if (logDataTab === "team") {
+                setTeamLogApiKeyFilter(DASHBOARD_API_KEY_ALL)
+              } else {
+                setPersonalApiKeyFilter(LOG_API_KEY_ALL)
+              }
             }}
           >
             <SelectTrigger id="log-provider" className="w-full">
@@ -284,35 +411,36 @@ export function UsageLogPanel() {
 
         <div className="space-y-2 sm:w-56">
           <Label htmlFor="log-apikey">API Key</Label>
-          <Select value={apiKeyFilter} onValueChange={(v) => { setLogsPage(0); setApiKeyFilter(v) }}>
+          <Select
+            value={logDataTab === "team" ? teamLogApiKeyFilter : personalApiKeyFilter}
+            onValueChange={(v) => {
+              setLogsPage(0)
+              if (logDataTab === "team") {
+                setTeamLogApiKeyFilter(v)
+              } else {
+                setPersonalApiKeyFilter(v)
+              }
+            }}
+          >
             <SelectTrigger id="log-apikey" className="w-full">
               <SelectValue placeholder="전체" />
             </SelectTrigger>
             <SelectContent className="max-h-[min(70vh,26rem)]">
-              <SelectItem value={LOG_API_KEY_ALL}>전체</SelectItem>
-              {activeApiKeyOptions.length > 0 ? (
-                <SelectGroup>
-                  <SelectLabel>사용 중</SelectLabel>
-                  {activeApiKeyOptions.map((item) => (
-                    <SelectItem key={item.apiKeyId} value={item.apiKeyId}>
-                      {usageApiKeyOptionLabel(item)}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              ) : null}
-              {deletedApiKeyOptions.length > 0 ? (
-                <>
-                  {activeApiKeyOptions.length > 0 ? <SelectSeparator /> : null}
-                  <SelectGroup>
-                    <SelectLabel>삭제됨 (로그 보존)</SelectLabel>
-                    {deletedApiKeyOptions.map((item) => (
-                      <SelectItem key={item.apiKeyId} value={item.apiKeyId}>
-                        {usageApiKeyOptionLabel(item)}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </>
-              ) : null}
+              {logDataTab === "team" ? (
+                <DashboardApiKeySelectMenu
+                  items={apiKeyOptions}
+                  allValue={DASHBOARD_API_KEY_ALL}
+                  showAllOption
+                  noneValue={DASHBOARD_API_KEY_NONE}
+                  showNoneOption={apiKeyOptions.length === 0}
+                />
+              ) : (
+                <DashboardApiKeySelectMenu
+                  items={apiKeyOptions}
+                  allValue={LOG_API_KEY_ALL}
+                  showAllOption
+                />
+              )}
             </SelectContent>
           </Select>
         </div>
