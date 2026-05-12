@@ -139,10 +139,10 @@ class UsageDashboardServiceTest {
 
     @Test
     void logApiKeys_personal_loadsFromMetadata_orderedByUpdatedAtDesc() {
-        ApiKeyMetadataEntity newer = ApiKeyMetadataEntity.create("2", "u1");
-        newer.apply("u1", null, "OPENAI", "beta", ApiKeyStatus.ACTIVE, Instant.parse("2025-06-20T00:00:00Z"));
-        ApiKeyMetadataEntity older = ApiKeyMetadataEntity.create("1", "u1");
-        older.apply("u1", null, "OPENAI", "alpha", ApiKeyStatus.ACTIVE, Instant.parse("2025-06-10T00:00:00Z"));
+        ApiKeyMetadataEntity newer = ApiKeyMetadataEntity.createPersonal("2", "u1");
+        newer.apply(null, "OPENAI", "beta", ApiKeyStatus.ACTIVE, Instant.parse("2025-06-20T00:00:00Z"));
+        ApiKeyMetadataEntity older = ApiKeyMetadataEntity.createPersonal("1", "u1");
+        older.apply(null, "OPENAI", "alpha", ApiKeyStatus.ACTIVE, Instant.parse("2025-06-10T00:00:00Z"));
         when(apiKeyMetadataRepository.findPersonalKeysForDashboard("u1", "openai")).thenReturn(List.of(newer, older));
         when(logRepository.findDistinctApiKeysForUserPersonalInRange(eq("u1"), any(), any(), eq(AiProvider.OPENAI)))
                 .thenReturn(List.of());
@@ -158,8 +158,8 @@ class UsageDashboardServiceTest {
 
     @Test
     void logApiKeys_personal_mergesMetadataForAlternateSubjectWhenPrimaryHasNoRows() {
-        ApiKeyMetadataEntity fromAlt = ApiKeyMetadataEntity.create("k9", "sub-9");
-        fromAlt.apply("sub-9", null, "OPENAI", "from-alt", ApiKeyStatus.ACTIVE, Instant.parse("2025-06-01T00:00:00Z"));
+        ApiKeyMetadataEntity fromAlt = ApiKeyMetadataEntity.createPersonal("k9", "sub-9");
+        fromAlt.apply(null, "OPENAI", "from-alt", ApiKeyStatus.ACTIVE, Instant.parse("2025-06-01T00:00:00Z"));
         when(apiKeyMetadataRepository.findPersonalKeysForDashboard("a@b.com", "openai")).thenReturn(List.of());
         when(apiKeyMetadataRepository.findPersonalKeysForDashboard("sub-9", "openai")).thenReturn(List.of(fromAlt));
         when(logRepository.findDistinctApiKeysForUserPersonalInRange(any(), any(), any(), eq(AiProvider.OPENAI)))
