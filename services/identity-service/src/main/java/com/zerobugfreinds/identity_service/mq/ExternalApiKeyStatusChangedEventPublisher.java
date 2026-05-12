@@ -9,9 +9,9 @@ import com.zerobugfreinds.identity.events.ExternalApiKeyStatusChangedEvent;
 import com.zerobugfreinds.identity.events.UserContextChangedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.zerobugfreinds.identity_service.config.RabbitOutboundAsyncConfig;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
-import com.zerobugfreinds.identity_service.config.RabbitOutboundAsyncConfig;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
@@ -19,6 +19,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
  * Publishes identity external API key messages to RabbitMQ only after transaction commit.
+ * 커밋 이후 발행은 {@link Async} 로 요청 스레드와 분리되며, 전송·직렬화 실패는 ERROR 로그만 남기고 삼킨다.
  * <ul>
  *     <li>{@link ExternalApiKeyStatusChangedEvent} — 등록·수정·삭제 예약·취소 등 상태 동기화</li>
  *     <li>{@link ExternalApiKeyDeletedEvent} — 물리 삭제(즉시 또는 유예 만료), usage 로그 보존 여부 포함</li>
@@ -115,7 +116,25 @@ public class ExternalApiKeyStatusChangedEventPublisher {
 					targetRoutingKey
 			);
 		} catch (JsonProcessingException e) {
-			throw new IllegalStateException(label + " serialization failed", e);
+			log.error(
+					"Outbound event JSON serialization failed label={} userId={} exchange={} routingKey={}",
+					label,
+					userId,
+					exchange,
+					targetRoutingKey,
+					e
+			);
+		} catch (Exception e) {
+			log.error(
+					"RabbitMQ convertAndSend failed label={} apiKeyIdOrKeyId={} userId={} detail={} exchange={} routingKey={}",
+					label,
+					apiKeyOrKeyId,
+					userId,
+					statusOrRetain,
+					exchange,
+					targetRoutingKey,
+					e
+			);
 		}
 	}
 }

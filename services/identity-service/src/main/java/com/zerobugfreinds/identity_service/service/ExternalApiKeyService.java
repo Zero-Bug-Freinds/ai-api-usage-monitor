@@ -31,6 +31,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 
 import static com.zerobugfreinds.identity_service.domain.ExternalApiKeyDeletionPolicy.DEFAULT_GRACE_DAYS;
@@ -370,7 +371,8 @@ public class ExternalApiKeyService {
 		}
 		String normalized = userIdOrEmail.trim();
 		if (normalized.contains("@")) {
-			return userRepository.findByEmailIgnoreCase(normalized)
+			String emailKey = normalized.toLowerCase(Locale.ROOT);
+			return userRepository.findByEmail(emailKey)
 					.map(user -> user.getId())
 					.orElse(null);
 		}
@@ -409,7 +411,7 @@ public class ExternalApiKeyService {
 		if (!StringUtils.hasText(email)) {
 			throw new IllegalArgumentException("email은 필수입니다");
 		}
-		String normalizedEmail = email.trim();
+		String normalizedEmail = email.trim().toLowerCase(Locale.ROOT);
 		Optional<Long> userId = userRepository.findByEmail(normalizedEmail).map(user -> user.getId());
 		if (userId.isEmpty()) {
 			return Optional.empty();

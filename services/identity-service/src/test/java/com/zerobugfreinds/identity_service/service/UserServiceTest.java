@@ -22,6 +22,9 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.TransactionStatus;
 
 import java.util.Optional;
 
@@ -30,8 +33,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -52,11 +57,19 @@ class UserServiceTest {
 	private ApplicationEventPublisher applicationEventPublisher;
 	@Mock
 	private IdentityUserSyncEventPublisher identityUserSyncEventPublisher;
+	@Mock
+	private PlatformTransactionManager platformTransactionManager;
 
 	private UserService userService;
 
 	@BeforeEach
 	void setUp() {
+		TransactionStatus transactionStatus = mock(TransactionStatus.class);
+		lenient().when(platformTransactionManager.getTransaction(any(TransactionDefinition.class))).thenReturn(transactionStatus);
+		lenient().doNothing().when(platformTransactionManager).commit(any(TransactionStatus.class));
+		lenient().doNothing().when(platformTransactionManager).rollback(any(TransactionStatus.class));
+		when(passwordEncoder.encode(any(CharSequence.class))).thenReturn("$2a$10$xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
+
 		userService = new UserService(
 				userRepository,
 				refreshTokenRepository,
@@ -64,7 +77,8 @@ class UserServiceTest {
 				jwtTokenProvider,
 				teamMembershipVerificationClient,
 				applicationEventPublisher,
-				identityUserSyncEventPublisher
+				identityUserSyncEventPublisher,
+				platformTransactionManager
 		);
 	}
 
@@ -77,7 +91,7 @@ class UserServiceTest {
 				"tester",
 				Role.USER
 		);
-		when(userRepository.existsByEmailIgnoreCase("test@example.com")).thenReturn(true);
+		when(userRepository.existsByEmail("test@example.com")).thenReturn(true);
 
 		assertThatThrownBy(() -> userService.signup(request))
 				.isInstanceOf(DuplicateEmailException.class);
@@ -92,7 +106,7 @@ class UserServiceTest {
 				"tester",
 				Role.USER
 		);
-		when(userRepository.existsByEmailIgnoreCase("test@example.com")).thenReturn(false);
+		when(userRepository.existsByEmail("test@example.com")).thenReturn(false);
 		when(passwordEncoder.encode("abc123!@")).thenReturn("encoded");
 		when(userRepository.save(any(User.class))).thenThrow(new DataIntegrityViolationException("duplicate"));
 
@@ -109,7 +123,7 @@ class UserServiceTest {
 				"tester",
 				Role.USER
 		);
-		when(userRepository.existsByEmailIgnoreCase("test@example.com")).thenReturn(false);
+		when(userRepository.existsByEmail("test@example.com")).thenReturn(false);
 		when(passwordEncoder.encode("abc123!@")).thenReturn("encoded");
 		User persisted = mock(User.class);
 		when(persisted.getId()).thenReturn(1L);
@@ -120,7 +134,7 @@ class UserServiceTest {
 
 		userService.signup(request);
 
-		verify(userRepository).existsByEmailIgnoreCase(eq("test@example.com"));
+		verify(userRepository).existsByEmail(eq("test@example.com"));
 		verify(userRepository).save(any(User.class));
 		verify(identityUserSyncEventPublisher).publishAfterCommit(any());
 	}
@@ -130,7 +144,7 @@ class UserServiceTest {
 		User user = mock(User.class);
 		when(user.getId()).thenReturn(42L);
 		when(user.getEmail()).thenReturn("Mix@Example.COM");
-		when(userRepository.findByEmailIgnoreCase("mix@example.com")).thenReturn(Optional.of(user));
+		when(userRepository.findByEmail("mix@example.com")).thenReturn(Optional.of(user));
 
 		assertThat(userService.resolvePrincipalForInternalLookup("  Mix@Example.COM  "))
 				.contains(new InternalUserPrincipalResponse("42", "mix@example.com"));
@@ -193,7 +207,7 @@ class UserServiceTest {
 		User other = new User("taken@example.com", "pw2", "Other", Role.USER);
 		ReflectionTestUtils.setField(other, "id", 2L);
 		when(userRepository.findById(1L)).thenReturn(Optional.of(self));
-		when(userRepository.findByEmailIgnoreCase("taken@example.com")).thenReturn(Optional.of(other));
+		when(userRepository.findByEmail("taken@example.com")).thenReturn(Optional.of(other));
 
 		assertThatThrownBy(() -> userService.updateProfile(1L, new UpdateProfileRequest("taken@example.com", null)))
 				.isInstanceOf(DuplicateEmailException.class);
