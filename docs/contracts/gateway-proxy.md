@@ -1,6 +1,6 @@
 # Gateway ↔ Proxy 서비스 간 계약
 
-버전: 1.5  
+버전: 1.6  
 관련: [docs/architecture.md](../architecture.md) §4.1, §4.2, §8.2, §10.1, §10.2, 루트 [`docker-compose.yml`](../../docker-compose.yml)(`web-edge`, `docker/web-edge/nginx.conf.template`), 루트 [`.env.example`](../../.env.example), [`services/usage-service/web/.env.example`](../../services/usage-service/web/.env.example), [Web·Gateway Usage BFF](./web-gateway-bff.md)(Usage BFF 브라우저 경로·`basePath`는 [web-split-boundary.md](./web-split-boundary.md))
 
 **v1.1:** `application.yml` 라우트·`RemoveRequestHeader=Authorization`·Bearer 검증·Web `API_GATEWAY_URL` 합의를 §1.1·§3·§9에 명시(게이트웨이·Usage BFF 담당 정합).  
@@ -8,6 +8,7 @@
 **v1.3:** 웹 BFF 소재를 `services/*/web` 목표 구조·풀스택 소유에 맞게 서술 보강.  
 **v1.4:** §5.1 Docker Compose·루트 `.env`와 `GATEWAY_SHARED_SECRET` 빈 값 주의, 로컬 기본 문자열을 게이트웨이·Proxy·usage와 정합.
 **v1.5:** `/api/v1/ai/ext/**` key-only ingress(HMAC+timestamp+nonce) 경로를 추가하고 기존 `/api/v1/ai/**` JWT 경로와 분리.
+**v1.6:** §6.1 `UsageRecordedEvent.metadataOwnerUserId` — PERSONAL `api_key_metadata` upsert 시 Identity MQ와 동일한 소유 `user_id`(플랫폼 사용자 id 문자열)를 쓰기 위한 선택 필드; Proxy는 `UserContext.keyLookupUserId()` 로 채운다.
 
 ---
 
@@ -187,6 +188,8 @@ Usage 소비 코드: [`UsageRecordedEventListener`](../../services/usage-service
 | `organizationId` | `String` | 선택 |
 | `teamId` | `String` | 선택 |
 | `apiKeyId` | `String` | 선택 |
+| `apiKeyAlias` | `String` | 선택 |
+| `teamApiKeyId` | `String` | 선택; 팀 키 메타데이터 식별 시 사용 |
 | `apiKeyFingerprint` | `String` | 선택 |
 | `apiKeySource` | `String` | 선택 |
 | `provider` | `AiProvider` | `OPENAI/GOOGLE/ANTHROPIC` 등 |
@@ -195,9 +198,11 @@ Usage 소비 코드: [`UsageRecordedEventListener`](../../services/usage-service
 | `estimatedCost` | `BigDecimal` | 선택 |
 | `requestPath` | `String` | Proxy 내부 path |
 | `upstreamHost` | `String` | 선택 |
+| `latencyMs` | `Long` | 선택 |
 | `streaming` | `Boolean` | 선택 |
 | `requestSuccessful` | `Boolean` | null이면 `true` |
 | `upstreamStatusCode` | `Integer` | 선택 |
+| `metadataOwnerUserId` | `String` | 선택; 아래 §6.1.4 |
 
 Team API Key 요청 식별 규약:
 
@@ -205,7 +210,13 @@ Team API Key 요청 식별 규약:
 - `apiKeyId=String(teamApiKeyId)` (`team-service`의 팀 키 PK 문자열)
 - Billing/Usage는 팀 키 집계·예산 임계 판단 시 `apiKeySource + apiKeyId` 조합으로 팀 키를 식별한다.
 
-### 6.1.3 Usage 서비스의 HTTP 소비 API(조회)
+### 6.1.4 `metadataOwnerUserId` (PERSONAL `api_key_metadata` 소유자 키)
+
+- **역할:** Usage 로그·비용 집계에 쓰는 `userId`와 별도로, Identity MQ가 채우는 **PERSONAL** 메타데이터 행의 복합 PK `(key_id, user_id, PERSONAL)` 에 들어갈 **`user_id` 후보**를 알려준다.
+- **발행:** Proxy `publishUsage` 가 [`UserContext.keyLookupUserId()`](../../services/proxy-service/src/main/java/com/eevee/proxyservice/security/UserContext.java) 로 설정한다. JWT에 플랫폼 사용자 PK 문자열이 있으면 그 값이 우선하고, 없으면 게이트웨이 `X-User-Id`(예: 이메일 `sub`)와 동일하게 둔다.
+- **소비:** usage-service `ApiKeyMetadataSyncService` 는 값이 있으면 이것으로 PERSONAL 메타 upsert를 하고, 없으면 기존처럼 `userId`만 사용한다. 원장(`usage_recorded_log.user_id`)과 대시보드 호출 주체는 계속 **`UsageRecordedEvent.userId`** 정본을 따른다(§4.2).
+
+### 6.1.5 Usage 서비스의 HTTP 소비 API(조회)
 
 Usage는 MQ로 적재 후 HTTP 조회를 제공한다(컨트롤러: `UsageAnalyticsController`):
 

@@ -5,6 +5,7 @@ import com.eevee.usage.events.AiProvider;
 import com.eevee.usage.events.UsageRecordedEvent;
 import com.eevee.usageservice.domain.UsageRecordedLogEntity;
 import com.eevee.usageservice.mq.UsageSummaryAggregationMessage;
+import com.eevee.usageservice.usage.UsageRecordedEventScopeNormalizer;
 import com.eevee.usageservice.repository.UsageRecordedLogRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -111,8 +112,11 @@ public class UsageRecordedService {
     }
 
     private UsageRecordedLogEntity map(UsageRecordedEvent event) {
-        String normalizedTeamId = normalizeTeamId(event.teamId());
-        String normalizedTeamApiKeyId = normalizeTeamApiKeyId(event.teamApiKeyId(), normalizedTeamId);
+        String normalizedTeamId = UsageRecordedEventScopeNormalizer.normalizeTeamId(event.teamId());
+        String normalizedTeamApiKeyId = UsageRecordedEventScopeNormalizer.normalizeTeamApiKeyId(
+                event.teamApiKeyId(),
+                normalizedTeamId
+        );
         TokenUsage tu = event.tokenUsage();
         String model = event.model();
         Long prompt = null;
@@ -172,25 +176,6 @@ public class UsageRecordedService {
                 event.upstreamStatusCode(),
                 Instant.now()
         );
-    }
-
-    private static String normalizeTeamId(String teamId) {
-        if (teamId == null) {
-            return null;
-        }
-        String normalized = teamId.trim();
-        return normalized.isEmpty() ? null : normalized;
-    }
-
-    private static String normalizeTeamApiKeyId(String teamApiKeyId, String normalizedTeamId) {
-        if (normalizedTeamId == null) {
-            return null;
-        }
-        if (teamApiKeyId == null) {
-            return null;
-        }
-        String normalized = teamApiKeyId.trim();
-        return normalized.isEmpty() ? null : normalized;
     }
 
     private String buildProviderTokenDetailsJson(AiProvider provider,

@@ -150,6 +150,43 @@ public class UsageAnalyticsJdbcRepository {
         );
     }
 
+    /**
+     * Average {@code latency_ms} for team-scoped rows for one member (non-null latencies only).
+     */
+    public Double aggregateAvgLatencyMsByTeamAndUser(
+            String teamId,
+            String userId,
+            Instant from,
+            Instant toExclusive,
+            AiProvider provider
+    ) {
+        String sql = """
+                SELECT AVG(latency_ms)::double precision
+                FROM usage_recorded_log
+                WHERE team_id = ?
+                  AND user_id = ?
+                  AND occurred_at >= ? AND occurred_at < ?
+                  AND latency_ms IS NOT NULL
+                """ + PROVIDER_FILTER;
+        String p1 = provider == null ? null : provider.name();
+        return jdbc.query(
+                sql,
+                rs -> {
+                    if (!rs.next()) {
+                        return null;
+                    }
+                    double v = rs.getDouble(1);
+                    return rs.wasNull() ? null : v;
+                },
+                teamId,
+                userId,
+                Timestamp.from(from),
+                Timestamp.from(toExclusive),
+                p1,
+                p1
+        );
+    }
+
     public UsageSummaryResponse aggregateSummaryTeamMemberOnly(
             String userId,
             Instant from,
@@ -718,16 +755,65 @@ public class UsageAnalyticsJdbcRepository {
         return scope == UsageDataContext.TEAM_MEMBER_ONLY ? TEAM_MEMBER_ONLY_SCOPE_FILTER_LOGS : PERSONAL_SCOPE_FILTER_LOGS;
     }
 
+    /**
+     * When {@code scope} is {@link UsageDataContext#TEAM_MEMBER_ONLY} and {@code restrictToTeamId} is non-blank,
+     * scopes log SQL to that team row; otherwise falls back to personal / all-team-member fragments.
+     */
+    private static String logScopeSqlForUserLogs(UsageDataContext scope, String restrictToTeamId) {
+        if (scope == UsageDataContext.TEAM_MEMBER_ONLY
+                && restrictToTeamId != null
+                && !restrictToTeamId.isBlank()) {
+            return " AND team_id = ?";
+        }
+        return userScopeLogsFragment(scope);
+    }
+
+    private static boolean restrictLogsToSingleTeam(UsageDataContext scope, String restrictToTeamId) {
+        return scope == UsageDataContext.TEAM_MEMBER_ONLY
+                && restrictToTeamId != null
+                && !restrictToTeamId.isBlank();
+    }
+
+    public BigDecimal sumEstimatedCostByTeamAndUser(
+            String teamId,
+            String userId,
+            Instant from,
+            Instant toExclusive,
+            AiProvider provider
+    ) {
+        String sql = """
+                SELECT COALESCE(SUM(total_cost), 0)
+                FROM daily_usage_summary
+                WHERE team_id = ?
+                  AND user_id = ?
+                  AND usage_date >= ((? AT TIME ZONE '%s')::date)
+                  AND usage_date < ((? AT TIME ZONE '%s')::date)%s
+                """.formatted(BUCKET_ZONE, BUCKET_ZONE, PROVIDER_FILTER);
+        String p1 = provider == null ? null : provider.name();
+        BigDecimal v = jdbc.queryForObject(
+                sql,
+                BigDecimal.class,
+                teamId,
+                userId,
+                Timestamp.from(from),
+                Timestamp.from(toExclusive),
+                p1,
+                p1
+        );
+        return v != null ? v : BigDecimal.ZERO;
+    }
+
     public UsageSummaryResponse aggregateSummaryForUserFromLogs(
             String userId,
             Instant from,
             Instant toExclusive,
             AiProvider provider,
             String apiKeyFilter,
-            UsageDataContext scope
+            UsageDataContext scope,
+            String restrictToTeamId
     ) {
         String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
-        String scopeFrag = userScopeLogsFragment(scope);
+        String scopeFrag = logScopeSqlForUserLogs(scope, restrictToTeamId);
         String sql = """
                 SELECT COUNT(*)::bigint,
                        COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0)::bigint,
@@ -739,6 +825,26 @@ public class UsageAnalyticsJdbcRepository {
                   %s%s%s
                 """.formatted(ERR_PRED, scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
+        if (restrictLogsToSingleTeam(scope, restrictToTeamId)) {
+            String tid = restrictToTeamId.trim();
+            return jdbc.queryForObject(
+                    sql,
+                    (rs, rowNum) -> new UsageSummaryResponse(
+                            rs.getLong(1),
+                            rs.getLong(2),
+                            rs.getLong(3),
+                            rs.getBigDecimal(4) != null ? rs.getBigDecimal(4) : BigDecimal.ZERO
+                    ),
+                    userId,
+                    Timestamp.from(from),
+                    Timestamp.from(toExclusive),
+                    tid,
+                    af,
+                    af,
+                    p1,
+                    p1
+            );
+        }
         return jdbc.queryForObject(
                 sql,
                 (rs, rowNum) -> new UsageSummaryResponse(
@@ -763,10 +869,11 @@ public class UsageAnalyticsJdbcRepository {
             Instant toExclusive,
             AiProvider provider,
             String apiKeyFilter,
-            UsageDataContext scope
+            UsageDataContext scope,
+            String restrictToTeamId
     ) {
         String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
-        String scopeFrag = userScopeLogsFragment(scope);
+        String scopeFrag = logScopeSqlForUserLogs(scope, restrictToTeamId);
         String sql = """
                 SELECT ((occurred_at AT TIME ZONE '%s'))::date AS d,
                        COUNT(*)::bigint,
@@ -781,6 +888,27 @@ public class UsageAnalyticsJdbcRepository {
                 ORDER BY 1
                 """.formatted(BUCKET_ZONE, ERR_PRED, scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
+        if (restrictLogsToSingleTeam(scope, restrictToTeamId)) {
+            String tid = restrictToTeamId.trim();
+            return jdbc.query(
+                    sql,
+                    (rs, rowNum) -> new DailyUsagePoint(
+                            rs.getDate("d").toLocalDate(),
+                            rs.getLong(2),
+                            rs.getLong(3),
+                            rs.getLong(4),
+                            rs.getBigDecimal(5) != null ? rs.getBigDecimal(5) : BigDecimal.ZERO
+                    ),
+                    userId,
+                    Timestamp.from(from),
+                    Timestamp.from(toExclusive),
+                    tid,
+                    af,
+                    af,
+                    p1,
+                    p1
+            );
+        }
         return jdbc.query(
                 sql,
                 (rs, rowNum) -> new DailyUsagePoint(
@@ -806,10 +934,11 @@ public class UsageAnalyticsJdbcRepository {
             Instant toExclusive,
             AiProvider provider,
             String apiKeyFilter,
-            UsageDataContext scope
+            UsageDataContext scope,
+            String restrictToTeamId
     ) {
         String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
-        String scopeFrag = userScopeLogsFragment(scope);
+        String scopeFrag = logScopeSqlForUserLogs(scope, restrictToTeamId);
         String sql = """
                 SELECT to_char((occurred_at AT TIME ZONE '%s'), 'YYYY-MM') AS ym,
                        COUNT(*)::bigint,
@@ -824,6 +953,27 @@ public class UsageAnalyticsJdbcRepository {
                 ORDER BY 1
                 """.formatted(BUCKET_ZONE, ERR_PRED, scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
+        if (restrictLogsToSingleTeam(scope, restrictToTeamId)) {
+            String tid = restrictToTeamId.trim();
+            return jdbc.query(
+                    sql,
+                    (rs, rowNum) -> new MonthlyUsagePoint(
+                            rs.getString("ym"),
+                            rs.getLong(2),
+                            rs.getLong(3),
+                            rs.getLong(4),
+                            rs.getBigDecimal(5) != null ? rs.getBigDecimal(5) : BigDecimal.ZERO
+                    ),
+                    userId,
+                    Timestamp.from(from),
+                    Timestamp.from(toExclusive),
+                    tid,
+                    af,
+                    af,
+                    p1,
+                    p1
+            );
+        }
         return jdbc.query(
                 sql,
                 (rs, rowNum) -> new MonthlyUsagePoint(
@@ -849,10 +999,11 @@ public class UsageAnalyticsJdbcRepository {
             Instant toExclusive,
             AiProvider provider,
             String apiKeyFilter,
-            UsageDataContext scope
+            UsageDataContext scope,
+            String restrictToTeamId
     ) {
         String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
-        String scopeFrag = userScopeLogsFragment(scope);
+        String scopeFrag = logScopeSqlForUserLogs(scope, restrictToTeamId);
         String sql = """
                 SELECT COALESCE(NULLIF(TRIM(model), ''), LOWER(provider::text) || '_unknown') AS m,
                        provider::text,
@@ -868,6 +1019,28 @@ public class UsageAnalyticsJdbcRepository {
                 ORDER BY COUNT(*) DESC
                 """.formatted(scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
+        if (restrictLogsToSingleTeam(scope, restrictToTeamId)) {
+            String tid = restrictToTeamId.trim();
+            return jdbc.query(
+                    sql,
+                    (rs, rowNum) -> new ModelUsageAggregate(
+                            rs.getString("m"),
+                            rs.getString("provider"),
+                            rs.getLong(3),
+                            rs.getLong(4),
+                            rs.getLong(5),
+                            rs.getLong(6)
+                    ),
+                    userId,
+                    Timestamp.from(from),
+                    Timestamp.from(toExclusive),
+                    tid,
+                    af,
+                    af,
+                    p1,
+                    p1
+            );
+        }
         return jdbc.query(
                 sql,
                 (rs, rowNum) -> new ModelUsageAggregate(
@@ -894,10 +1067,11 @@ public class UsageAnalyticsJdbcRepository {
             Instant toExclusive,
             AiProvider provider,
             String apiKeyFilter,
-            UsageDataContext scope
+            UsageDataContext scope,
+            String restrictToTeamId
     ) {
         String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
-        String scopeFrag = userScopeLogsFragment(scope);
+        String scopeFrag = logScopeSqlForUserLogs(scope, restrictToTeamId);
         String sql = """
                 SELECT COALESCE(SUM(estimated_cost), 0)
                 FROM usage_recorded_log
@@ -906,17 +1080,34 @@ public class UsageAnalyticsJdbcRepository {
                   %s%s%s
                 """.formatted(scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
-        BigDecimal v = jdbc.queryForObject(
-                sql,
-                BigDecimal.class,
-                userId,
-                Timestamp.from(from),
-                Timestamp.from(toExclusive),
-                af,
-                af,
-                p1,
-                p1
-        );
+        BigDecimal v;
+        if (restrictLogsToSingleTeam(scope, restrictToTeamId)) {
+            String tid = restrictToTeamId.trim();
+            v = jdbc.queryForObject(
+                    sql,
+                    BigDecimal.class,
+                    userId,
+                    Timestamp.from(from),
+                    Timestamp.from(toExclusive),
+                    tid,
+                    af,
+                    af,
+                    p1,
+                    p1
+            );
+        } else {
+            v = jdbc.queryForObject(
+                    sql,
+                    BigDecimal.class,
+                    userId,
+                    Timestamp.from(from),
+                    Timestamp.from(toExclusive),
+                    af,
+                    af,
+                    p1,
+                    p1
+            );
+        }
         return v != null ? v : BigDecimal.ZERO;
     }
 
@@ -935,7 +1126,8 @@ public class UsageAnalyticsJdbcRepository {
                 kstDayEndExclusiveUtc,
                 provider,
                 UsageDataContext.PERSONAL,
-                ""
+                "",
+                null
         );
     }
 
@@ -945,10 +1137,11 @@ public class UsageAnalyticsJdbcRepository {
             Instant kstDayEndExclusiveUtc,
             AiProvider provider,
             UsageDataContext scope,
-            String apiKeyFilter
+            String apiKeyFilter,
+            String restrictToTeamId
     ) {
         String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
-        String scopeFrag = userScopeLogsFragment(scope);
+        String scopeFrag = logScopeSqlForUserLogs(scope, restrictToTeamId);
         String sql = """
                 SELECT (EXTRACT(HOUR FROM (occurred_at AT TIME ZONE '%s')))::int AS h,
                        COUNT(*)::bigint,
@@ -962,22 +1155,44 @@ public class UsageAnalyticsJdbcRepository {
                 ORDER BY 1
                 """.formatted(BUCKET_ZONE, ERR_PRED, scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
-        List<HourlyUsagePoint> rows = jdbc.query(
-                sql,
-                (rs, rowNum) -> new HourlyUsagePoint(
-                        rs.getInt("h"),
-                        rs.getLong(2),
-                        rs.getLong(3),
-                        rs.getBigDecimal(4) != null ? rs.getBigDecimal(4) : BigDecimal.ZERO
-                ),
-                userId,
-                Timestamp.from(kstDayStartUtc),
-                Timestamp.from(kstDayEndExclusiveUtc),
-                af,
-                af,
-                p1,
-                p1
-        );
+        List<HourlyUsagePoint> rows;
+        if (restrictLogsToSingleTeam(scope, restrictToTeamId)) {
+            String tid = restrictToTeamId.trim();
+            rows = jdbc.query(
+                    sql,
+                    (rs, rowNum) -> new HourlyUsagePoint(
+                            rs.getInt("h"),
+                            rs.getLong(2),
+                            rs.getLong(3),
+                            rs.getBigDecimal(4) != null ? rs.getBigDecimal(4) : BigDecimal.ZERO
+                    ),
+                    userId,
+                    Timestamp.from(kstDayStartUtc),
+                    Timestamp.from(kstDayEndExclusiveUtc),
+                    tid,
+                    af,
+                    af,
+                    p1,
+                    p1
+            );
+        } else {
+            rows = jdbc.query(
+                    sql,
+                    (rs, rowNum) -> new HourlyUsagePoint(
+                            rs.getInt("h"),
+                            rs.getLong(2),
+                            rs.getLong(3),
+                            rs.getBigDecimal(4) != null ? rs.getBigDecimal(4) : BigDecimal.ZERO
+                    ),
+                    userId,
+                    Timestamp.from(kstDayStartUtc),
+                    Timestamp.from(kstDayEndExclusiveUtc),
+                    af,
+                    af,
+                    p1,
+                    p1
+            );
+        }
         Map<Integer, HourlyUsagePoint> byHour = new HashMap<>();
         for (HourlyUsagePoint row : rows) {
             byHour.put(row.hour(), row);
@@ -1297,10 +1512,11 @@ public class UsageAnalyticsJdbcRepository {
             Instant toExclusive,
             AiProvider provider,
             String apiKeyFilter,
-            UsageDataContext scope
+            UsageDataContext scope,
+            String restrictToTeamId
     ) {
         String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
-        String scopeFrag = userScopeLogsFragment(scope);
+        String scopeFrag = logScopeSqlForUserLogs(scope, restrictToTeamId);
         String sql = """
                 SELECT AVG(latency_ms)::double precision
                 FROM usage_recorded_log
@@ -1310,22 +1526,44 @@ public class UsageAnalyticsJdbcRepository {
                   %s%s%s
                 """.formatted(scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
-        Double v = jdbc.query(
-                sql,
-                rs -> {
-                    if (!rs.next()) {
-                        return null;
-                    }
-                    return rs.getObject(1) != null ? rs.getDouble(1) : null;
-                },
-                userId,
-                Timestamp.from(from),
-                Timestamp.from(toExclusive),
-                af,
-                af,
-                p1,
-                p1
-        );
+        Double v;
+        if (restrictLogsToSingleTeam(scope, restrictToTeamId)) {
+            String tid = restrictToTeamId.trim();
+            v = jdbc.query(
+                    sql,
+                    rs -> {
+                        if (!rs.next()) {
+                            return null;
+                        }
+                        return rs.getObject(1) != null ? rs.getDouble(1) : null;
+                    },
+                    userId,
+                    Timestamp.from(from),
+                    Timestamp.from(toExclusive),
+                    tid,
+                    af,
+                    af,
+                    p1,
+                    p1
+            );
+        } else {
+            v = jdbc.query(
+                    sql,
+                    rs -> {
+                        if (!rs.next()) {
+                            return null;
+                        }
+                        return rs.getObject(1) != null ? rs.getDouble(1) : null;
+                    },
+                    userId,
+                    Timestamp.from(from),
+                    Timestamp.from(toExclusive),
+                    af,
+                    af,
+                    p1,
+                    p1
+            );
+        }
         return v;
     }
 
@@ -1338,10 +1576,11 @@ public class UsageAnalyticsJdbcRepository {
             Instant kstDayEndExclusiveUtc,
             AiProvider provider,
             UsageDataContext scope,
-            String apiKeyFilter
+            String apiKeyFilter,
+            String restrictToTeamId
     ) {
         String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
-        String scopeFrag = userScopeLogsFragment(scope);
+        String scopeFrag = logScopeSqlForUserLogs(scope, restrictToTeamId);
         String sqlStats = """
                 SELECT (EXTRACT(HOUR FROM (occurred_at AT TIME ZONE '%s')))::int AS h,
                        COUNT(*)::bigint AS req_cnt,
@@ -1365,52 +1604,103 @@ public class UsageAnalyticsJdbcRepository {
                 """.formatted(BUCKET_ZONE, ERR_PRED, scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         Map<Integer, LatencyStabilityPoint> byHour = new HashMap<>();
-        jdbc.query(
-                sqlStats,
-                rs -> {
-                    while (rs.next()) {
-                        int h = rs.getInt("h");
-                        long req = rs.getLong("req_cnt");
-                        long err = rs.getLong("err_cnt");
-                        long tok = rs.getLong("tok_sum");
-                        double successRate = req > 0 ? (100.0 * (req - err)) / req : 0.0;
-                        double errorRate = req > 0 ? (100.0 * err) / req : 0.0;
-                        Double avgMs = rs.getObject("avg_ms") != null ? rs.getDouble("avg_ms") : null;
-                        Long minMs = rs.getObject("min_ms") != null ? rs.getLong("min_ms") : null;
-                        Long maxMs = rs.getObject("max_ms") != null ? rs.getLong("max_ms") : null;
-                        Double p95 = rs.getObject("p95") != null ? rs.getDouble("p95") : null;
-                        Double p99 = rs.getObject("p99") != null ? rs.getDouble("p99") : null;
-                        Double msPerTok = rs.getObject("ms_per_tok") != null ? rs.getDouble("ms_per_tok") : null;
-                        String label = String.format("%02d:00", h);
-                        byHour.put(
-                                h,
-                                new LatencyStabilityPoint(
-                                        label,
-                                        req,
-                                        successRate,
-                                        errorRate,
-                                        tok,
-                                        avgMs,
-                                        minMs,
-                                        maxMs,
-                                        p95,
-                                        p99,
-                                        msPerTok,
-                                        null,
-                                        null
-                                )
-                        );
-                    }
-                    return null;
-                },
-                userId,
-                Timestamp.from(kstDayStartUtc),
-                Timestamp.from(kstDayEndExclusiveUtc),
-                af,
-                af,
-                p1,
-                p1
-        );
+        if (restrictLogsToSingleTeam(scope, restrictToTeamId)) {
+            String tid = restrictToTeamId.trim();
+            jdbc.query(
+                    sqlStats,
+                    rs -> {
+                        while (rs.next()) {
+                            int h = rs.getInt("h");
+                            long req = rs.getLong("req_cnt");
+                            long err = rs.getLong("err_cnt");
+                            long tok = rs.getLong("tok_sum");
+                            double successRate = req > 0 ? (100.0 * (req - err)) / req : 0.0;
+                            double errorRate = req > 0 ? (100.0 * err) / req : 0.0;
+                            Double avgMs = rs.getObject("avg_ms") != null ? rs.getDouble("avg_ms") : null;
+                            Long minMs = rs.getObject("min_ms") != null ? rs.getLong("min_ms") : null;
+                            Long maxMs = rs.getObject("max_ms") != null ? rs.getLong("max_ms") : null;
+                            Double p95 = rs.getObject("p95") != null ? rs.getDouble("p95") : null;
+                            Double p99 = rs.getObject("p99") != null ? rs.getDouble("p99") : null;
+                            Double msPerTok = rs.getObject("ms_per_tok") != null ? rs.getDouble("ms_per_tok") : null;
+                            String label = String.format("%02d:00", h);
+                            byHour.put(
+                                    h,
+                                    new LatencyStabilityPoint(
+                                            label,
+                                            req,
+                                            successRate,
+                                            errorRate,
+                                            tok,
+                                            avgMs,
+                                            minMs,
+                                            maxMs,
+                                            p95,
+                                            p99,
+                                            msPerTok,
+                                            null,
+                                            null
+                                    )
+                            );
+                        }
+                        return null;
+                    },
+                    userId,
+                    Timestamp.from(kstDayStartUtc),
+                    Timestamp.from(kstDayEndExclusiveUtc),
+                    tid,
+                    af,
+                    af,
+                    p1,
+                    p1
+            );
+        } else {
+            jdbc.query(
+                    sqlStats,
+                    rs -> {
+                        while (rs.next()) {
+                            int h = rs.getInt("h");
+                            long req = rs.getLong("req_cnt");
+                            long err = rs.getLong("err_cnt");
+                            long tok = rs.getLong("tok_sum");
+                            double successRate = req > 0 ? (100.0 * (req - err)) / req : 0.0;
+                            double errorRate = req > 0 ? (100.0 * err) / req : 0.0;
+                            Double avgMs = rs.getObject("avg_ms") != null ? rs.getDouble("avg_ms") : null;
+                            Long minMs = rs.getObject("min_ms") != null ? rs.getLong("min_ms") : null;
+                            Long maxMs = rs.getObject("max_ms") != null ? rs.getLong("max_ms") : null;
+                            Double p95 = rs.getObject("p95") != null ? rs.getDouble("p95") : null;
+                            Double p99 = rs.getObject("p99") != null ? rs.getDouble("p99") : null;
+                            Double msPerTok = rs.getObject("ms_per_tok") != null ? rs.getDouble("ms_per_tok") : null;
+                            String label = String.format("%02d:00", h);
+                            byHour.put(
+                                    h,
+                                    new LatencyStabilityPoint(
+                                            label,
+                                            req,
+                                            successRate,
+                                            errorRate,
+                                            tok,
+                                            avgMs,
+                                            minMs,
+                                            maxMs,
+                                            p95,
+                                            p99,
+                                            msPerTok,
+                                            null,
+                                            null
+                                    )
+                            );
+                        }
+                        return null;
+                    },
+                    userId,
+                    Timestamp.from(kstDayStartUtc),
+                    Timestamp.from(kstDayEndExclusiveUtc),
+                    af,
+                    af,
+                    p1,
+                    p1
+            );
+        }
 
         String sqlTop = """
                 WITH cnt AS (
@@ -1429,22 +1719,43 @@ public class UsageAnalyticsJdbcRepository {
                 ORDER BY h, c DESC
                 """.formatted(BUCKET_ZONE, scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
         Map<Integer, String[]> topByHour = new HashMap<>();
-        jdbc.query(
-                sqlTop,
-                rs -> {
-                    while (rs.next()) {
-                        topByHour.put(rs.getInt("h"), new String[] {rs.getString("m"), rs.getString("p")});
-                    }
-                    return null;
-                },
-                userId,
-                Timestamp.from(kstDayStartUtc),
-                Timestamp.from(kstDayEndExclusiveUtc),
-                af,
-                af,
-                p1,
-                p1
-        );
+        if (restrictLogsToSingleTeam(scope, restrictToTeamId)) {
+            String tid = restrictToTeamId.trim();
+            jdbc.query(
+                    sqlTop,
+                    rs -> {
+                        while (rs.next()) {
+                            topByHour.put(rs.getInt("h"), new String[] {rs.getString("m"), rs.getString("p")});
+                        }
+                        return null;
+                    },
+                    userId,
+                    Timestamp.from(kstDayStartUtc),
+                    Timestamp.from(kstDayEndExclusiveUtc),
+                    tid,
+                    af,
+                    af,
+                    p1,
+                    p1
+            );
+        } else {
+            jdbc.query(
+                    sqlTop,
+                    rs -> {
+                        while (rs.next()) {
+                            topByHour.put(rs.getInt("h"), new String[] {rs.getString("m"), rs.getString("p")});
+                        }
+                        return null;
+                    },
+                    userId,
+                    Timestamp.from(kstDayStartUtc),
+                    Timestamp.from(kstDayEndExclusiveUtc),
+                    af,
+                    af,
+                    p1,
+                    p1
+            );
+        }
 
         List<LatencyStabilityPoint> out = new ArrayList<>(24);
         for (int h = 0; h < 24; h++) {
@@ -1496,10 +1807,11 @@ public class UsageAnalyticsJdbcRepository {
             Instant toExclusiveUtc,
             AiProvider provider,
             String apiKeyFilter,
-            UsageDataContext scope
+            UsageDataContext scope,
+            String restrictToTeamId
     ) {
         String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
-        String scopeFrag = userScopeLogsFragment(scope);
+        String scopeFrag = logScopeSqlForUserLogs(scope, restrictToTeamId);
         String sqlStats = """
                 SELECT ((occurred_at AT TIME ZONE '%s'))::date AS d,
                        COUNT(*)::bigint AS req_cnt,
@@ -1523,52 +1835,103 @@ public class UsageAnalyticsJdbcRepository {
                 """.formatted(BUCKET_ZONE, ERR_PRED, scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         Map<LocalDate, LatencyStabilityPoint> byDay = new HashMap<>();
-        jdbc.query(
-                sqlStats,
-                rs -> {
-                    while (rs.next()) {
-                        LocalDate d = rs.getDate("d").toLocalDate();
-                        long req = rs.getLong("req_cnt");
-                        long err = rs.getLong("err_cnt");
-                        long tok = rs.getLong("tok_sum");
-                        double successRate = req > 0 ? (100.0 * (req - err)) / req : 0.0;
-                        double errorRate = req > 0 ? (100.0 * err) / req : 0.0;
-                        Double avgMs = rs.getObject("avg_ms") != null ? rs.getDouble("avg_ms") : null;
-                        Long minMs = rs.getObject("min_ms") != null ? rs.getLong("min_ms") : null;
-                        Long maxMs = rs.getObject("max_ms") != null ? rs.getLong("max_ms") : null;
-                        Double p95 = rs.getObject("p95") != null ? rs.getDouble("p95") : null;
-                        Double p99 = rs.getObject("p99") != null ? rs.getDouble("p99") : null;
-                        Double msPerTok = rs.getObject("ms_per_tok") != null ? rs.getDouble("ms_per_tok") : null;
-                        String label = d.toString();
-                        byDay.put(
-                                d,
-                                new LatencyStabilityPoint(
-                                        label,
-                                        req,
-                                        successRate,
-                                        errorRate,
-                                        tok,
-                                        avgMs,
-                                        minMs,
-                                        maxMs,
-                                        p95,
-                                        p99,
-                                        msPerTok,
-                                        null,
-                                        null
-                                )
-                        );
-                    }
-                    return null;
-                },
-                userId,
-                Timestamp.from(fromUtc),
-                Timestamp.from(toExclusiveUtc),
-                af,
-                af,
-                p1,
-                p1
-        );
+        if (restrictLogsToSingleTeam(scope, restrictToTeamId)) {
+            String tid = restrictToTeamId.trim();
+            jdbc.query(
+                    sqlStats,
+                    rs -> {
+                        while (rs.next()) {
+                            LocalDate d = rs.getDate("d").toLocalDate();
+                            long req = rs.getLong("req_cnt");
+                            long err = rs.getLong("err_cnt");
+                            long tok = rs.getLong("tok_sum");
+                            double successRate = req > 0 ? (100.0 * (req - err)) / req : 0.0;
+                            double errorRate = req > 0 ? (100.0 * err) / req : 0.0;
+                            Double avgMs = rs.getObject("avg_ms") != null ? rs.getDouble("avg_ms") : null;
+                            Long minMs = rs.getObject("min_ms") != null ? rs.getLong("min_ms") : null;
+                            Long maxMs = rs.getObject("max_ms") != null ? rs.getLong("max_ms") : null;
+                            Double p95 = rs.getObject("p95") != null ? rs.getDouble("p95") : null;
+                            Double p99 = rs.getObject("p99") != null ? rs.getDouble("p99") : null;
+                            Double msPerTok = rs.getObject("ms_per_tok") != null ? rs.getDouble("ms_per_tok") : null;
+                            String label = d.toString();
+                            byDay.put(
+                                    d,
+                                    new LatencyStabilityPoint(
+                                            label,
+                                            req,
+                                            successRate,
+                                            errorRate,
+                                            tok,
+                                            avgMs,
+                                            minMs,
+                                            maxMs,
+                                            p95,
+                                            p99,
+                                            msPerTok,
+                                            null,
+                                            null
+                                    )
+                            );
+                        }
+                        return null;
+                    },
+                    userId,
+                    Timestamp.from(fromUtc),
+                    Timestamp.from(toExclusiveUtc),
+                    tid,
+                    af,
+                    af,
+                    p1,
+                    p1
+            );
+        } else {
+            jdbc.query(
+                    sqlStats,
+                    rs -> {
+                        while (rs.next()) {
+                            LocalDate d = rs.getDate("d").toLocalDate();
+                            long req = rs.getLong("req_cnt");
+                            long err = rs.getLong("err_cnt");
+                            long tok = rs.getLong("tok_sum");
+                            double successRate = req > 0 ? (100.0 * (req - err)) / req : 0.0;
+                            double errorRate = req > 0 ? (100.0 * err) / req : 0.0;
+                            Double avgMs = rs.getObject("avg_ms") != null ? rs.getDouble("avg_ms") : null;
+                            Long minMs = rs.getObject("min_ms") != null ? rs.getLong("min_ms") : null;
+                            Long maxMs = rs.getObject("max_ms") != null ? rs.getLong("max_ms") : null;
+                            Double p95 = rs.getObject("p95") != null ? rs.getDouble("p95") : null;
+                            Double p99 = rs.getObject("p99") != null ? rs.getDouble("p99") : null;
+                            Double msPerTok = rs.getObject("ms_per_tok") != null ? rs.getDouble("ms_per_tok") : null;
+                            String label = d.toString();
+                            byDay.put(
+                                    d,
+                                    new LatencyStabilityPoint(
+                                            label,
+                                            req,
+                                            successRate,
+                                            errorRate,
+                                            tok,
+                                            avgMs,
+                                            minMs,
+                                            maxMs,
+                                            p95,
+                                            p99,
+                                            msPerTok,
+                                            null,
+                                            null
+                                    )
+                            );
+                        }
+                        return null;
+                    },
+                    userId,
+                    Timestamp.from(fromUtc),
+                    Timestamp.from(toExclusiveUtc),
+                    af,
+                    af,
+                    p1,
+                    p1
+            );
+        }
 
         String sqlTop = """
                 WITH cnt AS (
@@ -1587,23 +1950,45 @@ public class UsageAnalyticsJdbcRepository {
                 ORDER BY d, c DESC
                 """.formatted(BUCKET_ZONE, scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
         Map<LocalDate, String[]> topByDay = new HashMap<>();
-        jdbc.query(
-                sqlTop,
-                rs -> {
-                    while (rs.next()) {
-                        LocalDate d = rs.getDate("d").toLocalDate();
-                        topByDay.put(d, new String[] {rs.getString("m"), rs.getString("p")});
-                    }
-                    return null;
-                },
-                userId,
-                Timestamp.from(fromUtc),
-                Timestamp.from(toExclusiveUtc),
-                af,
-                af,
-                p1,
-                p1
-        );
+        if (restrictLogsToSingleTeam(scope, restrictToTeamId)) {
+            String tid = restrictToTeamId.trim();
+            jdbc.query(
+                    sqlTop,
+                    rs -> {
+                        while (rs.next()) {
+                            LocalDate d = rs.getDate("d").toLocalDate();
+                            topByDay.put(d, new String[] {rs.getString("m"), rs.getString("p")});
+                        }
+                        return null;
+                    },
+                    userId,
+                    Timestamp.from(fromUtc),
+                    Timestamp.from(toExclusiveUtc),
+                    tid,
+                    af,
+                    af,
+                    p1,
+                    p1
+            );
+        } else {
+            jdbc.query(
+                    sqlTop,
+                    rs -> {
+                        while (rs.next()) {
+                            LocalDate d = rs.getDate("d").toLocalDate();
+                            topByDay.put(d, new String[] {rs.getString("m"), rs.getString("p")});
+                        }
+                        return null;
+                    },
+                    userId,
+                    Timestamp.from(fromUtc),
+                    Timestamp.from(toExclusiveUtc),
+                    af,
+                    af,
+                    p1,
+                    p1
+            );
+        }
 
         List<LatencyStabilityPoint> out = new ArrayList<>();
         for (LocalDate d = fromInclusive; !d.isAfter(toInclusive); d = d.plusDays(1)) {
@@ -1655,10 +2040,11 @@ public class UsageAnalyticsJdbcRepository {
             Instant toExclusiveUtc,
             AiProvider provider,
             String apiKeyFilter,
-            UsageDataContext scope
+            UsageDataContext scope,
+            String restrictToTeamId
     ) {
         String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
-        String scopeFrag = userScopeLogsFragment(scope);
+        String scopeFrag = logScopeSqlForUserLogs(scope, restrictToTeamId);
         String sqlStats = """
                 SELECT to_char((occurred_at AT TIME ZONE '%s'), 'YYYY-MM') AS ym,
                        COUNT(*)::bigint AS req_cnt,
@@ -1682,51 +2068,101 @@ public class UsageAnalyticsJdbcRepository {
                 """.formatted(BUCKET_ZONE, ERR_PRED, scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         Map<String, LatencyStabilityPoint> byYm = new HashMap<>();
-        jdbc.query(
-                sqlStats,
-                rs -> {
-                    while (rs.next()) {
-                        String ym = rs.getString("ym");
-                        long req = rs.getLong("req_cnt");
-                        long err = rs.getLong("err_cnt");
-                        long tok = rs.getLong("tok_sum");
-                        double successRate = req > 0 ? (100.0 * (req - err)) / req : 0.0;
-                        double errorRate = req > 0 ? (100.0 * err) / req : 0.0;
-                        Double avgMs = rs.getObject("avg_ms") != null ? rs.getDouble("avg_ms") : null;
-                        Long minMs = rs.getObject("min_ms") != null ? rs.getLong("min_ms") : null;
-                        Long maxMs = rs.getObject("max_ms") != null ? rs.getLong("max_ms") : null;
-                        Double p95 = rs.getObject("p95") != null ? rs.getDouble("p95") : null;
-                        Double p99 = rs.getObject("p99") != null ? rs.getDouble("p99") : null;
-                        Double msPerTok = rs.getObject("ms_per_tok") != null ? rs.getDouble("ms_per_tok") : null;
-                        byYm.put(
-                                ym,
-                                new LatencyStabilityPoint(
-                                        ym,
-                                        req,
-                                        successRate,
-                                        errorRate,
-                                        tok,
-                                        avgMs,
-                                        minMs,
-                                        maxMs,
-                                        p95,
-                                        p99,
-                                        msPerTok,
-                                        null,
-                                        null
-                                )
-                        );
-                    }
-                    return null;
-                },
-                userId,
-                Timestamp.from(fromUtc),
-                Timestamp.from(toExclusiveUtc),
-                af,
-                af,
-                p1,
-                p1
-        );
+        if (restrictLogsToSingleTeam(scope, restrictToTeamId)) {
+            String tid = restrictToTeamId.trim();
+            jdbc.query(
+                    sqlStats,
+                    rs -> {
+                        while (rs.next()) {
+                            String ym = rs.getString("ym");
+                            long req = rs.getLong("req_cnt");
+                            long err = rs.getLong("err_cnt");
+                            long tok = rs.getLong("tok_sum");
+                            double successRate = req > 0 ? (100.0 * (req - err)) / req : 0.0;
+                            double errorRate = req > 0 ? (100.0 * err) / req : 0.0;
+                            Double avgMs = rs.getObject("avg_ms") != null ? rs.getDouble("avg_ms") : null;
+                            Long minMs = rs.getObject("min_ms") != null ? rs.getLong("min_ms") : null;
+                            Long maxMs = rs.getObject("max_ms") != null ? rs.getLong("max_ms") : null;
+                            Double p95 = rs.getObject("p95") != null ? rs.getDouble("p95") : null;
+                            Double p99 = rs.getObject("p99") != null ? rs.getDouble("p99") : null;
+                            Double msPerTok = rs.getObject("ms_per_tok") != null ? rs.getDouble("ms_per_tok") : null;
+                            byYm.put(
+                                    ym,
+                                    new LatencyStabilityPoint(
+                                            ym,
+                                            req,
+                                            successRate,
+                                            errorRate,
+                                            tok,
+                                            avgMs,
+                                            minMs,
+                                            maxMs,
+                                            p95,
+                                            p99,
+                                            msPerTok,
+                                            null,
+                                            null
+                                    )
+                            );
+                        }
+                        return null;
+                    },
+                    userId,
+                    Timestamp.from(fromUtc),
+                    Timestamp.from(toExclusiveUtc),
+                    tid,
+                    af,
+                    af,
+                    p1,
+                    p1
+            );
+        } else {
+            jdbc.query(
+                    sqlStats,
+                    rs -> {
+                        while (rs.next()) {
+                            String ym = rs.getString("ym");
+                            long req = rs.getLong("req_cnt");
+                            long err = rs.getLong("err_cnt");
+                            long tok = rs.getLong("tok_sum");
+                            double successRate = req > 0 ? (100.0 * (req - err)) / req : 0.0;
+                            double errorRate = req > 0 ? (100.0 * err) / req : 0.0;
+                            Double avgMs = rs.getObject("avg_ms") != null ? rs.getDouble("avg_ms") : null;
+                            Long minMs = rs.getObject("min_ms") != null ? rs.getLong("min_ms") : null;
+                            Long maxMs = rs.getObject("max_ms") != null ? rs.getLong("max_ms") : null;
+                            Double p95 = rs.getObject("p95") != null ? rs.getDouble("p95") : null;
+                            Double p99 = rs.getObject("p99") != null ? rs.getDouble("p99") : null;
+                            Double msPerTok = rs.getObject("ms_per_tok") != null ? rs.getDouble("ms_per_tok") : null;
+                            byYm.put(
+                                    ym,
+                                    new LatencyStabilityPoint(
+                                            ym,
+                                            req,
+                                            successRate,
+                                            errorRate,
+                                            tok,
+                                            avgMs,
+                                            minMs,
+                                            maxMs,
+                                            p95,
+                                            p99,
+                                            msPerTok,
+                                            null,
+                                            null
+                                    )
+                            );
+                        }
+                        return null;
+                    },
+                    userId,
+                    Timestamp.from(fromUtc),
+                    Timestamp.from(toExclusiveUtc),
+                    af,
+                    af,
+                    p1,
+                    p1
+            );
+        }
 
         String sqlTop = """
                 WITH cnt AS (
@@ -1745,22 +2181,43 @@ public class UsageAnalyticsJdbcRepository {
                 ORDER BY ym, c DESC
                 """.formatted(BUCKET_ZONE, scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
         Map<String, String[]> topByYm = new HashMap<>();
-        jdbc.query(
-                sqlTop,
-                rs -> {
-                    while (rs.next()) {
-                        topByYm.put(rs.getString("ym"), new String[] {rs.getString("m"), rs.getString("p")});
-                    }
-                    return null;
-                },
-                userId,
-                Timestamp.from(fromUtc),
-                Timestamp.from(toExclusiveUtc),
-                af,
-                af,
-                p1,
-                p1
-        );
+        if (restrictLogsToSingleTeam(scope, restrictToTeamId)) {
+            String tid = restrictToTeamId.trim();
+            jdbc.query(
+                    sqlTop,
+                    rs -> {
+                        while (rs.next()) {
+                            topByYm.put(rs.getString("ym"), new String[] {rs.getString("m"), rs.getString("p")});
+                        }
+                        return null;
+                    },
+                    userId,
+                    Timestamp.from(fromUtc),
+                    Timestamp.from(toExclusiveUtc),
+                    tid,
+                    af,
+                    af,
+                    p1,
+                    p1
+            );
+        } else {
+            jdbc.query(
+                    sqlTop,
+                    rs -> {
+                        while (rs.next()) {
+                            topByYm.put(rs.getString("ym"), new String[] {rs.getString("m"), rs.getString("p")});
+                        }
+                        return null;
+                    },
+                    userId,
+                    Timestamp.from(fromUtc),
+                    Timestamp.from(toExclusiveUtc),
+                    af,
+                    af,
+                    p1,
+                    p1
+            );
+        }
 
         List<LatencyStabilityPoint> out = new ArrayList<>();
         for (YearMonth ym = fromYm; !ym.isAfter(toYmInclusive); ym = ym.plusMonths(1)) {

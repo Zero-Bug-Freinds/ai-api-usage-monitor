@@ -30,8 +30,16 @@ import { formatKstIsoDate, addKstDays } from "@/lib/usage/kst-dates"
 import { formatRequestCount, formatTokenCount, formatUsd, toNumber } from "@/lib/usage/format"
 import { EMPTY_MEMBER_MODEL_USAGE_MSG } from "@/lib/usage/team-dashboard-empty"
 import { teamUsageBffBase } from "@/lib/usage/team-usage-bff-base"
-
-const PROVIDER_ALL = "__ALL__"
+import { DASHBOARD_API_KEY_ALL, DASHBOARD_API_KEY_NONE } from "@/lib/usage/dashboard-api-key-constants"
+import {
+  DASHBOARD_PROVIDER_ALL,
+  type TeamBffApiKeyRow,
+  filterTeamBffRowsByProvider,
+  parseTeamBffApiKeysPayload,
+  teamBffRowsToUsageMenuItems,
+} from "@/lib/usage/dashboard-provider-api-keys"
+import { DashboardApiKeySelectMenu } from "@/components/usage/dashboard-api-key-select-menu"
+import { useDashboardAggregateApiKeySync } from "@/lib/usage/use-dashboard-aggregate-api-key"
 const LAST_TEAM_STORAGE_KEY = "last_team_id"
 
 export type TeamDashboardProps = {
@@ -72,7 +80,6 @@ type BffResponse = {
 }
 
 type TeamSummary = { id: string; name: string; createdAt?: string }
-type TeamApiKey = { id: string; alias: string; provider: string; updatedAt: string }
 type PeriodMode = "today" | "7d" | "30d" | "custom"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -155,6 +162,32 @@ function hashToUint(str: string): number {
 
 const MODEL_PALETTE = ["#9a3412", "#c2410c", "#ea580c", "#F97316", "#fb923c", "#fdba74", "#64748b"]
 
+/** 로딩·성공 동일 레이아웃용 (기존 성공 상태 높이에 맞춤). */
+const TEAM_DASH_MAIN_CHART_H = "h-[380px] min-h-[380px]"
+const TEAM_DASH_PIE_WRAP_MIN = "min-h-[300px]"
+const TEAM_DASH_BAR_CHART_H = "h-[300px] min-h-[300px]"
+const TEAM_DASH_STATS_ROW_MIN = "min-h-[2.75rem]"
+
+function TeamDashBlockSkeleton({ className }: { className?: string }) {
+  return (
+    <div
+      className={`animate-pulse rounded-lg border border-border bg-muted/35 ${className ?? ""}`}
+      aria-hidden="true"
+    />
+  )
+}
+
+function TeamDashStatsRowSkeleton() {
+  return (
+    <div className={`mt-3 flex flex-wrap gap-3 ${TEAM_DASH_STATS_ROW_MIN}`} aria-hidden="true">
+      <div className="h-4 w-24 animate-pulse rounded bg-muted/50" />
+      <div className="h-4 w-28 animate-pulse rounded bg-muted/50" />
+      <div className="h-4 w-20 animate-pulse rounded bg-muted/50" />
+      <div className="h-4 w-32 animate-pulse rounded bg-muted/50" />
+    </div>
+  )
+}
+
 function colorForModel(model: string, provider: string): string {
   const idx = hashToUint(`${provider}::${model}`) % MODEL_PALETTE.length
   return MODEL_PALETTE[idx] ?? "#94a3b8"
@@ -171,7 +204,7 @@ export default function TeamDashboard({
   onEffectiveTeamChange,
 }: TeamDashboardProps) {
   const todayKst = formatKstIsoDate()
-  const [dashProvider, setDashProvider] = React.useState(PROVIDER_ALL)
+  const [dashProvider, setDashProvider] = React.useState(DASHBOARD_PROVIDER_ALL)
   const [periodMode, setPeriodMode] = React.useState<PeriodMode>("today")
   const [customFrom, setCustomFrom] = React.useState(todayKst)
   const [customTo, setCustomTo] = React.useState(todayKst)
@@ -183,9 +216,9 @@ export default function TeamDashboard({
   const [teamsLoading, setTeamsLoading] = React.useState(true)
   const [teamsErr, setTeamsErr] = React.useState<string | null>(null)
   const [selectedTeamId, setSelectedTeamId] = React.useState("")
-  const [apiKeys, setApiKeys] = React.useState<TeamApiKey[]>([])
+  const [apiKeyRows, setApiKeyRows] = React.useState<TeamBffApiKeyRow[]>([])
   const [keysLoading, setKeysLoading] = React.useState(false)
-  const [selectedApiKeyId, setSelectedApiKeyId] = React.useState("")
+  const [selectedApiKeyId, setSelectedApiKeyId] = React.useState<string>(DASHBOARD_API_KEY_ALL)
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [data, setData] = React.useState<BffResponse | null>(null)
@@ -248,14 +281,14 @@ export default function TeamDashboard({
 
   React.useEffect(() => {
     if (!selectedTeamId) {
-      setApiKeys([])
+      setApiKeyRows([])
       return
     }
     let cancelled = false
     setKeysLoading(true)
     const base = teamUsageBffBase()
     if (!base) {
-      setApiKeys([])
+      setApiKeyRows([])
       setKeysLoading(false)
       return
     }
@@ -264,26 +297,16 @@ export default function TeamDashboard({
       headers: { Accept: "application/json" },
     })
       .then(async (r) => {
-        const json = (await r.json()) as { apiKeys?: unknown }
-        if (!r.ok || !Array.isArray(json.apiKeys)) return []
-        return (json.apiKeys as unknown[])
-          .map((item): TeamApiKey | null => {
-            if (!item || typeof item !== "object") return null
-            const o = item as Record<string, unknown>
-            if ((typeof o.id !== "number" && typeof o.id !== "string") || typeof o.alias !== "string" || typeof o.provider !== "string") return null
-            const updatedAt = typeof o.updatedAt === "string" ? o.updatedAt : ""
-            return { id: String(o.id), alias: o.alias, provider: o.provider, updatedAt }
-          })
-          .filter((x): x is TeamApiKey => x !== null)
-          .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))
+        const json = await r.json()
+        if (!r.ok) return []
+        return parseTeamBffApiKeysPayload(json)
       })
       .then((sorted) => {
         if (cancelled) return
-        setApiKeys(sorted)
-        setSelectedApiKeyId((prev) => (prev && sorted.some((k) => k.id === prev) ? prev : sorted[0] ? sorted[0].id : ""))
+        setApiKeyRows(sorted)
       })
       .catch(() => {
-        if (!cancelled) setApiKeys([])
+        if (!cancelled) setApiKeyRows([])
       })
       .finally(() => {
         if (!cancelled) setKeysLoading(false)
@@ -292,6 +315,17 @@ export default function TeamDashboard({
       cancelled = true
     }
   }, [selectedTeamId])
+
+  const filteredApiKeyRows = React.useMemo(
+    () => filterTeamBffRowsByProvider(apiKeyRows, dashProvider),
+    [apiKeyRows, dashProvider],
+  )
+  const apiKeyMenuItems = React.useMemo(
+    () => teamBffRowsToUsageMenuItems(filteredApiKeyRows),
+    [filteredApiKeyRows],
+  )
+
+  useDashboardAggregateApiKeySync(apiKeyMenuItems, selectedApiKeyId, setSelectedApiKeyId, true)
 
   const effectiveTeamId = selectedTeamId
   React.useEffect(() => {
@@ -316,8 +350,11 @@ export default function TeamDashboard({
       teamId: effectiveTeamId,
       from: range.from,
       to: range.to,
-      provider: dashProvider === PROVIDER_ALL ? undefined : dashProvider,
-      apiKeyId: selectedApiKeyId || undefined,
+      provider: dashProvider === DASHBOARD_PROVIDER_ALL ? undefined : dashProvider,
+      apiKeyId:
+        selectedApiKeyId !== DASHBOARD_API_KEY_ALL && selectedApiKeyId !== DASHBOARD_API_KEY_NONE
+          ? selectedApiKeyId
+          : undefined,
     })
     fetch(`${base}/dashboard?${q}`, { credentials: "include", headers: { Accept: "application/json" } })
       .then(async (r) => {
@@ -392,7 +429,20 @@ export default function TeamDashboard({
     !!effectiveTeamId &&
     !loading &&
     !error &&
-    (!hasMainData || apiKeys.length === 0)
+    (!hasMainData || apiKeyRows.length === 0)
+
+  /** 팀 목록 오류가 아니면, 팀 목록 로딩 중이거나 소속 팀이 있을 때 동일한 차트 격자를 유지한다. */
+  const showDashChartShell = !teamsErr && (teamsLoading || hasTeamMembership)
+  const showComposedChart = Boolean(
+    effectiveTeamId && !teamsLoading && !keysLoading && !loading && !error,
+  )
+  const showMainChartError = Boolean(
+    showDashChartShell && effectiveTeamId && !!error && !loading,
+  )
+  const showMainChartSkeleton =
+    showDashChartShell && !showComposedChart && !showMainChartError
+  const showSecondarySkeleton = showDashChartShell && !showComposedChart
+  const dashAriaBusy = showDashChartShell && (teamsLoading || keysLoading || loading)
 
   return (
     <div className="w-full min-h-full pb-6">
@@ -404,9 +454,55 @@ export default function TeamDashboard({
           </div>
           <p className="text-sm text-muted-foreground">자세한 비용 내역은 &apos;지출&apos; 메뉴를 통해 확인하세요. 집계 구간은 KST 기준입니다.</p>
         </div>
-        <Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => setRefresh((n) => n + 1)}>새로고침</Button>
+        <Button type="button" variant="outline" size="sm" disabled={loading || teamsLoading} onClick={() => setRefresh((n) => n + 1)}>새로고침</Button>
       </header>
       <div className="mb-6 flex flex-row flex-wrap items-end gap-4">
+        <div className="space-y-2 sm:w-52">
+          <Label htmlFor="team-dash-provider">공급사</Label>
+          <Select value={dashProvider} onValueChange={setDashProvider}>
+            <SelectTrigger id="team-dash-provider"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={DASHBOARD_PROVIDER_ALL}>전체</SelectItem>
+              <SelectItem value="GOOGLE">Gemini (Google)</SelectItem>
+              <SelectItem value="OPENAI">OpenAI</SelectItem>
+              <SelectItem value="ANTHROPIC">Anthropic</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2 sm:w-52">
+          <Label>팀</Label>
+          <Select
+            value={selectedTeamId}
+            onValueChange={setSelectedTeamId}
+            disabled={teamSelectDisabled}
+          >
+            <SelectTrigger>
+              <SelectValue
+                placeholder={
+                  teamsLoading ? "팀 목록 불러오는 중…" : !hasTeamMembership ? "소속 팀 없음" : "팀 선택"
+                }
+              />
+            </SelectTrigger>
+            <SelectContent>{teams.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2 sm:w-52">
+          <Label>API Key</Label>
+          <Select value={selectedApiKeyId} onValueChange={setSelectedApiKeyId} disabled={keysLoading}>
+            <SelectTrigger>
+              <SelectValue placeholder={keysLoading ? "불러오는 중…" : apiKeyMenuItems.length === 0 ? "없음" : "전체"} />
+            </SelectTrigger>
+            <SelectContent className="max-h-[min(70vh,26rem)]">
+              <DashboardApiKeySelectMenu
+                items={apiKeyMenuItems}
+                allValue={DASHBOARD_API_KEY_ALL}
+                showAllOption={apiKeyMenuItems.length > 0}
+                noneValue={DASHBOARD_API_KEY_NONE}
+                showNoneOption={apiKeyMenuItems.length === 0}
+              />
+            </SelectContent>
+          </Select>
+        </div>
         <div className="space-y-2 sm:w-44">
           <Label htmlFor="team-dash-period">기간</Label>
           <Select value={periodMode} onValueChange={(v) => {
@@ -433,42 +529,6 @@ export default function TeamDashboard({
             <div className="space-y-2"><Label htmlFor="team-to">종료</Label><Input id="team-to" type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} /></div>
           </div>
         ) : null}
-        <div className="space-y-2 sm:w-52">
-          <Label>팀</Label>
-          <Select
-            value={selectedTeamId}
-            onValueChange={setSelectedTeamId}
-            disabled={teamSelectDisabled}
-          >
-            <SelectTrigger>
-              <SelectValue
-                placeholder={
-                  teamsLoading ? "팀 목록 불러오는 중…" : !hasTeamMembership ? "소속 팀 없음" : "팀 선택"
-                }
-              />
-            </SelectTrigger>
-            <SelectContent>{teams.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}</SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2 sm:w-52">
-          <Label>API Key</Label>
-          <Select value={selectedApiKeyId} onValueChange={setSelectedApiKeyId} disabled={keysLoading || apiKeys.length === 0}>
-            <SelectTrigger><SelectValue placeholder={keysLoading ? "불러오는 중…" : "키 선택"} /></SelectTrigger>
-            <SelectContent>{apiKeys.map((k) => <SelectItem key={k.id} value={String(k.id)}>{k.alias} ({k.provider})</SelectItem>)}</SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2 sm:w-52">
-          <Label htmlFor="team-dash-provider">공급사</Label>
-          <Select value={dashProvider} onValueChange={setDashProvider}>
-            <SelectTrigger id="team-dash-provider"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value={PROVIDER_ALL}>전체</SelectItem>
-              <SelectItem value="GOOGLE">Gemini (Google)</SelectItem>
-              <SelectItem value="OPENAI">OpenAI</SelectItem>
-              <SelectItem value="ANTHROPIC">Anthropic</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
       </div>
 
       {teamsErr ? <p className="mb-4 text-sm text-amber-700">{teamsErr}</p> : null}
@@ -477,52 +537,57 @@ export default function TeamDashboard({
           팀에 속하게 되면 팀 대시보드 사용이 가능해집니다.
         </div>
       ) : null}
-      {error ? <p className="mb-6 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p> : null}
-      {!effectiveTeamId ? (
-        <section className="mb-8 rounded-lg border border-border p-4 shadow-sm">
-          <h2 className="mb-4 text-lg font-medium">{mainChartTitle(data?.usageSeriesUnit)}</h2>
-          <div className="h-[360px] min-h-[360px] w-full rounded-lg border border-dashed border-border bg-muted/20" />
-          <p className="mt-3 text-center text-sm text-muted-foreground">조회할 팀을 선택해 주세요.</p>
-        </section>
+      {showDashChartShell && showMainChartError ? (
+        <p className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert" aria-live="polite">
+          {error}
+        </p>
       ) : null}
-      {effectiveTeamId && (loading || error) ? (
-        <div aria-busy={loading ? "true" : undefined} className="space-y-6">
-          <div className="h-[360px] min-h-[360px] w-full animate-pulse rounded-lg border border-border bg-muted/40" />
-          <div className="h-[300px] min-h-[300px] w-full animate-pulse rounded-lg border border-border bg-muted/40" />
-          <div className="h-[300px] min-h-[300px] w-full animate-pulse rounded-lg border border-border bg-muted/40" />
-        </div>
-      ) : null}
-      {effectiveTeamId && !loading && !error ? (
-        <>
+      {showDashChartShell ? (
+        <div aria-busy={dashAriaBusy ? "true" : undefined}>
           <section className="mb-8 w-full min-w-0 rounded-lg border border-border p-4 shadow-sm">
             <h2 className="mb-4 text-lg font-medium">{mainChartTitle(data?.usageSeriesUnit)}</h2>
-            <div className="h-[380px] min-h-[380px] w-full min-w-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={mainRows.length > 0 ? mainRows : [{ label: "—", requestCount: 0, successRate: 0, errorRate: 0 }]}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                  <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
-                  <YAxis yAxisId="right" orientation="right" domain={rateDomain} tick={{ fontSize: 11 }} tickFormatter={(v) => `${Number(v).toFixed(1)}%`} />
-                  <Tooltip
-                    formatter={(value, name) => {
-                      const label = String(name ?? "")
-                      if (typeof value === "number" && label.includes("률")) {
-                        return [`${value.toFixed(1)}%`, label]
-                      }
-                      return [value ?? "", label]
-                    }}
-                  />
-                  <AnyLegend />
-                  <Bar yAxisId="left" dataKey="requestCount" name="총 요청 수" fill="#a3a3a3" radius={[4, 4, 0, 0]} />
-                  <Line yAxisId="right" type="monotone" dataKey="successRate" name="성공률" stroke="#10b981" strokeWidth={2} dot={false} />
-                  <Line yAxisId="right" type="monotone" dataKey="errorRate" name="오류율" stroke="#f43f5e" strokeWidth={2} dot={false} />
-                </ComposedChart>
-              </ResponsiveContainer>
+            <div className={`w-full min-w-0 ${TEAM_DASH_MAIN_CHART_H}`}>
+              {showMainChartSkeleton ? (
+                <TeamDashBlockSkeleton className="h-full w-full min-h-0" />
+              ) : null}
+              {showMainChartError ? (
+                <div
+                  className="h-full min-h-0 rounded-md border border-destructive/30 bg-destructive/5"
+                  role="alert"
+                  aria-live="polite"
+                />
+              ) : null}
+              {showComposedChart ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={mainRows.length > 0 ? mainRows : [{ label: "—", requestCount: 0, successRate: 0, errorRate: 0 }]}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                    <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
+                    <YAxis yAxisId="right" orientation="right" domain={rateDomain} tick={{ fontSize: 11 }} tickFormatter={(v) => `${Number(v).toFixed(1)}%`} />
+                    <Tooltip
+                      cursor={{ stroke: "transparent", fill: "transparent" }}
+                      formatter={(value, name) => {
+                        const label = String(name ?? "")
+                        if (typeof value === "number" && label.includes("률")) {
+                          return [`${value.toFixed(1)}%`, label]
+                        }
+                        return [value ?? "", label]
+                      }}
+                    />
+                    <AnyLegend />
+                    <Bar yAxisId="left" dataKey="requestCount" name="총 요청 수" fill="#a3a3a3" radius={[4, 4, 0, 0]} />
+                    <Line yAxisId="right" type="monotone" dataKey="successRate" name="성공률" stroke="#10b981" strokeWidth={2} dot={false} />
+                    <Line yAxisId="right" type="monotone" dataKey="errorRate" name="오류율" stroke="#f43f5e" strokeWidth={2} dot={false} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              ) : null}
             </div>
-            {!hasMainData ? (
+            {showMainChartSkeleton ? <TeamDashStatsRowSkeleton /> : null}
+            {showMainChartError ? <div className={TEAM_DASH_STATS_ROW_MIN} aria-hidden="true" /> : null}
+            {showComposedChart && !hasMainData ? (
               <p className="mt-3 text-center text-sm text-muted-foreground">{EMPTY_MEMBER_MODEL_USAGE_MSG}</p>
             ) : null}
-            {hasMainData ? (
+            {showComposedChart && hasMainData ? (
               <div className="mt-3 text-xs text-muted-foreground">
                 총 요청 {formatRequestCount(rangeRequests)} · 오류 {rangeErrors.toLocaleString("en-US")}건 · 성공률 {successRatePercent.toFixed(1)}% · 총 비용 {formatUsd(rangeCost)} · 총 입력 토큰 {formatTokenCount(rangeTokens)}
               </div>
@@ -532,55 +597,80 @@ export default function TeamDashboard({
                 Api key를 추가하여 AI를 호출하면 API 데이터가 쌓입니다.
               </div>
             ) : null}
+            {showMainChartSkeleton && hasTeamMembership && !effectiveTeamId && !teamsLoading ? (
+              <p className="mt-2 text-center text-xs text-muted-foreground">조회할 팀을 선택해 주세요.</p>
+            ) : null}
           </section>
           <div className="mb-8 flex min-w-0 flex-col gap-6">
             <section className="min-w-0 rounded-lg border border-border p-4 shadow-sm">
               <h2 className="mb-4 text-lg font-medium">모델별 요청 비중</h2>
-              <div className="flex min-h-[300px] flex-col items-center gap-4 sm:flex-row">
-                <div className="h-[260px] w-full max-w-[260px] shrink-0">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={pieData.length > 0 ? pieData : [{ name: "—", value: 1, fullName: "__empty__", provider: "GOOGLE", percent: 1 }]} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius="52%" outerRadius="78%" paddingAngle={2}>
-                        {(pieData.length > 0 ? pieData : [{ name: "—", fullName: "__empty__", provider: "GOOGLE", value: 1 }]).map((entry, i) => (
-                          <Cell key={`cell-${entry.fullName}-${i}`} fill={pieData.length === 0 ? "var(--border)" : colorForModel(entry.fullName ?? "", entry.provider ?? "")} fillOpacity={pieData.length === 0 ? 0.35 : 1} />
-                        ))}
-                      </Pie>
-                      <Tooltip formatter={(value) => formatRequestCount(Number(value ?? 0))} />
-                    </PieChart>
-                  </ResponsiveContainer>
+              {showSecondarySkeleton ? (
+                <div className={`flex ${TEAM_DASH_PIE_WRAP_MIN} flex-col items-center gap-4 sm:flex-row`}>
+                  <TeamDashBlockSkeleton className="h-[260px] w-full max-w-[260px] shrink-0 rounded-full" />
+                  <div className="flex w-full max-h-[220px] flex-1 flex-col gap-2 overflow-hidden">
+                    {[0, 1, 2, 3, 4].map((i) => (
+                      <div key={i} className="h-3 w-full animate-pulse rounded bg-muted/45" aria-hidden="true" />
+                    ))}
+                  </div>
                 </div>
-                <ul className="max-h-[220px] w-full flex-1 space-y-1 overflow-auto text-xs">
-                  {pieData.length === 0 ? <li className="text-muted-foreground">—</li> : pieData.map((p) => <li key={p.fullName} className="flex justify-between gap-2"><span className="truncate text-muted-foreground">{p.name}</span><span className="tabular-nums">{(p.percent * 100).toFixed(1)}%</span></li>)}
-                </ul>
-              </div>
-              {pieData.length === 0 ? (
-                <p className="mt-3 text-center text-sm text-muted-foreground">{EMPTY_MEMBER_MODEL_USAGE_MSG}</p>
+              ) : null}
+              {!showSecondarySkeleton ? (
+                <>
+                  <div className={`flex ${TEAM_DASH_PIE_WRAP_MIN} flex-col items-center gap-4 sm:flex-row`}>
+                    <div className="h-[260px] w-full max-w-[260px] shrink-0">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie data={pieData.length > 0 ? pieData : [{ name: "—", value: 1, fullName: "__empty__", provider: "GOOGLE", percent: 1 }]} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius="52%" outerRadius="78%" paddingAngle={2}>
+                            {(pieData.length > 0 ? pieData : [{ name: "—", fullName: "__empty__", provider: "GOOGLE", value: 1 }]).map((entry, i) => (
+                              <Cell key={`cell-${entry.fullName}-${i}`} fill={pieData.length === 0 ? "var(--border)" : colorForModel(entry.fullName ?? "", entry.provider ?? "")} fillOpacity={pieData.length === 0 ? 0.35 : 1} />
+                            ))}
+                          </Pie>
+                          <Tooltip formatter={(value) => formatRequestCount(Number(value ?? 0))} cursor={false} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <ul className="max-h-[220px] w-full flex-1 space-y-1 overflow-auto text-xs">
+                      {pieData.length === 0 ? <li className="text-muted-foreground">—</li> : pieData.map((p) => <li key={p.fullName} className="flex justify-between gap-2"><span className="truncate text-muted-foreground">{p.name}</span><span className="tabular-nums">{(p.percent * 100).toFixed(1)}%</span></li>)}
+                    </ul>
+                  </div>
+                  {pieData.length === 0 ? (
+                    <p className="mt-3 text-center text-sm text-muted-foreground">{EMPTY_MEMBER_MODEL_USAGE_MSG}</p>
+                  ) : null}
+                </>
               ) : null}
             </section>
             <section className="min-w-0 rounded-lg border border-border p-4 shadow-sm">
               <h2 className="mb-4 text-lg font-medium">모델별 요청 수 (상위)</h2>
-              <div className="h-[300px] min-h-[300px] w-full min-w-0">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={barModelData.length > 0 ? barModelData : [{ label: "—", fullName: "", provider: "", requests: 0 }]}
-                    layout="vertical"
-                    margin={{ left: 8, right: 8 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis type="number" tick={{ fontSize: 11 }} />
-                    <YAxis type="category" dataKey="label" width={100} tick={{ fontSize: 10 }} />
-                    <Tooltip />
-                    <Bar dataKey="requests" name="요청 수" fill="#64748b" fillOpacity={barModelData.length === 0 ? 0.2 : 1} radius={[0, 4, 4, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              {barModelData.length === 0 ? (
-                <p className="mt-3 text-center text-sm text-muted-foreground">{EMPTY_MEMBER_MODEL_USAGE_MSG}</p>
-              ) : null}
+              {showSecondarySkeleton ? (
+                <TeamDashBlockSkeleton className={`w-full min-w-0 ${TEAM_DASH_BAR_CHART_H}`} />
+              ) : (
+                <>
+                  <div className={`${TEAM_DASH_BAR_CHART_H} w-full min-w-0`}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={barModelData.length > 0 ? barModelData : [{ label: "—", fullName: "", provider: "", requests: 0 }]}
+                        layout="vertical"
+                        margin={{ left: 8, right: 8 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                        <XAxis type="number" tick={{ fontSize: 11 }} />
+                        <YAxis type="category" dataKey="label" width={100} tick={{ fontSize: 10 }} />
+                        <Tooltip cursor={{ fill: "transparent" }} />
+                        <Bar dataKey="requests" name="요청 수" fill="#64748b" fillOpacity={barModelData.length === 0 ? 0.2 : 1} radius={[0, 4, 4, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  {barModelData.length === 0 ? (
+                    <p className="mt-3 text-center text-sm text-muted-foreground">{EMPTY_MEMBER_MODEL_USAGE_MSG}</p>
+                  ) : null}
+                </>
+              )}
             </section>
           </div>
-          {data?.enrichment?.partial ? <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">프로필 일부 결합 실패: {(data.enrichment.warnings ?? []).join(", ")}</div> : null}
-        </>
+          {showComposedChart && data?.enrichment?.partial ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">프로필 일부 결합 실패: {(data.enrichment.warnings ?? []).join(", ")}</div>
+          ) : null}
+        </div>
       ) : null}
     </div>
   )

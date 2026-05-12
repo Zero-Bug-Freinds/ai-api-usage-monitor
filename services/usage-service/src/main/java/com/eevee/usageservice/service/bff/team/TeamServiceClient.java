@@ -220,6 +220,23 @@ public class TeamServiceClient {
         }
     }
 
+    /**
+     * Team member user ids for usage-side API key metadata fan-out (MQ consumer).
+     * Uses the same members API as dashboard enrichment; empty when team-service is unavailable.
+     */
+    public List<String> fetchTeamMemberUserIds(String actorUserId, String teamId) {
+        if (!StringUtils.hasText(actorUserId) || !StringUtils.hasText(teamId)) {
+            return List.of();
+        }
+        return fetchMemberProfiles(actorUserId.trim(), teamId.trim()).stream()
+                .map(TeamMemberProfile::userId)
+                .filter(java.util.Objects::nonNull)
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .distinct()
+                .toList();
+    }
+
     public CompletableFuture<TeamEnrichmentResult> loadTeamEnrichment(String requesterUserId, String teamId) {
         String key = requesterUserId + ":" + teamId;
         TeamEnrichmentResult cached = memberCache.getIfPresent(key);
