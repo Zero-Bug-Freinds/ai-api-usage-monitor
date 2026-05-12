@@ -32,3 +32,22 @@ export type TeamMonthRollup = {
   totalCostUsd: number;
   byUser: { userId: string; costUsd: number }[];
 };
+
+export type TeamApiKeyMonthSpend = {
+  teamApiKeyId: number;
+  alias: string;
+  provider: string;
+  monthlyBudgetUsd: number;
+  status: string;
+  monthSpendUsd: number;
+};
+
+export type TeamApiKeyMonthSpendResponse = {
+  teamId: number;
+  monthStartDate: string | null;
+  from: string;
+  to: string;
+  teamMonthlyBudgetUsd: number;
+  teamMonthSpendUsd: number;
+  keys: TeamApiKeyMonthSpend[];
+};
