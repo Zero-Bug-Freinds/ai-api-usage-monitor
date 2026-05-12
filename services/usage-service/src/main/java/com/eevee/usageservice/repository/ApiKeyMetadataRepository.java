@@ -16,6 +16,8 @@ public interface ApiKeyMetadataRepository extends JpaRepository<ApiKeyMetadataEn
 
     /**
      * Team-scope rows (one per member per logical key). Callers dedupe by {@code keyId} for filter UIs.
+     * Query shape aligns with partial index {@code idx_api_key_metadata_team_scope_status} on
+     * {@code (team_id, key_scope, status)} where {@code team_id} is not null (see Flyway V8).
      */
     List<ApiKeyMetadataEntity> findByTeamIdAndId_KeyScopeAndStatusInOrderByUpdatedAtDesc(
             String teamId,

@@ -28,7 +28,9 @@ import java.util.UUID;
         name = "usage_recorded_log",
         indexes = {
                 @Index(name = "idx_url_team_occurred", columnList = "team_id, occurred_at"),
-                @Index(name = "idx_url_user_team_occurred", columnList = "user_id, team_id, occurred_at")
+                @Index(name = "idx_url_user_team_occurred", columnList = "user_id, team_id, occurred_at"),
+                @Index(name = "idx_url_team_team_api_key_occurred", columnList = "team_id, team_api_key_id, occurred_at"),
+                @Index(name = "idx_url_user_team_team_api_key", columnList = "user_id, team_id, team_api_key_id")
         }
 )
 public class UsageRecordedLogEntity {
@@ -55,6 +57,11 @@ public class UsageRecordedLogEntity {
     @Column(name = "team_api_key_id")
     private String teamApiKeyId;
 
+    /**
+     * Join literals ({@code 'PERSONAL'} / {@code 'TEAM'}) must match {@link ApiKeyMetadataScope} enum names in
+     * {@code api_key_metadata.key_scope} (JPA {@link EnumType#STRING}). Applies to {@link #personalKeyMetadata} and
+     * {@link #teamKeyMetadata}.
+     */
     @ManyToOne(fetch = FetchType.LAZY)
     @NotFound(action = NotFoundAction.IGNORE)
     @JoinColumnsOrFormulas({
