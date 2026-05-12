@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
+import { InAppNotificationsService } from '../in-app-notifications/in-app-notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { buildInAppDedupeKey } from './team-dedupe-keys';
 import type { TeamDomainEventPayload } from './team-domain-event.schema';
@@ -21,6 +22,7 @@ export class TeamInAppNotificationHandlerService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly inAppNotifications: InAppNotificationsService,
   ) {}
 
   private getLocale(): NotificationLocale {
@@ -32,6 +34,15 @@ export class TeamInAppNotificationHandlerService {
     eventType: TeamEventType,
     payload: TeamDomainEventPayload,
   ): Promise<{ createdCount: number; skippedCount: number }> {
+    if (eventType === 'TEAM_DELETED') {
+      const voided = await this.inAppNotifications.voidTeamInviteNotificationsForDeletedTeam(payload.teamId);
+      if (voided > 0) {
+        this.logger.log(
+          `Voided stale team invite in-app notifications after TEAM_DELETED teamId=${payload.teamId} updatedRows=${voided}`,
+        );
+      }
+    }
+
     const recipients = getEffectiveRecipientUserIds(eventType, payload);
     let createdCount = 0;
     let skippedCount = 0;

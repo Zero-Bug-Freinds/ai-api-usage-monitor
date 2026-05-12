@@ -333,6 +333,8 @@ services:
       BILLING_IDENTITY_ENABLED: ${BILLING_IDENTITY_ENABLED:-false}
       BILLING_IDENTITY_BASE_URL: ${BILLING_IDENTITY_BASE_URL:-http://identity-service:8080}
       BILLING_IDENTITY_BUDGET_PATH: "${BILLING_IDENTITY_BUDGET_PATH:-/api/identity/v1/users/budget?email={userId}}"
+      # 로컬 볼륨 DB에 카탈로그 신규 모델 row만 비어 있는 경우 멱등 보강(운영은 보통 false)
+      BILLING_PRICING_SEED_MISSING: ${BILLING_PRICING_SEED_MISSING:-true}
     ports:
       - "${BILLING_SERVICE_PORT:-8095}:8095"
 

@@ -1,5 +1,7 @@
 import {
   Controller,
+  HttpException,
+  HttpStatus,
   Param,
   Post,
   Req,
@@ -48,24 +50,36 @@ export class TeamInvitationActionsController {
     const inviteeUserId = requireUserId(req);
     const correlationId = getTrimmedHeader(req, 'x-correlation-id');
 
-    const result = await this.teamInternal.acceptInvitation({ invitationId, inviteeUserId });
+    try {
+      const result = await this.teamInternal.acceptInvitation({ invitationId, inviteeUserId });
 
-    await this.inAppNotifications.markTeamInviteNotificationsResolved({
-      userId: inviteeUserId,
-      platformUserId: req.auth?.platformUserId,
-      invitationId,
-      decision: 'ACCEPT',
-    });
+      await this.inAppNotifications.markTeamInviteNotificationsResolved({
+        userId: inviteeUserId,
+        platformUserId: req.auth?.platformUserId,
+        invitationId,
+        decision: 'ACCEPT',
+      });
 
-    // Best-effort command publish for async processing / audit; membership is already applied via internal API.
-    await this.publisher.publishDecision({
-      invitationId,
-      inviteeUserId,
-      decision: 'ACCEPT',
-      correlationId: correlationId ?? undefined,
-    });
+      // Best-effort command publish for async processing / audit; membership is already applied via internal API.
+      await this.publisher.publishDecision({
+        invitationId,
+        inviteeUserId,
+        decision: 'ACCEPT',
+        correlationId: correlationId ?? undefined,
+      });
 
-    return result;
+      return result;
+    } catch (e: unknown) {
+      if (e instanceof HttpException && shouldVoidTeamInviteAfterTeamFailure(e.getStatus())) {
+        await this.inAppNotifications.voidTeamInviteNotificationsAfterFailedDecision({
+          userId: inviteeUserId,
+          platformUserId: req.auth?.platformUserId,
+          invitationId,
+          staleReason: 'INVITE_ACTION_FAILED',
+        });
+      }
+      throw e;
+    }
   }
 
   @Post(':invitationId/reject')
@@ -74,24 +88,36 @@ export class TeamInvitationActionsController {
     const inviteeUserId = requireUserId(req);
     const correlationId = getTrimmedHeader(req, 'x-correlation-id');
 
-    const result = await this.teamInternal.rejectInvitation({ invitationId, inviteeUserId });
+    try {
+      const result = await this.teamInternal.rejectInvitation({ invitationId, inviteeUserId });
 
-    await this.inAppNotifications.markTeamInviteNotificationsResolved({
-      userId: inviteeUserId,
-      platformUserId: req.auth?.platformUserId,
-      invitationId,
-      decision: 'REJECT',
-    });
+      await this.inAppNotifications.markTeamInviteNotificationsResolved({
+        userId: inviteeUserId,
+        platformUserId: req.auth?.platformUserId,
+        invitationId,
+        decision: 'REJECT',
+      });
 
-    // Best-effort command publish for async processing / audit; rejection is already applied via internal API.
-    await this.publisher.publishDecision({
-      invitationId,
-      inviteeUserId,
-      decision: 'REJECT',
-      correlationId: correlationId ?? undefined,
-    });
+      // Best-effort command publish for async processing / audit; rejection is already applied via internal API.
+      await this.publisher.publishDecision({
+        invitationId,
+        inviteeUserId,
+        decision: 'REJECT',
+        correlationId: correlationId ?? undefined,
+      });
 
-    return result;
+      return result;
+    } catch (e: unknown) {
+      if (e instanceof HttpException && shouldVoidTeamInviteAfterTeamFailure(e.getStatus())) {
+        await this.inAppNotifications.voidTeamInviteNotificationsAfterFailedDecision({
+          userId: inviteeUserId,
+          platformUserId: req.auth?.platformUserId,
+          invitationId,
+          staleReason: 'INVITE_ACTION_FAILED',
+        });
+      }
+      throw e;
+    }
   }
 }
 
@@ -101,5 +127,13 @@ function getTrimmedHeader(req: AuthedRequest, name: string): string | undefined 
   if (typeof v !== 'string') return undefined;
   const t = v.trim();
   return t.length > 0 ? t : undefined;
+}
+
+function shouldVoidTeamInviteAfterTeamFailure(status: number): boolean {
+  return (
+    status === HttpStatus.NOT_FOUND ||
+    status === HttpStatus.BAD_REQUEST ||
+    status === HttpStatus.CONFLICT
+  );
 }
 

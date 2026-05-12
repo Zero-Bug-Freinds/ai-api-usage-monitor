@@ -115,6 +115,60 @@ export class InAppNotificationsService {
   }
 
   /**
+   * When team-service rejects an invite decision (unknown invite, stale state, missing team),
+   * remove action buttons and mark the row read so the UI cannot retry indefinitely.
+   */
+  async voidTeamInviteNotificationsAfterFailedDecision(params: {
+    userId: string;
+    platformUserId?: string;
+    invitationId: string;
+    staleReason: string;
+  }): Promise<number> {
+    const recipientIds = resolveRecipientUserIds(params.userId, params.platformUserId);
+    const rows = await this.prisma.inAppNotification.findMany({
+      where: {
+        userId: { in: recipientIds },
+        type: TEAM_INVITE_NOTIFICATION_TYPE,
+        meta: { path: ['invitationId'], equals: params.invitationId },
+      },
+      select: { id: true, meta: true },
+    });
+
+    const now = new Date();
+    for (const row of rows) {
+      const nextMeta = buildVoidedTeamInviteMeta(row.meta, params.staleReason, now);
+      await this.prisma.inAppNotification.update({
+        where: { id: row.id },
+        data: { readAt: now, meta: nextMeta },
+      });
+    }
+    return rows.length;
+  }
+
+  /**
+   * TEAM_DELETED may not reach invitees who were never members; void pending invite rows by teamId.
+   */
+  async voidTeamInviteNotificationsForDeletedTeam(teamId: string): Promise<number> {
+    const rows = await this.prisma.inAppNotification.findMany({
+      where: {
+        type: TEAM_INVITE_NOTIFICATION_TYPE,
+        meta: { path: ['teamId'], equals: teamId },
+      },
+      select: { id: true, meta: true },
+    });
+
+    const now = new Date();
+    for (const row of rows) {
+      const nextMeta = buildVoidedTeamInviteMeta(row.meta, 'TEAM_DELETED', now);
+      await this.prisma.inAppNotification.update({
+        where: { id: row.id },
+        data: { readAt: now, meta: nextMeta },
+      });
+    }
+    return rows.length;
+  }
+
+  /**
    * After accept/reject, marks matching in-app rows read and records decision on meta
    * so mark-read guards clear for team invites.
    */
@@ -214,5 +268,20 @@ function teamInviteActionedAtPresent(meta: unknown): boolean {
 function isPendingTeamInviteForReadGuard(type: string | null, meta: unknown): boolean {
   if (type !== TEAM_INVITE_NOTIFICATION_TYPE) return false;
   return !teamInviteActionedAtPresent(meta);
+}
+
+function buildVoidedTeamInviteMeta(
+  previous: unknown,
+  staleReason: string,
+  readAt: Date,
+): Prisma.InputJsonObject {
+  const base =
+    previous !== null && typeof previous === 'object' && !Array.isArray(previous)
+      ? { ...(previous as Record<string, unknown>) }
+      : {};
+  delete base.actions;
+  base.staleReason = staleReason;
+  base.inviteVoidedAt = readAt.toISOString();
+  return base as Prisma.InputJsonObject;
 }
 
