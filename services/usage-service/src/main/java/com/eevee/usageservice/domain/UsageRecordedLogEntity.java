@@ -2,18 +2,19 @@ package com.eevee.usageservice.domain;
 
 import com.eevee.usage.events.AiProvider;
 import jakarta.persistence.Column;
-import jakarta.persistence.ConstraintMode;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
-import jakarta.persistence.ForeignKey;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.annotations.JoinColumnOrFormula;
+import org.hibernate.annotations.JoinColumnsOrFormulas;
+import org.hibernate.annotations.JoinFormula;
 import org.hibernate.annotations.NotFound;
 import org.hibernate.annotations.NotFoundAction;
 import org.hibernate.type.SqlTypes;
@@ -56,14 +57,21 @@ public class UsageRecordedLogEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @NotFound(action = NotFoundAction.IGNORE)
-    @JoinColumn(
-            name = "api_key_id",
-            referencedColumnName = "key_id",
-            insertable = false,
-            updatable = false,
-            foreignKey = @ForeignKey(ConstraintMode.NO_CONSTRAINT)
-    )
-    private ApiKeyMetadataEntity apiKeyMetadata;
+    @JoinColumnsOrFormulas({
+            @JoinColumnOrFormula(formula = @JoinFormula(value = "'PERSONAL'", referencedColumnName = "keyScope")),
+            @JoinColumnOrFormula(column = @JoinColumn(name = "api_key_id", referencedColumnName = "keyId", insertable = false, updatable = false)),
+            @JoinColumnOrFormula(column = @JoinColumn(name = "user_id", referencedColumnName = "userId", insertable = false, updatable = false))
+    })
+    private ApiKeyMetadataEntity personalKeyMetadata;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @NotFound(action = NotFoundAction.IGNORE)
+    @JoinColumnsOrFormulas({
+            @JoinColumnOrFormula(formula = @JoinFormula(value = "'TEAM'", referencedColumnName = "keyScope")),
+            @JoinColumnOrFormula(column = @JoinColumn(name = "team_api_key_id", referencedColumnName = "keyId", insertable = false, updatable = false)),
+            @JoinColumnOrFormula(column = @JoinColumn(name = "user_id", referencedColumnName = "userId", insertable = false, updatable = false))
+    })
+    private ApiKeyMetadataEntity teamKeyMetadata;
 
     private String apiKeyFingerprint;
 
@@ -242,7 +250,16 @@ public class UsageRecordedLogEntity {
     public String getTeamId() { return teamId; }
     public String getApiKeyId() { return apiKeyId; }
     public String getTeamApiKeyId() { return teamApiKeyId; }
-    public ApiKeyMetadataEntity getApiKeyMetadata() { return apiKeyMetadata; }
+    /**
+     * Resolved metadata for this log row: team traffic joins on {@code team_api_key_id} + member {@code user_id};
+     * personal traffic on {@code api_key_id} + {@code user_id}.
+     */
+    public ApiKeyMetadataEntity getApiKeyMetadata() {
+        if (teamApiKeyId != null && !teamApiKeyId.isBlank()) {
+            return teamKeyMetadata;
+        }
+        return personalKeyMetadata;
+    }
     public String getApiKeyFingerprint() { return apiKeyFingerprint; }
     public String getApiKeySource() { return apiKeySource; }
     public AiProvider getProvider() { return provider; }
