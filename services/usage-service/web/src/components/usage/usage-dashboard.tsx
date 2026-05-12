@@ -50,6 +50,8 @@ import type {
   UsageSummaryResponse,
 } from "@/lib/usage/types"
 import { addKstDays, formatKstIsoDate } from "@/lib/usage/kst-dates"
+import { DASHBOARD_API_KEY_ALL, DASHBOARD_API_KEY_NONE } from "@/lib/usage/dashboard-api-key-constants"
+import { DashboardApiKeySelectMenu } from "@/components/usage/dashboard-api-key-select-menu"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const AnyLegend = Legend as any
@@ -72,9 +74,6 @@ const MAX_RANGE_DAYS = 366
 const HISTORY_CACHE_TTL_MS = 60 * 60 * 1000
 
 const DASHBOARD_PROVIDER_ALL = "__ALL__"
-const DASHBOARD_API_KEY_ALL = "__ALL__"
-/** 개인 키가 0개일 때 전용(서버에는 apiKeyId 미전달 — ALL과 동일). */
-const DASHBOARD_API_KEY_NONE = "__NONE__"
 const DASHBOARD_PROVIDER_STORAGE_KEY = "usage-dashboard:provider:v1"
 const DASHBOARD_PERIOD_STORAGE_KEY = "usage-dashboard:period:v1"
 /** 개인 대시보드 전용. 팀 대시보드·팀 멤버 뷰와 sessionStorage 충돌 없음. */
@@ -245,7 +244,7 @@ async function fetchTeamApiKeysForMemberDashboard(
   })
   const json = (await res.json()) as { apiKeys?: unknown }
   if (!res.ok || !Array.isArray(json.apiKeys)) return []
-  type Parsed = { apiKeyId: string; alias: string; sortKey: string }
+  type Parsed = { apiKeyId: string; alias: string; sortKey: string; status: UsageLogApiKeyItemResponse["status"] }
   const rows = (json.apiKeys as unknown[])
     .map((item): Parsed | null => {
       if (!item || typeof item !== "object") return null
@@ -257,11 +256,14 @@ async function fetchTeamApiKeysForMemberDashboard(
       const createdAt = typeof o.createdAt === "string" ? o.createdAt : ""
       const updatedAt = typeof o.updatedAt === "string" ? o.updatedAt : ""
       const sortKey = (createdAt || updatedAt || "").trim()
-      return { apiKeyId, alias: o.alias, sortKey }
+      const st = o.status
+      const status: UsageLogApiKeyItemResponse["status"] =
+        st === "DELETED" || st === "DELETION_REQUESTED" || st === "ACTIVE" ? st : "ACTIVE"
+      return { apiKeyId, alias: o.alias, sortKey, status }
     })
     .filter((x): x is Parsed => x !== null)
   rows.sort((a, b) => b.sortKey.localeCompare(a.sortKey))
-  return rows.map((r) => ({ apiKeyId: r.apiKeyId, alias: r.alias, status: "ACTIVE" as const }))
+  return rows.map((r) => ({ apiKeyId: r.apiKeyId, alias: r.alias, status: r.status }))
 }
 
 function tooltipNumericValue(value: unknown): number {
@@ -1734,20 +1736,22 @@ export function UsageDashboard() {
                 }
               />
             </SelectTrigger>
-            <SelectContent>
-              {(dataContext === "PERSONAL" || dataContext === "TEAM_MEMBER_ONLY") &&
-              apiKeyOptions.length === 0 ? (
-                <SelectItem value={DASHBOARD_API_KEY_NONE}>없음</SelectItem>
-              ) : (
-                <>
-                  <SelectItem value={DASHBOARD_API_KEY_ALL}>전체</SelectItem>
-                  {apiKeyOptions.map((k: UsageLogApiKeyItemResponse) => (
-                    <SelectItem key={k.apiKeyId} value={k.apiKeyId}>
-                      {(k.alias?.trim() ? k.alias : k.apiKeyId).slice(0, 64)}
-                    </SelectItem>
-                  ))}
-                </>
-              )}
+            <SelectContent className="max-h-[min(70vh,26rem)]">
+              <DashboardApiKeySelectMenu
+                items={apiKeyOptions}
+                allValue={DASHBOARD_API_KEY_ALL}
+                showAllOption={
+                  !(
+                    (dataContext === "PERSONAL" || dataContext === "TEAM_MEMBER_ONLY") &&
+                    apiKeyOptions.length === 0
+                  )
+                }
+                noneValue={DASHBOARD_API_KEY_NONE}
+                showNoneOption={
+                  (dataContext === "PERSONAL" || dataContext === "TEAM_MEMBER_ONLY") &&
+                  apiKeyOptions.length === 0
+                }
+              />
             </SelectContent>
           </Select>
         </div>

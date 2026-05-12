@@ -30,6 +30,9 @@ import { formatKstIsoDate, addKstDays } from "@/lib/usage/kst-dates"
 import { formatRequestCount, formatTokenCount, formatUsd, toNumber } from "@/lib/usage/format"
 import { EMPTY_MEMBER_MODEL_USAGE_MSG } from "@/lib/usage/team-dashboard-empty"
 import { teamUsageBffBase } from "@/lib/usage/team-usage-bff-base"
+import { DASHBOARD_API_KEY_ALL } from "@/lib/usage/dashboard-api-key-constants"
+import { teamBffKeyToUsageOption } from "@/lib/usage/api-key-options"
+import { DashboardApiKeySelectMenu } from "@/components/usage/dashboard-api-key-select-menu"
 
 const PROVIDER_ALL = "__ALL__"
 const LAST_TEAM_STORAGE_KEY = "last_team_id"
@@ -72,7 +75,13 @@ type BffResponse = {
 }
 
 type TeamSummary = { id: string; name: string; createdAt?: string }
-type TeamApiKey = { id: string; alias: string; provider: string; updatedAt: string }
+type TeamApiKeyRow = {
+  id: string
+  alias: string
+  provider: string
+  updatedAt: string
+  status?: string
+}
 type PeriodMode = "today" | "7d" | "30d" | "custom"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -209,9 +218,9 @@ export default function TeamDashboard({
   const [teamsLoading, setTeamsLoading] = React.useState(true)
   const [teamsErr, setTeamsErr] = React.useState<string | null>(null)
   const [selectedTeamId, setSelectedTeamId] = React.useState("")
-  const [apiKeys, setApiKeys] = React.useState<TeamApiKey[]>([])
+  const [apiKeyRows, setApiKeyRows] = React.useState<TeamApiKeyRow[]>([])
   const [keysLoading, setKeysLoading] = React.useState(false)
-  const [selectedApiKeyId, setSelectedApiKeyId] = React.useState("")
+  const [selectedApiKeyId, setSelectedApiKeyId] = React.useState<string>(DASHBOARD_API_KEY_ALL)
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [data, setData] = React.useState<BffResponse | null>(null)
@@ -274,14 +283,14 @@ export default function TeamDashboard({
 
   React.useEffect(() => {
     if (!selectedTeamId) {
-      setApiKeys([])
+      setApiKeyRows([])
       return
     }
     let cancelled = false
     setKeysLoading(true)
     const base = teamUsageBffBase()
     if (!base) {
-      setApiKeys([])
+      setApiKeyRows([])
       setKeysLoading(false)
       return
     }
@@ -293,23 +302,29 @@ export default function TeamDashboard({
         const json = (await r.json()) as { apiKeys?: unknown }
         if (!r.ok || !Array.isArray(json.apiKeys)) return []
         return (json.apiKeys as unknown[])
-          .map((item): TeamApiKey | null => {
+          .map((item): TeamApiKeyRow | null => {
             if (!item || typeof item !== "object") return null
             const o = item as Record<string, unknown>
-            if ((typeof o.id !== "number" && typeof o.id !== "string") || typeof o.alias !== "string" || typeof o.provider !== "string") return null
+            if ((typeof o.id !== "number" && typeof o.id !== "string") || typeof o.alias !== "string" || typeof o.provider !== "string")
+              return null
             const updatedAt = typeof o.updatedAt === "string" ? o.updatedAt : ""
-            return { id: String(o.id), alias: o.alias, provider: o.provider, updatedAt }
+            const status = typeof o.status === "string" ? o.status : undefined
+            return { id: String(o.id), alias: o.alias, provider: o.provider, updatedAt, status }
           })
-          .filter((x): x is TeamApiKey => x !== null)
+          .filter((x): x is TeamApiKeyRow => x !== null)
           .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))
       })
       .then((sorted) => {
         if (cancelled) return
-        setApiKeys(sorted)
-        setSelectedApiKeyId((prev) => (prev && sorted.some((k) => k.id === prev) ? prev : sorted[0] ? sorted[0].id : ""))
+        setApiKeyRows(sorted)
+        setSelectedApiKeyId((prev) => {
+          if (prev === DASHBOARD_API_KEY_ALL) return DASHBOARD_API_KEY_ALL
+          if (prev && sorted.some((k) => k.id === prev)) return prev
+          return DASHBOARD_API_KEY_ALL
+        })
       })
       .catch(() => {
-        if (!cancelled) setApiKeys([])
+        if (!cancelled) setApiKeyRows([])
       })
       .finally(() => {
         if (!cancelled) setKeysLoading(false)
@@ -343,7 +358,7 @@ export default function TeamDashboard({
       from: range.from,
       to: range.to,
       provider: dashProvider === PROVIDER_ALL ? undefined : dashProvider,
-      apiKeyId: selectedApiKeyId || undefined,
+      apiKeyId: selectedApiKeyId !== DASHBOARD_API_KEY_ALL ? selectedApiKeyId : undefined,
     })
     fetch(`${base}/dashboard?${q}`, { credentials: "include", headers: { Accept: "application/json" } })
       .then(async (r) => {
@@ -418,7 +433,7 @@ export default function TeamDashboard({
     !!effectiveTeamId &&
     !loading &&
     !error &&
-    (!hasMainData || apiKeys.length === 0)
+    (!hasMainData || apiKeyRows.length === 0)
 
   /** 팀 목록 오류가 아니면, 팀 목록 로딩 중이거나 소속 팀이 있을 때 동일한 차트 격자를 유지한다. */
   const showDashChartShell = !teamsErr && (teamsLoading || hasTeamMembership)
@@ -477,9 +492,17 @@ export default function TeamDashboard({
         </div>
         <div className="space-y-2 sm:w-52">
           <Label>API Key</Label>
-          <Select value={selectedApiKeyId} onValueChange={setSelectedApiKeyId} disabled={keysLoading || apiKeys.length === 0}>
-            <SelectTrigger><SelectValue placeholder={keysLoading ? "불러오는 중…" : "키 선택"} /></SelectTrigger>
-            <SelectContent>{apiKeys.map((k) => <SelectItem key={k.id} value={String(k.id)}>{k.alias} ({k.provider})</SelectItem>)}</SelectContent>
+          <Select value={selectedApiKeyId} onValueChange={setSelectedApiKeyId} disabled={keysLoading}>
+            <SelectTrigger>
+              <SelectValue placeholder={keysLoading ? "불러오는 중…" : "전체"} />
+            </SelectTrigger>
+            <SelectContent className="max-h-[min(70vh,26rem)]">
+              <DashboardApiKeySelectMenu
+                items={apiKeyRows.map(teamBffKeyToUsageOption)}
+                allValue={DASHBOARD_API_KEY_ALL}
+                showAllOption
+              />
+            </SelectContent>
           </Select>
         </div>
         <div className="space-y-2 sm:w-44">
