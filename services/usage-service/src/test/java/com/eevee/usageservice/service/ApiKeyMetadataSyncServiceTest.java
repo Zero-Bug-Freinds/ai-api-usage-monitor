@@ -5,10 +5,13 @@ import com.eevee.usage.events.TokenUsage;
 import com.eevee.usage.events.UsageRecordedEvent;
 import com.eevee.usageservice.domain.ApiKeyMetadataEntity;
 import com.eevee.usageservice.domain.ApiKeyMetadataEntityId;
+import com.eevee.usageservice.domain.ApiKeyMetadataScope;
 import com.eevee.usageservice.domain.ApiKeyStatus;
 import com.eevee.usageservice.mq.TeamApiKeyDeletedEvent;
 import com.eevee.usageservice.mq.TeamApiKeyDeletionCancelledEvent;
 import com.eevee.usageservice.mq.TeamApiKeyDeletionScheduledEvent;
+import com.eevee.usageservice.mq.ExternalApiKeyStatus;
+import com.eevee.usageservice.mq.ExternalApiKeyStatusChangedEvent;
 import com.eevee.usageservice.mq.TeamApiKeyRegisteredEvent;
 import com.eevee.usageservice.mq.TeamApiKeyStatus;
 import com.eevee.usageservice.mq.TeamApiKeyStatusChangedEvent;
@@ -67,7 +70,9 @@ class ApiKeyMetadataSyncServiceTest {
                 1L,
                 "OPENAI",
                 "team-main",
-                "owner-1"
+                "owner-1",
+                null,
+                null
         );
         stubTeamMembers("owner-1", "1", List.of("owner-1"));
         var id = ApiKeyMetadataEntityId.team("101", "owner-1");
@@ -95,7 +100,9 @@ class ApiKeyMetadataSyncServiceTest {
                 2L,
                 "GOOGLE",
                 "team-google",
-                "owner-2"
+                "owner-2",
+                null,
+                null
         );
         stubTeamMembers("owner-2", "2", List.of("owner-2"));
         when(apiKeyMetadataRepository.findById(ApiKeyMetadataEntityId.team("202", "owner-2"))).thenReturn(Optional.empty());
@@ -116,7 +123,9 @@ class ApiKeyMetadataSyncServiceTest {
                 3L,
                 "OPENAI",
                 "team-openai",
-                "owner-3"
+                "owner-3",
+                null,
+                null
         );
         stubTeamMembers("owner-3", "3", List.of("owner-3"));
         when(apiKeyMetadataRepository.findById(ApiKeyMetadataEntityId.team("303", "owner-3"))).thenReturn(Optional.empty());
@@ -231,7 +240,7 @@ class ApiKeyMetadataSyncServiceTest {
                 "cafe-1",
                 null,
                 "fp",
-                "team",
+                "managed",
                 AiProvider.GOOGLE,
                 "gemini-pro",
                 new TokenUsage("gemini-pro", 1L, 1L, 2L, null, null, null, null, null, null),
@@ -288,6 +297,89 @@ class ApiKeyMetadataSyncServiceTest {
     }
 
     @Test
+    void upsertFromUsageRecordedEvent_managedSourceUsesPersonalMetadataDespiteTeamFields() {
+        when(apiKeyMetadataRepository.findById(ApiKeyMetadataEntityId.personal("888", "user@example.com")))
+                .thenReturn(Optional.empty());
+
+        UsageRecordedEvent event = new UsageRecordedEvent(
+                UUID.randomUUID(),
+                Instant.parse("2026-05-11T12:00:00Z"),
+                "c-1",
+                "user@example.com",
+                null,
+                "1",
+                "888",
+                "alias",
+                "999",
+                "fp",
+                "managed",
+                AiProvider.OPENAI,
+                "gpt-4o",
+                new TokenUsage("gpt-4o", 1L, 1L, 2L, null, null, null, null, null, null),
+                BigDecimal.ZERO,
+                "/p",
+                "api.openai.com",
+                false,
+                true,
+                200
+        );
+
+        service.upsertFromUsageRecordedEvent(event);
+
+        verify(apiKeyMetadataRepository).findById(eq(ApiKeyMetadataEntityId.personal("888", "user@example.com")));
+        verify(apiKeyMetadataRepository, never()).findById(eq(ApiKeyMetadataEntityId.team("999", "user@example.com")));
+    }
+
+    @Test
+    void upsertFromIdentity_setsTeamIdNullOnPersonalMetadata() {
+        ExternalApiKeyStatusChangedEvent event = new ExternalApiKeyStatusChangedEvent(
+                1,
+                Instant.parse("2026-05-01T00:00:00Z"),
+                42L,
+                "alias",
+                7L,
+                "OPENAI",
+                ExternalApiKeyStatus.ACTIVE
+        );
+        when(apiKeyMetadataRepository.findById(ApiKeyMetadataEntityId.personal("42", "7"))).thenReturn(Optional.empty());
+
+        service.upsertFromIdentity(event);
+
+        ArgumentCaptor<ApiKeyMetadataEntity> captor = ArgumentCaptor.forClass(ApiKeyMetadataEntity.class);
+        verify(apiKeyMetadataRepository).save(captor.capture());
+        assertThat(captor.getValue().getTeamId()).isNull();
+        assertThat(captor.getValue().getKeyScope()).isEqualTo(ApiKeyMetadataScope.PERSONAL);
+    }
+
+    @Test
+    void upsertFromTeamRegistered_fanOutFromRecipientUserIdsWithoutCallingTeamService() {
+        TeamApiKeyRegisteredEvent event = new TeamApiKeyRegisteredEvent(
+                "TEAM_API_KEY_REGISTERED",
+                Instant.parse("2026-05-01T00:00:00Z"),
+                101L,
+                1L,
+                "OPENAI",
+                "team-main",
+                "owner-1",
+                null,
+                List.of("user-a", "user-b", "user-c")
+        );
+        when(apiKeyMetadataRepository.findById(ApiKeyMetadataEntityId.team("101", "user-a"))).thenReturn(Optional.empty());
+        when(apiKeyMetadataRepository.findById(ApiKeyMetadataEntityId.team("101", "user-b"))).thenReturn(Optional.empty());
+        when(apiKeyMetadataRepository.findById(ApiKeyMetadataEntityId.team("101", "user-c"))).thenReturn(Optional.empty());
+
+        service.upsertFromTeamRegistered(event);
+
+        verify(teamServiceClient, never()).fetchTeamMemberUserIds(any(), any());
+        verify(apiKeyMetadataRepository, times(3)).save(any(ApiKeyMetadataEntity.class));
+        verify(apiKeyMetadataRepository).deleteTeamMetadataRowsForKeyNotInMemberList(
+                "101",
+                "1",
+                List.of("user-a", "user-b", "user-c")
+        );
+    }
+
+    @Test
     void upsertFromTeamRegistered_skipsSaveWhenProviderMissingAndNoExistingMetadata() {
         TeamApiKeyRegisteredEvent event = new TeamApiKeyRegisteredEvent(
                 "TEAM_API_KEY_REGISTERED",
@@ -296,7 +388,9 @@ class ApiKeyMetadataSyncServiceTest {
                 1L,
                 null,
                 "alias-only",
-                "owner-1"
+                "owner-1",
+                null,
+                null
         );
         stubTeamMembers("owner-1", "1", List.of("owner-1"));
         when(apiKeyMetadataRepository.findById(ApiKeyMetadataEntityId.team("888", "owner-1"))).thenReturn(Optional.empty());
@@ -320,7 +414,9 @@ class ApiKeyMetadataSyncServiceTest {
                 8L,
                 null,
                 "new-alias",
-                "owner-8"
+                "owner-8",
+                null,
+                null
         );
 
         service.upsertFromTeamUpdated(event);
