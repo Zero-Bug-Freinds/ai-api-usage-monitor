@@ -18,7 +18,8 @@ import java.util.Map;
 public class TeamBffQueryService {
     private static final List<ApiKeyStatus> VISIBLE_TEAM_KEY_STATUSES = List.of(
             ApiKeyStatus.ACTIVE,
-            ApiKeyStatus.DELETION_REQUESTED
+            ApiKeyStatus.DELETION_REQUESTED,
+            ApiKeyStatus.DELETED
     );
 
     private final TeamServiceClient teamServiceClient;
@@ -63,7 +64,8 @@ public class TeamBffQueryService {
                         entity.getKeyId(),
                         entity.getAlias(),
                         entity.getProvider(),
-                        entity.getUpdatedAt()
+                        entity.getUpdatedAt(),
+                        entity.getStatus().name()
                 ))
                 .toList();
     }
