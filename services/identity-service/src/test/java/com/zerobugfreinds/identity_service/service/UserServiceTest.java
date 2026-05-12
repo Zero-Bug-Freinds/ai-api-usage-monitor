@@ -183,7 +183,7 @@ class UserServiceTest {
 		verify(identityUserSyncEventPublisher).publishAfterCommit(
 				argThat(
 						ev -> IdentityUserSyncEventTypes.USER_PROFILE_UPDATED.equals(ev.eventType())
-								&& "9".equals(ev.userId())
+								&& "a@example.com".equals(ev.userId())
 				)
 		);
 	}

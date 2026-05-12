@@ -91,7 +91,7 @@ public class ExternalApiKeyStatusChangedEventPublisher {
 		);
 	}
 
-	private void publishJson(Object payload, String label, Object apiKeyOrKeyId, Long userId, Object statusOrRetain) {
+	private void publishJson(Object payload, String label, Object apiKeyOrKeyId, Object userId, Object statusOrRetain) {
 		publishJson(payload, label, apiKeyOrKeyId, userId, statusOrRetain, routingKey);
 	}
 
@@ -99,7 +99,7 @@ public class ExternalApiKeyStatusChangedEventPublisher {
 			Object payload,
 			String label,
 			Object apiKeyOrKeyId,
-			Long userId,
+			Object userId,
 			Object statusOrRetain,
 			String targetRoutingKey
 	) {

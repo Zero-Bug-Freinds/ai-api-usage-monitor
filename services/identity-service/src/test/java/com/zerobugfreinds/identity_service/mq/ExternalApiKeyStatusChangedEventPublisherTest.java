@@ -41,7 +41,7 @@ class ExternalApiKeyStatusChangedEventPublisherTest {
 		ExternalApiKeyStatusChangedEvent event = ExternalApiKeyStatusChangedEvent.of(
 				10L,
 				"Main key",
-				99L,
+				"owner@example.com",
 				"OPENAI",
 				ExternalApiKeyStatus.ACTIVE,
 				"abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"
@@ -60,7 +60,7 @@ class ExternalApiKeyStatusChangedEventPublisherTest {
 		assertThat(node.get("schemaVersion").asInt()).isEqualTo(ExternalApiKeyStatusChangedEvent.CURRENT_SCHEMA_VERSION);
 		assertThat(node.get("keyId").asLong()).isEqualTo(10L);
 		assertThat(node.get("alias").asText()).isEqualTo("Main key");
-		assertThat(node.get("userId").asLong()).isEqualTo(99L);
+		assertThat(node.get("userId").asText()).isEqualTo("owner@example.com");
 		assertThat(node.get("visibility").asText()).isEqualTo("PRIVATE");
 		assertThat(node.get("provider").asText()).isEqualTo("OPENAI");
 		assertThat(node.get("status").asText()).isEqualTo("ACTIVE");
@@ -78,7 +78,7 @@ class ExternalApiKeyStatusChangedEventPublisherTest {
 		);
 
 		ExternalApiKeyDeletedEvent deleted = ExternalApiKeyDeletedEvent.of(
-				99L,
+				"owner@example.com",
 				10L,
 				Instant.parse("2026-04-15T12:00:00Z"),
 				false,
@@ -97,7 +97,7 @@ class ExternalApiKeyStatusChangedEventPublisherTest {
 		ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
 		JsonNode node = mapper.readTree(jsonCaptor.getValue());
 		assertThat(node.get("eventType").asText()).isEqualTo(IdentityExternalApiKeyEventTypes.EXTERNAL_API_KEY_DELETED);
-		assertThat(node.get("userId").asLong()).isEqualTo(99L);
+		assertThat(node.get("userId").asText()).isEqualTo("owner@example.com");
 		assertThat(node.get("apiKeyId").asLong()).isEqualTo(10L);
 		assertThat(node.get("retainLogs").asBoolean()).isFalse();
 		assertThat(node.hasNonNull("occurredAt")).isTrue();
@@ -117,7 +117,7 @@ class ExternalApiKeyStatusChangedEventPublisherTest {
 		ExternalApiKeyBudgetChangedEvent event = ExternalApiKeyBudgetChangedEvent.of(
 				10L,
 				"Main key",
-				99L,
+				"owner@example.com",
 				"OPENAI",
 				ExternalApiKeyStatus.ACTIVE,
 				new BigDecimal("123.45"),
@@ -137,7 +137,7 @@ class ExternalApiKeyStatusChangedEventPublisherTest {
 		assertThat(node.get("eventType").asText()).isEqualTo(IdentityExternalApiKeyEventTypes.EXTERNAL_API_KEY_BUDGET_CHANGED);
 		assertThat(node.get("schemaVersion").asInt()).isEqualTo(ExternalApiKeyBudgetChangedEvent.CURRENT_SCHEMA_VERSION);
 		assertThat(node.get("keyId").asLong()).isEqualTo(10L);
-		assertThat(node.get("userId").asLong()).isEqualTo(99L);
+		assertThat(node.get("userId").asText()).isEqualTo("owner@example.com");
 		assertThat(node.get("visibility").asText()).isEqualTo("PRIVATE");
 		assertThat(node.get("monthlyBudgetUsd").asText()).isEqualTo("123.45");
 		assertThat(node.get("status").asText()).isEqualTo("ACTIVE");

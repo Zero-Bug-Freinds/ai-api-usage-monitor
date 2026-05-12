@@ -16,7 +16,7 @@ public record ExternalApiKeyDeletedEvent(
 		String eventType,
 
 		@JsonProperty("userId")
-		Long userId,
+		String userId,
 
 		@JsonProperty("apiKeyId")
 		Long apiKeyId,
@@ -35,7 +35,7 @@ public record ExternalApiKeyDeletedEvent(
 		String alias
 ) {
 	public static ExternalApiKeyDeletedEvent of(
-			Long userId,
+			String userId,
 			Long apiKeyId,
 			Instant occurredAt,
 			boolean retainLogs,

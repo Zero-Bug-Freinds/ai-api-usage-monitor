@@ -111,7 +111,7 @@ public class UserService {
 		identityUserSyncEventPublisher.publishAfterCommit(
 				IdentityUserSyncEvent.of(
 						IdentityUserSyncEventTypes.USER_REGISTERED,
-						saved.getId(),
+						normalizeEmail(saved.getEmail()),
 						saved.getEmail(),
 						saved.getName(),
 						Instant.now()
@@ -162,7 +162,7 @@ public class UserService {
 			identityUserSyncEventPublisher.publishAfterCommit(
 					IdentityUserSyncEvent.of(
 							IdentityUserSyncEventTypes.USER_PROFILE_UPDATED,
-							user.getId(),
+							normalizeEmail(user.getEmail()),
 							user.getEmail(),
 							user.getName(),
 							Instant.now()
@@ -335,13 +335,13 @@ public class UserService {
 		String refreshToken = jwtTokenProvider.createRefreshToken(user, activeTeamId);
 		boolean firstSession = replaceRefreshToken(user.getId(), refreshToken, activeTeamId, issuedAt);
 		applicationEventPublisher.publishEvent(
-				UserContextChangedEvent.of(user.getId(), activeTeamId, user.getRole().name())
+				UserContextChangedEvent.of(normalizeEmail(user.getEmail()), activeTeamId, user.getRole().name())
 		);
 		if (firstSession) {
 			identityUserSyncEventPublisher.publishAfterCommit(
 					IdentityUserSyncEvent.of(
 							IdentityUserSyncEventTypes.USER_FIRST_LOGIN_RECORDED,
-							user.getId(),
+							normalizeEmail(user.getEmail()),
 							user.getEmail(),
 							user.getName(),
 							Instant.now()

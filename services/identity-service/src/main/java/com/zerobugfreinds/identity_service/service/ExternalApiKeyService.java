@@ -9,6 +9,7 @@ import com.zerobugfreinds.identity_service.dto.InternalApiKeyLookupResponse;
 import com.zerobugfreinds.identity_service.dto.InternalApiKeyResponse;
 import com.zerobugfreinds.identity_service.dto.InternalApiKeyHashEntry;
 import com.zerobugfreinds.identity_service.entity.ExternalApiKeyEntity;
+import com.zerobugfreinds.identity_service.entity.User;
 import com.zerobugfreinds.identity_service.exception.AmbiguousExternalApiKeyHashException;
 import com.zerobugfreinds.identity_service.exception.DuplicateExternalApiKeyAliasException;
 import com.zerobugfreinds.identity_service.exception.DuplicateExternalApiKeyException;
@@ -530,7 +531,7 @@ public class ExternalApiKeyService {
 		ExternalApiKeyStatusChangedEvent event = ExternalApiKeyStatusChangedEvent.of(
 				entity.getId(),
 				entity.getKeyAlias(),
-				entity.getUserId(),
+				principalSubForUser(entity.getUserId()),
 				providerName(entity.getProvider()),
 				status,
 				entity.getKeyHash()
@@ -540,7 +541,7 @@ public class ExternalApiKeyService {
 
 	private void publishExternalApiKeyDeleted(ExternalApiKeyEntity entity, boolean retainLogs) {
 		ExternalApiKeyDeletedEvent event = ExternalApiKeyDeletedEvent.of(
-				entity.getUserId(),
+				principalSubForUser(entity.getUserId()),
 				entity.getId(),
 				Instant.now(),
 				retainLogs,
@@ -554,13 +555,20 @@ public class ExternalApiKeyService {
 		ExternalApiKeyBudgetChangedEvent event = ExternalApiKeyBudgetChangedEvent.of(
 				entity.getId(),
 				entity.getKeyAlias(),
-				entity.getUserId(),
+				principalSubForUser(entity.getUserId()),
 				providerName(entity.getProvider()),
 				status,
 				entity.getMonthlyBudgetUsd(),
 				entity.getKeyHash()
 		);
 		applicationEventPublisher.publishEvent(event);
+	}
+
+	private String principalSubForUser(Long userId) {
+		return userRepository.findById(userId)
+				.map(User::getEmail)
+				.map(email -> email.trim().toLowerCase(Locale.ROOT))
+				.orElseThrow(() -> new IllegalStateException("user not found for external API key owner userId=" + userId));
 	}
 
 	private static ExternalApiKeyProvider normalizeProvider(ExternalApiKeyProvider provider) {
