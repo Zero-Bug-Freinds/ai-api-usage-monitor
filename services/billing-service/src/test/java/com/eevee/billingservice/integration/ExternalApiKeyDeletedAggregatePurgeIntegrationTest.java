@@ -4,12 +4,9 @@ import com.eevee.billingservice.service.BillingAggregationJdbc;
 import com.eevee.usage.events.AiProvider;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zerobugfreinds.identity.events.ExternalApiKeyDeletedEvent;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.amqp.core.AmqpAdmin;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -37,17 +34,6 @@ class ExternalApiKeyDeletedAggregatePurgeIntegrationTest extends AbstractBilling
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
-
-    @Autowired
-    private AmqpAdmin amqpAdmin;
-
-    @Value("${billing.rabbit.identity-external-api-key-in.queue}")
-    private String identityExternalApiKeyQueue;
-
-    @BeforeEach
-    void waitForQueue() {
-        awaitQueuePresent(amqpAdmin, identityExternalApiKeyQueue, 90);
-    }
 
     private long countPersonalAggRows(String userIdStored, String apiKeyId) {
         Long d = jdbcTemplate.queryForObject(
@@ -111,13 +97,14 @@ class ExternalApiKeyDeletedAggregatePurgeIntegrationTest extends AbstractBilling
                 "alias"
         );
 
-        rabbitTemplate.convertAndSend(
+        convertAndSendWhenReady(
+                rabbitTemplate,
                 "identity.events",
                 "identity.external-api-key.status-changed",
                 objectMapper.writeValueAsString(ev)
         );
 
-        await().atMost(60, SECONDS).pollInterval(100, MILLISECONDS)
+        await().atMost(45, SECONDS).pollInterval(100, MILLISECONDS)
                 .until(() -> countPersonalAggRows(storedUserId, apiKeyId) == 0L);
     }
 
@@ -141,13 +128,14 @@ class ExternalApiKeyDeletedAggregatePurgeIntegrationTest extends AbstractBilling
 
         String json = "{\"eventType\":\"EXTERNAL_API_KEY_BUDGET_CHANGED\",\"userId\":\"" + storedUserId + "\",\"apiKeyId\":77}";
 
-        rabbitTemplate.convertAndSend(
+        convertAndSendWhenReady(
+                rabbitTemplate,
                 "identity.events",
                 "identity.external-api-key.status-changed",
                 json
         );
 
-        await().atMost(15, SECONDS).pollInterval(200, MILLISECONDS)
+        await().atMost(10, SECONDS).pollInterval(200, MILLISECONDS)
                 .untilAsserted(() -> assertThat(countPersonalAggRows(storedUserId, apiKeyId)).isEqualTo(before));
     }
 }

@@ -4,12 +4,9 @@ import com.eevee.billingservice.domain.BillingTeamApiKeyEntity;
 import com.eevee.billingservice.repository.BillingTeamApiKeyRepository;
 import com.eevee.billingservice.service.TeamApiKeyAggregationJdbc;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.amqp.core.AmqpAdmin;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -41,17 +38,6 @@ class TeamApiKeyDeletedAggregatePurgeIntegrationTest extends AbstractBillingInte
 
     @Autowired
     private BillingTeamApiKeyRepository billingTeamApiKeyRepository;
-
-    @Autowired
-    private AmqpAdmin amqpAdmin;
-
-    @Value("${billing.rabbit.team-domain-in.queue}")
-    private String teamDomainQueue;
-
-    @BeforeEach
-    void waitForQueue() {
-        awaitQueuePresent(amqpAdmin, teamDomainQueue, 90);
-    }
 
     private long countTeamAggRows(long teamApiKeyId) {
         Long d = jdbcTemplate.queryForObject(
@@ -112,13 +98,9 @@ class TeamApiKeyDeletedAggregatePurgeIntegrationTest extends AbstractBillingInte
                 "alias", "alias-a"
         ));
 
-        rabbitTemplate.convertAndSend(
-                "team.events",
-                "team.api.key.deleted",
-                json
-        );
+        convertAndSendWhenReady(rabbitTemplate, "team.events", "team.api.key.deleted", json);
 
-        await().atMost(60, SECONDS).pollInterval(100, MILLISECONDS)
+        await().atMost(45, SECONDS).pollInterval(100, MILLISECONDS)
                 .until(() -> countTeamAggRows(teamApiKeyId) == 0L
                         && billingTeamApiKeyRepository.findById(teamApiKeyId).isEmpty());
     }
@@ -144,13 +126,9 @@ class TeamApiKeyDeletedAggregatePurgeIntegrationTest extends AbstractBillingInte
                 "alias", "x"
         ));
 
-        rabbitTemplate.convertAndSend(
-                "team.events",
-                "team.api.key.registered",
-                json
-        );
+        convertAndSendWhenReady(rabbitTemplate, "team.events", "team.api.key.registered", json);
 
-        await().atMost(15, SECONDS).pollInterval(200, MILLISECONDS)
+        await().atMost(10, SECONDS).pollInterval(200, MILLISECONDS)
                 .untilAsserted(() -> assertThat(countTeamAggRows(teamApiKeyId)).isEqualTo(before));
     }
 }

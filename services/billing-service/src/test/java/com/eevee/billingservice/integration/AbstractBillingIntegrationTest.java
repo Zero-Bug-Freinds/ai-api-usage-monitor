@@ -1,7 +1,7 @@
 package com.eevee.billingservice.integration;
 
 import org.springframework.amqp.AmqpException;
-import org.springframework.amqp.core.AmqpAdmin;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -26,14 +26,14 @@ abstract class AbstractBillingIntegrationTest {
 
     @Container
     static final RabbitMQContainer rabbit = new RabbitMQContainer("rabbitmq:3.13-alpine")
-            .withStartupTimeout(Duration.ofMinutes(2));
+            .withStartupTimeout(Duration.ofSeconds(90));
 
     @Container
     static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
             .withDatabaseName("app")
             .withUsername("app")
             .withPassword("app")
-            .withStartupTimeout(Duration.ofMinutes(2));
+            .withStartupTimeout(Duration.ofSeconds(90));
 
     @DynamicPropertySource
     static void registerProps(DynamicPropertyRegistry r) {
@@ -49,16 +49,21 @@ abstract class AbstractBillingIntegrationTest {
     }
 
     /**
-     * Waits until {@link AmqpAdmin#getQueueProperties(String)} reports the queue exists.
-     * Awaitility's default {@code until} fails the whole wait if the predicate throws; during CI cold
-     * starts the first AMQP calls can throw {@link AmqpException} while the broker socket is not ready.
+     * Publishes when the broker accepts a connection; avoids failing the whole test on a single
+     * {@link AmqpException} during CI cold starts (replaces long {@code AmqpAdmin} queue probes).
      */
-    protected static void awaitQueuePresent(AmqpAdmin amqpAdmin, String queueName, long timeoutSeconds) {
-        await().atMost(timeoutSeconds, SECONDS)
-                .pollInterval(200, MILLISECONDS)
+    protected static void convertAndSendWhenReady(
+            RabbitTemplate rabbitTemplate,
+            String exchange,
+            String routingKey,
+            String body
+    ) {
+        await().atMost(45, SECONDS)
+                .pollInterval(150, MILLISECONDS)
                 .until(() -> {
                     try {
-                        return amqpAdmin.getQueueProperties(queueName) != null;
+                        rabbitTemplate.convertAndSend(exchange, routingKey, body);
+                        return true;
                     } catch (AmqpException e) {
                         return false;
                     }
