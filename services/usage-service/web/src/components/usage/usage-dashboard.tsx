@@ -34,6 +34,11 @@ import {
 } from "@ai-usage/ui"
 import { buildUsageQuery, fetchUsageJson } from "@/lib/usage/fetch-usage"
 import { teamUsageBffBase } from "@/lib/usage/team-usage-bff-base"
+import {
+  MY_USAGE_BY_TEAM_LAST_SELECTED_TEAM_ID,
+  type MemberTeamSummary,
+  pickMemberTeamIdFromSources,
+} from "@/lib/usage/team-member-team-picker"
 import { formatOccurredAtKst } from "@/lib/usage/format-occurred-at-kst"
 import { formatRequestCount, formatTokenCount, formatUsd, toNumber } from "@/lib/usage/format"
 import type {
@@ -85,8 +90,6 @@ const DASHBOARD_PROVIDER_STORAGE_KEY = "usage-dashboard:provider:v1"
 const DASHBOARD_PERIOD_STORAGE_KEY = "usage-dashboard:period:v1"
 /** 개인 대시보드 전용. 팀 대시보드·팀 멤버 뷰와 sessionStorage 충돌 없음. */
 const PERSONAL_DASHBOARD_SELECTED_API_KEY_ID = "PERSONAL_DASHBOARD_SELECTED_API_KEY_ID"
-/** 팀별 나의 사용량 전용 (팀 대시보드 `last_team_id` 와 분리). */
-const MY_USAGE_BY_TEAM_LAST_SELECTED_TEAM_ID = "MY_USAGE_BY_TEAM_LAST_SELECTED_TEAM_ID"
 const TEAM_MY_USAGE_PROVIDER_KEY = "TEAM_MY_USAGE_PROVIDER"
 const TEAM_MY_USAGE_PERIOD_KEY = "TEAM_MY_USAGE_PERIOD"
 const TEAM_MY_USAGE_SELECTED_API_KEY_ID_KEY = "TEAM_MY_USAGE_SELECTED_API_KEY_ID"
@@ -217,26 +220,6 @@ function readStoredTeamMyUsageApiKeyId(): string {
   } catch {
     return DASHBOARD_API_KEY_ALL
   }
-}
-
-type MemberTeamSummary = { id: string; name: string; createdAt?: string }
-
-function pickOldestMemberTeamId(list: MemberTeamSummary[]): string {
-  if (list.length === 0) return ""
-  const dated = list.filter((t) => t.createdAt)
-  if (dated.length === 0) return list[0]!.id
-  return [...dated].sort((a, b) => (a.createdAt ?? "").localeCompare(b.createdAt ?? ""))[0]!.id
-}
-
-function pickMemberTeamIdFromSources(list: MemberTeamSummary[]): string {
-  if (list.length === 0) return ""
-  if (typeof window !== "undefined") {
-    const saved = window.localStorage.getItem(MY_USAGE_BY_TEAM_LAST_SELECTED_TEAM_ID)
-    if (saved && list.some((t) => t.id === saved)) {
-      return saved
-    }
-  }
-  return pickOldestMemberTeamId(list)
 }
 
 function tooltipNumericValue(value: unknown): number {
