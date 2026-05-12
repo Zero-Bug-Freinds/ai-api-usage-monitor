@@ -1,5 +1,5 @@
 {
-  "model": "gpt-5.4-mini",
+  "model": "gpt-4o-mini",
   "messages": [
     {
       "role": "user",
@@ -7,5 +7,5 @@
     }
   ],
   "max_completion_tokens": 500,
-  "reasoning_effort": "low"
+  "reasoning_effort": "medium"
 }
