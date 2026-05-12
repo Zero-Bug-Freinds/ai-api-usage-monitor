@@ -2,10 +2,12 @@ package com.zerobugfreinds.ai_agent_service.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.zerobugfreinds.ai_agent_service.config.AiAgentGeminiHttpClientConfiguration;
 import com.zerobugfreinds.ai_agent_service.config.AiAgentGeminiProperties;
 import com.zerobugfreinds.ai_agent_service.dto.RecommendationConfidenceLevel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
@@ -14,6 +16,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
 
 @Service
 public class RecommendationGeminiService {
@@ -23,10 +28,19 @@ public class RecommendationGeminiService {
 
 	private final AiAgentGeminiProperties properties;
 	private final ObjectMapper objectMapper;
+	private final RestClient geminiRestClient;
+	private final ExecutorService geminiBatchExecutor;
 
-	public RecommendationGeminiService(AiAgentGeminiProperties properties, ObjectMapper objectMapper) {
+	public RecommendationGeminiService(
+			AiAgentGeminiProperties properties,
+			ObjectMapper objectMapper,
+			@Qualifier(AiAgentGeminiHttpClientConfiguration.GEMINI_REST_CLIENT) RestClient geminiRestClient,
+			@Qualifier(AiAgentGeminiHttpClientConfiguration.GEMINI_BATCH_EXECUTOR) ExecutorService geminiBatchExecutor
+	) {
 		this.properties = properties;
 		this.objectMapper = objectMapper;
+		this.geminiRestClient = geminiRestClient;
+		this.geminiBatchExecutor = geminiBatchExecutor;
 	}
 
 	public Optional<AiRecommendationResult> inferRecommendation(AiRecommendationPromptRequest request) {
@@ -82,12 +96,33 @@ public class RecommendationGeminiService {
 		if (requests == null || requests.isEmpty()) {
 			return Map.of();
 		}
+		List<AiRecommendationPromptRequest> ordered = requests.stream()
+				.filter(r -> r.keyId() != null && !r.keyId().isBlank())
+				.toList();
 		Map<String, AiRecommendationResult> byKeyId = new LinkedHashMap<>();
-		for (AiRecommendationPromptRequest request : requests) {
-			if (request.keyId() == null || request.keyId().isBlank()) {
-				continue;
+		if (ordered.isEmpty()) {
+			return byKeyId;
+		}
+		int parallelism = properties.resolvedBatchParallelism();
+		if (ordered.size() == 1 || parallelism <= 1) {
+			for (AiRecommendationPromptRequest request : ordered) {
+				String kid = request.keyId().trim();
+				inferRecommendation(request).ifPresent(result -> byKeyId.put(kid, result));
 			}
-			inferRecommendation(request).ifPresent(result -> byKeyId.put(request.keyId().trim(), result));
+			return byKeyId;
+		}
+		Map<String, Optional<AiRecommendationResult>> pending = new ConcurrentHashMap<>();
+		@SuppressWarnings("unchecked")
+		CompletableFuture<Void>[] futures = ordered.stream()
+				.map(request -> CompletableFuture.runAsync(() -> {
+					String kid = request.keyId().trim();
+					pending.put(kid, inferRecommendation(request));
+				}, geminiBatchExecutor))
+				.toArray(CompletableFuture[]::new);
+		CompletableFuture.allOf(futures).join();
+		for (AiRecommendationPromptRequest request : ordered) {
+			String kid = request.keyId().trim();
+			pending.getOrDefault(kid, Optional.empty()).ifPresent(result -> byKeyId.put(kid, result));
 		}
 		return byKeyId;
 	}
@@ -251,8 +286,7 @@ public class RecommendationGeminiService {
 				? "https://generativelanguage.googleapis.com"
 				: properties.baseUrl();
 		String uri = baseUrl + "/v1beta/models/" + configuredModel + ":generateContent?key=" + properties.apiKey();
-		return RestClient.create()
-				.post()
+		return geminiRestClient.post()
 				.uri(uri)
 				.body(body)
 				.retrieve()

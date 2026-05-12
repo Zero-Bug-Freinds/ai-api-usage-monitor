@@ -2,11 +2,13 @@ package com.zerobugfreinds.ai_agent_service.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.zerobugfreinds.ai_agent_service.config.AiAgentGeminiHttpClientConfiguration;
 import com.zerobugfreinds.ai_agent_service.config.AiAgentGeminiProperties;
 import com.zerobugfreinds.ai_agent_service.dto.AiBudgetForecastResult;
 import com.zerobugfreinds.ai_agent_service.dto.BudgetForecastRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
@@ -21,6 +23,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
 
 @Service
 public class GeminiAssistantService {
@@ -31,10 +36,19 @@ public class GeminiAssistantService {
 
 	private final AiAgentGeminiProperties properties;
 	private final ObjectMapper objectMapper;
+	private final RestClient geminiRestClient;
+	private final ExecutorService geminiBatchExecutor;
 
-	public GeminiAssistantService(AiAgentGeminiProperties properties, ObjectMapper objectMapper) {
+	public GeminiAssistantService(
+			AiAgentGeminiProperties properties,
+			ObjectMapper objectMapper,
+			@Qualifier(AiAgentGeminiHttpClientConfiguration.GEMINI_REST_CLIENT) RestClient geminiRestClient,
+			@Qualifier(AiAgentGeminiHttpClientConfiguration.GEMINI_BATCH_EXECUTOR) ExecutorService geminiBatchExecutor
+	) {
 		this.properties = properties;
 		this.objectMapper = objectMapper;
+		this.geminiRestClient = geminiRestClient;
+		this.geminiBatchExecutor = geminiBatchExecutor;
 	}
 
 	/**
@@ -79,12 +93,31 @@ public class GeminiAssistantService {
 		if (requests == null || requests.isEmpty()) {
 			return Map.of();
 		}
+		List<BudgetForecastRequest> ordered = requests.stream()
+				.filter(r -> r.keyId() != null)
+				.toList();
 		Map<Long, AiBudgetForecastResult> results = new LinkedHashMap<>();
-		for (BudgetForecastRequest request : requests) {
-			if (request.keyId() == null) {
-				continue;
+		if (ordered.isEmpty()) {
+			return results;
+		}
+		int parallelism = properties.resolvedBatchParallelism();
+		if (ordered.size() == 1 || parallelism <= 1) {
+			for (BudgetForecastRequest request : ordered) {
+				inferForecast(request).ifPresent(ai -> results.put(request.keyId(), ai));
 			}
-			inferForecast(request).ifPresent(ai -> results.put(request.keyId(), ai));
+			return results;
+		}
+		Map<Long, Optional<AiBudgetForecastResult>> byKeyId = new ConcurrentHashMap<>();
+		@SuppressWarnings("unchecked")
+		CompletableFuture<Void>[] futures = ordered.stream()
+				.map(request -> CompletableFuture.runAsync(
+						() -> byKeyId.put(request.keyId(), inferForecast(request)),
+						geminiBatchExecutor
+				))
+				.toArray(CompletableFuture[]::new);
+		CompletableFuture.allOf(futures).join();
+		for (BudgetForecastRequest request : ordered) {
+			byKeyId.getOrDefault(request.keyId(), Optional.empty()).ifPresent(ai -> results.put(request.keyId(), ai));
 		}
 		return results;
 	}
@@ -328,8 +361,7 @@ public class GeminiAssistantService {
 
 	private String callGenerateContentWithModel(String baseUrl, String model, Map<String, Object> body) {
 		String uri = baseUrl + "/v1beta/models/" + model + ":generateContent?key=" + properties.apiKey();
-		return RestClient.create()
-				.post()
+		return geminiRestClient.post()
 				.uri(uri)
 				.body(body)
 				.retrieve()
