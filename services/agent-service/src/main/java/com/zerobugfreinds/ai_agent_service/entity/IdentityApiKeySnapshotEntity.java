@@ -17,8 +17,8 @@ import java.util.Objects;
 public class IdentityApiKeySnapshotEntity {
 
 	@Id
-	@Column(nullable = false)
-	private Long userId;
+	@Column(nullable = false, length = 255)
+	private String userId;
 
 	@Id
 	@Column(nullable = false)
@@ -48,7 +48,7 @@ public class IdentityApiKeySnapshotEntity {
 	}
 
 	public IdentityApiKeySnapshotEntity(
-			Long userId,
+			String userId,
 			Long keyId,
 			String alias,
 			String provider,
@@ -69,7 +69,7 @@ public class IdentityApiKeySnapshotEntity {
 		this.updatedAt = updatedAt;
 	}
 
-	public Long getUserId() { return userId; }
+	public String getUserId() { return userId; }
 	public Long getKeyId() { return keyId; }
 	public String getAlias() { return alias; }
 	public String getProvider() { return provider; }
@@ -88,13 +88,13 @@ public class IdentityApiKeySnapshotEntity {
 	public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
 
 	public static class IdentityApiKeySnapshotId implements Serializable {
-		private Long userId;
+		private String userId;
 		private Long keyId;
 
 		public IdentityApiKeySnapshotId() {
 		}
 
-		public IdentityApiKeySnapshotId(Long userId, Long keyId) {
+		public IdentityApiKeySnapshotId(String userId, Long keyId) {
 			this.userId = userId;
 			this.keyId = keyId;
 		}

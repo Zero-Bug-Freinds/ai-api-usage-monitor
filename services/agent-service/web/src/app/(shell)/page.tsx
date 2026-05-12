@@ -564,9 +564,11 @@ export default function AgentPage() {
           const merged: AnalysisResult = {
             ...previous,
             ...nextResult,
-            data: nextResult.data ?? previous.data,
-            recommendation: nextResult.recommendation ?? previous.recommendation,
-            forecastGaps: nextResult.forecastGaps ?? previous.forecastGaps,
+            data: nextResult.error ? nextResult.data : (nextResult.data ?? previous.data),
+            recommendation: nextResult.recommendationError
+              ? nextResult.recommendation
+              : (nextResult.recommendation ?? previous.recommendation),
+            forecastGaps: nextResult.error ? nextResult.forecastGaps : (nextResult.forecastGaps ?? previous.forecastGaps),
           }
           return [merged]
         })
@@ -1087,8 +1089,12 @@ export default function AgentPage() {
                           {localizeAssistantMessage(result.data.assistantMessage)}
                         </div>
                         {result.data.anomalySummary ? (
-                          <div className="rounded-md border border-orange-200 bg-orange-50 p-3 text-sm text-orange-900">
-                            이상 탐지: {result.data.anomalySummary}
+                          <div className="rounded-md border border-orange-200 bg-orange-50 p-3 text-sm text-orange-900 dark:border-orange-900/50 dark:bg-orange-950/40 dark:text-orange-100">
+                            <p>이상 탐지: {result.data.anomalySummary}</p>
+                            <p className="mt-2 text-xs text-orange-800/90 dark:text-orange-200/90">
+                              구체적인 사용 패턴은 대시보드의 <strong>사용량</strong> 또는 <strong>상세 로그</strong> 탭에서
+                              확인해 주세요.
+                            </p>
                           </div>
                         ) : null}
                         {result.data.routingRecommendation ? (

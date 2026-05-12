@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.ArgumentCaptor;
 
 import java.time.Instant;
 import java.util.Optional;
@@ -48,7 +49,7 @@ class IdentityUserSyncServiceTest {
     void syncUser_acceptsJsonFromIdentityUserSyncEvent() throws Exception {
         IdentityUserSyncEvent outgoing = IdentityUserSyncEvent.of(
                 IdentityUserSyncEventTypes.USER_REGISTERED,
-                5L,
+                "sync@test.com",
                 "sync@test.com",
                 "Sync User",
                 Instant.parse("2026-01-02T03:04:05Z")
@@ -62,9 +63,47 @@ class IdentityUserSyncServiceTest {
     }
 
     @Test
+    void syncUser_whenEmailEmpty_derivesEmailFromSubPrincipalUserId() throws Exception {
+        IdentityUserSyncEvent outgoing = IdentityUserSyncEvent.of(
+                IdentityUserSyncEventTypes.USER_REGISTERED,
+                "User@Principal.COM",
+                "",
+                "Sync User",
+                Instant.parse("2026-01-02T03:04:05Z")
+        );
+        ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        String json = mapper.writeValueAsString(outgoing);
+
+        identityUserSyncService.syncUser(json);
+
+        ArgumentCaptor<IdentityUserSyncEntity> saved = ArgumentCaptor.forClass(IdentityUserSyncEntity.class);
+        verify(identityUserSyncRepository).save(saved.capture());
+        assertThat(saved.getValue().getUserId()).isEqualTo("user@principal.com");
+        assertThat(saved.getValue().getEmail()).isEqualTo("user@principal.com");
+    }
+
+    @Test
     void resolveMembershipLookupCandidates_blank_returnsEmpty() {
         assertThat(identityUserSyncService.resolveMembershipLookupCandidates(null)).isEmpty();
         assertThat(identityUserSyncService.resolveMembershipLookupCandidates("   ")).isEmpty();
+    }
+
+    @Test
+    void resolveMembershipLookupCandidates_subAsPkRow_loadsByEmailAndById() {
+        IdentityUserSyncEntity sync = IdentityUserSyncEntity.create(
+                "member@test.com",
+                "member@test.com",
+                "Member",
+                "USER_REGISTERED",
+                Instant.now()
+        );
+        when(identityUserSyncRepository.findById("member@test.com")).thenReturn(Optional.of(sync));
+        when(identityUserSyncRepository.findByEmailIgnoreCase("member@test.com")).thenReturn(Optional.of(sync));
+
+        Set<String> candidates = identityUserSyncService.resolveMembershipLookupCandidates("Member@Test.com");
+
+        assertThat(candidates).contains("Member@Test.com", "member@test.com");
+        verify(identityUserLookupClient).addResolvedPrincipalIdentifiers(eq("Member@Test.com"), any());
     }
 
     @Test

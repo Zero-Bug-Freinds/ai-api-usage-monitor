@@ -2,14 +2,14 @@ package com.zerobugfreinds.ai_agent_service.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.zerobugfreinds.ai_agent_service.config.AiAgentGeminiHttpClientConfiguration;
 import com.zerobugfreinds.ai_agent_service.config.AiAgentGeminiProperties;
 import com.zerobugfreinds.ai_agent_service.dto.AiBudgetForecastResult;
 import com.zerobugfreinds.ai_agent_service.dto.BudgetForecastRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientResponseException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -21,20 +21,32 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
 
 @Service
 public class GeminiAssistantService {
 
 	private static final Logger log = LoggerFactory.getLogger(GeminiAssistantService.class);
-	private static final String DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
 	private static final double FORECAST_TEMPERATURE = 0.0;
 
 	private final AiAgentGeminiProperties properties;
 	private final ObjectMapper objectMapper;
+	private final AgentLlmCompletionClient llmCompletionClient;
+	private final ExecutorService geminiBatchExecutor;
 
-	public GeminiAssistantService(AiAgentGeminiProperties properties, ObjectMapper objectMapper) {
+	public GeminiAssistantService(
+			AiAgentGeminiProperties properties,
+			ObjectMapper objectMapper,
+			AgentLlmCompletionClient llmCompletionClient,
+			@Qualifier(AiAgentGeminiHttpClientConfiguration.GEMINI_BATCH_EXECUTOR)
+			ExecutorService geminiBatchExecutor
+	) {
 		this.properties = properties;
 		this.objectMapper = objectMapper;
+		this.llmCompletionClient = llmCompletionClient;
+		this.geminiBatchExecutor = geminiBatchExecutor;
 	}
 
 	/**
@@ -42,8 +54,8 @@ public class GeminiAssistantService {
 	 * Returns empty when API key is missing, HTTP/parse fails, or the model output is invalid.
 	 */
 	public Optional<AiBudgetForecastResult> inferForecast(BudgetForecastRequest request) {
-		if (properties.apiKey() == null || properties.apiKey().isBlank()) {
-			log.warn("Gemini inference skipped: API key missing");
+		if (!llmCompletionClient.geminiConfigured() && !llmCompletionClient.deepseekConfigured()) {
+			log.warn("Budget LLM inference skipped: set AI_AGENT_DEEPSEEK_API_KEY and/or AI_AGENT_GEMINI_API_KEY (or GOOGLE_API_KEY chain for Gemini)");
 			return Optional.empty();
 		}
 		String requestId = UUID.randomUUID().toString();
@@ -62,10 +74,10 @@ public class GeminiAssistantService {
 			if (secondary.isPresent()) {
 				return secondary;
 			}
-			log.warn("Gemini inference failed after retry: invalid payload shape");
+			log.warn("Budget LLM inference failed after retry: invalid payload shape");
 			return Optional.empty();
 		} catch (Exception ex) {
-			log.warn("Gemini inference failed: {}", ex.getMessage());
+			log.warn("Budget LLM inference failed: {}", ex.getMessage());
 			return Optional.empty();
 		} finally {
 			logGeminiUsageSummary(usageAggregate);
@@ -79,12 +91,31 @@ public class GeminiAssistantService {
 		if (requests == null || requests.isEmpty()) {
 			return Map.of();
 		}
+		List<BudgetForecastRequest> ordered = requests.stream()
+				.filter(r -> r.keyId() != null)
+				.toList();
 		Map<Long, AiBudgetForecastResult> results = new LinkedHashMap<>();
-		for (BudgetForecastRequest request : requests) {
-			if (request.keyId() == null) {
-				continue;
+		if (ordered.isEmpty()) {
+			return results;
+		}
+		int parallelism = properties.resolvedBatchParallelism();
+		if (ordered.size() == 1 || parallelism <= 1) {
+			for (BudgetForecastRequest request : ordered) {
+				inferForecast(request).ifPresent(ai -> results.put(request.keyId(), ai));
 			}
-			inferForecast(request).ifPresent(ai -> results.put(request.keyId(), ai));
+			return results;
+		}
+		Map<Long, Optional<AiBudgetForecastResult>> byKeyId = new ConcurrentHashMap<>();
+		@SuppressWarnings("unchecked")
+		CompletableFuture<Void>[] futures = ordered.stream()
+				.map(request -> CompletableFuture.runAsync(
+						() -> byKeyId.put(request.keyId(), inferForecast(request)),
+						geminiBatchExecutor
+				))
+				.toArray(CompletableFuture[]::new);
+		CompletableFuture.allOf(futures).join();
+		for (BudgetForecastRequest request : ordered) {
+			byKeyId.getOrDefault(request.keyId(), Optional.empty()).ifPresent(ai -> results.put(request.keyId(), ai));
 		}
 		return results;
 	}
@@ -161,7 +192,7 @@ public class GeminiAssistantService {
 			String responseBody = callGenerateContent(prompt);
 			if (responseBody == null || responseBody.isBlank()) {
 				logGeminiUsage(requestId, keyId, attempt, prompt.length(), null, startedAt, usageAggregate);
-				log.warn("Gemini inference returned empty response body");
+				log.warn("Budget LLM returned empty response body");
 				return Optional.empty();
 			}
 			JsonNode root = objectMapper.readTree(responseBody);
@@ -181,7 +212,7 @@ public class GeminiAssistantService {
 			return parseAiForecast(forecast);
 		} catch (Exception ex) {
 			logGeminiUsage(requestId, keyId, attempt, prompt.length(), null, startedAt, usageAggregate);
-			log.warn("Gemini inference attempt failed: {}", ex.getMessage());
+			log.warn("Budget LLM inference attempt failed: {}", ex.getMessage());
 			return Optional.empty();
 		}
 	}
@@ -297,43 +328,7 @@ public class GeminiAssistantService {
 	}
 
 	private String callGenerateContent(String prompt) {
-		Map<String, Object> body = Map.of(
-				"contents", new Object[] {
-						Map.of("parts", new Object[] {Map.of("text", prompt)})
-				},
-				"generationConfig", Map.of(
-						"responseMimeType", "application/json",
-						"temperature", FORECAST_TEMPERATURE
-				)
-		);
-
-		String configuredModel = (properties.model() == null || properties.model().isBlank())
-				? DEFAULT_GEMINI_MODEL
-				: properties.model().trim();
-		String baseUrl = (properties.baseUrl() == null || properties.baseUrl().isBlank())
-				? "https://generativelanguage.googleapis.com"
-				: properties.baseUrl();
-		try {
-			return callGenerateContentWithModel(baseUrl, configuredModel, body);
-		} catch (RestClientResponseException ex) {
-			log.warn(
-					"Gemini call failed. model={}, status={}, responseBody={}",
-					configuredModel,
-					ex.getStatusCode(),
-					summarizeErrorBody(ex.getResponseBodyAsString())
-			);
-			throw ex;
-		}
-	}
-
-	private String callGenerateContentWithModel(String baseUrl, String model, Map<String, Object> body) {
-		String uri = baseUrl + "/v1beta/models/" + model + ":generateContent?key=" + properties.apiKey();
-		return RestClient.create()
-				.post()
-				.uri(uri)
-				.body(body)
-				.retrieve()
-				.body(String.class);
+		return llmCompletionClient.completeAsGeminiGenerateContentJson(prompt, FORECAST_TEMPERATURE);
 	}
 
 	private Optional<AiBudgetForecastResult> parseAiForecast(JsonNode node) {
@@ -353,15 +348,18 @@ public class GeminiAssistantService {
 		LocalDate today = LocalDate.now();
 		long computedDays = Math.max(0, ChronoUnit.DAYS.between(today, predicted));
 
+		if (node.has("daysUntilRunOut") && node.get("daysUntilRunOut").isIntegralNumber()) {
+			long modelDays = node.get("daysUntilRunOut").asLong();
+			if (Math.abs(modelDays - computedDays) > 1) {
+				log.info(
+						"Budget forecast: model daysUntilRunOut={} inconsistent with predictedRunOutDate vs today (derived={}); using derived only",
+						modelDays,
+						computedDays
+				);
+			}
+		}
+
 		long daysUntilRunOut = computedDays;
-		if (!node.has("daysUntilRunOut") || !node.get("daysUntilRunOut").isIntegralNumber()) {
-			return Optional.empty();
-		}
-		long modelDays = node.get("daysUntilRunOut").asLong();
-		if (Math.abs(modelDays - computedDays) > 1) {
-			return Optional.empty();
-		}
-		daysUntilRunOut = modelDays;
 
 		String health = textOrNull(node.get("healthStatus"));
 		if (health == null) {
@@ -473,14 +471,4 @@ public class GeminiAssistantService {
 		return compact.substring(0, 280) + "...";
 	}
 
-	private static String summarizeErrorBody(String body) {
-		if (body == null) {
-			return "";
-		}
-		String compact = body.replaceAll("\\s+", " ").trim();
-		if (compact.length() <= 600) {
-			return compact;
-		}
-		return compact.substring(0, 600) + "...";
-	}
 }

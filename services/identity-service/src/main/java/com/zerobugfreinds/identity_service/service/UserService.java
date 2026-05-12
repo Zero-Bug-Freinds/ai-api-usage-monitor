@@ -8,7 +8,6 @@ import com.zerobugfreinds.identity_service.dto.UpdateProfileRequest;
 import com.zerobugfreinds.identity_service.dto.LoginRequest;
 import com.zerobugfreinds.identity_service.dto.TokenResponse;
 import com.zerobugfreinds.identity_service.entity.User;
-import com.zerobugfreinds.identity_service.entity.RefreshTokenEntity;
 import com.zerobugfreinds.identity_service.exception.DuplicateEmailException;
 import com.zerobugfreinds.identity_service.exception.InvalidCredentialsException;
 import com.zerobugfreinds.identity_service.exception.InvalidSignupRequestException;
@@ -25,7 +24,9 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -47,6 +48,11 @@ import java.util.Set;
 public class UserService {
 	private static final Logger log = LoggerFactory.getLogger(UserService.class);
 
+	/**
+	 * 미존재 계정 로그인 시에도 {@link PasswordEncoder#matches} 비용을 맞추기 위한 더미 BCrypt 해시.
+	 */
+	private static final String LOGIN_TIMING_DUMMY_PLAINTEXT = "__identity_login_timing_dummy__";
+
 	private final UserRepository userRepository;
 	private final RefreshTokenRepository refreshTokenRepository;
 	private final PasswordEncoder passwordEncoder;
@@ -54,6 +60,8 @@ public class UserService {
 	private final TeamMembershipVerificationClient teamMembershipVerificationClient;
 	private final ApplicationEventPublisher applicationEventPublisher;
 	private final IdentityUserSyncEventPublisher identityUserSyncEventPublisher;
+	private final TransactionTemplate loginTokenTransactionTemplate;
+	private final String loginTimingDummyPasswordHash;
 
 	public UserService(
 			UserRepository userRepository,
@@ -62,7 +70,8 @@ public class UserService {
 			JwtTokenProvider jwtTokenProvider,
 			TeamMembershipVerificationClient teamMembershipVerificationClient,
 			ApplicationEventPublisher applicationEventPublisher,
-			IdentityUserSyncEventPublisher identityUserSyncEventPublisher
+			IdentityUserSyncEventPublisher identityUserSyncEventPublisher,
+			PlatformTransactionManager transactionManager
 	) {
 		this.userRepository = userRepository;
 		this.refreshTokenRepository = refreshTokenRepository;
@@ -71,6 +80,8 @@ public class UserService {
 		this.teamMembershipVerificationClient = teamMembershipVerificationClient;
 		this.applicationEventPublisher = applicationEventPublisher;
 		this.identityUserSyncEventPublisher = identityUserSyncEventPublisher;
+		this.loginTokenTransactionTemplate = new TransactionTemplate(transactionManager);
+		this.loginTimingDummyPasswordHash = passwordEncoder.encode(LOGIN_TIMING_DUMMY_PLAINTEXT);
 	}
 
 	/**
@@ -81,7 +92,7 @@ public class UserService {
 		validateSignupRequest(request);
 		String normalizedEmail = normalizeEmail(request.email());
 
-		if (userRepository.existsByEmailIgnoreCase(normalizedEmail)) {
+		if (userRepository.existsByEmail(normalizedEmail)) {
 			throw new DuplicateEmailException("이미 사용 중인 이메일입니다");
 		}
 		String encodedPassword = passwordEncoder.encode(request.password());
@@ -100,7 +111,7 @@ public class UserService {
 		identityUserSyncEventPublisher.publishAfterCommit(
 				IdentityUserSyncEvent.of(
 						IdentityUserSyncEventTypes.USER_REGISTERED,
-						saved.getId(),
+						normalizeEmail(saved.getEmail()),
 						saved.getEmail(),
 						saved.getName(),
 						Instant.now()
@@ -128,7 +139,7 @@ public class UserService {
 			String normalizedEmail = normalizeEmail(rawEmail);
 			assertValidProfileEmail(normalizedEmail);
 			if (!normalizedEmail.equalsIgnoreCase(user.getEmail())) {
-				userRepository.findByEmailIgnoreCase(normalizedEmail)
+				userRepository.findByEmail(normalizedEmail)
 						.filter(other -> !other.getId().equals(userId))
 						.ifPresent(other -> {
 							throw new DuplicateEmailException("이미 사용 중인 이메일입니다");
@@ -151,7 +162,7 @@ public class UserService {
 			identityUserSyncEventPublisher.publishAfterCommit(
 					IdentityUserSyncEvent.of(
 							IdentityUserSyncEventTypes.USER_PROFILE_UPDATED,
-							user.getId(),
+							normalizeEmail(user.getEmail()),
 							user.getEmail(),
 							user.getName(),
 							Instant.now()
@@ -179,21 +190,22 @@ public class UserService {
 
 	/**
 	 * 로그인: 이메일/비밀번호를 검증하고 JWT 액세스 토큰을 발행한다.
+	 * BCrypt 검증은 토큰 발급 트랜잭션과 분리하고, 리프레시 토큰·커밋 후 이벤트만 짧은 트랜잭션으로 묶는다.
 	 */
-	@Transactional
 	public TokenResponse login(LoginRequest request) {
 		String normalizedEmail = normalizeEmail(request.email());
-		User user = userRepository.findByEmailIgnoreCase(normalizedEmail)
-				.orElseThrow(() -> new InvalidCredentialsException("이메일 또는 비밀번호가 올바르지 않습니다"));
-
+		Optional<User> userOpt = userRepository.findByEmail(normalizedEmail);
+		if (userOpt.isEmpty()) {
+			passwordEncoder.matches(request.password(), loginTimingDummyPasswordHash);
+			throw new InvalidCredentialsException("이메일 또는 비밀번호가 올바르지 않습니다");
+		}
+		User user = userOpt.get();
 		if (!passwordEncoder.matches(request.password(), user.getPassword())) {
 			throw new InvalidCredentialsException("이메일 또는 비밀번호가 올바르지 않습니다");
 		}
-
-		return issueTokenPair(user, null);
+		return issueTokenPairInTransaction(user, null);
 	}
 
-	@Transactional
 	public TokenResponse switchTeam(Long authenticatedUserId, Long targetTeamId) {
 		if (authenticatedUserId == null) {
 			throw new IllegalArgumentException("인증 사용자 정보가 없습니다");
@@ -220,7 +232,7 @@ public class UserService {
 		if (!isValidMember) {
 			throw new IllegalArgumentException("요청한 팀의 활성 멤버가 아닙니다");
 		}
-		return issueTokenPair(user, targetTeamId);
+		return issueTokenPairInTransaction(user, targetTeamId);
 	}
 
 	@Transactional(readOnly = true)
@@ -228,7 +240,7 @@ public class UserService {
 		if (email == null || email.isBlank()) {
 			return false;
 		}
-		return userRepository.existsByEmailIgnoreCase(normalizeEmail(email));
+		return userRepository.existsByEmail(normalizeEmail(email));
 	}
 
 	/**
@@ -241,7 +253,7 @@ public class UserService {
 		}
 		String t = raw.trim();
 		if (t.contains("@")) {
-			return userRepository.findByEmailIgnoreCase(normalizeEmail(t))
+			return userRepository.findByEmail(normalizeEmail(t))
 					.map(u -> new InternalUserPrincipalResponse(String.valueOf(u.getId()), normalizeEmail(u.getEmail())));
 		}
 		try {
@@ -301,7 +313,7 @@ public class UserService {
 			return userRepository.findById(userId)
 					.orElseThrow(() -> new InvalidCredentialsException("사용자 정보를 찾을 수 없습니다"));
 		} catch (NumberFormatException ignored) {
-			return userRepository.findByEmailIgnoreCase(normalizeEmail(normalized))
+			return userRepository.findByEmail(normalizeEmail(normalized))
 					.orElseThrow(() -> new InvalidCredentialsException("사용자 정보를 찾을 수 없습니다"));
 		}
 	}
@@ -310,19 +322,26 @@ public class UserService {
 		return email.trim().toLowerCase(Locale.ROOT);
 	}
 
+	/**
+	 * 리프레시 토큰 UPSERT 및 커밋 이후 발행 이벤트를 한 트랜잭션 경계에 둔다.
+	 */
+	private TokenResponse issueTokenPairInTransaction(User user, Long activeTeamId) {
+		return loginTokenTransactionTemplate.execute(status -> issueTokenPair(user, activeTeamId));
+	}
+
 	private TokenResponse issueTokenPair(User user, Long activeTeamId) {
-		boolean firstSession = refreshTokenRepository.countByUserId(user.getId()) == 0;
+		Instant issuedAt = Instant.now();
 		String accessToken = jwtTokenProvider.createAccessToken(user, activeTeamId);
 		String refreshToken = jwtTokenProvider.createRefreshToken(user, activeTeamId);
-		replaceRefreshToken(user.getId(), refreshToken, activeTeamId);
+		boolean firstSession = replaceRefreshToken(user.getId(), refreshToken, activeTeamId, issuedAt);
 		applicationEventPublisher.publishEvent(
-				UserContextChangedEvent.of(user.getId(), activeTeamId, user.getRole().name())
+				UserContextChangedEvent.of(normalizeEmail(user.getEmail()), activeTeamId, user.getRole().name())
 		);
 		if (firstSession) {
 			identityUserSyncEventPublisher.publishAfterCommit(
 					IdentityUserSyncEvent.of(
 							IdentityUserSyncEventTypes.USER_FIRST_LOGIN_RECORDED,
-							user.getId(),
+							normalizeEmail(user.getEmail()),
 							user.getEmail(),
 							user.getName(),
 							Instant.now()
@@ -338,15 +357,15 @@ public class UserService {
 		);
 	}
 
-	private void replaceRefreshToken(Long userId, String refreshToken, Long activeTeamId) {
-		refreshTokenRepository.deleteAllByUserId(userId);
-		RefreshTokenEntity tokenEntity = RefreshTokenEntity.issue(
+	private boolean replaceRefreshToken(Long userId, String refreshToken, Long activeTeamId, Instant issuedAt) {
+		Instant expiresAt = issuedAt.plusSeconds(jwtTokenProvider.getRefreshTokenTtlSeconds());
+		return refreshTokenRepository.upsertByUserId(
 				userId,
 				sha256Hex(refreshToken),
 				activeTeamId,
-				Instant.now().plusSeconds(jwtTokenProvider.getRefreshTokenTtlSeconds())
+				expiresAt,
+				issuedAt
 		);
-		refreshTokenRepository.save(tokenEntity);
 	}
 
 	private static String sha256Hex(String value) {

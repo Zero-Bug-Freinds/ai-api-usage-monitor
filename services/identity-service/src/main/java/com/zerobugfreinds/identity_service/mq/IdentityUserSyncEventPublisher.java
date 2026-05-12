@@ -4,17 +4,20 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.zerobugfreinds.identity.events.IdentityUserSyncEvent;
+import com.zerobugfreinds.identity_service.config.RabbitOutboundAsyncConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
  * team-service 가 {@code identity_user_sync} 를 채우기 위해 구독하는 사용자 동기화 메시지를 발행한다.
+ * 커밋 이후 발행은 {@link Async} 로 분리되며, 전송 실패는 ERROR 로그만 남긴다({@link #publishImmediately} 는 예외 전파).
  */
 @Component
 public class IdentityUserSyncEventPublisher {
@@ -50,15 +53,20 @@ public class IdentityUserSyncEventPublisher {
      * 관리용 재발행·테스트 등 즉시 발행이 필요할 때 사용한다.
      */
     public void publishImmediately(IdentityUserSyncEvent event) {
-        sendJson(event);
+        sendJson(event, true);
     }
 
+    @Async(RabbitOutboundAsyncConfig.RABBIT_TRANSACTIONAL_OUTBOUND_EXECUTOR)
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onCommitted(IdentityUserSyncCommitted wrapped) {
-        sendJson(wrapped.event());
+        sendJson(wrapped.event(), false);
     }
 
-    private void sendJson(IdentityUserSyncEvent event) {
+    /**
+     * @param failHard {@code true} 이면 직렬화·전송 실패 시 예외를 던진다(동기 {@link #publishImmediately} 용).
+     *                 {@code false} 이면 커밋 후 비동기 발행용으로 ERROR 로그만 남긴다.
+     */
+    private void sendJson(IdentityUserSyncEvent event, boolean failHard) {
         try {
             String json = EVENT_JSON.writeValueAsString(event);
             rabbitTemplate.convertAndSend(exchange, routingKey, json);
@@ -70,7 +78,29 @@ public class IdentityUserSyncEventPublisher {
                     routingKey
             );
         } catch (JsonProcessingException e) {
-            throw new IllegalStateException("IdentityUserSyncEvent serialization failed", e);
+            log.error(
+                    "IdentityUserSyncEvent JSON serialization failed userId={} eventType={} exchange={} routingKey={}",
+                    event.userId(),
+                    event.eventType(),
+                    exchange,
+                    routingKey,
+                    e
+            );
+            if (failHard) {
+                throw new IllegalStateException("IdentityUserSyncEvent serialization failed", e);
+            }
+        } catch (Exception e) {
+            log.error(
+                    "RabbitMQ convertAndSend failed for IdentityUserSyncEvent userId={} eventType={} exchange={} routingKey={}",
+                    event.userId(),
+                    event.eventType(),
+                    exchange,
+                    routingKey,
+                    e
+            );
+            if (failHard) {
+                throw new IllegalStateException("IdentityUserSyncEvent Rabbit publish failed", e);
+            }
         }
     }
 }
