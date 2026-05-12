@@ -3,6 +3,7 @@ package com.zerobugfreinds.ai_agent_service.mq;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.zerobugfreinds.ai_agent_service.service.ApiKeyUsageDataCleanupService;
 import com.zerobugfreinds.ai_agent_service.service.EventDebugService;
 import com.zerobugfreinds.ai_agent_service.service.IdentityApiKeySnapshotService;
 import com.zerobugfreinds.identity.events.ExternalApiKeyBudgetChangedEvent;
@@ -35,15 +36,18 @@ public class IdentityExternalApiKeyEventListener {
 
 	private final ObjectMapper objectMapper;
 	private final IdentityApiKeySnapshotService snapshotService;
+	private final ApiKeyUsageDataCleanupService apiKeyUsageDataCleanupService;
 	private final EventDebugService eventDebugService;
 
 	public IdentityExternalApiKeyEventListener(
 			ObjectMapper objectMapper,
 			IdentityApiKeySnapshotService snapshotService,
+			ApiKeyUsageDataCleanupService apiKeyUsageDataCleanupService,
 			EventDebugService eventDebugService
 	) {
 		this.objectMapper = objectMapper;
 		this.snapshotService = snapshotService;
+		this.apiKeyUsageDataCleanupService = apiKeyUsageDataCleanupService;
 		this.eventDebugService = eventDebugService;
 	}
 
@@ -60,6 +64,9 @@ public class IdentityExternalApiKeyEventListener {
 				eventDebugService.record(IdentityExternalApiKeyEventTypes.EXTERNAL_API_KEY_DELETED, headers, json);
 				ExternalApiKeyDeletedEvent deleted = parseDeletedEvent(root);
 				snapshotService.delete(deleted);
+				if (!deleted.retainLogs() && deleted.apiKeyId() != null) {
+					apiKeyUsageDataCleanupService.purgeByApiKeyId(String.valueOf(deleted.apiKeyId()));
+				}
 				return;
 			}
 
