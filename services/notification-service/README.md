@@ -33,10 +33,26 @@ notification-service는 선택적으로 **팀 도메인 이벤트**(`TEAM_CREATE
 
 ## Billing 예산 임계 이벤트 (RabbitMQ, 인앱 알림)
 
-notification-service는 billing-service가 발행하는 `billing.budget.threshold.reached` 이벤트를 선택적으로 소비해 **인앱 알림**을 생성한다.
+notification-service는 billing-service가 발행하는 예산 임계 이벤트를 **두 개의 라우팅 키**로 나누어 소비할 수 있다.
+
+### 개인·Identity API 키 (`billing.budget.threshold.reached`)
 
 - **토폴로지(기본)**: exchange `billing.events`, routing key `billing.budget.threshold.reached`
-- **활성화 플래그**: `BILLING_EVENTS_CONSUMER_ENABLED=true` (기본값; 비활성화 시 소비자 미기동)
+- **활성화 플래그**: `BILLING_EVENTS_CONSUMER_ENABLED=true` (기본값; 비활성화 시 이 소비자 미기동)
+- **큐(기본)**: `BILLING_EVENTS_QUEUE_NAME` → `notification.billing.events`
 - **브로커 URL**: `RABBITMQ_URL` (필수)
 - **멱등(dedupe)**: `NotificationDelivery.dedupeKey` 유니크 제약으로 동일 임계 이벤트의 중복 인앱 생성 방지
   - dedupe 키의 임계값 파트는 `thresholdPct`를 퍼센트 정수로 정규화해 `pct{n}` 형식을 사용한다(예: 0.8 → `pct80`).
+- **인앱 `type`**: `billing:budget-threshold`
+
+### 팀 API 키 (`billing.team.budget.threshold.reached`)
+
+- **토폴로지(기본)**: exchange `billing.events`, routing key `billing.team.budget.threshold.reached` (**개인 키 스트림과 다른 전용 큐로 바인딩할 것**)
+- **활성화 플래그**: `BILLING_TEAM_EVENTS_CONSUMER_ENABLED=true` (기본값)
+- **큐(기본)**: `BILLING_TEAM_EVENTS_QUEUE_NAME` → `notification.billing.team.events`
+- **assert**: `BILLING_TEAM_EVENTS_ASSERT_TOPOLOGY`(기본 `true`), `BILLING_TEAM_EVENTS_EXCHANGE_NAME`, `BILLING_TEAM_EVENTS_BINDING_KEYS`, `BILLING_TEAM_EVENTS_PREFETCH`
+- **팀원 조회**: 이벤트의 `triggerUserId`를 `X-User-Id`로 넣어 team-service `GET /api/v1/teams/{teamId}/members`를 호출하고, 팀 이름은 `GET /internal/teams/{teamId}`로 조회한다(`TEAM_SERVICE_BASE_URL`).
+- **멱등**: 수신 사용자(`targetUserId`)마다 별도 `NotificationDelivery.dedupeKey`(팀·키·월·임계·사용자 조합).
+- **인앱 `type`**: `billing:team-api-key-budget-threshold`
+
+페이로드·헤더 정본은 루트 [`docs/billing-outbound-events.md`](../../docs/billing-outbound-events.md) (§2 및 §2.1).

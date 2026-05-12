@@ -1,6 +1,6 @@
 # billing-service
 
-타 서비스가 RabbitMQ로 **billing이 발행하는(outbound) 이벤트**를 구독할 때는 저장소 루트의 [`docs/billing-outbound-events.md`](../../docs/billing-outbound-events.md) 를 본다.
+타 서비스가 RabbitMQ로 **billing이 발행하는(outbound) 이벤트**를 구독할 때는 저장소 루트의 [`docs/billing-outbound-events.md`](../../docs/billing-outbound-events.md) 를 본다. 예산 임계는 **개인·Identity 키**용 `billing.budget.threshold.reached`와 **팀 API 키**용 `billing.team.budget.threshold.reached`(페이로드·라우팅 키가 다름)로 분리되어 있다.
 
 ## Identity 예산(월 예산 USD) 연동 설정
 
