@@ -1,6 +1,7 @@
 package com.eevee.usageservice.service;
 
 import com.eevee.usage.events.DailyCumulativeTokensUpdatedEvent;
+import com.eevee.usageservice.domain.ApiKeyMetadataEntityId;
 import com.eevee.usageservice.domain.UsageRecordedLogEntity;
 import com.eevee.usageservice.repository.ApiKeyMetadataRepository;
 import com.eevee.usageservice.repository.analytics.DailyCumulativeTokenRollupRepository;
@@ -52,7 +53,7 @@ public class DailyCumulativeTokensAfterRecordedService {
                 delta
         );
         String apiKeyIdPayload = apiKeyKey.isEmpty() ? null : apiKeyKey;
-        String apiKeyAlias = resolveAlias(apiKeyKey);
+        String apiKeyAlias = resolveAlias(entity);
         Instant occurredAt = Instant.now();
         var outbound = new DailyCumulativeTokensUpdatedEvent(
                 DailyCumulativeTokensUpdatedEvent.CURRENT_SCHEMA_VERSION,
@@ -67,15 +68,25 @@ public class DailyCumulativeTokensAfterRecordedService {
         eventPublisher.ifPresent(p -> p.publish(outbound));
     }
 
-    private String resolveAlias(String apiKeyKey) {
-        if (apiKeyKey == null || apiKeyKey.isEmpty()) {
-            return null;
+    private String resolveAlias(UsageRecordedLogEntity entity) {
+        if (entity.getTeamApiKeyId() != null && !entity.getTeamApiKeyId().isBlank()) {
+            var id = ApiKeyMetadataEntityId.team(entity.getTeamApiKeyId().trim(), entity.getUserId().trim());
+            return apiKeyMetadataRepository.findById(id)
+                    .map(meta -> {
+                        String a = meta.getAlias();
+                        return a != null && !a.isBlank() ? a : null;
+                    })
+                    .orElse(null);
         }
-        return apiKeyMetadataRepository.findById(apiKeyKey)
-                .map(meta -> {
-                    String a = meta.getAlias();
-                    return a != null && !a.isBlank() ? a : null;
-                })
-                .orElse(null);
+        if (entity.getApiKeyId() != null && !entity.getApiKeyId().isBlank()) {
+            var id = ApiKeyMetadataEntityId.personal(entity.getApiKeyId().trim(), entity.getUserId().trim());
+            return apiKeyMetadataRepository.findById(id)
+                    .map(meta -> {
+                        String a = meta.getAlias();
+                        return a != null && !a.isBlank() ? a : null;
+                    })
+                    .orElse(null);
+        }
+        return null;
     }
 }
