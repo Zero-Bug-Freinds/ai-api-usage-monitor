@@ -17,6 +17,7 @@ import com.eevee.usageservice.mq.TeamApiKeyUpdatedEvent;
 import com.eevee.usageservice.repository.ApiKeyMetadataRepository;
 import com.eevee.usageservice.repository.UsageRecordedLogRepository;
 import com.eevee.usageservice.service.bff.team.TeamServiceClient;
+import com.eevee.usageservice.usage.UsageRecordedEventScopeNormalizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -144,6 +145,12 @@ public class ApiKeyMetadataSyncService {
         if (event == null) {
             return;
         }
+        String normalizedTeamId = UsageRecordedEventScopeNormalizer.normalizeTeamId(event.teamId());
+        String normalizedTeamApiKeyId = UsageRecordedEventScopeNormalizer.normalizeTeamApiKeyId(
+                event.teamApiKeyId(),
+                normalizedTeamId
+        );
+
         String metadataKeyId = resolveMetadataKeyIdFromUsage(event);
         if (!StringUtils.hasText(metadataKeyId)) {
             return;
@@ -151,16 +158,29 @@ public class ApiKeyMetadataSyncService {
 
         Instant updatedAt = event.occurredAt() != null ? event.occurredAt() : Instant.now();
 
+        /*
+         * Team vs personal branch uses the raw event's teamApiKeyId presence, not normalizedTeamApiKeyId.
+         * Deferred: external-system keys and proxy reverse-lookup may send teamApiKeyId without teamId; then the log
+         * stores team_api_key_id as null (see UsageRecordedService.map) while metadata upsert may still follow this
+         * branch. Unifying that edge case is deferred until the full external-key usage pipeline exists.
+         */
         if (StringUtils.hasText(event.teamApiKeyId())) {
-            String teamId = event.teamId() != null ? event.teamId().trim() : "";
-            String memberUserId = resolveUserId(event, metadataKeyId);
-            var id = ApiKeyMetadataEntityId.team(metadataKeyId.trim(), memberUserId);
+            String teamKeyForMetadata = normalizedTeamApiKeyId != null
+                    ? normalizedTeamApiKeyId
+                    : metadataKeyId.trim();
+            String memberUserId = resolveUserId(event, teamKeyForMetadata);
+            var id = ApiKeyMetadataEntityId.team(teamKeyForMetadata, memberUserId);
             ApiKeyMetadataEntity entity = apiKeyMetadataRepository.findById(id)
-                    .orElseGet(() -> ApiKeyMetadataEntity.createTeamRow(metadataKeyId.trim(), memberUserId, teamId));
+                    .orElseGet(() -> ApiKeyMetadataEntity.createTeamRow(
+                            teamKeyForMetadata,
+                            memberUserId,
+                            StringUtils.hasText(normalizedTeamId) ? normalizedTeamId : null
+                    ));
 
             String alias = StringUtils.hasText(event.apiKeyAlias()) ? event.apiKeyAlias().trim() : entity.getAlias();
+            String teamIdForApply = StringUtils.hasText(normalizedTeamId) ? normalizedTeamId : entity.getTeamId();
             entity.apply(
-                    StringUtils.hasText(teamId) ? teamId : entity.getTeamId(),
+                    teamIdForApply,
                     entity.getProvider(),
                     alias,
                     entity.getStatus() != null ? entity.getStatus() : ApiKeyStatus.ACTIVE,
@@ -187,8 +207,12 @@ public class ApiKeyMetadataSyncService {
     }
 
     /**
-     * Team traffic: prefer {@link UsageRecordedEvent#teamApiKeyId()} as metadata PK (team key row id).
-     * Personal traffic: {@link UsageRecordedEvent#apiKeyId()}.
+     * Resolves the logical key id for {@link ApiKeyMetadataEntity} rows from a usage event.
+     * <p>
+     * Contract (Step 1): On team traffic, {@link UsageRecordedEvent#apiKeyId()} and {@link UsageRecordedEvent#teamApiKeyId()}
+     * may carry the same value (team key row id). Consumers must treat {@code teamApiKeyId} as the primary identifier
+     * for team-scope metadata when it is non-blank; personal scope uses {@code apiKeyId} only when {@code teamApiKeyId}
+     * is absent.
      */
     private static String resolveMetadataKeyIdFromUsage(UsageRecordedEvent event) {
         if (StringUtils.hasText(event.teamApiKeyId())) {
