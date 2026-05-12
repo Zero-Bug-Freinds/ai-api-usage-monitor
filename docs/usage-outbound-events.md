@@ -8,24 +8,28 @@ Inbound streams (proxy `UsageRecordedEvent`, billing `UsageCostFinalizedEvent`, 
 
 ## Step 1 — Agent prediction logic vs usage data (reference)
 
-**Source:** `services/agent-service` `BudgetForecastService` + `BudgetForecastRequest`.
+**Source:** `services/agent-service` `BudgetForecastService` + `BudgetForecastRequest` + `GeminiAssistantService`.
 
-The forecast uses:
+**End-to-end behavior today:** `BudgetForecastService` **normalizes** the incoming `BudgetForecastRequest` (for example preferring **usage prediction snapshot** daily spend when present, rolling up **7-day token totals** from usage DB when the caller omits a daily token series). It then calls **Gemini** (`GeminiAssistantService.inferForecast`) with a JSON payload built from that request. The model returns a single JSON object (predicted run-out date, `healthStatus`, Korean copy, **`anomalySummary`**, routing fields, etc.). There is **no** separate Java-side anomaly scorer (no z-score, no fixed “last day ÷ prior-day average ≥ 1.5” threshold in code).
 
-| Input | Role in algorithm |
-|--------|-------------------|
-| `monthlyBudgetUsd`, `currentSpendUsd` | Budget utilization % and days-until-run-out by **money** (`remainingBudget / averageDailySpendUsd`). |
-| `averageDailySpendUsd` | Daily USD burn rate. |
-| `averageDailyTokenUsage` | Daily token burn rate vs `remainingTokens`. |
-| `remainingTokens` | Token depletion horizon (`remainingTokens / averageDailyTokenUsage`). |
-| `billingCycleEndDate` | Days until cycle end; **health** if predicted run-out is after cycle end. |
-| `recentDailySpendUsd` | **Spend spike** detection: last day vs average of prior days (ratio ≥ 1.5 → spike). |
+The model prompt instructs it to treat **`hourlyTokenUsage24h`** and **`recentDailyTokenUsage7d`** as the primary basis for **anomaly** narrative, and to consider **`modelUsageDistribution7d`** for routing text; **`recentDailySpendUsd`** and budget fields inform utilization and risk wording (e.g. WARNING when the prompt describes a sudden daily spend spike). Those rules are **prompt-level**, not duplicated as deterministic formulas in `BudgetForecastService`.
 
-There is no embedded linear regression yet; heuristics + optional Gemini copy use the above. **Enriched usage signals** allow replacing single averages with **7d/14d windows**, richer **daily series** (spike detection), and **provider/model breakdown** for targeted recommendations.
+| Input | Role |
+|--------|------|
+| `monthlyBudgetUsd`, `currentSpendUsd` | Context for budget utilization and run-out narrative in the model output. |
+| `averageDailySpendUsd` | Daily USD burn context (also normalized from usage snapshots when available). |
+| `averageDailyTokenUsage` | Token burn context vs `remainingTokens`. |
+| `remainingTokens` | Token depletion horizon in the narrative. |
+| `billingCycleEndDate` | Cycle-end context for health vs run-out messaging. |
+| `recentDailySpendUsd` | Daily USD series fed into the request; informs model + downstream **confidence** (`BudgetForecastService.assessConfidence` uses how many recent days are present); **not** a hardcoded spike detector in Java. |
+| `recentDailyTokenUsage7d`, `hourlyTokenUsage24h` | Primary series the prompt ties to **anomalySummary** (filled or defaulted in `BudgetForecastService`). |
+| `modelUsageDistribution7d` | Model mix for **routingRecommendation** / savings text in the model output. |
+
+There is no embedded linear regression in agent-service today. **Enriched usage signals** (7d/14d windows from usage, daily series, provider/model breakdown) improve what the model sees; any “spike” or anomaly wording follows from **Gemini** interpretation of those fields, not from a second numeric engine in this repo.
 
 **Fields not owned by usage:** `remainingTokens` and `billingCycleEndDate` are typically sourced from **billing/identity** policy. The usage event includes them as **optional null** so agent (or a facade) can merge with billing data without contradicting those systems.
 
-**Additional data** (if needed later): request counts, error ratio, or hourly shape for intraday alerts — not required for the current `BudgetForecastService` formulas; extend the event schema with a new `schemaVersion` if added.
+**Additional data** (if needed later): request counts, error ratio, or richer hourly shape for stricter **server-side** alerts — would require new product rules or a `schemaVersion` bump if encoded on the wire beyond what the current prompt consumes.
 
 ---
 
@@ -59,7 +63,7 @@ There is no embedded linear regression yet; heuristics + optional Gemini copy us
 | `averageDailySpendUsd14d` | Sum over the last **14** KST days ÷ 14. |
 | `averageDailyTokenUsage7d` | Sum of `total_tokens` over 7d ÷ 7. |
 | `averageDailyTokenUsage14d` | Sum of `total_tokens` over 14d ÷ 14. |
-| `recentDailySpendUsd` | **7** elements, **oldest → newest** KST day, each day’s summed `total_cost` for the slice (0 if no rows). **Use with** `BudgetForecastService` spike rule (min 4 points in agent today — agent may still run with 7). |
+| `recentDailySpendUsd` | **7** elements, **oldest → newest** KST day, each day’s summed `total_cost` for the slice (0 if no rows). Map into `BudgetForecastRequest.recentDailySpendUsd` for Gemini + **confidence** heuristics in `BudgetForecastService.assessConfidence` (e.g. more days → higher stated confidence); there is **no** fixed spend-spike multiplier implemented in agent Java. |
 | `remainingTokens` | `null` from usage-service (quota not stored here). |
 | `billingCycleEndDate` | `null` from usage-service; fill from billing when building `BudgetForecastRequest`. |
 | `providerModelBreakdown7d` | List of `{ provider, model, totalCostUsd, totalTokens }` for the **7d** window, ordered by cost descending. |

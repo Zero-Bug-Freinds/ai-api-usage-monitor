@@ -11,6 +11,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
+import com.zerobugfreinds.identity_service.config.RabbitOutboundAsyncConfig;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -45,11 +47,13 @@ public class ExternalApiKeyStatusChangedEventPublisher {
 		this.userContextRoutingKey = userContextRoutingKey;
 	}
 
+	@Async(RabbitOutboundAsyncConfig.RABBIT_TRANSACTIONAL_OUTBOUND_EXECUTOR)
 	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
 	public void onExternalApiKeyStatusChanged(ExternalApiKeyStatusChangedEvent event) {
 		publishJson(event, "ExternalApiKeyStatusChangedEvent", event.keyId(), event.userId(), event.status());
 	}
 
+	@Async(RabbitOutboundAsyncConfig.RABBIT_TRANSACTIONAL_OUTBOUND_EXECUTOR)
 	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
 	public void onExternalApiKeyDeleted(ExternalApiKeyDeletedEvent event) {
 		publishJson(
@@ -61,6 +65,7 @@ public class ExternalApiKeyStatusChangedEventPublisher {
 		);
 	}
 
+	@Async(RabbitOutboundAsyncConfig.RABBIT_TRANSACTIONAL_OUTBOUND_EXECUTOR)
 	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
 	public void onExternalApiKeyBudgetChanged(ExternalApiKeyBudgetChangedEvent event) {
 		publishJson(
@@ -72,6 +77,7 @@ public class ExternalApiKeyStatusChangedEventPublisher {
 		);
 	}
 
+	@Async(RabbitOutboundAsyncConfig.RABBIT_TRANSACTIONAL_OUTBOUND_EXECUTOR)
 	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
 	public void onUserContextChanged(UserContextChangedEvent event) {
 		publishJson(

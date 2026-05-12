@@ -4,11 +4,13 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.zerobugfreinds.identity.events.IdentityUserSyncEvent;
+import com.zerobugfreinds.identity_service.config.RabbitOutboundAsyncConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -53,6 +55,7 @@ public class IdentityUserSyncEventPublisher {
         sendJson(event);
     }
 
+    @Async(RabbitOutboundAsyncConfig.RABBIT_TRANSACTIONAL_OUTBOUND_EXECUTOR)
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onCommitted(IdentityUserSyncCommitted wrapped) {
         sendJson(wrapped.event());

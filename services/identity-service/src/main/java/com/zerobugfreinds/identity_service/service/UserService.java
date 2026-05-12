@@ -8,7 +8,6 @@ import com.zerobugfreinds.identity_service.dto.UpdateProfileRequest;
 import com.zerobugfreinds.identity_service.dto.LoginRequest;
 import com.zerobugfreinds.identity_service.dto.TokenResponse;
 import com.zerobugfreinds.identity_service.entity.User;
-import com.zerobugfreinds.identity_service.entity.RefreshTokenEntity;
 import com.zerobugfreinds.identity_service.exception.DuplicateEmailException;
 import com.zerobugfreinds.identity_service.exception.InvalidCredentialsException;
 import com.zerobugfreinds.identity_service.exception.InvalidSignupRequestException;
@@ -311,7 +310,7 @@ public class UserService {
 	}
 
 	private TokenResponse issueTokenPair(User user, Long activeTeamId) {
-		boolean firstSession = refreshTokenRepository.countByUserId(user.getId()) == 0;
+		boolean firstSession = !refreshTokenRepository.existsByUserId(user.getId());
 		String accessToken = jwtTokenProvider.createAccessToken(user, activeTeamId);
 		String refreshToken = jwtTokenProvider.createRefreshToken(user, activeTeamId);
 		replaceRefreshToken(user.getId(), refreshToken, activeTeamId);
@@ -339,14 +338,9 @@ public class UserService {
 	}
 
 	private void replaceRefreshToken(Long userId, String refreshToken, Long activeTeamId) {
-		refreshTokenRepository.deleteAllByUserId(userId);
-		RefreshTokenEntity tokenEntity = RefreshTokenEntity.issue(
-				userId,
-				sha256Hex(refreshToken),
-				activeTeamId,
-				Instant.now().plusSeconds(jwtTokenProvider.getRefreshTokenTtlSeconds())
-		);
-		refreshTokenRepository.save(tokenEntity);
+		Instant now = Instant.now();
+		Instant expiresAt = now.plusSeconds(jwtTokenProvider.getRefreshTokenTtlSeconds());
+		refreshTokenRepository.upsertByUserId(userId, sha256Hex(refreshToken), activeTeamId, expiresAt, now);
 	}
 
 	private static String sha256Hex(String value) {
