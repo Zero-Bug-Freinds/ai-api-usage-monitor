@@ -12,20 +12,19 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.annotation.DirtiesContext;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Map;
 
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 @SuppressWarnings("resource")
 @SpringBootTest
-@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class TeamApiKeyDeletedAggregatePurgeIntegrationTest extends AbstractBillingIntegrationTest {
 
     @Autowired
@@ -41,18 +40,17 @@ class TeamApiKeyDeletedAggregatePurgeIntegrationTest extends AbstractBillingInte
     private JdbcTemplate jdbcTemplate;
 
     @Autowired
-    private AmqpAdmin amqpAdmin;
+    private BillingTeamApiKeyRepository billingTeamApiKeyRepository;
 
     @Autowired
-    private BillingTeamApiKeyRepository billingTeamApiKeyRepository;
+    private AmqpAdmin amqpAdmin;
 
     @Value("${billing.rabbit.team-domain-in.queue}")
     private String teamDomainQueue;
 
     @BeforeEach
     void waitForQueue() {
-        await().atMost(20, SECONDS).pollInterval(200, java.util.concurrent.TimeUnit.MILLISECONDS)
-                .until(() -> amqpAdmin.getQueueProperties(teamDomainQueue) != null);
+        awaitQueuePresent(amqpAdmin, teamDomainQueue, 90);
     }
 
     private long countTeamAggRows(long teamApiKeyId) {
@@ -120,7 +118,7 @@ class TeamApiKeyDeletedAggregatePurgeIntegrationTest extends AbstractBillingInte
                 json
         );
 
-        await().atMost(30, SECONDS).pollInterval(100, java.util.concurrent.TimeUnit.MILLISECONDS)
+        await().atMost(60, SECONDS).pollInterval(100, MILLISECONDS)
                 .until(() -> countTeamAggRows(teamApiKeyId) == 0L
                         && billingTeamApiKeyRepository.findById(teamApiKeyId).isEmpty());
     }
@@ -152,7 +150,7 @@ class TeamApiKeyDeletedAggregatePurgeIntegrationTest extends AbstractBillingInte
                 json
         );
 
-        await().atMost(5, SECONDS).pollInterval(200, java.util.concurrent.TimeUnit.MILLISECONDS)
+        await().atMost(15, SECONDS).pollInterval(200, MILLISECONDS)
                 .untilAsserted(() -> assertThat(countTeamAggRows(teamApiKeyId)).isEqualTo(before));
     }
 }

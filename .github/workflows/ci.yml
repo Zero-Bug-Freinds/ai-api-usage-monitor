@@ -472,11 +472,10 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
       # check = compile + test (+ verification); skips bootJar (Dockerfile builds jar separately).
-      # Override services/billing-service/gradle.properties (parallel=false, workers.max=1 for local Windows).
+      # Use services/billing-service/gradle.properties worker/parallel defaults so Testcontainers-backed
+      # tests do not contend with many concurrent Gradle workers on ubuntu-latest runners.
       - name: Build and test
-        env:
-          GRADLE_OPTS: -Dorg.gradle.parallel=true -Dorg.gradle.workers.max=4
-        run: ./gradlew check --no-daemon --parallel --build-cache
+        run: ./gradlew check --no-daemon --build-cache
       - uses: docker/setup-buildx-action@v3
       - name: Docker image (billing-service) (cache gha)
         uses: docker/build-push-action@v6

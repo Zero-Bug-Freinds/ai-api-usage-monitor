@@ -12,19 +12,18 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.annotation.DirtiesContext;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 @SuppressWarnings("resource")
 @SpringBootTest
-@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class ExternalApiKeyDeletedAggregatePurgeIntegrationTest extends AbstractBillingIntegrationTest {
 
     @Autowired
@@ -47,8 +46,7 @@ class ExternalApiKeyDeletedAggregatePurgeIntegrationTest extends AbstractBilling
 
     @BeforeEach
     void waitForQueue() {
-        await().atMost(20, SECONDS).pollInterval(200, java.util.concurrent.TimeUnit.MILLISECONDS)
-                .until(() -> amqpAdmin.getQueueProperties(identityExternalApiKeyQueue) != null);
+        awaitQueuePresent(amqpAdmin, identityExternalApiKeyQueue, 90);
     }
 
     private long countPersonalAggRows(String userIdStored, String apiKeyId) {
@@ -119,7 +117,7 @@ class ExternalApiKeyDeletedAggregatePurgeIntegrationTest extends AbstractBilling
                 objectMapper.writeValueAsString(ev)
         );
 
-        await().atMost(30, SECONDS).pollInterval(100, java.util.concurrent.TimeUnit.MILLISECONDS)
+        await().atMost(60, SECONDS).pollInterval(100, MILLISECONDS)
                 .until(() -> countPersonalAggRows(storedUserId, apiKeyId) == 0L);
     }
 
@@ -149,7 +147,7 @@ class ExternalApiKeyDeletedAggregatePurgeIntegrationTest extends AbstractBilling
                 json
         );
 
-        await().atMost(5, SECONDS).pollInterval(200, java.util.concurrent.TimeUnit.MILLISECONDS)
+        await().atMost(15, SECONDS).pollInterval(200, MILLISECONDS)
                 .untilAsserted(() -> assertThat(countPersonalAggRows(storedUserId, apiKeyId)).isEqualTo(before));
     }
 }
