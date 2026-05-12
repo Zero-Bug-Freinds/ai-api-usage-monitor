@@ -6,6 +6,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.containers.RabbitMQContainer;
+import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
@@ -24,16 +25,22 @@ import static org.awaitility.Awaitility.await;
 @Testcontainers
 abstract class AbstractBillingIntegrationTest {
 
+    private static final Duration POSTGRES_STARTUP = Duration.ofMinutes(3);
+    private static final Duration RABBIT_STARTUP = Duration.ofMinutes(2);
+
     @Container
     static final RabbitMQContainer rabbit = new RabbitMQContainer("rabbitmq:3.13-alpine")
-            .withStartupTimeout(Duration.ofSeconds(90));
+            .withStartupTimeout(RABBIT_STARTUP);
 
     @Container
     static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
             .withDatabaseName("app")
             .withUsername("app")
             .withPassword("app")
-            .withStartupTimeout(Duration.ofSeconds(90));
+            .withStartupTimeout(POSTGRES_STARTUP)
+            .waitingFor(
+                    Wait.forLogMessage(".*database system is ready to accept connections.*", 2)
+                            .withStartupTimeout(POSTGRES_STARTUP));
 
     @DynamicPropertySource
     static void registerProps(DynamicPropertyRegistry r) {
@@ -44,6 +51,8 @@ abstract class AbstractBillingIntegrationTest {
         r.add("spring.datasource.url", postgres::getJdbcUrl);
         r.add("spring.datasource.username", postgres::getUsername);
         r.add("spring.datasource.password", postgres::getPassword);
+        r.add("spring.datasource.hikari.connection-timeout", () -> "120000");
+        r.add("spring.datasource.hikari.validation-timeout", () -> "10000");
         r.add("spring.jpa.hibernate.ddl-auto", () -> "create-drop");
         r.add("billing.gateway.shared-secret", () -> "test-secret");
     }

@@ -51,4 +51,6 @@ dependencies {
 tasks.named('test') {
     useJUnitPlatform()
     maxParallelForks = 1
+    // Avoids HotSpot CDS "bootstrap classpath has been appended" noise during forked tests.
+    jvmArgs '-Xshare:off'
 }
