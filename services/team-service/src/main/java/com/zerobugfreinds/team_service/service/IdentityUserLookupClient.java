@@ -2,6 +2,8 @@ package com.zerobugfreinds.team_service.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.zerobugfreinds.team_service.config.IdentityServiceUrlSupport;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -22,16 +24,21 @@ public class IdentityUserLookupClient {
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final String identityServiceBaseUrl;
+    private final Duration requestTimeout;
+    private final Duration bulkRequestTimeout;
 
     public IdentityUserLookupClient(
             ObjectMapper objectMapper,
-            @Value("${identity.service.url:http://host.docker.internal:8090}") String identityServiceBaseUrl
+            @Qualifier("identityServiceHttpClient") HttpClient httpClient,
+            IdentityServiceUrlSupport identityServiceUrlSupport,
+            @Value("${identity.http.read-timeout-ms:5000}") int readTimeoutMs,
+            @Value("${identity.http.read-timeout-bulk-ms:10000}") int readTimeoutBulkMs
     ) {
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(3))
-                .build();
         this.objectMapper = objectMapper;
-        this.identityServiceBaseUrl = identityServiceBaseUrl.replaceAll("/+$", "");
+        this.httpClient = httpClient;
+        this.identityServiceBaseUrl = identityServiceUrlSupport.primaryBaseUrl();
+        this.requestTimeout = Duration.ofMillis(Math.max(1, readTimeoutMs));
+        this.bulkRequestTimeout = Duration.ofMillis(Math.max(1, readTimeoutBulkMs));
     }
 
     public boolean existsByEmail(String email) {
@@ -42,7 +49,7 @@ public class IdentityUserLookupClient {
                 .toUri();
 
         HttpRequest request = HttpRequest.newBuilder(uri)
-                .timeout(Duration.ofSeconds(5))
+                .timeout(requestTimeout)
                 .GET()
                 .header("Accept", "application/json")
                 .build();
@@ -74,7 +81,7 @@ public class IdentityUserLookupClient {
             return Set.of();
         }
         HttpRequest request = HttpRequest.newBuilder(uri)
-                .timeout(Duration.ofSeconds(10))
+                .timeout(bulkRequestTimeout)
                 .header("Accept", "application/json")
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(requestBody))
@@ -120,7 +127,7 @@ public class IdentityUserLookupClient {
                 .toUri();
 
         HttpRequest request = HttpRequest.newBuilder(uri)
-                .timeout(Duration.ofSeconds(5))
+                .timeout(requestTimeout)
                 .GET()
                 .header("Accept", "application/json")
                 .build();
@@ -161,7 +168,7 @@ public class IdentityUserLookupClient {
                 .toUri();
 
         HttpRequest request = HttpRequest.newBuilder(uri)
-                .timeout(Duration.ofSeconds(5))
+                .timeout(requestTimeout)
                 .GET()
                 .header("Accept", "application/json")
                 .build();

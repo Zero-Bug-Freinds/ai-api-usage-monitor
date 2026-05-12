@@ -18,6 +18,7 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
+import java.util.Locale;
 import java.util.Optional;
 
 /**
@@ -60,7 +61,7 @@ public class PasswordResetService {
 	 */
 	@Transactional
 	public void requestForgotPassword(ForgotPasswordRequest request) {
-		String email = request.email().trim();
+		String email = request.email().trim().toLowerCase(Locale.ROOT);
 		Optional<User> userOpt = userRepository.findByEmail(email);
 		if (userOpt.isEmpty()) {
 			return;

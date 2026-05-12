@@ -10,6 +10,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.springframework.util.StringUtils;
+
 import java.time.Instant;
 
 /**
@@ -44,13 +46,14 @@ public class IdentityUserSyncReplayService {
         do {
             page = userRepository.findAll(PageRequest.of(pageIndex, PAGE_SIZE));
             for (User user : page.getContent()) {
-                if (user.getId() == null) {
+                if (user.getId() == null || !StringUtils.hasText(user.getEmail())) {
                     continue;
                 }
+                String principalSub = user.getEmail().trim().toLowerCase();
                 identityUserSyncEventPublisher.publishImmediately(
                         IdentityUserSyncEvent.of(
                                 IdentityUserSyncEventTypes.USER_SYNC_BACKFILL,
-                                user.getId(),
+                                principalSub,
                                 user.getEmail(),
                                 user.getName(),
                                 Instant.now()

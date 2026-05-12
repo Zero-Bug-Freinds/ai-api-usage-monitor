@@ -25,4 +25,6 @@ public interface UsageRecordedTokenRollupRepository extends JpaRepository<
 			LocalDate from,
 			LocalDate to
 	);
+
+	long deleteByKeyId(String keyId);
 }

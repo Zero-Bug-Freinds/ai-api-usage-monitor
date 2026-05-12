@@ -2,36 +2,48 @@ package com.zerobugfreinds.ai_agent_service.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.zerobugfreinds.ai_agent_service.config.AiAgentGeminiHttpClientConfiguration;
 import com.zerobugfreinds.ai_agent_service.config.AiAgentGeminiProperties;
 import com.zerobugfreinds.ai_agent_service.dto.RecommendationConfidenceLevel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestClient;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
 
 @Service
 public class RecommendationGeminiService {
 
 	private static final Logger log = LoggerFactory.getLogger(RecommendationGeminiService.class);
-	private static final String DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
 
 	private final AiAgentGeminiProperties properties;
 	private final ObjectMapper objectMapper;
+	private final AgentLlmCompletionClient llmCompletionClient;
+	private final ExecutorService geminiBatchExecutor;
 
-	public RecommendationGeminiService(AiAgentGeminiProperties properties, ObjectMapper objectMapper) {
+	public RecommendationGeminiService(
+			AiAgentGeminiProperties properties,
+			ObjectMapper objectMapper,
+			AgentLlmCompletionClient llmCompletionClient,
+			@Qualifier(AiAgentGeminiHttpClientConfiguration.GEMINI_BATCH_EXECUTOR) ExecutorService geminiBatchExecutor
+	) {
 		this.properties = properties;
 		this.objectMapper = objectMapper;
+		this.llmCompletionClient = llmCompletionClient;
+		this.geminiBatchExecutor = geminiBatchExecutor;
 	}
 
 	public Optional<AiRecommendationResult> inferRecommendation(AiRecommendationPromptRequest request) {
-		if (properties.apiKey() == null || properties.apiKey().isBlank()) {
-			log.warn("Gemini recommendation skipped: API key missing");
+		if (!llmCompletionClient.geminiConfigured() && !llmCompletionClient.deepseekConfigured()) {
+			log.warn("Recommendation LLM skipped: set AI_AGENT_DEEPSEEK_API_KEY and/or AI_AGENT_GEMINI_API_KEY (or GOOGLE_API_KEY chain for Gemini)");
 			return Optional.empty();
 		}
 		String requestId = UUID.randomUUID().toString();
@@ -68,7 +80,7 @@ public class RecommendationGeminiService {
 			String retryPrompt = prompt + "\nDo not omit required keys. Return valid JSON only.";
 			return inferRecommendationByPrompt(requestId, keyId, 2, retryPrompt, usageAggregate);
 		} catch (Exception ex) {
-			log.warn("Gemini recommendation inference failed: {}", ex.getMessage());
+			log.warn("Recommendation LLM inference failed: {}", ex.getMessage());
 			return Optional.empty();
 		} finally {
 			logGeminiUsageSummary(usageAggregate);
@@ -82,12 +94,33 @@ public class RecommendationGeminiService {
 		if (requests == null || requests.isEmpty()) {
 			return Map.of();
 		}
+		List<AiRecommendationPromptRequest> ordered = requests.stream()
+				.filter(r -> r.keyId() != null && !r.keyId().isBlank())
+				.toList();
 		Map<String, AiRecommendationResult> byKeyId = new LinkedHashMap<>();
-		for (AiRecommendationPromptRequest request : requests) {
-			if (request.keyId() == null || request.keyId().isBlank()) {
-				continue;
+		if (ordered.isEmpty()) {
+			return byKeyId;
+		}
+		int parallelism = properties.resolvedBatchParallelism();
+		if (ordered.size() == 1 || parallelism <= 1) {
+			for (AiRecommendationPromptRequest request : ordered) {
+				String kid = request.keyId().trim();
+				inferRecommendation(request).ifPresent(result -> byKeyId.put(kid, result));
 			}
-			inferRecommendation(request).ifPresent(result -> byKeyId.put(request.keyId().trim(), result));
+			return byKeyId;
+		}
+		Map<String, Optional<AiRecommendationResult>> pending = new ConcurrentHashMap<>();
+		@SuppressWarnings("unchecked")
+		CompletableFuture<Void>[] futures = ordered.stream()
+				.map(request -> CompletableFuture.runAsync(() -> {
+					String kid = request.keyId().trim();
+					pending.put(kid, inferRecommendation(request));
+				}, geminiBatchExecutor))
+				.toArray(CompletableFuture[]::new);
+		CompletableFuture.allOf(futures).join();
+		for (AiRecommendationPromptRequest request : ordered) {
+			String kid = request.keyId().trim();
+			pending.getOrDefault(kid, Optional.empty()).ifPresent(result -> byKeyId.put(kid, result));
 		}
 		return byKeyId;
 	}
@@ -135,7 +168,7 @@ public class RecommendationGeminiService {
 			));
 		} catch (Exception ex) {
 			logGeminiUsage(requestId, keyId, attempt, prompt.length(), null, startedAt, usageAggregate);
-			log.warn("Gemini recommendation attempt failed: {}", ex.getMessage());
+			log.warn("Recommendation LLM attempt failed: {}", ex.getMessage());
 			return Optional.empty();
 		}
 	}
@@ -235,28 +268,7 @@ public class RecommendationGeminiService {
 	}
 
 	private String callGenerateContent(String prompt) {
-		Map<String, Object> body = Map.of(
-				"contents", new Object[]{
-						Map.of("parts", new Object[]{Map.of("text", prompt)})
-				},
-				"generationConfig", Map.of(
-						"responseMimeType", "application/json",
-						"temperature", 0.0
-				)
-		);
-		String configuredModel = (properties.model() == null || properties.model().isBlank())
-				? DEFAULT_GEMINI_MODEL
-				: properties.model().trim();
-		String baseUrl = (properties.baseUrl() == null || properties.baseUrl().isBlank())
-				? "https://generativelanguage.googleapis.com"
-				: properties.baseUrl();
-		String uri = baseUrl + "/v1beta/models/" + configuredModel + ":generateContent?key=" + properties.apiKey();
-		return RestClient.create()
-				.post()
-				.uri(uri)
-				.body(body)
-				.retrieve()
-				.body(String.class);
+		return llmCompletionClient.completeAsGeminiGenerateContentJson(prompt, 0.0);
 	}
 
 	private static String textOrNull(JsonNode n) {

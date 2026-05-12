@@ -13,4 +13,6 @@ public interface RecommendationSnapshotRepository extends JpaRepository<Recommen
 			String scopeId,
 			String keyId
 	);
+
+	long deleteByKeyId(String keyId);
 }

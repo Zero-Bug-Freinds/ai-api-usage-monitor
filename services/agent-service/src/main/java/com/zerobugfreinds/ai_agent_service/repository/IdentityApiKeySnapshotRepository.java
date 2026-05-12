@@ -9,11 +9,11 @@ import java.util.Optional;
 public interface IdentityApiKeySnapshotRepository
 		extends JpaRepository<IdentityApiKeySnapshotEntity, IdentityApiKeySnapshotEntity.IdentityApiKeySnapshotId> {
 
-	Optional<IdentityApiKeySnapshotEntity> findByUserIdAndKeyId(Long userId, Long keyId);
+	Optional<IdentityApiKeySnapshotEntity> findByUserIdAndKeyId(String userId, Long keyId);
 
-	List<IdentityApiKeySnapshotEntity> findByUserIdOrderByUpdatedAtDesc(Long userId);
+	List<IdentityApiKeySnapshotEntity> findByUserIdOrderByUpdatedAtDesc(String userId);
 
 	List<IdentityApiKeySnapshotEntity> findAllByOrderByUpdatedAtDesc();
 
-	void deleteByUserIdAndKeyId(Long userId, Long keyId);
+	void deleteByUserIdAndKeyId(String userId, Long keyId);
 }

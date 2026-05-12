@@ -1,6 +1,6 @@
 # Web(Next.js) ↔ Team Service BFF 계약
 
-버전: 0.16  
+버전: 0.17  
 관련: [web-split-boundary.md](./web-split-boundary.md), [web-identity-bff.md](./web-identity-bff.md) — `/teams` UI 소유·경로: §2.3, [identity-auth-api-contract.md](../identity-auth-api-contract.md) §14(Identity → Team 사용자 동기화 MQ)
 
 ---
@@ -30,7 +30,7 @@
 | `POST /api/team/v1/teams/{id}/api-keys` | Team BFF `POST /api/team/v1/teams/{id}/api-keys` → Gateway `POST ...` → Team Service `POST /api/v1/teams/{id}/api-keys` |
 | `GET /api/team/v1/teams/{id}/expenditure/team-api-keys/month-spend` | Team BFF `GET ...` → Gateway `GET ...` → Team Service `GET /api/v1/teams/{id}/expenditure/team-api-keys/month-spend` → Team Service 내부 Billing 호출 `POST /api/v1/expenditure/team/month-rollup` |
 | `PUT /api/team/v1/teams/{teamId}/api-keys/{keyId}` | Team BFF `PUT ...` → Gateway `PUT ...` → Team Service `PUT /api/v1/teams/{teamId}/api-keys/{keyId}` |
-| `DELETE /api/team/v1/teams/{teamId}/api-keys/{keyId}` | Team BFF `DELETE ...` → Gateway `DELETE ...` → Team Service `DELETE /api/v1/teams/{teamId}/api-keys/{keyId}` (선택 쿼리 `gracePeriodDays`) |
+| `DELETE /api/team/v1/teams/{teamId}/api-keys/{keyId}` | Team BFF `DELETE ...` → Gateway `DELETE ...` → Team Service `DELETE /api/v1/teams/{teamId}/api-keys/{keyId}` (선택 쿼리 `gracePeriodDays`, `retainLogs`) |
 | `POST /api/team/v1/teams/{teamId}/api-keys/{keyId}/deletion/cancel` | Team BFF `POST ...` → Gateway `POST ...` → Team Service `POST /api/v1/teams/{teamId}/api-keys/{keyId}/deletion/cancel` |
 
 - **팀 콘솔 UI**는 `web-edge`의 **`/teams` → `team-web`** 에서 렌더링한다.
@@ -242,6 +242,7 @@
 - 설정 정본: `services/team-service/src/main/resources/application.properties` — `team.member-added-event.exchange`, `team.member-added-event.routing-key`(기본값 `team-member-added`), `spring.rabbitmq.*`.
 - **동일 TopicExchange·라우팅 키**로 팀 도메인 이벤트 JSON이 발행된다. 각 메시지 본문에 **`eventType`**(필수)과 공통 필드(`teamId`, `teamName`, `actorUserId`, `occurredAt`, `recipientUserIds` 등)가 포함되며, AMQP **헤더 `eventType`**에도 동일 문자열이 실린다. 구독자는 헤더 또는 본문 `eventType`으로 분기한다.
 - 주요 `eventType` 값: `TEAM_CREATED`, `TEAM_INVITE_CREATED`, `TEAM_INVITATION_ACCEPTED`, `TEAM_INVITATION_REJECTED`, `TEAM_MEMBER_JOINED`, `TEAM_MEMBER_REMOVED`, `TEAM_DELETED`, `TEAM_API_KEY_REGISTERED`, `TEAM_API_KEY_UPDATED`, `TEAM_API_KEY_DELETED`, `TEAM_API_KEY_DELETION_SCHEDULED`, `TEAM_API_KEY_DELETION_CANCELLED`.
+- 유예 삭제 만료로 키가 물리 삭제될 때도 `TEAM_API_KEY_STATUS_CHANGED(status=DELETED, retainLogs=...)`가 함께 발행되며, usage/agent 소비자는 이 이벤트를 기준으로 로그 보존 정책을 적용한다.
 - 하위 호환: `TEAM_INVITE_CREATED` 페이로드에 기존 `invitationId`, `receiverId`, `inviterId`, `createdAt` 필드가 유지된다. `TEAM_MEMBER_JOINED`에 `receiverId`, `inviterId`, `createdAt`(레거시)가 유지된다.
 - 목적: notification 등이 알림·감사 로그를 비동기로 처리할 수 있도록 전달
 - **소비(인앱):** **notification-service**(`services/notification-service/src/team-events/`)가 RabbitMQ 큐를 구독해 위 이벤트별로 `InAppNotification`을 생성하고, `NotificationDelivery.dedupeKey`로 멱등을 보장한다. `TEAM_MEMBER_JOINED`는 제품 규칙상 **참여 사용자(`receiverId`)에게만** 인앱을 생성한다(초대자는 `TEAM_INVITATION_ACCEPTED`로 별도 통지). **`TEAM_DELETED`:** 동일 `teamId`의 `team:TEAM_INVITE_CREATED` 인앱을 void 처리해 초대 버튼이 남지 않게 한다. 상세·환경 변수는 [`services/notification-service/README.md`](../../services/notification-service/README.md), 아키텍처 요약은 [`architecture.md`](../architecture.md) §4.9·§6.
@@ -287,6 +288,8 @@
 구현: `team-management-view.tsx`. 팀 API Key **등록/수정/삭제 예약/삭제 취소**는 Team `web`에서 제공하며, 서버 기본 유예 **7일**, `gracePeriodDays` 허용 범위 **0~365일**(`0` = 즉시 삭제)이다.
 
 1. **삭제 예약/즉시 삭제** — 활성 키 행에서 **`삭제`** → 모달에서 유예 기간(일) 입력(기본 7일, **0이면 즉시 삭제**) 및 로그 보존 여부 선택 후 `DELETE .../api-keys/{keyId}?gracePeriodDays=...&retainLogs=...` 호출.
+   - `retainLogs=false`: 키 삭제 완료 시 Agent/Usage의 키 기준 지출·사용 로그 프로젝션도 삭제 대상.
+   - `retainLogs=true`: 키는 삭제되더라도 Agent/Usage의 지출·사용 기록은 보존.
 2. **삭제 예정 표시** — 해당 행에 `(삭제 예정)` 안내, **영구 삭제 예정 시각**·유예 일수 표시, **`수정` 비활성**.
 3. **삭제 취소** — **`삭제 취소`** → 확인 후 `POST .../api-keys/{keyId}/deletion/cancel`. 성공 시 다시 활성 키로 표시.
 4. **동일 키 재등록** — 삭제 예정 중인 키와 같은 provider+키 값으로 등록하면 실패하지 않고, 기존 삭제 예정 키를 ACTIVE로 복구(재활성화)한다.

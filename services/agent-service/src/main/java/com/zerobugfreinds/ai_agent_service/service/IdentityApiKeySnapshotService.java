@@ -87,7 +87,7 @@ public class IdentityApiKeySnapshotService {
 		snapshotRepository.deleteByUserIdAndKeyId(event.userId(), event.apiKeyId());
 	}
 
-	public List<ApiKeySnapshot> findByUserId(Long userId) {
+	public List<ApiKeySnapshot> findByUserId(String userId) {
 		return snapshotRepository.findByUserIdOrderByUpdatedAtDesc(userId).stream()
 				.map(this::toSnapshot)
 				.toList();
@@ -115,7 +115,7 @@ public class IdentityApiKeySnapshotService {
 
 	public record ApiKeySnapshot(
 			Long keyId,
-			Long userId,
+			String userId,
 			String alias,
 			String provider,
 			String visibility,

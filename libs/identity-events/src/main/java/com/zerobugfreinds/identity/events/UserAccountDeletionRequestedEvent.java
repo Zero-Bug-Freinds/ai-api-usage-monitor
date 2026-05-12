@@ -1,6 +1,8 @@
 package com.zerobugfreinds.identity.events;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.time.Instant;
 
@@ -13,6 +15,8 @@ public record UserAccountDeletionRequestedEvent(
         int schemaVersion,
         Instant occurredAt,
         long identityUserId,
+        @JsonProperty("sub")
+        @JsonAlias({"userEmail"})
         String userEmail
 ) {
 

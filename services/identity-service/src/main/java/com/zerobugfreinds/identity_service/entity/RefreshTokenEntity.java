@@ -6,6 +6,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 
 import java.time.Instant;
 
@@ -13,7 +14,10 @@ import java.time.Instant;
  * 사용자별 리프레시 토큰 저장소(서버측 무효화/회전용).
  */
 @Entity
-@Table(name = "refresh_tokens")
+@Table(
+		name = "refresh_tokens",
+		uniqueConstraints = @UniqueConstraint(name = "uk_refresh_tokens_user_id", columnNames = "user_id")
+)
 public class RefreshTokenEntity {
 
     @Id

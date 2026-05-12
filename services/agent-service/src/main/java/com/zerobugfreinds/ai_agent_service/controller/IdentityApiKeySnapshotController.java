@@ -24,7 +24,7 @@ public class IdentityApiKeySnapshotController {
 	}
 
 	@GetMapping("/{userId}")
-	public List<IdentityApiKeySnapshotService.ApiKeySnapshot> listByUserId(@PathVariable("userId") Long userId) {
+	public List<IdentityApiKeySnapshotService.ApiKeySnapshot> listByUserId(@PathVariable("userId") String userId) {
 		return identityApiKeySnapshotService.findByUserId(userId);
 	}
 }

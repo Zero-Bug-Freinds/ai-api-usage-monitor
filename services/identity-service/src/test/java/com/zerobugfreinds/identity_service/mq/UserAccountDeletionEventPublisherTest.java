@@ -43,7 +43,7 @@ class UserAccountDeletionEventPublisherTest {
 		JsonNode node = mapper.readTree(jsonCaptor.getValue());
 		assertThat(node.get("schemaVersion").asInt()).isEqualTo(UserAccountDeletionRequestedEvent.CURRENT_SCHEMA_VERSION);
 		assertThat(node.get("identityUserId").asLong()).isEqualTo(99L);
-		assertThat(node.get("userEmail").asText()).isEqualTo("user@example.com");
+		assertThat(node.get("sub").asText()).isEqualTo("user@example.com");
 		assertThat(node.hasNonNull("occurredAt")).isTrue();
 	}
 }

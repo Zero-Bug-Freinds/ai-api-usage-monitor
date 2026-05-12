@@ -1,5 +1,7 @@
 package com.zerobugfreinds.team_service.service;
 
+import com.zerobugfreinds.team_service.config.IdentityServiceUrlSupport;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -10,22 +12,22 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 
 @Component
 public class IdentityApiKeyLookupClient {
     private final HttpClient httpClient;
     private final List<String> identityServiceBaseUrls;
+    private final Duration requestTimeout;
 
     public IdentityApiKeyLookupClient(
-            @Value("${identity.service.url:http://host.docker.internal:8090}") String identityServiceBaseUrl
+            @Qualifier("identityServiceHttpClient") HttpClient httpClient,
+            IdentityServiceUrlSupport identityServiceUrlSupport,
+            @Value("${identity.http.read-timeout-ms:5000}") int readTimeoutMs
     ) {
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(3))
-                .build();
-        this.identityServiceBaseUrls = resolveCandidateBaseUrls(identityServiceBaseUrl);
+        this.httpClient = httpClient;
+        this.requestTimeout = Duration.ofMillis(Math.max(1, readTimeoutMs));
+        this.identityServiceBaseUrls = identityServiceUrlSupport.apiKeyLookupBaseUrls();
     }
 
     public boolean existsByHashedKey(String provider, String hashedKey) {
@@ -43,7 +45,7 @@ public class IdentityApiKeyLookupClient {
                     .build(true)
                     .toUri();
             HttpRequest request = HttpRequest.newBuilder(uri)
-                    .timeout(Duration.ofSeconds(5))
+                    .timeout(requestTimeout)
                     .GET()
                     .header("Accept", "application/json")
                     .build();
@@ -67,34 +69,5 @@ public class IdentityApiKeyLookupClient {
             }
         }
         throw new IllegalStateException("identity-service에 연결할 수 없어 개인 API 키 중복 검증에 실패했습니다");
-    }
-
-    private static List<String> resolveCandidateBaseUrls(String configuredBaseUrl) {
-        Set<String> candidates = new LinkedHashSet<>();
-        addCandidate(candidates, configuredBaseUrl);
-        if (configuredBaseUrl != null && configuredBaseUrl.contains("host.docker.internal")) {
-            addCandidate(candidates, "http://localhost:8090");
-            addCandidate(candidates, "http://identity-service:8090");
-        }
-        if (candidates.isEmpty()) {
-            addCandidate(candidates, "http://host.docker.internal:8090");
-            addCandidate(candidates, "http://localhost:8090");
-            addCandidate(candidates, "http://identity-service:8090");
-        }
-        return List.copyOf(candidates);
-    }
-
-    private static void addCandidate(Set<String> candidates, String baseUrl) {
-        if (baseUrl == null) {
-            return;
-        }
-        String normalized = baseUrl.trim();
-        if (normalized.isEmpty()) {
-            return;
-        }
-        if (normalized.endsWith("/")) {
-            normalized = normalized.substring(0, normalized.length() - 1);
-        }
-        candidates.add(normalized);
     }
 }

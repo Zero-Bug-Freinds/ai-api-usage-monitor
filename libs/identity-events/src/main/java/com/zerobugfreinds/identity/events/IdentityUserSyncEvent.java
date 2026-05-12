@@ -10,7 +10,7 @@ import java.util.Objects;
 
 /**
  * Platform user upsert notification consumed by team-service into {@code identity_user_sync}.
- * JSON field names and aliases match team-service deserialization expectations.
+ * JSON {@code userId} holds JWT {@code sub} (이메일). Aliases match team-service deserialization expectations.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record IdentityUserSyncEvent(
@@ -53,9 +53,12 @@ public record IdentityUserSyncEvent(
         }
     }
 
+    /**
+     * @param principalSub JWT {@code sub} (이메일) — JSON {@code userId} 필드에 그대로 실린다.
+     */
     public static IdentityUserSyncEvent of(
             String eventType,
-            long userId,
+            String principalSub,
             String email,
             String name,
             Instant occurredAt
@@ -63,7 +66,7 @@ public record IdentityUserSyncEvent(
         Instant at = occurredAt != null ? occurredAt : Instant.now();
         return new IdentityUserSyncEvent(
                 eventType,
-                Long.toString(userId),
+                principalSub,
                 email != null ? email : "",
                 name != null ? name : "",
                 at

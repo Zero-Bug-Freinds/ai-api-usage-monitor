@@ -37,7 +37,7 @@ class IdentityUserSyncEventPublisherTest {
 
         IdentityUserSyncEvent event = IdentityUserSyncEvent.of(
                 IdentityUserSyncEventTypes.USER_REGISTERED,
-                42L,
+                "user@example.com",
                 "user@example.com",
                 "User Name",
                 null
@@ -54,7 +54,7 @@ class IdentityUserSyncEventPublisherTest {
         ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
         JsonNode node = mapper.readTree(jsonCaptor.getValue());
         assertThat(node.get("eventType").asText()).isEqualTo(IdentityUserSyncEventTypes.USER_REGISTERED);
-        assertThat(node.get("userId").asText()).isEqualTo("42");
+        assertThat(node.get("userId").asText()).isEqualTo("user@example.com");
         assertThat(node.get("email").asText()).isEqualTo("user@example.com");
         assertThat(node.get("name").asText()).isEqualTo("User Name");
         assertThat(node.hasNonNull("occurredAt")).isTrue();
