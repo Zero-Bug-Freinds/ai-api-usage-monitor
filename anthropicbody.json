@@ -1,0 +1,7 @@
+{
+  "model": "claude-haiku-4-5",
+  "max_tokens": 300,
+  "messages": [
+    { "role": "user", "content": "깜짝 놀랐을 때, 한국인은 '엄마야'라고 외치는 이유와 영어권 사람들은 'oh my god'라고 외치는 이유를 비교해서 간단하게 10줄 내로 설명해줘." }
+  ]
+}

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 type TeamApiResponse<T> = {
@@ -46,18 +46,39 @@ export class TeamServiceInternalClient {
         signal: controller.signal,
       });
       const text = await res.text();
-      const json: unknown = text ? (JSON.parse(text) as unknown) : null;
+      let json: unknown = null;
+      if (text) {
+        try {
+          json = JSON.parse(text) as unknown;
+        } catch {
+          json = null;
+        }
+      }
       if (!res.ok) {
         const msg =
           typeof json === 'object' && json !== null && 'message' in json
-            ? String((json as { message?: unknown }).message ?? '')
-            : `HTTP ${res.status}`;
-        throw new Error(msg);
+            ? String((json as { message?: unknown }).message ?? '').trim()
+            : '';
+        throw new HttpException(
+          { success: false, message: msg.length > 0 ? msg : `HTTP ${res.status}` },
+          res.status,
+        );
       }
       if (typeof json !== 'object' || json === null) {
-        throw new Error('Invalid response from team-service');
+        throw new HttpException({ success: false, message: 'Invalid response from team-service' }, HttpStatus.BAD_GATEWAY);
       }
       return json as TeamApiResponse<unknown>;
+    } catch (e: unknown) {
+      if (e instanceof HttpException) {
+        throw e;
+      }
+      if (e instanceof Error && e.name === 'AbortError') {
+        throw new HttpException(
+          { success: false, message: 'team-service request timed out' },
+          HttpStatus.GATEWAY_TIMEOUT,
+        );
+      }
+      throw e;
     } finally {
       clearTimeout(t);
     }

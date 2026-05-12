@@ -84,6 +84,7 @@ Notification `web`은 Next `basePath=/notifications`를 사용한다.
 
 - `in-app-notifications` 목록 API의 각 아이템에는 `meta`가 포함될 수 있다(없으면 `null` 또는 누락).
 - UI는 `type`별로 `meta`를 해석해 추가 UI/액션을 렌더링할 수 있다.
+- **목록 표시 정책(Notification `web`):** 기본은 **읽지 않은 알림만** 목록에 포함한다. 사용자가 **읽음 알림 포함**을 켜면 `readAt`이 있는 행도 같은 API 응답을 필터링해 보여준다(서버 계약은 동일·클라이언트 필터).
 
 #### 4.4.1 Team 초대 알림 (`type = team:TEAM_INVITE_CREATED`)
 
@@ -104,6 +105,7 @@ Notification `web`은 Next `basePath=/notifications`를 사용한다.
 - `actions.*Path`는 **notification-service API 베이스(`/api`) 기준의 상대 경로**로 저장된다.
 - Notification `web` UI는 BFF 프록시 경로(`/notifications/api/notification`) 뒤에 붙여 호출한다(§4.3 규칙 동일).
   - 예: `POST /notifications/api/notification/team-invitations/<invitationId>/accept`
+- **void·정리 후 `meta`:** `actions`가 제거되면 UI는 수락/거절을 렌더링하지 않는다. 서버가 채울 수 있는 필드 예: `staleReason`(`TEAM_DELETED`, `INVITE_ACTION_FAILED` 등), `inviteVoidedAt`(ISO-8601 문자열). 정상 수락·거절 후에는 기존과 같이 `actionedAt`·`decision`이 붙을 수 있다.
 
 ### 4.5 팀 초대 수락/거절 액션 API (Notification → Team 내부 연동)
 
@@ -121,6 +123,7 @@ Notification `web`은 Next `basePath=/notifications`를 사용한다.
   - 동일하게 `access_token` 쿠키 → BFF가 `Authorization: Bearer`로 업스트림에 전달한다(§4.1).
   - `direct` 모드에서는 `X-User-Id`가 JWT `sub` 기반으로 업스트림에 전달된다(§4.2).
   - `gateway` 모드에서는 `X-User-Id` 등은 Gateway가 주입하는 모델을 따른다(가이드 §2).
+- **team-service 오류 매핑(요약):** 내부 호출이 **400/404/409**이면 해당 초대 인앱을 void 처리한 뒤 동일 HTTP 상태로 응답한다. **타임아웃(Abort)** 은 **504**(`GATEWAY_TIMEOUT`)에 가깝게 매핑된다.
 
 ### 4.6 캐시 정책
 

@@ -31,6 +31,11 @@ notification-service는 선택적으로 **팀 도메인 이벤트**(`TEAM_CREATE
 
 **제품 규칙:** `TEAM_INVITATION_ACCEPTED`는 초대한 사람에게, `TEAM_MEMBER_JOINED`는 **참여한 사용자(`receiverId`)에게만** 인앱을 생성한다. 초대자는 수락 알림만 받고, 동일 흐름에서 `TEAM_MEMBER_JOINED`로 중복 행이 생기지 않는다.
 
+### 팀 초대 인앱 정리(void)
+
+- **`TEAM_DELETED`:** `meta.teamId`가 삭제된 팀과 일치하는 `team:TEAM_INVITE_CREATED` 행을 void(`actions` 제거·`readAt`·`staleReason` 등) — 미가입 초대 수신자는 삭제 이벤트 멤버 스냅샷에 없을 수 있어, 인앱만으로 UX를 맞춘다.
+- **초대 액션 실패:** `POST …/team-invitations/…/accept|reject` 처리 중 team-service가 **400/404/409**를 반환하면, 해당 `invitationId`의 초대 인앱을 void(`staleReason` 예: `INVITE_ACTION_FAILED`)한 뒤 동일 HTTP 상태로 응답한다. 내부 HTTP **타임아웃**은 **504**에 가깝게 매핑된다(`TEAM_SERVICE_INTERNAL_TIMEOUT_MS`).
+
 ## Billing 예산 임계 이벤트 (RabbitMQ, 인앱 알림)
 
 notification-service는 billing-service가 발행하는 예산 임계 이벤트를 **두 개의 라우팅 키**로 나누어 소비할 수 있다.

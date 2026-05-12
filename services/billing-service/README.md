@@ -269,6 +269,10 @@ ORDER BY first_seen_at ASC;
 
 이 모드에서는 카탈로그의 row 중 **DB에 없는(provider/model/valid_from/valid_to=null) row만 추가 삽입**합니다(멱등).
 
+루트 `docker-compose.yml` 의 `billing-service` 서비스는 기본으로 `BILLING_PRICING_SEED_MISSING=${BILLING_PRICING_SEED_MISSING:-true}` 를 넘기므로, 로컬 Compose만으로도 위 보강이 켜진 상태로 기동합니다(운영 배포에서는 `false` 등 팀 정책에 맞게 덮어씁니다).
+
+모델 문자열 **별칭 자동 매칭**(OPENAI·GOOGLE·ANTHROPIC)과 단가 미존재 시 로그 정책은 [`docs/billing-pricing-catalog-ops.md`](../../docs/billing-pricing-catalog-ops.md) 를 본다.
+
 ## billing-web USD 표시 규칙(아주 작은 값)
 
 지출 화면에서 USD 금액이 아주 작을 때 `toFixed(4)`로 인해 `$0.0000`으로 보이는 혼동을 줄이기 위해, billing-web은 아래 정책으로 표시를 통일합니다.
