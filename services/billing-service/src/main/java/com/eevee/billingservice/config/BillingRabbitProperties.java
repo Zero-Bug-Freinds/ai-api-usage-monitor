@@ -42,6 +42,12 @@ public class BillingRabbitProperties {
     private final IdentityExternalApiKeyIn identityExternalApiKeyIn = new IdentityExternalApiKeyIn();
 
     /**
+     * Inbound team-service domain stream ({@code team.events} / {@code team.api.key.#}). Mixed payloads;
+     * billing purges team key aggregates on {@code TEAM_API_KEY_DELETED} only.
+     */
+    private final TeamDomainIn teamDomainIn = new TeamDomainIn();
+
+    /**
      * Outbound billing → usage/analytics (and similar) after a correction is applied.
      */
     private final CorrectionOut correctionOut = new CorrectionOut();
@@ -96,6 +102,10 @@ public class BillingRabbitProperties {
 
     public IdentityExternalApiKeyIn getIdentityExternalApiKeyIn() {
         return identityExternalApiKeyIn;
+    }
+
+    public TeamDomainIn getTeamDomainIn() {
+        return teamDomainIn;
     }
 
     public static class CostOut {
@@ -268,6 +278,46 @@ public class BillingRabbitProperties {
         private String exchange = "team.api-key.exchange";
         private String routingKey = "team.api-key.status.changed";
         private String queue = "billing-service.team-api-key.status.changed.queue";
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getExchange() {
+            return exchange;
+        }
+
+        public void setExchange(String exchange) {
+            this.exchange = exchange;
+        }
+
+        public String getRoutingKey() {
+            return routingKey;
+        }
+
+        public void setRoutingKey(String routingKey) {
+            this.routingKey = routingKey;
+        }
+
+        public String getQueue() {
+            return queue;
+        }
+
+        public void setQueue(String queue) {
+            this.queue = queue;
+        }
+    }
+
+    public static class TeamDomainIn {
+
+        private boolean enabled = true;
+        private String exchange = "team.events";
+        private String routingKey = "team.api.key.#";
+        private String queue = "billing-service.team.api-key.domain.queue";
 
         public boolean isEnabled() {
             return enabled;

@@ -17,6 +17,11 @@ public class TeamApiKeyExpenditureQueryService {
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
+    /** Matches team-service {@code TeamApiKeyStatus} names stored in {@code billing_team_api_key.status}. */
+    private static boolean excludedFromSpendListing(String status) {
+        return "DELETED".equals(status) || "DELETION_REQUESTED".equals(status);
+    }
+
     private final BillingTeamApiKeyRepository teamApiKeyRepository;
     private final TeamApiKeyAggregationJdbc teamApiKeyAggregationJdbc;
 
@@ -61,9 +66,10 @@ public class TeamApiKeyExpenditureQueryService {
 
         final LocalDate monthStartOrNull = effectiveMonthStartDate;
         BigDecimal teamBudgetUsd = teamApiKeyAggregationJdbc.sumMonthlyBudgetUsdForTeam(teamId);
-        BigDecimal teamSpendUsd = resolveTeamSpendUsd(teamId, effectiveFrom, effectiveTo, monthStartOrNull);
 
-        List<BillingTeamApiKeyEntity> keys = teamApiKeyRepository.findByTeamId(teamId);
+        List<BillingTeamApiKeyEntity> keys = teamApiKeyRepository.findByTeamId(teamId).stream()
+                .filter(k -> !excludedFromSpendListing(k.getStatus()))
+                .toList();
         List<TeamApiKeyMonthSpend> rows = keys.stream()
                 .map(k -> new TeamApiKeyMonthSpend(
                         k.getTeamApiKeyId(),
@@ -78,6 +84,9 @@ public class TeamApiKeyExpenditureQueryService {
                         .thenComparing(TeamApiKeyMonthSpend::alias, Comparator.nullsLast(String::compareToIgnoreCase))
                         .thenComparingLong(TeamApiKeyMonthSpend::teamApiKeyId))
                 .toList();
+        BigDecimal teamSpendUsd = rows.stream()
+                .map(TeamApiKeyMonthSpend::monthSpendUsd)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         return new TeamApiKeyMonthSpendResponse(
                 teamId,
@@ -88,13 +97,6 @@ public class TeamApiKeyExpenditureQueryService {
                 teamSpendUsd,
                 rows
         );
-    }
-
-    private BigDecimal resolveTeamSpendUsd(long teamId, LocalDate from, LocalDate to, LocalDate monthStartDateOrNull) {
-        if (monthStartDateOrNull != null && from.equals(monthStartDateOrNull) && to.equals(monthStartDateOrNull.plusMonths(1).minusDays(1))) {
-            return teamApiKeyAggregationJdbc.sumMonthlyCostUsdForTeam(monthStartDateOrNull, teamId);
-        }
-        return teamApiKeyAggregationJdbc.sumDailyCostUsdForTeam(from, to, teamId);
     }
 
     private BigDecimal resolveKeySpendUsd(long teamApiKeyId, LocalDate from, LocalDate to, LocalDate monthStartDateOrNull) {
