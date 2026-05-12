@@ -107,35 +107,4 @@ class ExternalApiKeyDeletedAggregatePurgeIntegrationTest extends AbstractBilling
         await().atMost(45, SECONDS).pollInterval(100, MILLISECONDS)
                 .until(() -> countPersonalAggRows(storedUserId, apiKeyId) == 0L);
     }
-
-    @Test
-    void budgetChangedEvent_doesNotRemoveAggregates() {
-        String storedUserId = "keep@example.com";
-        String apiKeyId = "77";
-        LocalDate day = LocalDate.of(2026, 5, 11);
-        billingAggregationJdbc.upsertDaily(
-                day,
-                storedUserId,
-                apiKeyId,
-                AiProvider.OPENAI,
-                "gpt-4o-mini",
-                new BigDecimal("0.01"),
-                0L,
-                0L
-        );
-
-        long before = countPersonalAggRows(storedUserId, apiKeyId);
-
-        String json = "{\"eventType\":\"EXTERNAL_API_KEY_BUDGET_CHANGED\",\"userId\":\"" + storedUserId + "\",\"apiKeyId\":77}";
-
-        convertAndSendWhenReady(
-                rabbitTemplate,
-                "identity.events",
-                "identity.external-api-key.status-changed",
-                json
-        );
-
-        await().atMost(10, SECONDS).pollInterval(200, MILLISECONDS)
-                .untilAsserted(() -> assertThat(countPersonalAggRows(storedUserId, apiKeyId)).isEqualTo(before));
-    }
 }

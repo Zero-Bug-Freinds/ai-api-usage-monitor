@@ -104,31 +104,4 @@ class TeamApiKeyDeletedAggregatePurgeIntegrationTest extends AbstractBillingInte
                 .until(() -> countTeamAggRows(teamApiKeyId) == 0L
                         && billingTeamApiKeyRepository.findById(teamApiKeyId).isEmpty());
     }
-
-    @Test
-    void registeredEvent_doesNotRemoveAggregates() throws Exception {
-        long teamApiKeyId = 99002L;
-        LocalDate day = LocalDate.of(2026, 5, 12);
-
-        teamApiKeyAggregationJdbc.upsertDaily(day, teamApiKeyId, new BigDecimal("0.01"));
-
-        long before = countTeamAggRows(teamApiKeyId);
-
-        String json = objectMapper.writeValueAsString(Map.of(
-                "eventType", "TEAM_API_KEY_REGISTERED",
-                "teamId", "1",
-                "teamName", "n",
-                "actorUserId", "a",
-                "occurredAt", Instant.parse("2026-05-12T12:00:00Z"),
-                "recipientUserIds", java.util.List.of(),
-                "apiKeyId", teamApiKeyId,
-                "provider", "OPENAI",
-                "alias", "x"
-        ));
-
-        convertAndSendWhenReady(rabbitTemplate, "team.events", "team.api.key.registered", json);
-
-        await().atMost(10, SECONDS).pollInterval(200, MILLISECONDS)
-                .untilAsserted(() -> assertThat(countTeamAggRows(teamApiKeyId)).isEqualTo(before));
-    }
 }

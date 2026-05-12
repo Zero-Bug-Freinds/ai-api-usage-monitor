@@ -2,58 +2,54 @@ package com.eevee.billingservice.integration;
 
 import org.springframework.amqp.AmqpException;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.containers.RabbitMQContainer;
-
-import java.time.Duration;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.awaitility.Awaitility.await;
 
 /**
- * Shared Testcontainers for billing integration tests.
+ * Shared Testcontainers + Spring properties for billing integration tests.
  * <p>
- * Singleton-container pattern: containers are started once in a static initializer and live for the
- * entire test JVM. JUnit's {@code @Container} lifecycle restarts the static fields between test
- * classes, which assigns a new random port each time; cached Spring contexts whose Hikari pool was
- * bound to the previous port then fail with {@code Connection refused} (postgres) on subsequent test
- * classes. Owning the lifecycle here keeps every {@link ServiceConnection}-derived context pointed
- * at a live container and, as a bonus, removes per-class container boot from the suite runtime.
+ * Mirrors {@code usage-service} integration test infrastructure to avoid the JVM-shutdown hang previously seen in
+ * billing CI: {@link DirtiesContext} closes the Spring context immediately after each test class — while the
+ * containers are still alive — so Hibernate and the AMQP listeners shut down cleanly. {@code ddl-auto: update}
+ * lets Hibernate create the tables Flyway migrations do not yet cover (production runs the same mode) and, unlike
+ * {@code create-drop}, never issues DROP statements that would block on a dying container during JVM shutdown.
  */
+@Testcontainers
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 abstract class AbstractBillingIntegrationTest {
 
-    private static final Duration POSTGRES_STARTUP = Duration.ofMinutes(2);
-    private static final Duration RABBIT_STARTUP = Duration.ofMinutes(2);
+    @Container
+    static final RabbitMQContainer rabbit = BillingIntegrationContainers.rabbitMq();
 
-    @ServiceConnection
-    static final RabbitMQContainer rabbit = new RabbitMQContainer("rabbitmq:3.13-alpine")
-            .withStartupTimeout(RABBIT_STARTUP);
-
-    @ServiceConnection
-    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
-            .withDatabaseName("app")
-            .withUsername("app")
-            .withPassword("app")
-            .withStartupTimeout(POSTGRES_STARTUP);
-
-    static {
-        rabbit.start();
-        postgres.start();
-    }
+    @Container
+    static final PostgreSQLContainer<?> postgres = BillingIntegrationContainers.postgres();
 
     @DynamicPropertySource
     static void registerProps(DynamicPropertyRegistry r) {
-        r.add("spring.jpa.hibernate.ddl-auto", () -> "create-drop");
+        r.add("spring.rabbitmq.host", rabbit::getHost);
+        r.add("spring.rabbitmq.port", rabbit::getAmqpPort);
+        r.add("spring.rabbitmq.username", () -> "guest");
+        r.add("spring.rabbitmq.password", () -> "guest");
+        r.add("spring.datasource.url", postgres::getJdbcUrl);
+        r.add("spring.datasource.username", postgres::getUsername);
+        r.add("spring.datasource.password", postgres::getPassword);
+        r.add("spring.jpa.hibernate.ddl-auto", () -> "update");
+        r.add("spring.flyway.enabled", () -> "true");
         r.add("billing.gateway.shared-secret", () -> "test-secret");
     }
 
     /**
-     * Publishes when the broker accepts a connection; avoids failing the whole test on a single
-     * {@link AmqpException} during CI cold starts.
+     * Publishes when the broker accepts a connection; absorbs the short window between context bootstrap and the
+     * AMQP listener containers reaching {@code attemptDeclarations} during cold starts.
      */
     protected static void convertAndSendWhenReady(
             RabbitTemplate rabbitTemplate,
@@ -61,7 +57,7 @@ abstract class AbstractBillingIntegrationTest {
             String routingKey,
             String body
     ) {
-        await().atMost(45, SECONDS)
+        await().atMost(30, SECONDS)
                 .pollInterval(150, MILLISECONDS)
                 .until(() -> {
                     try {
