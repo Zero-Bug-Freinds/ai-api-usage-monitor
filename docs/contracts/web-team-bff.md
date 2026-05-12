@@ -246,6 +246,7 @@
 - 하위 호환: `TEAM_INVITE_CREATED` 페이로드에 기존 `invitationId`, `receiverId`, `inviterId`, `createdAt` 필드가 유지된다. `TEAM_MEMBER_JOINED`에 `receiverId`, `inviterId`, `createdAt`(레거시)가 유지된다.
 - 목적: notification 등이 알림·감사 로그를 비동기로 처리할 수 있도록 전달
 - **소비(인앱):** **notification-service**(`services/notification-service/src/team-events/`)가 RabbitMQ 큐를 구독해 위 이벤트별로 `InAppNotification`을 생성하고, `NotificationDelivery.dedupeKey`로 멱등을 보장한다. `TEAM_MEMBER_JOINED`는 제품 규칙상 **참여 사용자(`receiverId`)에게만** 인앱을 생성한다(초대자는 `TEAM_INVITATION_ACCEPTED`로 별도 통지). **`TEAM_DELETED`:** 동일 `teamId`의 `team:TEAM_INVITE_CREATED` 인앱을 void 처리해 초대 버튼이 남지 않게 한다. 상세·환경 변수는 [`services/notification-service/README.md`](../../services/notification-service/README.md), 아키텍처 요약은 [`architecture.md`](../architecture.md) §4.9·§6.
+- **소비(billing 집계 정리):** **billing-service**는 `team.events` + **`team.api.key.#`** 전용 큐에서 **`TEAM_API_KEY_DELETED`** 만 처리해 팀 API 키 비용 집계·read model을 삭제한다([`docs/billing-service-overview-20260412.md`](../billing-service-overview-20260412.md) §6.2; 키 상태 동기화용 `team.api-key.status.changed`와는 별도).
 
 ---
 

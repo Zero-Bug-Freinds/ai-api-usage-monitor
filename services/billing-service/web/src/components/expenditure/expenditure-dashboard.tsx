@@ -506,8 +506,8 @@ export function ExpenditureDashboard() {
               <h2 className="text-sm font-medium text-muted-foreground">월 예산 대비 (전체)</h2>
               {budgetUi.monthlyBudgetUsd != null ? (
                 <p className="text-xs text-muted-foreground">
-                  이번 달 지출 {formatUsd(budgetUi.totalCostUsd)} / 월 예산 ${budgetUi.monthlyBudgetUsd.toFixed(2)} (잔여 $
-                  {(budgetUi.remainingUsd ?? 0).toFixed(2)})
+                  이번 달 지출 {formatUsd(budgetUi.totalCostUsd)} / 월 예산 {formatUsd(budgetUi.monthlyBudgetUsd)} (잔여{" "}
+                  {formatUsd(budgetUi.remainingUsd ?? 0)})
                 </p>
               ) : (
                 <p className="text-xs text-muted-foreground">
@@ -945,7 +945,7 @@ export function ExpenditureDashboard() {
                 {summary.monthlyBudgetUsd != null ? (
                   <div>
                     <p className="text-xs text-muted-foreground">월 예산 (identity 연동 시)</p>
-                    <p className="text-lg font-medium tabular-nums">${summary.monthlyBudgetUsd.toFixed(2)}</p>
+                    <p className="text-lg font-medium tabular-nums">{formatUsd(summary.monthlyBudgetUsd)}</p>
                   </div>
                 ) : (
                   <p className="text-xs text-muted-foreground">
@@ -963,8 +963,8 @@ export function ExpenditureDashboard() {
                   <h2 className="text-sm font-medium text-muted-foreground">월 예산 대비 (선택한 키)</h2>
                   {keyBudgetUi.monthlyBudgetUsd != null ? (
                     <p className="text-xs text-muted-foreground">
-                      이번 달 지출 {formatUsd(keyBudgetUi.totalCostUsd)} / 월 예산 ${keyBudgetUi.monthlyBudgetUsd.toFixed(2)} (잔여 $
-                      {(keyBudgetUi.remainingUsd ?? 0).toFixed(2)})
+                      이번 달 지출 {formatUsd(keyBudgetUi.totalCostUsd)} / 월 예산 {formatUsd(keyBudgetUi.monthlyBudgetUsd)} (잔여{" "}
+                      {formatUsd(keyBudgetUi.remainingUsd ?? 0)})
                     </p>
                   ) : (
                     <p className="text-xs text-muted-foreground">
