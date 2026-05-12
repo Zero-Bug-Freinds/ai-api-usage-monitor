@@ -8,7 +8,6 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
-import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -65,18 +64,19 @@ public class UsageRecordedLogEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @NotFound(action = NotFoundAction.IGNORE)
     @JoinColumnsOrFormulas({
-            @JoinColumnOrFormula(formula = @JoinFormula(value = "'PERSONAL'", referencedColumnName = "keyScope")),
-            @JoinColumnOrFormula(column = @JoinColumn(name = "api_key_id", referencedColumnName = "keyId", insertable = false, updatable = false)),
-            @JoinColumnOrFormula(column = @JoinColumn(name = "user_id", referencedColumnName = "userId", insertable = false, updatable = false))
+            // Join formulas only: @JoinColumn on user_id/api_key_id would duplicate basic field mappings (Hibernate 7).
+            @JoinColumnOrFormula(formula = @JoinFormula(value = "'PERSONAL'", referencedColumnName = "key_scope")),
+            @JoinColumnOrFormula(formula = @JoinFormula(value = "api_key_id", referencedColumnName = "key_id")),
+            @JoinColumnOrFormula(formula = @JoinFormula(value = "user_id", referencedColumnName = "user_id"))
     })
     private ApiKeyMetadataEntity personalKeyMetadata;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @NotFound(action = NotFoundAction.IGNORE)
     @JoinColumnsOrFormulas({
-            @JoinColumnOrFormula(formula = @JoinFormula(value = "'TEAM'", referencedColumnName = "keyScope")),
-            @JoinColumnOrFormula(column = @JoinColumn(name = "team_api_key_id", referencedColumnName = "keyId", insertable = false, updatable = false)),
-            @JoinColumnOrFormula(column = @JoinColumn(name = "user_id", referencedColumnName = "userId", insertable = false, updatable = false))
+            @JoinColumnOrFormula(formula = @JoinFormula(value = "'TEAM'", referencedColumnName = "key_scope")),
+            @JoinColumnOrFormula(formula = @JoinFormula(value = "team_api_key_id", referencedColumnName = "key_id")),
+            @JoinColumnOrFormula(formula = @JoinFormula(value = "user_id", referencedColumnName = "user_id"))
     })
     private ApiKeyMetadataEntity teamKeyMetadata;
 

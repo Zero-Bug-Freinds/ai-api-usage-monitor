@@ -7,5 +7,5 @@
     }
   ],
   "max_completion_tokens": 500,
-  "reasoning_effort": "medium"
+  "reasoning_effort": "low"
 }

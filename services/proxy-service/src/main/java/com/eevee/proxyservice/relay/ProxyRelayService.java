@@ -245,7 +245,8 @@ public class ProxyRelayService {
                 latencyMs,
                 streaming,
                 successful,
-                statusCode
+                statusCode,
+                ctx.keyLookupUserId()
         );
         return usageEventPublisher.publish(event);
     }

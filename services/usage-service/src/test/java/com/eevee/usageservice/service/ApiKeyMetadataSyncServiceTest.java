@@ -224,6 +224,78 @@ class ApiKeyMetadataSyncServiceTest {
     }
 
     @Test
+    void upsertFromUsageRecordedEvent_newPersonalRow_setsProviderFromEvent() {
+        when(apiKeyMetadataRepository.findById(ApiKeyMetadataEntityId.personal("101", "user-new")))
+                .thenReturn(Optional.empty());
+
+        UsageRecordedEvent event = new UsageRecordedEvent(
+                UUID.randomUUID(),
+                Instant.parse("2026-05-11T12:00:00Z"),
+                "c-new",
+                "user-new",
+                null,
+                null,
+                "101",
+                "café-alias",
+                null,
+                "fp",
+                "managed",
+                AiProvider.OPENAI,
+                "gpt-4o",
+                new TokenUsage("gpt-4o", 1L, 1L, 2L, null, null, null, null, null, null),
+                BigDecimal.ZERO,
+                "/p",
+                "api.openai.com",
+                false,
+                true,
+                200
+        );
+
+        service.upsertFromUsageRecordedEvent(event);
+
+        ArgumentCaptor<ApiKeyMetadataEntity> captor = ArgumentCaptor.forClass(ApiKeyMetadataEntity.class);
+        verify(apiKeyMetadataRepository).save(captor.capture());
+        assertThat(captor.getValue().getProvider()).isEqualTo("OPENAI");
+        assertThat(captor.getValue().getAlias()).isEqualTo("café-alias");
+    }
+
+    @Test
+    void upsertFromUsageRecordedEvent_metadataOwnerUserId_usedForPersonalPk() {
+        when(apiKeyMetadataRepository.findById(ApiKeyMetadataEntityId.personal("88", "42")))
+                .thenReturn(Optional.empty());
+
+        UsageRecordedEvent event = new UsageRecordedEvent(
+                UUID.randomUUID(),
+                Instant.parse("2026-05-11T12:00:00Z"),
+                "c-meta",
+                "user@example.com",
+                null,
+                null,
+                "88",
+                "alias",
+                null,
+                "fp",
+                "managed",
+                AiProvider.OPENAI,
+                "gpt-4o",
+                new TokenUsage("gpt-4o", 1L, 1L, 2L, null, null, null, null, null, null),
+                BigDecimal.ZERO,
+                "/p",
+                "api.openai.com",
+                null,
+                false,
+                true,
+                200,
+                "42"
+        );
+
+        service.upsertFromUsageRecordedEvent(event);
+
+        verify(apiKeyMetadataRepository).findById(eq(ApiKeyMetadataEntityId.personal("88", "42")));
+        verify(apiKeyMetadataRepository, never()).findById(eq(ApiKeyMetadataEntityId.personal("88", "user@example.com")));
+    }
+
+    @Test
     void upsertFromUsageRecordedEvent_doesNotOverwriteProviderFromCall() {
         ApiKeyMetadataEntity existing = ApiKeyMetadataEntity.createPersonal("101", "user-a");
         existing.apply(null, "OPENAI", "cafe-1", ApiKeyStatus.ACTIVE, Instant.parse("2026-04-01T00:00:00Z"));

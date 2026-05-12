@@ -1064,9 +1064,33 @@ public class UsageDashboardService {
             byKeyId.merge(
                     m.getKeyId(),
                     m,
-                    (a, b) -> a.getUpdatedAt().isAfter(b.getUpdatedAt()) ? a : b
+                    UsageDashboardService::preferPersonalMetadataRow
             );
         }
+    }
+
+    /**
+     * When the same key_id exists under two user_id PK variants (e.g. email vs platform id), prefer rows with
+     * provider/alias from Identity sync over usage-created stubs; tie-break on {@code updatedAt}.
+     */
+    static ApiKeyMetadataEntity preferPersonalMetadataRow(ApiKeyMetadataEntity a, ApiKeyMetadataEntity b) {
+        int sa = personalMetadataRichnessScore(a);
+        int sb = personalMetadataRichnessScore(b);
+        if (sa != sb) {
+            return sa > sb ? a : b;
+        }
+        return a.getUpdatedAt().isAfter(b.getUpdatedAt()) ? a : b;
+    }
+
+    private static int personalMetadataRichnessScore(ApiKeyMetadataEntity m) {
+        int score = 0;
+        if (StringUtils.hasText(m.getProvider())) {
+            score += 2;
+        }
+        if (StringUtils.hasText(m.getAlias())) {
+            score += 1;
+        }
+        return score;
     }
 
     /**

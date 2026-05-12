@@ -138,6 +138,43 @@ class UsageDashboardServiceTest {
     }
 
     @Test
+    void preferPersonalMetadataRow_prefersRichMetadataDespiteOlderUpdatedAt() {
+        ApiKeyMetadataEntity rich = ApiKeyMetadataEntity.createPersonal("k1", "7");
+        rich.apply(null, "OPENAI", "from-identity", ApiKeyStatus.ACTIVE, Instant.parse("2025-06-01T00:00:00Z"));
+        ApiKeyMetadataEntity stub = ApiKeyMetadataEntity.createPersonal("k1", "user@example.com");
+        stub.apply(null, null, null, ApiKeyStatus.ACTIVE, Instant.parse("2025-06-20T00:00:00Z"));
+
+        assertThat(UsageDashboardService.preferPersonalMetadataRow(stub, rich)).isSameAs(rich);
+        assertThat(UsageDashboardService.preferPersonalMetadataRow(rich, stub)).isSameAs(rich);
+    }
+
+    @Test
+    void preferPersonalMetadataRow_equalRichness_usesNewerUpdatedAt() {
+        ApiKeyMetadataEntity older = ApiKeyMetadataEntity.createPersonal("k1", "a");
+        older.apply(null, "OPENAI", "a1", ApiKeyStatus.ACTIVE, Instant.parse("2025-06-01T00:00:00Z"));
+        ApiKeyMetadataEntity newer = ApiKeyMetadataEntity.createPersonal("k1", "b");
+        newer.apply(null, "OPENAI", "a2", ApiKeyStatus.ACTIVE, Instant.parse("2025-06-15T00:00:00Z"));
+
+        assertThat(UsageDashboardService.preferPersonalMetadataRow(older, newer)).isSameAs(newer);
+    }
+
+    @Test
+    void logApiKeys_personal_prefersRichRowWhenStubIsNewerSameKeyId() {
+        ApiKeyMetadataEntity rich = ApiKeyMetadataEntity.createPersonal("k1", "7");
+        rich.apply(null, "OPENAI", "구구", ApiKeyStatus.ACTIVE, Instant.parse("2025-06-01T00:00:00Z"));
+        ApiKeyMetadataEntity stub = ApiKeyMetadataEntity.createPersonal("k1", "user@example.com");
+        stub.apply(null, null, null, ApiKeyStatus.ACTIVE, Instant.parse("2025-06-25T00:00:00Z"));
+        when(apiKeyMetadataRepository.findPersonalKeysForDashboard("u1", "openai")).thenReturn(List.of(stub, rich));
+        when(logRepository.findDistinctApiKeysForUserPersonalInRange(eq("u1"), any(), any(), eq(AiProvider.OPENAI)))
+                .thenReturn(List.of());
+
+        var keys = service.logApiKeys("u1", AiProvider.OPENAI, UsageDataContext.PERSONAL);
+
+        assertThat(keys).hasSize(1);
+        assertThat(keys.getFirst().alias()).isEqualTo("구구");
+    }
+
+    @Test
     void logApiKeys_personal_loadsFromMetadata_orderedByUpdatedAtDesc() {
         ApiKeyMetadataEntity newer = ApiKeyMetadataEntity.createPersonal("2", "u1");
         newer.apply(null, "OPENAI", "beta", ApiKeyStatus.ACTIVE, Instant.parse("2025-06-20T00:00:00Z"));

@@ -11,6 +11,9 @@ import java.util.UUID;
 /**
  * Published by Proxy Service when usage is known (or partially known) after an upstream call.
  * Consumers: Usage Tracking, Billing, Analytics, Quota.
+ * <p>
+ * {@code metadataOwnerUserId}: optional canonical owner id for {@code api_key_metadata} PERSONAL rows (aligns with
+ * Identity MQ when set). When null, usage-service falls back to {@link #userId}. Logs still use {@link #userId}.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -35,7 +38,8 @@ public record UsageRecordedEvent(
         Long latencyMs,
         Boolean streaming,
         Boolean requestSuccessful,
-        Integer upstreamStatusCode
+        Integer upstreamStatusCode,
+        String metadataOwnerUserId
 ) {
     public UsageRecordedEvent {
         if (eventId == null) {
@@ -46,6 +50,9 @@ public record UsageRecordedEvent(
         }
         if (requestSuccessful == null) {
             requestSuccessful = Boolean.TRUE;
+        }
+        if (metadataOwnerUserId != null && metadataOwnerUserId.isBlank()) {
+            metadataOwnerUserId = null;
         }
     }
 
@@ -92,7 +99,8 @@ public record UsageRecordedEvent(
                 null,
                 streaming,
                 requestSuccessful,
-                upstreamStatusCode
+                upstreamStatusCode,
+                null
         );
     }
 
@@ -139,7 +147,8 @@ public record UsageRecordedEvent(
                 latencyMs,
                 streaming,
                 requestSuccessful,
-                upstreamStatusCode
+                upstreamStatusCode,
+                null
         );
     }
 
@@ -185,7 +194,8 @@ public record UsageRecordedEvent(
                 null,
                 streaming,
                 requestSuccessful,
-                upstreamStatusCode
+                upstreamStatusCode,
+                null
         );
     }
 }
