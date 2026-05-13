@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # 패턴 B — usage-service 백엔드 전용 이미지 (docs/architecture.md §10.1).
-# :usage-events 는 ../../libs/usage-events 이므로 build context 는 저장소 루트여야 한다.
+# :usage-events, :identity-events 는 ../../libs/... 이므로 build context 는 저장소 루트여야 한다.
 # 빌드(저장소 루트에서):
 #   docker build -f services/usage-service/Dockerfile -t usage-service:local .
 
@@ -12,6 +12,7 @@ ENV GRADLE_OPTS="-Dorg.gradle.daemon=false"
 COPY services/usage-service/gradlew services/usage-service/settings.gradle services/usage-service/build.gradle ./
 COPY services/usage-service/gradle ./gradle
 COPY libs/usage-events /workspace/libs/usage-events
+COPY libs/identity-events /workspace/libs/identity-events
 
 RUN chmod +x gradlew && sed -i 's/\r$//' gradlew
 
