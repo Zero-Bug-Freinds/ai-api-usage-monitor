@@ -394,6 +394,7 @@ export default function AgentPage() {
   const [analysisHistory, setAnalysisHistory] = useState<AnalysisHistorySnapshot[]>([])
   const [mainResultsTab, setMainResultsTab] = useState<"current" | "history">("current")
   const [historySelectedDateKey, setHistorySelectedDateKey] = useState<string | null>(null)
+  const [historySortNewestFirst, setHistorySortNewestFirst] = useState<boolean>(true)
   const resultsHistoryBaselineCapturedRef = useRef(false)
   const resultsHistorySigRef = useRef<string>("")
   const lastHistoryMutationRef = useRef<{ keyId: number; action: AnalysisAction } | null>(null)
@@ -450,19 +451,21 @@ export default function AgentPage() {
     return map
   }, [analysisHistory])
 
-  const historyDateKeys = useMemo(
-    () => Array.from(historyByDate.keys()).sort((a: string, b: string) => b.localeCompare(a)),
-    [historyByDate],
-  )
+  const historyDateKeys = useMemo(() => {
+    const keys = Array.from(historyByDate.keys())
+    return keys.sort((a: string, b: string) =>
+      historySortNewestFirst ? b.localeCompare(a) : a.localeCompare(b),
+    )
+  }, [historyByDate, historySortNewestFirst])
 
-  /** 선택한 날짜의 스냅샷 전체(같은 날 여러 번 저장 시 모두). 화면에는 시간 오름차순으로 나열 */
+  /** 선택한 날짜의 스냅샷 전체 — 정렬은 최신순/오래된순 토글에 따름 */
   const snapshotsForSelectedDate = useMemo(() => {
     if (!historySelectedDateKey) return []
     const list = historyByDate.get(historySelectedDateKey) ?? []
     return [...list].sort((a: AnalysisHistorySnapshot, b: AnalysisHistorySnapshot) =>
-      a.savedAt.localeCompare(b.savedAt),
+      historySortNewestFirst ? b.savedAt.localeCompare(a.savedAt) : a.savedAt.localeCompare(b.savedAt),
     )
-  }, [historyByDate, historySelectedDateKey])
+  }, [historyByDate, historySelectedDateKey, historySortNewestFirst])
 
   useEffect(() => {
     setResults(readAnalysisResultsFromStorage())
@@ -1021,7 +1024,33 @@ export default function AgentPage() {
             emptyLabel="분석·추천을 실행하면 여기에 결과가 나타납니다."
           />
         ) : (
-          <div className="grid gap-4 pt-2 md:grid-cols-12">
+          <div className="space-y-3 pt-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-medium text-muted-foreground">정렬</span>
+              <button
+                type="button"
+                className={`rounded-md border px-2.5 py-1 text-[11px] font-medium ${
+                  historySortNewestFirst
+                    ? "border-primary bg-primary/10 text-foreground"
+                    : "border-border bg-background text-muted-foreground hover:bg-muted/50"
+                }`}
+                onClick={() => setHistorySortNewestFirst(true)}
+              >
+                최신순
+              </button>
+              <button
+                type="button"
+                className={`rounded-md border px-2.5 py-1 text-[11px] font-medium ${
+                  !historySortNewestFirst
+                    ? "border-primary bg-primary/10 text-foreground"
+                    : "border-border bg-background text-muted-foreground hover:bg-muted/50"
+                }`}
+                onClick={() => setHistorySortNewestFirst(false)}
+              >
+                오래된순
+              </button>
+            </div>
+            <div className="grid gap-4 md:grid-cols-12">
             <div className="space-y-2 md:col-span-3">
               <p className="text-xs font-medium text-muted-foreground">날짜</p>
               {historyDateKeys.length === 0 ? (
@@ -1058,6 +1087,7 @@ export default function AgentPage() {
                 <p className="text-xs text-muted-foreground">날짜를 선택해 주세요.</p>
               )}
             </div>
+          </div>
           </div>
         )}
       </section>

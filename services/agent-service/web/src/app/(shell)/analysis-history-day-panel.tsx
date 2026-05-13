@@ -1,6 +1,5 @@
 "use client"
 
-import { useMemo } from "react"
 import type { AnalysisHistorySnapshot, AnalysisResult } from "./agent-result-shared"
 import { AnalysisResultArticles } from "./analysis-result-articles"
 
@@ -17,18 +16,13 @@ type AnalysisHistoryDayPanelProps = {
 }
 
 export function AnalysisHistoryDayPanel({ snapshots }: AnalysisHistoryDayPanelProps) {
-  const orderedSnapshots = useMemo(
-    () => [...snapshots].sort((a, b) => a.savedAt.localeCompare(b.savedAt)),
-    [snapshots],
-  )
-
-  if (orderedSnapshots.length === 0) {
+  if (snapshots.length === 0) {
     return <p className="text-xs text-muted-foreground">이 날짜에 저장된 기록이 없습니다.</p>
   }
 
   return (
     <div className="space-y-8">
-      {orderedSnapshots.map((snap: AnalysisHistorySnapshot, snapIndex: number) => {
+      {snapshots.map((snap: AnalysisHistorySnapshot, snapIndex: number) => {
         const budgetRows = snap.results.filter((r: AnalysisResult) => hasBudgetContent(r))
         const recRows = snap.results.filter((r: AnalysisResult) => hasRecommendationContent(r))
 
@@ -39,7 +33,7 @@ export function AnalysisHistoryDayPanel({ snapshots }: AnalysisHistoryDayPanelPr
               snapIndex > 0 ? "space-y-4 border-t border-dashed border-border pt-6" : "space-y-4"
             }
           >
-            {orderedSnapshots.length > 1 ? (
+            {snapshots.length > 1 ? (
               <p className="text-[10px] text-muted-foreground">
                 {snapIndex + 1}번째 저장 ·{" "}
                 {new Date(snap.savedAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
