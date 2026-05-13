@@ -1,8 +1,11 @@
 package com.zerobugfreinds.ai_agent_service.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.zerobugfreinds.ai_agent_service.dto.AiBudgetForecastResult;
 import com.zerobugfreinds.ai_agent_service.dto.BudgetForecastRequest;
 import com.zerobugfreinds.ai_agent_service.dto.BudgetForecastResponse;
+import com.zerobugfreinds.ai_agent_service.repository.BudgetForecastSnapshotRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -22,6 +25,7 @@ class BudgetForecastServiceTest {
 	private GeminiAssistantService geminiAssistantService;
 	private UsageRecordedTokenRollupService usageRecordedTokenRollupService;
 	private UsagePredictionSignalSnapshotService usagePredictionSignalSnapshotService;
+	private BudgetForecastSnapshotRepository budgetForecastSnapshotRepository;
 	private BudgetForecastService budgetForecastService;
 
 	@BeforeEach
@@ -29,13 +33,16 @@ class BudgetForecastServiceTest {
 		geminiAssistantService = Mockito.mock(GeminiAssistantService.class);
 		usageRecordedTokenRollupService = Mockito.mock(UsageRecordedTokenRollupService.class);
 		usagePredictionSignalSnapshotService = Mockito.mock(UsagePredictionSignalSnapshotService.class);
+		budgetForecastSnapshotRepository = Mockito.mock(BudgetForecastSnapshotRepository.class);
 		when(usageRecordedTokenRollupService.summarizeLastSevenDays(any(), any(), any()))
-				.thenReturn(new UsageRecordedTokenRollupService.SevenDayTokenSummary(0L, 0L, 0L, null));
+				.thenReturn(new UsageRecordedTokenRollupService.SevenDayTokenSummary(0L, 0L, 0L, 0L, null));
 		when(usagePredictionSignalSnapshotService.findAll()).thenReturn(List.of());
 		budgetForecastService = new BudgetForecastService(
 				geminiAssistantService,
 				usageRecordedTokenRollupService,
-				usagePredictionSignalSnapshotService
+				usagePredictionSignalSnapshotService,
+				budgetForecastSnapshotRepository,
+				new ObjectMapper().registerModule(new JavaTimeModule())
 		);
 	}
 

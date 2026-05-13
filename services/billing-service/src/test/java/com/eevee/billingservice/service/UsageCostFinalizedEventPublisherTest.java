@@ -23,6 +23,7 @@ import java.time.Instant;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class UsageCostFinalizedEventPublisherTest {
@@ -85,5 +86,41 @@ class UsageCostFinalizedEventPublisherTest {
         assertThat(sentMessage.getMessageProperties().getHeaders().get("userId")).isEqualTo("u");
         assertThat(sentMessage.getMessageProperties().getHeaders().get("teamId")).isEqualTo("t");
         assertThat(sentMessage.getMessageProperties().getHeaders().get("apiKeyId")).isEqualTo("k");
+    }
+
+    @Test
+    void doesNotPublish_whenCostOutDisabled() {
+        BillingRabbitProperties props = new BillingRabbitProperties();
+        props.getCostOut().setEnabled(false);
+        props.getCostOut().setExchange("billing.events");
+        props.getCostOut().setRoutingKey("usage.cost.finalized");
+        UsageCostFinalizedEventPublisher disabled =
+                new UsageCostFinalizedEventPublisher(rabbitTemplate, props, objectMapper);
+
+        UsageRecordedEvent source = new UsageRecordedEvent(
+                java.util.UUID.randomUUID(),
+                Instant.parse("2025-06-01T12:00:00Z"),
+                "c",
+                "u",
+                null,
+                null,
+                "k",
+                null,
+                "hash",
+                "managed",
+                AiProvider.OPENAI,
+                "gpt-4o-mini",
+                new TokenUsage("gpt-4o-mini", 1L, 2L, 3L, null, null, null, null, null, null),
+                BigDecimal.ZERO,
+                "/p",
+                "h",
+                false,
+                true,
+                200
+        );
+
+        disabled.publish(source, "gpt-4o-mini", new BigDecimal("0.01"));
+
+        verifyNoInteractions(rabbitTemplate);
     }
 }

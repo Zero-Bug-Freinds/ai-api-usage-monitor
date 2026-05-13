@@ -1,5 +1,6 @@
 package com.zerobugfreinds.ai_agent_service.mq;
 
+import com.eevee.usage.events.AiProvider;
 import com.eevee.usage.events.TokenUsage;
 import com.eevee.usage.events.UsageRecordedEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -56,21 +57,21 @@ public class UsageRecordedEventListener {
 				return;
 			}
 
-			String scopeType = resolveScopeType(event.apiKeySource());
-			String scopeId = scopeType.equals("TEAM") ? event.teamId() : event.userId();
-			if (scopeId == null || scopeId.isBlank()) {
-				log.debug("Skip usage.recorded rollup because scopeId is missing. keyId={}, apiKeySource={}",
-						event.apiKeyId(), event.apiKeySource());
+			ResolvedScope resolved = resolveScope(event);
+			if (resolved == null) {
+				log.debug("Skip usage.recorded rollup because scopeId is missing. keyId={}, apiKeySource={}, teamApiKeyId={}",
+						event.apiKeyId(), event.apiKeySource(), event.teamApiKeyId());
 				return;
 			}
 
 			rollupService.add(
 					event.apiKeyId(),
-					scopeType,
-					scopeId,
+					resolved.scopeType(),
+					resolved.scopeId(),
 					event.occurredAt(),
 					tokenUsage.promptTokens(),
-					tokenUsage.completionTokens(),
+					resolveOutputTokens(event.provider(), tokenUsage),
+					resolveReasoningTokens(tokenUsage),
 					event.latencyMs()
 			);
 		} catch (Exception ex) {
@@ -79,13 +80,67 @@ public class UsageRecordedEventListener {
 		}
 	}
 
-	private static String resolveScopeType(String apiKeySource) {
-		String source = apiKeySource == null ? "" : apiKeySource.trim().toLowerCase(Locale.ROOT);
-		return switch (source) {
-			case "team" -> "TEAM";
-			case "managed", "mock" -> "PERSONAL";
-			default -> "PERSONAL";
-		};
+	/**
+	 * 사용량 이벤트의 scope 결정.
+	 *
+	 * <p>proxy 가 reverse-lookup 경로로 키를 식별하면 {@code apiKeySource} 가 {@code "team"} 이 아니라
+	 * {@code "reverse_lookup"} 등으로 들어올 수 있다. 이 때도 팀 키이면 {@code teamApiKeyId}/{@code teamId}
+	 * 가 채워지므로, {@code apiKeySource} 만으로 판정하지 않고 페이로드의 team 식별자가 있으면 우선 TEAM 으로
+	 * 본다. 그렇지 않은 경우에만 {@code apiKeySource == "team"} 폴백을 적용하고, 최종적으로 PERSONAL 로 떨어진다.</p>
+	 */
+	static ResolvedScope resolveScope(UsageRecordedEvent event) {
+		String teamApiKeyId = trimToNull(event.teamApiKeyId());
+		String teamId = trimToNull(event.teamId());
+		if (teamApiKeyId != null || teamId != null || isTeamSource(event.apiKeySource())) {
+			String scopeId = teamId != null ? teamId : teamApiKeyId;
+			if (scopeId == null) {
+				return null;
+			}
+			return new ResolvedScope("TEAM", scopeId);
+		}
+		String userId = trimToNull(event.userId());
+		if (userId == null) {
+			return null;
+		}
+		return new ResolvedScope("PERSONAL", userId);
+	}
+
+	private static boolean isTeamSource(String apiKeySource) {
+		if (apiKeySource == null) {
+			return false;
+		}
+		return "team".equals(apiKeySource.trim().toLowerCase(Locale.ROOT));
+	}
+
+	private static String trimToNull(String value) {
+		if (value == null) {
+			return null;
+		}
+		String trimmed = value.trim();
+		return trimmed.isEmpty() ? null : trimmed;
+	}
+
+	record ResolvedScope(String scopeType, String scopeId) {
+	}
+
+	private static Long resolveReasoningTokens(TokenUsage tokenUsage) {
+		if (tokenUsage.completionReasoningTokens() == null || tokenUsage.completionReasoningTokens() < 0) {
+			return 0L;
+		}
+		return tokenUsage.completionReasoningTokens();
+	}
+
+	private static Long resolveOutputTokens(AiProvider provider, TokenUsage tokenUsage) {
+		Long completionTokens = tokenUsage.completionTokens();
+		if (completionTokens == null || completionTokens < 0) {
+			return 0L;
+		}
+		Long reasoningTokens = resolveReasoningTokens(tokenUsage);
+		if (provider != AiProvider.OPENAI) {
+			return completionTokens;
+		}
+		long pureOutput = completionTokens - reasoningTokens;
+		return Math.max(pureOutput, 0L);
 	}
 
 	private static Map<String, String> toStringHeaders(Message message) {

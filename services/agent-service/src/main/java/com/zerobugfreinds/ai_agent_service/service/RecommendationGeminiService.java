@@ -2,36 +2,48 @@ package com.zerobugfreinds.ai_agent_service.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.zerobugfreinds.ai_agent_service.config.AiAgentGeminiHttpClientConfiguration;
 import com.zerobugfreinds.ai_agent_service.config.AiAgentGeminiProperties;
 import com.zerobugfreinds.ai_agent_service.dto.RecommendationConfidenceLevel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestClient;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
 
 @Service
 public class RecommendationGeminiService {
 
 	private static final Logger log = LoggerFactory.getLogger(RecommendationGeminiService.class);
-	private static final String DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
 
 	private final AiAgentGeminiProperties properties;
 	private final ObjectMapper objectMapper;
+	private final AgentLlmCompletionClient llmCompletionClient;
+	private final ExecutorService geminiBatchExecutor;
 
-	public RecommendationGeminiService(AiAgentGeminiProperties properties, ObjectMapper objectMapper) {
+	public RecommendationGeminiService(
+			AiAgentGeminiProperties properties,
+			ObjectMapper objectMapper,
+			AgentLlmCompletionClient llmCompletionClient,
+			@Qualifier(AiAgentGeminiHttpClientConfiguration.GEMINI_BATCH_EXECUTOR) ExecutorService geminiBatchExecutor
+	) {
 		this.properties = properties;
 		this.objectMapper = objectMapper;
+		this.llmCompletionClient = llmCompletionClient;
+		this.geminiBatchExecutor = geminiBatchExecutor;
 	}
 
 	public Optional<AiRecommendationResult> inferRecommendation(AiRecommendationPromptRequest request) {
-		if (properties.apiKey() == null || properties.apiKey().isBlank()) {
-			log.warn("Gemini recommendation skipped: API key missing");
+		if (!llmCompletionClient.geminiConfigured() && !llmCompletionClient.deepseekConfigured()) {
+			log.warn("Recommendation LLM skipped: set AI_AGENT_DEEPSEEK_API_KEY and/or AI_AGENT_GEMINI_API_KEY (or GOOGLE_API_KEY chain for Gemini)");
 			return Optional.empty();
 		}
 		String requestId = UUID.randomUUID().toString();
@@ -68,64 +80,49 @@ public class RecommendationGeminiService {
 			String retryPrompt = prompt + "\nDo not omit required keys. Return valid JSON only.";
 			return inferRecommendationByPrompt(requestId, keyId, 2, retryPrompt, usageAggregate);
 		} catch (Exception ex) {
-			log.warn("Gemini recommendation inference failed: {}", ex.getMessage());
+			log.warn("Recommendation LLM inference failed: {}", ex.getMessage());
 			return Optional.empty();
 		} finally {
 			logGeminiUsageSummary(usageAggregate);
 		}
 	}
 
+	/**
+	 * Runs one Gemini inference per key so recommendation prompts never mix multiple keys.
+	 */
 	public Map<String, AiRecommendationResult> inferRecommendations(List<AiRecommendationPromptRequest> requests) {
 		if (requests == null || requests.isEmpty()) {
 			return Map.of();
 		}
-		if (properties.apiKey() == null || properties.apiKey().isBlank()) {
-			log.warn("Gemini recommendation batch skipped: API key missing");
-			return Map.of();
+		List<AiRecommendationPromptRequest> ordered = requests.stream()
+				.filter(r -> r.keyId() != null && !r.keyId().isBlank())
+				.toList();
+		Map<String, AiRecommendationResult> byKeyId = new LinkedHashMap<>();
+		if (ordered.isEmpty()) {
+			return byKeyId;
 		}
-		String requestId = UUID.randomUUID().toString();
-		UsageAggregate usageAggregate = new UsageAggregate(requestId, "batch");
-		try {
-			String inputJson = objectMapper.writeValueAsString(requests);
-			String prompt = """
-					You are an AI model recommendation assistant for API usage optimization.
-					Return ONLY one raw JSON array.
-					No markdown fences.
-
-					[Input array]
-					%s
-
-					[Rules]
-					- Analyze each item independently.
-					- Preserve every input keyId in output.
-					- Explain recommendation rationale in Korean.
-					- Use one of HIGH, MEDIUM, LOW for confidenceLevel.
-					- Keep reasonMessage concise (<= 2 sentences).
-					- title should be short.
-
-					[Output JSON schema]
-					[
-					  {
-					    "keyId": "string",
-					    "title": "string",
-					    "reasonMessage": "string",
-					    "confidenceLevel": "HIGH|MEDIUM|LOW",
-					    "disclaimer": "string|null"
-					  }
-					]
-					""".formatted(inputJson);
-			Map<String, AiRecommendationResult> primary = inferRecommendationsByPrompt(requestId, 1, prompt, usageAggregate);
-			if (!primary.isEmpty()) {
-				return primary;
+		int parallelism = properties.resolvedBatchParallelism();
+		if (ordered.size() == 1 || parallelism <= 1) {
+			for (AiRecommendationPromptRequest request : ordered) {
+				String kid = request.keyId().trim();
+				inferRecommendation(request).ifPresent(result -> byKeyId.put(kid, result));
 			}
-			String retryPrompt = prompt + "\nDo not omit keyId and required keys. Return valid JSON array only.";
-			return inferRecommendationsByPrompt(requestId, 2, retryPrompt, usageAggregate);
-		} catch (Exception ex) {
-			log.warn("Gemini recommendation batch inference failed: {}", ex.getMessage());
-			return Map.of();
-		} finally {
-			logGeminiUsageSummary(usageAggregate);
+			return byKeyId;
 		}
+		Map<String, Optional<AiRecommendationResult>> pending = new ConcurrentHashMap<>();
+		@SuppressWarnings("unchecked")
+		CompletableFuture<Void>[] futures = ordered.stream()
+				.map(request -> CompletableFuture.runAsync(() -> {
+					String kid = request.keyId().trim();
+					pending.put(kid, inferRecommendation(request));
+				}, geminiBatchExecutor))
+				.toArray(CompletableFuture[]::new);
+		CompletableFuture.allOf(futures).join();
+		for (AiRecommendationPromptRequest request : ordered) {
+			String kid = request.keyId().trim();
+			pending.getOrDefault(kid, Optional.empty()).ifPresent(result -> byKeyId.put(kid, result));
+		}
+		return byKeyId;
 	}
 
 	private Optional<AiRecommendationResult> inferRecommendationByPrompt(
@@ -171,69 +168,8 @@ public class RecommendationGeminiService {
 			));
 		} catch (Exception ex) {
 			logGeminiUsage(requestId, keyId, attempt, prompt.length(), null, startedAt, usageAggregate);
-			log.warn("Gemini recommendation attempt failed: {}", ex.getMessage());
+			log.warn("Recommendation LLM attempt failed: {}", ex.getMessage());
 			return Optional.empty();
-		}
-	}
-
-	private Map<String, AiRecommendationResult> inferRecommendationsByPrompt(
-			String requestId,
-			int attempt,
-			String prompt,
-			UsageAggregate usageAggregate
-	) {
-		long startedAt = System.currentTimeMillis();
-		try {
-			String responseBody = callGenerateContent(prompt);
-			if (responseBody == null || responseBody.isBlank()) {
-				logGeminiUsage(requestId, "batch", attempt, prompt.length(), null, startedAt, usageAggregate);
-				return Map.of();
-			}
-			JsonNode root = objectMapper.readTree(responseBody);
-			logGeminiUsage(requestId, "batch", attempt, prompt.length(), root.path("usageMetadata"), startedAt, usageAggregate);
-			JsonNode textNode = root.path("candidates").path(0).path("content").path("parts").path(0).path("text");
-			if (textNode.isMissingNode() || textNode.asText().isBlank()) {
-				return Map.of();
-			}
-			String rawJson = extractJsonPayload(textNode.asText().trim());
-			JsonNode arrayNode = objectMapper.readTree(rawJson);
-			if (!arrayNode.isArray()) {
-				return Map.of();
-			}
-			Map<String, AiRecommendationResult> byKeyId = new LinkedHashMap<>();
-			for (JsonNode recommendation : arrayNode) {
-				String keyId = textOrNull(recommendation.get("keyId"));
-				String title = textOrNull(recommendation.get("title"));
-				String reasonMessage = textOrNull(recommendation.get("reasonMessage"));
-				String confidenceRaw = textOrNull(recommendation.get("confidenceLevel"));
-				String disclaimer = textOrNull(recommendation.get("disclaimer"));
-				if (keyId == null || keyId.isBlank()) {
-					continue;
-				}
-				if (title == null || title.isBlank() || reasonMessage == null || reasonMessage.isBlank() || confidenceRaw == null) {
-					continue;
-				}
-				RecommendationConfidenceLevel confidenceLevel;
-				try {
-					confidenceLevel = RecommendationConfidenceLevel.valueOf(confidenceRaw.trim().toUpperCase());
-				} catch (Exception ex) {
-					continue;
-				}
-				byKeyId.put(
-						keyId.trim(),
-						new AiRecommendationResult(
-								title.trim(),
-								reasonMessage.trim(),
-								confidenceLevel,
-								disclaimer == null || disclaimer.isBlank() ? null : disclaimer.trim()
-						)
-				);
-			}
-			return byKeyId;
-		} catch (Exception ex) {
-			logGeminiUsage(requestId, "batch", attempt, prompt.length(), null, startedAt, usageAggregate);
-			log.warn("Gemini recommendation batch attempt failed: {}", ex.getMessage());
-			return Map.of();
 		}
 	}
 
@@ -332,28 +268,7 @@ public class RecommendationGeminiService {
 	}
 
 	private String callGenerateContent(String prompt) {
-		Map<String, Object> body = Map.of(
-				"contents", new Object[]{
-						Map.of("parts", new Object[]{Map.of("text", prompt)})
-				},
-				"generationConfig", Map.of(
-						"responseMimeType", "application/json",
-						"temperature", 0.0
-				)
-		);
-		String configuredModel = (properties.model() == null || properties.model().isBlank())
-				? DEFAULT_GEMINI_MODEL
-				: properties.model().trim();
-		String baseUrl = (properties.baseUrl() == null || properties.baseUrl().isBlank())
-				? "https://generativelanguage.googleapis.com"
-				: properties.baseUrl();
-		String uri = baseUrl + "/v1beta/models/" + configuredModel + ":generateContent?key=" + properties.apiKey();
-		return RestClient.create()
-				.post()
-				.uri(uri)
-				.body(body)
-				.retrieve()
-				.body(String.class);
+		return llmCompletionClient.completeAsGeminiGenerateContentJson(prompt, 0.0);
 	}
 
 	private static String textOrNull(JsonNode n) {
@@ -384,8 +299,10 @@ public class RecommendationGeminiService {
 			String scopeId,
 			String keyId,
 			String reasonCode,
+			String recommendationPriority,
 			Long averageLatencyMs,
 			String inputOutputRatio,
+			Long totalReasoningTokens,
 			Long totalRequests,
 			Long totalTokensUsed,
 			String currentMonthlyCostUsd,

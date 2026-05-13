@@ -11,6 +11,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 
 import java.math.BigDecimal;
@@ -80,18 +81,18 @@ public class BillingSignalReconciliationService {
 		int hydrated = 0;
 		for (IdentityApiKeySnapshotService.ApiKeySnapshot key : keys) {
 			Long keyId = key.keyId();
-			Long userId = key.userId();
-			if (keyId == null || keyId <= 0 || userId == null || userId <= 0) {
+			String userId = key.userId();
+			if (keyId == null || keyId <= 0 || !StringUtils.hasText(userId)) {
 				continue;
 			}
 			try {
-				BigDecimal totalCost = fetchMonthlyCostUsd(String.valueOf(userId), String.valueOf(keyId), key.provider(), from, to);
+				BigDecimal totalCost = fetchMonthlyCostUsd(userId.trim(), String.valueOf(keyId), key.provider(), from, to);
 				if (totalCost == null) {
 					continue;
 				}
 				billingSignalSnapshotService.upsertReconciledCost(
 						String.valueOf(keyId),
-						String.valueOf(userId),
+						userId.trim(),
 						null,
 						"API_KEY",
 						totalCost,

@@ -21,7 +21,7 @@ public record UserContextChangedEvent(
 		Instant occurredAt,
 
 		@JsonProperty("userId")
-		Long userId,
+		String userId,
 
 		@JsonProperty("activeTeamId")
 		Long activeTeamId,
@@ -29,9 +29,9 @@ public record UserContextChangedEvent(
 		@JsonProperty("role")
 		String role
 ) {
-	public static final int CURRENT_SCHEMA_VERSION = 1;
+	public static final int CURRENT_SCHEMA_VERSION = 2;
 
-	public static UserContextChangedEvent of(Long userId, Long activeTeamId, String role) {
+	public static UserContextChangedEvent of(String userId, Long activeTeamId, String role) {
 		return new UserContextChangedEvent(
 				IdentityExternalApiKeyEventTypes.USER_CONTEXT_CHANGED,
 				CURRENT_SCHEMA_VERSION,

@@ -23,9 +23,9 @@ function asApiResponse(json: unknown): ApiResponse<unknown> | null {
 }
 
 function providerLabel(provider: ExternalKeyProvider) {
-  if (provider === "OPENAI") return "OpenAI"
-  if (provider === "GOOGLE") return "Google"
-  return "Anthropic"
+  if (provider === "OPENAI") return "OPENAI"
+  if (provider === "GOOGLE") return "GOOGLE"
+  return "ANTHROPIC"
 }
 
 function defaultAlias(provider: ExternalKeyProvider) {
@@ -466,6 +466,7 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
                 ? null
                 : "유예 기간이 지나면 DB에서 키가 영구 삭제됩니다. 유예 중에는 취소할 수 있습니다. 과거 사용량 로그는 usage 쪽 기록에 남을 수 있습니다."}
             </p>
+            <p className="mt-2 text-xs font-medium text-destructive">키 삭제 후 지출내역은 전혀 볼 수 없습니다.</p>
             {deletionModalParsed?.valid && deletionModalParsed.immediate ? (
               <p className="mt-2 text-sm font-medium text-destructive">이 API Key는 즉시 영구 삭제됩니다.</p>
             ) : null}
@@ -624,6 +625,8 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
                             onChange={(e) => setEditAliasValue(e.target.value)}
                             disabled={saveEditLoadingId === row.id}
                             autoComplete="off"
+                            required
+                            aria-label="별칭 (필수)"
                           />
                           <input
                             className="h-8 rounded-md border border-input bg-background px-2 text-sm"
@@ -640,7 +643,7 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
                         <span className="text-foreground">{row.alias}</span>
                       )}
                       {isPendingDeletion(row) ? (
-                        <span className="ml-1.5 text-amber-700 dark:text-amber-500">(삭제 예정)</span>
+                        <span className="ml-1.5 text-amber-700 dark:text-amber-500">(삭제)</span>
                       ) : null}
                     </div>
                     {isPendingDeletion(row) && row.permanentDeletionAt ? (
@@ -743,7 +746,7 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
 
           <div className="grid gap-1.5">
             <label className="text-sm font-medium" htmlFor="external-key-alias">
-              별칭(alias)
+              별칭(alias) (필수)
             </label>
             <input
               id="external-key-alias"

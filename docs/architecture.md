@@ -1,5 +1,5 @@
 # <Team Project> AI Usage & Billing Platform (MSA) 아키텍처 문서
-버전: 0.6.2
+버전: 0.6.5
 
 ---
 
@@ -7,7 +7,7 @@
 
 - **MSA 이론 배경**(일반 개념·특징·API Gateway 패턴): [`docs/msa-architecture-theory.md`](msa-architecture-theory.md)
   - 본 문서(`architecture.md`)는 **이 팀 프로젝트의 구조·스택·서비스 분해**를 다룬다. 위 이론 문서는 구현과 무관한 **일반 설명**을 위한 참고 자료이다.
-- **이벤트 소비·발행 흐름**(Proxy `UsageRecordedEvent` → usage·billing 소비, Billing `UsageCostFinalizedEvent` → usage 등): 본 문서 **§6**, 공유 타입·AMQP는 [`libs/usage-events`](../libs/usage-events) · 상세는 [`docs/billing-service-overview-20260412.md`](billing-service-overview-20260412.md)(부록 A 포함) · Billing이 RabbitMQ로 **추가 발행**하는 스트림(예산 임계·비용 정정 완료 등)은 [`docs/billing-outbound-events.md`](billing-outbound-events.md)
+- **이벤트 소비·발행 흐름**(Proxy `UsageRecordedEvent` → usage·billing 소비, Billing `UsageCostFinalizedEvent` → usage 등): 본 문서 **§6**, 공유 타입·AMQP는 [`libs/usage-events`](../libs/usage-events) · 상세는 [`docs/billing-service-overview-20260412.md`](billing-service-overview-20260412.md)(부록 A 포함) · Billing이 RabbitMQ로 **추가 발행**하는 스트림(개인 키 예산 임계·팀 API 키 예산 임계·비용 정정 완료 등)은 [`docs/billing-outbound-events.md`](billing-outbound-events.md)
 - **팀 도메인 이벤트 → 인앱 알림**: Team Service 발행 `team.events` / notification-service 소비·인앱 저장 — 본 문서 **§4.9·§6**, 페이로드 계약은 [`docs/contracts/web-team-bff.md`](contracts/web-team-bff.md) §6.2
 - **사용량·집계·대시보드 관점**: 본 문서 **§6·§11**, 다이어그램은 [`docs/c4-architecture-diagrams.md`](c4-architecture-diagrams.md)
 - **서비스별 DB 구성·서비스 간 데이터 전달**(물리/논리 PostgreSQL, 타 서비스 DB 직접 접근 금지, API vs RabbitMQ, 조회 성능): [`docs/msa-database-and-service-integration.md`](msa-database-and-service-integration.md)
@@ -97,6 +97,7 @@
 - 다른 애플리케이션 서비스(Identity, Usage Tracking, Team 등)도 기본은 **호스트 로컬 실행**으로 두되, 팀 합의에 따라 루트 Compose `profile: web`/서비스별 Compose에 포함해 함께 기동할 수 있다.
 - **team-service**는 `TEAM_SERVICE_PORT` 없으면 기본 **8093**, **billing-service**는 `BILLING_SERVICE_PORT` 없으면 기본 **8095** — 기본값끼리는 포트가 겹치지 않는다. `scripts/bootrun.ps1`·`bootrun.sh`는 team **8094**·billing **8095**를 넣어 과거(둘 다 8093) 충돌을 피한다. API Gateway **`GATEWAY_BILLING_URI`** 기본은 **`http://localhost:8095`** 와 billing 기본 포트가 일치한다(Compose 게이트웨이는 `host.docker.internal:8095`). 스모크: `scripts/verify-expenditure-chain.ps1` / `verify-expenditure-chain.sh`.
 - 루트 Compose의 **`team-service`**(`profiles: web`)는 **호스트 포트 매핑**에 **`TEAM_SERVICE_HOST_PORT`**(기본 **8093**)를 쓰고, 호스트에서 JVM으로 기동할 때의 **`TEAM_SERVICE_PORT`**(예: **8094**)와 변수명을 분리한다. 과거에는 둘 다 `TEAM_SERVICE_PORT`로 치환되어 `.env`에 **8094**를 두면 Compose가 호스트 **8094**를 Docker에 바인딩하고, 같은 머신에서 `bootRun`이 **8094**를 다시 쓰려 할 때(점유 PID가 **java**가 아니라 **Docker / wslrelay**인 유형) 충돌이 났다. **`TEAM_SERVICE_HOST_PORT`**는 Compose 전용, **`TEAM_SERVICE_PORT`**는 호스트 JVM용으로 구분한다. **`team-web`**는 같은 Compose 스택에서는 기본 **`http://team-service:8093`**, 호스트에서만 team을 띄울 때는 **`WEB_TEAM_SERVICE_URL`**을 호스트 포트에 맞춘다(`.env.example`).
+- Team Service가 Billing 월 롤업을 서버 간 호출할 때는 `team.billing.base-url`(`TEAM_BILLING_SERVICE_BASE_URL`)을 사용한다. 호스트 `bootRun` 기본은 `http://localhost:8095`, 루트 Compose `team-service` 기본은 `http://billing-service:8095`로 맞춘다.
 
 ---
 
@@ -149,6 +150,7 @@
 - 책임 범위
   - 사용자-조직-권한 모델을 관리한다(팀 단위 멤버십·팀 키 저장은 Team Service DB 소유).
   - Quota/Key 설정의 “정책 값(설정)”을 제공한다.
+  - 개인 외부 API Key 등록/수정 시 Team 내부 역조회 API를 통해 동일 키 해시 존재를 확인하고, 팀 키와의 중복 등록을 거절한다.
 
 ### 4.4 API Key Service
 - 역할
@@ -197,13 +199,15 @@
   - Slack/Email/앱 알림 발송
   - **인앱 알림(In-App Notification) 저장·조회**(1차 범위)
 - 책임 범위
-  - (로드맵) Billing이 발행하는 **비용·예산 임계** AMQP(`billing.budget.threshold.reached` 등, [`docs/billing-outbound-events.md`](billing-outbound-events.md))를 소비해 **발송만** 수행한다(§6).
+  - Billing이 발행하는 **예산 임계** AMQP를 소비해 **인앱 알림**을 생성한다: **개인·Identity 키** 스코프(팀 소스 `usage.recorded`로 쌓인 지출은 제외)는 **`billing.budget.threshold.reached`**, 팀 API 키(등록 키) 스코프는 **`billing.team.budget.threshold.reached`**([`docs/billing-outbound-events.md`](billing-outbound-events.md)). 비용 정정 완료(`billing.cost.corrected`) 등 추가 스트림의 소비는 필요 시 확장한다(§6).
   - **(1차) 인앱 알림의 진실 공급원(Source of truth)** 을 **notification-service의 PostgreSQL(`notification_db`)** 로 둔다.
     - 알림 목록·읽음 처리·테스트 발송(설정 화면에서 호출) 등은 **notification-service API**가 담당한다.
     - 사용자 세션/식별은 Identity `web`의 쿠키 기반 인증을 유지하고, **Notification `web` BFF가 서버에서 세션을 확인**한 뒤 내부 호출로 전달한다(§10.2, §13).
-  - **팀 도메인 이벤트 → 인앱(비동기):** **team-service**가 RabbitMQ TopicExchange **`team.events`** 로 발행하는 팀 도메인 이벤트(본문·헤더 `eventType`, 페이로드 정본은 [`docs/contracts/web-team-bff.md`](contracts/web-team-bff.md) §6.2·Java `TeamDomainOutboundEvent`)를 **notification-service**가 큐에서 소비해 `InAppNotification` 행을 생성한다. `type` 필드는 `team:{eventType}` 형태를 사용한다. 동일 이벤트 재전송 시 중복 행 방지를 위해 **`NotificationDelivery.dedupeKey`**(채널 `in-app`)로 멱등 처리한다. `TEAM_INVITATION_ACCEPTED`는 초대한 사용자에게, `TEAM_MEMBER_JOINED`는 **참여한 사용자(`receiverId`)에게만** 인앱을 생성해 초대자에게 수락 알림과 중복되지 않게 한다. 구현·환경 변수·로컬 Compose는 **`services/notification-service/README.md`** 를 본다.
-  - **팀 초대 수락/거절(동기 액션):** `TEAM_INVITE_CREATED` 인앱 알림에는 `meta.actions`로 수락/거절 경로가 포함될 수 있으며, UI는 이를 호출해 **notification-service 액션 API**(`POST /api/team-invitations/{invitationId}/accept|reject`)를 실행한다. notification-service는 team-service의 **내부 API**(`POST /internal/v1/team-invitations/{invitationId}/decision`)로 위임해 멤버십을 적용한다(계약: [`docs/contracts/web-team-bff.md`](contracts/web-team-bff.md) §6.1).
-  - 외부 채널(Slack/Email)·**Billing 예산 임계** 등 이벤트 기반 알림은 **소비자(notification) 구현·바인딩**이 붙는 대로 연결한다(발행 계약은 [`docs/billing-outbound-events.md`](billing-outbound-events.md)).
+  - **Identity 외부 API 키 상태 스트림 → 인앱(비동기):** Identity가 **`identity.events`** / **`identity.external-api-key.status-changed`** 로 발행하는 JSON 중, 삭제·활성 등은 **notification-service**가 별도 큐로 소비해 인앱·멱등 키를 만든다([`services/notification-service/README.md`](../services/notification-service/README.md) §「Identity 개인 외부 API 키」). billing-service는 동일 스트림에서 **`EXTERNAL_API_KEY_DELETED`** 만 골라 **개인 지출 집계**를 정리한다([`docs/billing-service-overview-20260412.md`](billing-service-overview-20260412.md) §6.2).
+  - **팀 도메인 이벤트 → 인앱(비동기):** **team-service**가 RabbitMQ TopicExchange **`team.events`** 로 발행하는 팀 도메인 이벤트(본문·헤더 `eventType`, 페이로드 정본은 [`docs/contracts/web-team-bff.md`](contracts/web-team-bff.md) §6.2·Java `TeamDomainOutboundEvent`)를 **notification-service**가 큐에서 소비해 `InAppNotification` 행을 생성한다. `type` 필드는 `team:{eventType}` 형태를 사용한다. 동일 이벤트 재전송 시 중복 행 방지를 위해 **`NotificationDelivery.dedupeKey`**(채널 `in-app`)로 멱등 처리한다. `TEAM_INVITATION_ACCEPTED`는 초대한 사용자에게, `TEAM_MEMBER_JOINED`는 **참여한 사용자(`receiverId`)에게만** 인앱을 생성해 초대자에게 수락 알림과 중복되지 않게 한다. **`TEAM_DELETED` 수신 시** notification-service는 `meta.teamId`가 동일한 **`team:TEAM_INVITE_CREATED`** 인앱을 void 처리(`actions` 제거·`staleReason` 등)해, 팀 삭제 후에도 남은 초대 버튼이 보이지 않게 한다. 구현·환경 변수·로컬 Compose는 **`services/notification-service/README.md`** 를 본다.
+  - **팀 초대 수락/거절(동기 액션):** `TEAM_INVITE_CREATED` 인앱 알림에는 `meta.actions`로 수락/거절 경로가 포함될 수 있으며, UI는 이를 호출해 **notification-service 액션 API**(`POST /api/team-invitations/{invitationId}/accept|reject`)를 실행한다. notification-service는 team-service의 **내부 API**(`POST /internal/v1/team-invitations/{invitationId}/decision`)로 위임해 멤버십을 적용한다(계약: [`docs/contracts/web-team-bff.md`](contracts/web-team-bff.md) §6.1). team-service가 **HTTP 400/404/409**로 거절하면 해당 초대 인앱 행을 void 처리한 뒤 동일 상태를 클라이언트에 전달한다(타임아웃은 **504**에 가깝게 매핑).
+  - **인앱 목록 UI(Notification `web`):** 기본 뷰는 **읽지 않은 알림만** 표시하고, **읽음 알림 포함** 토글로 읽음 행을 다시 볼 수 있다. `meta.staleReason` 또는 `actionedAt`이 있는 팀 초대는 수락/거절 버튼을 렌더링하지 않는다.
+  - 외부 채널(Slack/Email) 등은 별도 연동을 따르며, **Billing 예산 임계**는 이미 RabbitMQ 소비자로 인앱에 연결되어 있다(발행·페이로드 계약: [`docs/billing-outbound-events.md`](billing-outbound-events.md), 구현·환경 변수: **`services/notification-service/README.md`**).
 
 ### 4.10 Team Service
 - 역할
@@ -213,8 +217,11 @@
 - 책임 범위
   - 팀 도메인의 데이터 소유권을 분리해 관리한다.
   - 팀 멤버십 기준 권한(예: 팀 멤버만 초대 가능)을 서버에서 강제한다.
-  - 팀원 초대 시 Identity 사용자 존재 여부를 검증한다. 우선 RabbitMQ 기반 `identity_user_sync` 캐시를 확인하고, 필요 시 Identity 내부 API로 fallback 조회해 실제 가입된 사용자(이메일 아이디)만 초대되도록 보장한다.
+  - 팀원 초대 시 Identity 사용자 존재 여부를 검증한다. **identity-service**가 RabbitMQ(`identity.events` / `identity.user.sync`)로 사용자 동기화 이벤트를 발행하면 team-service가 `identity_user_sync`에 적재한다(계약·백필: [`docs/contracts/web-team-bff.md`](contracts/web-team-bff.md) §5.2). 캐시 미스 시 Identity 내부 API로 fallback 조회해 실제 가입된 사용자(이메일 아이디)만 초대되도록 보장한다.
+  - **`GET /internal/v1/users/{userId}/teams`** 및 이를 호출하는 usage-service Usage BFF 팀 목록 등에서는 `team_members.user_id`와 요청 `{userId}` 형태가 다를 수 있으므로, 동일한 **`resolveMembershipLookupCandidates`** 경로로 이메일·숫자 ID 후보를 넓힌 뒤 멤버십을 조회한다. 식별자 불일치·빈 목록 분석은 [`docs/contracts/web-team-bff.md`](contracts/web-team-bff.md) §6.1을 본다.
   - 팀 API Key는 암호화 저장하고, 조회 시 원문 대신 마스킹된 요약만 제공한다.
+  - **Identity 개인 키와 Team 키는 상호 중복 등록을 허용하지 않는다.** Team 키 등록/수정 시 Identity 내부 역조회 API로 동일 해시 키 존재를 확인하며, 이미 개인 키로 등록된 키면 거절한다.
+  - 동일 서비스 내에서 삭제 예정 상태의 키를 다시 등록하면 중복 오류로 거절하지 않고 ACTIVE로 복구(재등록)한다.
 
 ---
 
@@ -255,7 +262,7 @@
 ### 6.1 기본 이벤트 예시
 - `usage-recorded`
   - 발행 주체: Proxy Service
-  - 소비 주체: **Usage Service**(저장·**API 사용량 대시보드** 원천), **Billing Service**(**비용 대시보드**·비용 집계 및 예산 대비 지출 판단의 입력).
+  - 소비 주체: **Usage Service**(저장·**API 사용량 대시보드** 원천), **Billing Service**(**비용 대시보드**·비용 집계 및 예산 대비 지출 판단의 입력). Billing은 `UsageRecordedEvent.apiKeySource`에 따라 **개인** `daily_expenditure_agg` 등과 **팀 API 키 전용** 집계를 나누어 갱신한다(팀 소스는 개인 집계·개인 월 예산 임계 경로에 넣지 않음 — [`docs/billing-service-overview-20260412.md`](billing-service-overview-20260412.md) §4.1).
 - `usage.cost.finalized`
   - 발행 주체: Billing Service (`billing.events` exchange)
   - 소비 주체: Usage Service (`usage-service.usage-cost-finalized.queue`)
@@ -265,9 +272,15 @@
   - 발행 주체: Identity Service (회원 탈퇴 요청)
   - 소비 주체: Team Service (해당 사용자 팀 멤버십/초대 정리) 등
   - 후속 ACK: Team Service는 정리 완료 후 `identity.user.account-deletion-ack` 를 발행해 Identity의 삭제 코디네이션을 완료한다.
+- `identity.external-api-key.status-changed` (JSON, Identity → 다중 소비자)
+  - 발행 주체: Identity Service — exchange **`identity.events`**, routing key **`identity.external-api-key.status-changed`**(기본; 상태·예산·삭제 페이로드가 같은 스트림에 실릴 수 있음).
+  - 소비 주체(예): **usage-service**, **agent-service**, **notification-service**(인앱·삭제 등), **billing-service** — billing은 본문 **`eventType=EXTERNAL_API_KEY_DELETED`** 만 처리해 해당 키의 **개인** 일·월 집계·`billing_user_api_key_seen`를 삭제한다([`docs/billing-service-overview-20260412.md`](billing-service-overview-20260412.md) §6.2).
 - `billing.budget.threshold.reached` (구현, 선택 플래그)
-  - 발행 주체: Billing Service — `billing.events` / `billing.budget.threshold.reached`(기본; 환경으로 덮어쓰기 가능). 키·프로바이더별 월 예산(Identity) 대비 **임계 단위(기본 10%; 테스트 시 1%)**를 **처음 넘을 때** 알림용으로 발행.
-  - 소비 주체: Notification 등(팀 합의). 페이로드·토폴로지 정본: [`docs/billing-outbound-events.md`](billing-outbound-events.md).
+  - 발행 주체: Billing Service — `billing.events` / `billing.budget.threshold.reached`(기본). **`apiKeySource`가 `team`이 아닌** 사용 이벤트로 쌓인 **개인·Identity API 키·프로바이더** 월 예산(Identity) 대비 임계 비율을 **`BudgetThresholdEventPublisher`의 `PERCENT_STEP`(현재 코드 기준 1% 단위)**마다 **처음 넘을 때** 알림용으로 발행한다(운영에서 10% 단위로 바꾸려면 동일 상수 조정). 팀 키 사용량은 본 routing이 아니라 **`billing.team.budget.threshold.reached`**(아래)로만 다룬다.
+  - 소비 주체: **notification-service**(인앱). 페이로드·토폴로지 정본: [`docs/billing-outbound-events.md`](billing-outbound-events.md).
+- `billing.team.budget.threshold.reached` (구현, 선택 플래그)
+  - 발행 주체: Billing Service — 동일 `billing.events` / **`billing.team.budget.threshold.reached`**. **팀 API 키**(`apiKeySource=team` 등) 집계와 Team DB의 **팀 키별 `monthlyBudgetUsd`** 대비 임계를 **`TeamApiKeyBudgetThresholdEventPublisher`**가 동일한 퍼센트 스텝 규칙으로 발행한다.
+  - 소비 주체: **notification-service** — 기본 큐 **`notification.billing.team.events`** 등으로 구독해 팀 멤버별 인앱을 생성한다(팀원 목록은 team-service HTTP로 조회). 상세: [`docs/billing-outbound-events.md`](billing-outbound-events.md) §2.1, **`services/notification-service/README.md`**.
 - `billing.cost.corrected` (구현, 선택 플래그)
   - 발행 주체: Billing Service — 비용 정정이 집계에 반영된 뒤 트랜잭션 커밋 후 발행.
   - 소비 주체: 감사·동기화 워커 등(팀 합의). 상세: [`docs/billing-outbound-events.md`](billing-outbound-events.md).
@@ -276,7 +289,7 @@
   - 소비 주체: Analytics Service
 - 팀 도메인 이벤트(`TEAM_CREATED`, `TEAM_INVITE_CREATED`, … — **12종**, [`TeamEventTypes`](../services/team-service/src/main/java/com/zerobugfreinds/team_service/event/TeamEventTypes.java))
   - 발행 주체: **Team Service** — exchange **`team.events`**, routing key **`team-member-added`**(기본, `application.properties`로 조정 가능)
-  - 소비 주체: **notification-service** — 큐 **`notification.team.events`**(기본) 등으로 구독·인앱 생성(§4.9, §6.2 토폴로지)
+  - 소비 주체: **notification-service** — 큐 **`notification.team.events`**(기본) 등으로 구독·인앱 생성(§4.9, §6.2 토폴로지). **billing-service**는 별도 바인딩으로 **`team.api.key.#`** 패턴을 구독해 **`TEAM_API_KEY_DELETED`** 만 처리·집계 purge한다([`docs/billing-service-overview-20260412.md`](billing-service-overview-20260412.md) §6.2).
 
 ### 6.2 브로커 및 연동
 - **브로커**: **RabbitMQ** (Kafka 등은 본 프로젝트 범위에서 사용하지 않는다).
@@ -292,8 +305,15 @@
   - consume queue: `usage-service.usage-cost-finalized.queue` (`billing.events` / `usage.cost.finalized`)
 - Billing
   - consume queue: `billing-service.queue` (`usage.recorded`)
+  - consume queue(선택): `billing-service.identity.external-api-key.queue` 근처 바인딩 — `identity.events` / `identity.external-api-key.status-changed` ([`docs/billing-service-overview-20260412.md`](billing-service-overview-20260412.md) §6.2)
+  - consume queue(선택): `billing-service.team.api-key.domain.queue` — `team.events` / `team.api.key.#` ( **`TEAM_API_KEY_DELETED`** purge 전용)
   - publish exchange/routing key: `billing.events` / `usage.cost.finalized` (비용 확정; 플래그로 비활성 가능)
-  - publish (선택): 동일 `billing.events`에 `billing.budget.threshold.reached`, `billing.cost.corrected` 등 — [`docs/billing-outbound-events.md`](billing-outbound-events.md)
+  - publish (선택): 동일 `billing.events`에 `billing.budget.threshold.reached`, `billing.team.budget.threshold.reached`, `billing.cost.corrected` 등 — [`docs/billing-outbound-events.md`](billing-outbound-events.md)
+- Notification (Billing 예산 임계)
+  - consume queue(개인): 기본 `notification.billing.events` 근처 바인딩 — `BILLING_EVENTS_*` 환경 변수([`services/notification-service/README.md`](../services/notification-service/README.md))
+  - consume queue(팀 API 키): 기본 **`notification.billing.team.events`** — `BILLING_TEAM_EVENTS_*`
+- Notification (Identity 외부 API 키)
+  - consume queue(기본): **`notification.identity.external-api-key.queue`** — `IDENTITY_EXTERNAL_API_KEY_EVENTS_*` ([`services/notification-service/README.md`](../services/notification-service/README.md))
 - Team/Identity 계정 삭제 이벤트
   - queue 예: `team.account-deletion.requested.queue`, `identity.account-deletion.ack.queue`
 - Team 도메인(팀 생성·초대·API 키 등)
@@ -413,10 +433,10 @@
 
 - Proxy Service: “AI 요청을 실제 Provider로 전달하고, usage(토큰·비용) 정보를 **RabbitMQ 이벤트로 발행**한다(Usage DB에 직접 쓰지 않음; §2·§6).”
 - Usage Service: “**이벤트 소비·usage 로그 영속**(전용 DB) 및 **API 사용량 대시보드** 관련 데이터·API(§4.5·§6).”
-- Billing Service: “usage 기반 **비용 산출·정산·billing_record** 및 **비용 대시보드**; **예산 한도 대비 지출** 판단 후 RabbitMQ로 **`billing.budget.threshold.reached`** 등 알림용 이벤트 **발행**(§6, [`docs/billing-outbound-events.md`](billing-outbound-events.md)). Notification이 이를 **소비·발송**하는 것은 팀 로드맵(§4.9·§12).”
+- Billing Service: “usage 기반 **비용 산출·정산·billing_record** 및 **비용 대시보드**; **예산 한도 대비 지출** 판단 후 RabbitMQ로 **`billing.budget.threshold.reached`**(개인·Identity 키)·**`billing.team.budget.threshold.reached`**(팀 API 키)·**`billing.cost.corrected`** 등을 **발행**(§6, [`docs/billing-outbound-events.md`](billing-outbound-events.md)). **notification-service**가 예산 임계 스트림을 **소비해 인앱**으로 전달한다(§4.9·§12).”
 - Analytics & Reporting Service: “추가 **집계·리포트** 파이프라인(팀이 별도 서비스로 둘 때 §12와 연계); 사용량 **요약·차트**의 일부는 현재 Usage 경계에서 노출될 수 있다.”
 - Quota Service: “예산/제한 정책 소유 및 초과 기준 제공(§7).”
-- Notification Service: “Slack/Email 등 외부 알림 발송 + **(1차) 인앱 알림 저장·조회**(전용 DB). Billing이 발행하는 **`billing.budget.threshold.reached`** 등 **소비·발송 연계**는 팀 로드맵(§6).”
+- Notification Service: “Slack/Email 등 외부 알림 발송 + **(1차) 인앱 알림 저장·조회**(전용 DB). Billing이 발행하는 **`billing.budget.threshold.reached`**·**`billing.team.budget.threshold.reached`** 를 **RabbitMQ로 소비해 인앱**으로 저장한다(§6, [`docs/billing-outbound-events.md`](billing-outbound-events.md)).”
 - Identity Service: “인증·사용자·**조직**·멤버십·RBAC; 팀 도메인은 **Team Service**와 HTTP API로 연동(§4.3·§4.10).”
 - Team Service: “팀·팀원·팀 API Key 등 **팀 도메인** 데이터 소유·API(§4.10).”
 - API Key Service: “(논리 경계) 공급사 API Key 암호화 저장/조회; 구현 위치는 **identity-service** 등 팀 합의 경계(§4.4).”
@@ -433,9 +453,9 @@
 ### 12.1 담당 서비스·산출물
 
 - **Usage Service**: **`usage-recorded`** 소비·로그 영속 및 **사용량 대시보드**용 조회·집계(§4.5·§6·§11).
-- **Billing Service**: **`usage-recorded`** 를 비용 산출·**비용 대시보드** 입력으로 쓰고, RabbitMQ로 **`usage.cost.finalized`**, **`billing.budget.threshold.reached`**, **`billing.cost.corrected`** 등을 **발행**한다(§6, [`docs/billing-outbound-events.md`](billing-outbound-events.md)). **Notification**이 이를 구독해 사용자 알림으로 바꾸는 단계는 팀 로드맵(§6·§11).
+- **Billing Service**: **`usage-recorded`** 를 비용 산출·**비용 대시보드** 입력으로 쓰고, RabbitMQ로 **`usage.cost.finalized`**, **`billing.budget.threshold.reached`**, **`billing.team.budget.threshold.reached`**, **`billing.cost.corrected`** 등을 **발행**한다(§6, [`docs/billing-outbound-events.md`](billing-outbound-events.md)).
 - **Analytics & Reporting Service**(또는 동일 책임의 모듈): Usage·Billing **허용 API** 또는 후속 이벤트를 바탕으로 한 **추가** 집계 API·리포트 생성 파이프라인.
-- **Notification Service**(또는 동일 책임의 워커): Slack·이메일 등 외부 채널 발송; Billing 발행 **예산 임계·비용 정정 완료** 등 AMQP **소비**는 팀 로드맵(§4.9·§6, [`docs/billing-outbound-events.md`](billing-outbound-events.md)).
+- **Notification Service**(또는 동일 책임의 워커): Slack·이메일 등 외부 채널 발송; Billing 발행 **예산 임계**(개인·팀 API 키) AMQP는 **인앱 소비자로 구현**되어 있다(§4.9·§6, [`docs/billing-outbound-events.md`](billing-outbound-events.md)). **`billing.cost.corrected`** 등 추가 스트림 소비는 필요 시 확장한다.
 
 ### 12.2 데이터 집계(Aggregation)
 
@@ -448,7 +468,7 @@
 
 - **입력**: Quota/비용 **임계치**(예: 예산 **80%**, **100%**)는 **Quota Service·Billing·Identity 등이 제공하는 정책·집계**를 기준으로 한다(§7).
 - **동작**: 조건 충족 시 **Slack Webhook**, **이메일(Resend 등)** 등으로 발송; **동일 임계치에 대한 중복 알림 방지** 및 최소한의 **발송 이력**을 둔다(§4.9).
-- **이벤트 연계**: `quota-warning` / `quota-exceeded` 등(§6.1)을 소비해 “발송만” 수행하는 구조를 권장한다.
+- **이벤트 연계**: `quota-warning` / `quota-exceeded` 등(§6.1)을 소비해 “발송만” 수행하는 구조를 권장한다. **비용 예산 임계**는 Billing이 발행하고 notification-service가 **인앱**으로 소비한다(§6.1의 `billing.budget.threshold.reached` / `billing.team.budget.threshold.reached`).
 
 ### 12.4 리포트 생성(Reporting)
 

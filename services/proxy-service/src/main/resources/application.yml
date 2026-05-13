@@ -4,6 +4,9 @@ server:
 spring:
   application:
     name: proxy-service
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: false
   rabbitmq:
     host: localhost
     port: 5672
@@ -31,6 +34,8 @@ proxy:
     mock-key-google: ${PROXY_GOOGLE_TEST_API_KEY:}
     mock-key: ${PROXY_MOCK_KEY_FALLBACK:}
     cache-ttl: PT5M
+    # Contract-gap fallback for ext raw-key reverse lookup (identity/team not yet supporting reverse API).
+    reverse-lookup-mocks: []
   team-key-service:
     base-url: ${PROXY_TEAM_KEY_SERVICE_BASE_URL:http://localhost:8093}
     internal-token: ${PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN:change-this-team-internal-api-token}

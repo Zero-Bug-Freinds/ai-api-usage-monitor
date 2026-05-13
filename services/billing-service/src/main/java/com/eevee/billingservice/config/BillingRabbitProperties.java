@@ -21,9 +21,31 @@ public class BillingRabbitProperties {
     private final BudgetOut budgetOut = new BudgetOut();
 
     /**
+     * Outbound billing → notification team budget-threshold events (team registered keys only).
+     */
+    private final TeamBudgetOut teamBudgetOut = new TeamBudgetOut();
+
+    /**
      * Inbound cost correction commands (delta adjustments).
      */
     private final CorrectionIn correctionIn = new CorrectionIn();
+
+    /**
+     * Inbound team-service Team API key status events (read model sync).
+     */
+    private final TeamApiKeyIn teamApiKeyIn = new TeamApiKeyIn();
+
+    /**
+     * Inbound identity-service personal external API key stream ({@code identity.events} /
+     * {@code identity.external-api-key.status-changed}). Payloads are mixed; billing only purges on delete.
+     */
+    private final IdentityExternalApiKeyIn identityExternalApiKeyIn = new IdentityExternalApiKeyIn();
+
+    /**
+     * Inbound team-service domain stream ({@code team.events} / {@code team.api.key.#}). Mixed payloads;
+     * billing purges team key aggregates on {@code TEAM_API_KEY_DELETED} only.
+     */
+    private final TeamDomainIn teamDomainIn = new TeamDomainIn();
 
     /**
      * Outbound billing → usage/analytics (and similar) after a correction is applied.
@@ -62,12 +84,28 @@ public class BillingRabbitProperties {
         return budgetOut;
     }
 
+    public TeamBudgetOut getTeamBudgetOut() {
+        return teamBudgetOut;
+    }
+
     public CorrectionIn getCorrectionIn() {
         return correctionIn;
     }
 
     public CorrectionOut getCorrectionOut() {
         return correctionOut;
+    }
+
+    public TeamApiKeyIn getTeamApiKeyIn() {
+        return teamApiKeyIn;
+    }
+
+    public IdentityExternalApiKeyIn getIdentityExternalApiKeyIn() {
+        return identityExternalApiKeyIn;
+    }
+
+    public TeamDomainIn getTeamDomainIn() {
+        return teamDomainIn;
     }
 
     public static class CostOut {
@@ -106,6 +144,37 @@ public class BillingRabbitProperties {
         private boolean enabled = true;
         private String exchange = "billing.events";
         private String routingKey = "billing.budget.threshold.reached";
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getExchange() {
+            return exchange;
+        }
+
+        public void setExchange(String exchange) {
+            this.exchange = exchange;
+        }
+
+        public String getRoutingKey() {
+            return routingKey;
+        }
+
+        public void setRoutingKey(String routingKey) {
+            this.routingKey = routingKey;
+        }
+    }
+
+    public static class TeamBudgetOut {
+
+        private boolean enabled = true;
+        private String exchange = "billing.events";
+        private String routingKey = "billing.team.budget.threshold.reached";
 
         public boolean isEnabled() {
             return enabled;
@@ -200,6 +269,126 @@ public class BillingRabbitProperties {
 
         public void setRoutingKey(String routingKey) {
             this.routingKey = routingKey;
+        }
+    }
+
+    public static class TeamApiKeyIn {
+
+        private boolean enabled = true;
+        private String exchange = "team.api-key.exchange";
+        private String routingKey = "team.api-key.status.changed";
+        private String queue = "billing-service.team-api-key.status.changed.queue";
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getExchange() {
+            return exchange;
+        }
+
+        public void setExchange(String exchange) {
+            this.exchange = exchange;
+        }
+
+        public String getRoutingKey() {
+            return routingKey;
+        }
+
+        public void setRoutingKey(String routingKey) {
+            this.routingKey = routingKey;
+        }
+
+        public String getQueue() {
+            return queue;
+        }
+
+        public void setQueue(String queue) {
+            this.queue = queue;
+        }
+    }
+
+    public static class TeamDomainIn {
+
+        private boolean enabled = true;
+        private String exchange = "team.events";
+        private String routingKey = "team.api.key.#";
+        private String queue = "billing-service.team.api-key.domain.queue";
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getExchange() {
+            return exchange;
+        }
+
+        public void setExchange(String exchange) {
+            this.exchange = exchange;
+        }
+
+        public String getRoutingKey() {
+            return routingKey;
+        }
+
+        public void setRoutingKey(String routingKey) {
+            this.routingKey = routingKey;
+        }
+
+        public String getQueue() {
+            return queue;
+        }
+
+        public void setQueue(String queue) {
+            this.queue = queue;
+        }
+    }
+
+    public static class IdentityExternalApiKeyIn {
+
+        private boolean enabled = true;
+        private String exchange = "identity.events";
+        private String routingKey = "identity.external-api-key.status-changed";
+        private String queue = "billing-service.identity.external-api-key.queue";
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getExchange() {
+            return exchange;
+        }
+
+        public void setExchange(String exchange) {
+            this.exchange = exchange;
+        }
+
+        public String getRoutingKey() {
+            return routingKey;
+        }
+
+        public void setRoutingKey(String routingKey) {
+            this.routingKey = routingKey;
+        }
+
+        public String getQueue() {
+            return queue;
+        }
+
+        public void setQueue(String queue) {
+            this.queue = queue;
         }
     }
 }

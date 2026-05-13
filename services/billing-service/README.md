@@ -1,6 +1,6 @@
 # billing-service
 
-타 서비스가 RabbitMQ로 **billing이 발행하는(outbound) 이벤트**를 구독할 때는 저장소 루트의 [`docs/billing-outbound-events.md`](../../docs/billing-outbound-events.md) 를 본다.
+타 서비스가 RabbitMQ로 **billing이 발행하는(outbound) 이벤트**를 구독할 때는 저장소 루트의 [`docs/billing-outbound-events.md`](../../docs/billing-outbound-events.md) 를 본다. 예산 임계는 **개인·Identity 키**용 `billing.budget.threshold.reached`와 **팀 API 키**용 `billing.team.budget.threshold.reached`(페이로드·라우팅 키가 다름)로 분리되어 있다.
 
 ## Identity 예산(월 예산 USD) 연동 설정
 
@@ -33,7 +33,7 @@ BILLING_IDENTITY_BUDGET_PATH=/api/identity/v1/users/{userId}/budget
 `billing-service`는 Identity 응답 body를 JSON으로 파싱합니다.
 
 - **기본 예산 조회(기존)**: 최상위 `monthlyBudgetUsd` 를 사용합니다.
-- **키별 예산(선택)**: `monthlyBudgetsByKey` 배열이 있으면 `ExpenditureQueryService` / `IdentityBudgetClient.fetchMonthlyBudgetUsdForKey` 등에서 사용합니다.
+- **키별 예산(선택)**: `monthlyBudgetsByKey` 배열이 있으면 `ExpenditureQueryService` / `IdentityBudgetClient.fetchMonthlyBudgetUsdForKey` 등에서 사용합니다. 행의 `provider`는 Identity canonical로 **`OPENAI` / `ANTHROPIC` / `GOOGLE`** 이며, billing `AiProvider.GOOGLE` 조회 시 레거시 **`GEMINI`** 행도 매칭됩니다.
 
 예시:
 
@@ -41,7 +41,8 @@ BILLING_IDENTITY_BUDGET_PATH=/api/identity/v1/users/{userId}/budget
 {
   "monthlyBudgetUsd": 100.00,
   "monthlyBudgetsByKey": [
-    { "externalApiKeyId": 123, "provider": "OPENAI", "monthlyBudgetUsd": 25.00 }
+    { "externalApiKeyId": 123, "provider": "OPENAI", "monthlyBudgetUsd": 25.00 },
+    { "externalApiKeyId": 456, "provider": "GOOGLE", "monthlyBudgetUsd": 10.00 }
   ]
 }
 ```
@@ -267,6 +268,10 @@ ORDER BY first_seen_at ASC;
 - **설정 키**: `billing.pricing.seed-missing=true` (`services/billing-service/src/main/resources/application.yml`)
 
 이 모드에서는 카탈로그의 row 중 **DB에 없는(provider/model/valid_from/valid_to=null) row만 추가 삽입**합니다(멱등).
+
+루트 `docker-compose.yml` 의 `billing-service` 서비스는 기본으로 `BILLING_PRICING_SEED_MISSING=${BILLING_PRICING_SEED_MISSING:-true}` 를 넘기므로, 로컬 Compose만으로도 위 보강이 켜진 상태로 기동합니다(운영 배포에서는 `false` 등 팀 정책에 맞게 덮어씁니다).
+
+모델 문자열 **별칭 자동 매칭**(OPENAI·GOOGLE·ANTHROPIC)과 단가 미존재 시 로그 정책은 [`docs/billing-pricing-catalog-ops.md`](../../docs/billing-pricing-catalog-ops.md) 를 본다.
 
 ## billing-web USD 표시 규칙(아주 작은 값)
 

@@ -28,7 +28,7 @@ public record ExternalApiKeyBudgetChangedEvent(
 		String alias,
 
 		@JsonProperty("userId")
-		Long userId,
+		String userId,
 
 		@JsonProperty("visibility")
 		String visibility,
@@ -40,17 +40,21 @@ public record ExternalApiKeyBudgetChangedEvent(
 		ExternalApiKeyStatus status,
 
 		@JsonProperty("monthlyBudgetUsd")
-		BigDecimal monthlyBudgetUsd
+		BigDecimal monthlyBudgetUsd,
+
+		@JsonProperty("keyHash")
+		String keyHash
 ) {
-	public static final int CURRENT_SCHEMA_VERSION = 1;
+	public static final int CURRENT_SCHEMA_VERSION = 2;
 
 	public static ExternalApiKeyBudgetChangedEvent of(
 			Long keyId,
 			String alias,
-			Long userId,
+			String userId,
 			String provider,
 			ExternalApiKeyStatus status,
-			BigDecimal monthlyBudgetUsd
+			BigDecimal monthlyBudgetUsd,
+			String keyHash
 	) {
 		return new ExternalApiKeyBudgetChangedEvent(
 				IdentityExternalApiKeyEventTypes.EXTERNAL_API_KEY_BUDGET_CHANGED,
@@ -62,7 +66,8 @@ public record ExternalApiKeyBudgetChangedEvent(
 				"PRIVATE",
 				provider,
 				status,
-				monthlyBudgetUsd
+				monthlyBudgetUsd,
+				keyHash
 		);
 	}
 }

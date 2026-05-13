@@ -11,10 +11,10 @@ import type {
   ExpenditureSummary,
   MonthlyBudgetStatus,
   MonthlyPoint,
-  TeamMonthRollup,
+  TeamApiKeyMonthSpendResponse,
 } from "@/lib/expenditure/types";
 
-type IdentityExternalKeyProvider = "GEMINI" | "OPENAI" | "ANTHROPIC";
+type IdentityExternalKeyProvider = "GOOGLE" | "OPENAI" | "ANTHROPIC";
 
 type RegisteredExternalKey = {
   id: number | string;
@@ -45,9 +45,11 @@ async function fetchJson<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-function mapBillingProviderToIdentity(p: AiProviderCode): IdentityExternalKeyProvider {
-  if (p === "GOOGLE") return "GEMINI";
-  return p;
+function normalizeIdentityExternalKeyProvider(prov: unknown): IdentityExternalKeyProvider | null {
+  if (prov === "GOOGLE" || prov === "OPENAI" || prov === "ANTHROPIC") return prov;
+  // Legacy Identity external-key provider string (pre-GOOGLE canonical); not the same as billing AiProvider naming.
+  if (prov === "GEMINI") return "GOOGLE";
+  return null;
 }
 
 function parseRegisteredExternalKeys(json: unknown): RegisteredExternalKey[] {
@@ -64,44 +66,17 @@ function parseRegisteredExternalKeys(json: unknown): RegisteredExternalKey[] {
     const alias = o.alias;
     const idOk = typeof id === "number" || (typeof id === "string" && id.length > 0);
     if (!idOk) continue;
-    if (prov !== "GEMINI" && prov !== "OPENAI" && prov !== "ANTHROPIC") continue;
+    const normalizedProv = normalizeIdentityExternalKeyProvider(prov);
+    if (normalizedProv === null) continue;
     if (typeof alias !== "string") continue;
-    out.push({ id, provider: prov, alias });
+    out.push({ id, provider: normalizedProv, alias });
   }
   return out;
 }
 
-async function fetchJsonPost<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(path, {
-    method: "POST",
-    credentials: "include",
-    cache: "no-store",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `HTTP ${res.status}`);
-  }
-  return (await res.json()) as T;
-}
-
-async function fetchTeamMemberUserIds(teamId: string): Promise<string[]> {
-  const res = await fetch(`/api/team/v1/teams/${encodeURIComponent(teamId)}/members`, {
-    method: "GET",
-    credentials: "include",
-    headers: { Accept: "application/json" },
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(text || `팀 멤버 조회 실패 (HTTP ${res.status})`);
-  }
-  const json: unknown = await res.json();
-  if (typeof json !== "object" || json === null) return [];
-  const rec = json as Record<string, unknown>;
-  if (rec.success !== true || !Array.isArray(rec.data)) return [];
-  return rec.data.filter((x): x is string => typeof x === "string");
+async function fetchTeamApiKeySpendRange(teamId: string, from: string, to: string): Promise<TeamApiKeyMonthSpendResponse> {
+  const q = new URLSearchParams({ teamId, from, to });
+  return await fetchJson<TeamApiKeyMonthSpendResponse>(expenditureApiPath(`/api/expenditure/team-api-keys/month-spend?${q.toString()}`));
 }
 
 type MyTeam = { id: string; name: string };
@@ -146,10 +121,40 @@ export function ExpenditureDashboard() {
 
   const [teams, setTeams] = useState<MyTeam[]>([]);
   const [selectedTeamId, setSelectedTeamId] = useState("");
-  const [teamRollup, setTeamRollup] = useState<TeamMonthRollup | null>(null);
+  const [teamSpend, setTeamSpend] = useState<TeamApiKeyMonthSpendResponse | null>(null);
   const [teamLoading, setTeamLoading] = useState(false);
   const [teamsLoading, setTeamsLoading] = useState(false);
-  const [teamMonth, setTeamMonth] = useState<string>(() => currentMonthStartKst().slice(0, 7));
+  const [teamRangePreset, setTeamRangePreset] = useState<"last7" | "last30" | "last90" | "thisMonth" | "custom">("thisMonth");
+  const [teamCustomFrom, setTeamCustomFrom] = useState<string>(() => currentMonthRangeKst().from);
+  const [teamCustomTo, setTeamCustomTo] = useState<string>(() => currentMonthRangeKst().to);
+
+  const teamRange = useMemo(() => {
+    if (teamRangePreset === "last7") return rangeLastDays(7);
+    if (teamRangePreset === "last30") return rangeLastDays(30);
+    if (teamRangePreset === "last90") return rangeLastDays(90);
+    if (teamRangePreset === "thisMonth") return currentMonthRangeKst();
+    return { from: teamCustomFrom, to: teamCustomTo };
+  }, [teamCustomFrom, teamCustomTo, teamRangePreset]);
+
+  const teamRangeUi = useMemo(() => {
+    const iso = /^\d{4}-\d{2}-\d{2}$/;
+    if (!iso.test(teamRange.from) || !iso.test(teamRange.to)) {
+      return { ok: false as const, message: "날짜 형식이 올바르지 않습니다 (YYYY-MM-DD)" };
+    }
+    const fromD = new Date(`${teamRange.from}T00:00:00Z`);
+    const toD = new Date(`${teamRange.to}T00:00:00Z`);
+    if (Number.isNaN(fromD.getTime()) || Number.isNaN(toD.getTime())) {
+      return { ok: false as const, message: "날짜 값이 올바르지 않습니다" };
+    }
+    if (fromD.getTime() > toD.getTime()) {
+      return { ok: false as const, message: "from 날짜가 to 날짜보다 이후입니다" };
+    }
+    const diffDays = Math.floor((toD.getTime() - fromD.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+    if (diffDays > MAX_RANGE_DAYS) {
+      return { ok: false as const, message: `최대 ${MAX_RANGE_DAYS}일 범위까지 조회할 수 있습니다` };
+    }
+    return { ok: true as const, days: diffDays };
+  }, [teamRange.from, teamRange.to]);
 
   const range = useMemo(() => {
     if (rangePreset === "last7") return rangeLastDays(7);
@@ -197,9 +202,8 @@ export function ExpenditureDashboard() {
   }, [loadRegisteredKeys]);
 
   const keysForProvider = useMemo(() => {
-    const want = mapBillingProviderToIdentity(provider);
     return registeredKeys
-      .filter((k) => k.provider === want)
+      .filter((k) => k.provider === provider)
       .slice()
       .sort((a, b) => a.alias.localeCompare(b.alias, "ko"));
   }, [registeredKeys, provider]);
@@ -300,60 +304,82 @@ export function ExpenditureDashboard() {
     }
   }, [loadMonthlyBudget, loadRegisteredKeys, loadSeries]);
 
-  const loadTeams = useCallback(async () => {
+  const loadTeams = useCallback(async (): Promise<string> => {
     setTeamsLoading(true);
     setError(null);
+    let nextSelected = "";
     try {
       const list = await fetchMyTeams();
       setTeams(list);
       setSelectedTeamId((prev) => {
-        if (prev && list.some((t) => t.id === prev)) return prev;
-        return list[0]?.id ?? "";
+        nextSelected = prev && list.some((t) => t.id === prev) ? prev : list[0]?.id ?? "";
+        return nextSelected;
       });
+      return nextSelected;
     } catch (e: unknown) {
       setTeams([]);
       setSelectedTeamId("");
       setError(e instanceof Error ? e.message : "내 팀 목록을 불러오지 못했습니다");
+      return "";
     } finally {
       setTeamsLoading(false);
     }
   }, []);
+
+  const refreshTeam = useCallback(async () => {
+    setError(null);
+    try {
+      const tid = await loadTeams();
+      if (!tid) {
+        return;
+      }
+      if (!teamRangeUi.ok) {
+        setTeamSpend(null);
+        setError(teamRangeUi.message);
+        return;
+      }
+      setTeamLoading(true);
+      try {
+        const res = await fetchTeamApiKeySpendRange(tid, teamRange.from, teamRange.to);
+        setTeamSpend(res);
+      } catch (e: unknown) {
+        setTeamSpend(null);
+        setError(
+          e instanceof Error
+            ? e.message
+            : "팀 집계를 불러오지 못했습니다 (단일 오리진/권한/게이트웨이 설정을 확인하세요)"
+        );
+      } finally {
+        setTeamLoading(false);
+      }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "새로고침에 실패했습니다");
+    }
+  }, [loadTeams, teamRange.from, teamRange.to, teamRangeUi]);
 
   useEffect(() => {
     if (viewMode !== "team") return;
     void loadTeams();
   }, [loadTeams, viewMode]);
 
-  const loadTeamRollup = useCallback(async () => {
+  const loadTeamSpend = useCallback(async () => {
     const tid = selectedTeamId.trim();
     if (!tid) {
       setError("팀을 선택하세요.");
       return;
     }
+    if (!teamRangeUi.ok) {
+      setTeamSpend(null);
+      setError(teamRangeUi.message);
+      return;
+    }
     setTeamLoading(true);
     setError(null);
     try {
-      const userIds = await fetchTeamMemberUserIds(tid);
-      if (userIds.length === 0) {
-        setTeamRollup(null);
-        setError("팀에 멤버가 없습니다.");
-        return;
-      }
-      const monthStart = `${teamMonth}-01`;
-      const raw = await fetchJsonPost<{
-        totalCostUsd: number;
-        byUser: { userId: string; costUsd: number }[];
-      }>(expenditureApiPath("/api/expenditure/team/month-rollup"), {
-        teamId: tid,
-        userIds,
-        monthStartDate: monthStart,
-      });
-      setTeamRollup({
-        totalCostUsd: Number(raw.totalCostUsd),
-        byUser: raw.byUser.map((r) => ({ userId: r.userId, costUsd: Number(r.costUsd) })),
-      });
+      const res = await fetchTeamApiKeySpendRange(tid, teamRange.from, teamRange.to);
+      setTeamSpend(res);
     } catch (e: unknown) {
-      setTeamRollup(null);
+      setTeamSpend(null);
       setError(
         e instanceof Error
           ? e.message
@@ -362,7 +388,7 @@ export function ExpenditureDashboard() {
     } finally {
       setTeamLoading(false);
     }
-  }, [selectedTeamId, teamMonth]);
+  }, [selectedTeamId, teamRange.from, teamRange.to, teamRangeUi]);
 
   const budgetUi = useMemo(() => {
     const total = monthlyBudget?.totalCostUsd ?? null;
@@ -407,14 +433,50 @@ export function ExpenditureDashboard() {
     [monthly]
   );
 
-  const teamMemberChart = useMemo(
+  const teamKeyChart = useMemo(
     () =>
-      (teamRollup?.byUser ?? []).map((r) => ({
-        user: r.userId.length > 10 ? `${r.userId.slice(0, 8)}…` : r.userId,
-        usd: Number(r.costUsd),
-      })),
-    [teamRollup]
+      (teamSpend?.keys ?? [])
+        .filter((k) => Number(k.monthSpendUsd) > 0)
+        .map((k) => ({
+          key: k.alias.length > 16 ? `${k.alias.slice(0, 14)}…` : k.alias,
+          usd: Number(k.monthSpendUsd),
+        })),
+    [teamSpend]
   );
+
+  const teamBudgetUi = useMemo(() => {
+    const total = teamSpend?.teamMonthSpendUsd ?? null;
+    const budget = teamSpend?.teamMonthlyBudgetUsd ?? null;
+    if (total == null) return null;
+    if (budget == null || budget <= 0) {
+      return {
+        totalCostUsd: total,
+        monthlyBudgetUsd: null as number | null,
+        remainingUsd: null as number | null,
+        pct: null as number | null,
+      };
+    }
+    const remaining = Math.max(0, budget - total);
+    const pct = Math.min(100, (total / budget) * 100);
+    return { totalCostUsd: total, monthlyBudgetUsd: budget, remainingUsd: remaining, pct };
+  }, [teamSpend]);
+
+  const teamKeyBudgetById = useMemo(() => {
+    const out = new Map<number, { pct: number | null; remainingUsd: number | null }>();
+    for (const k of teamSpend?.keys ?? []) {
+      const spend = Number(k.monthSpendUsd);
+      const budget = Number(k.monthlyBudgetUsd);
+      if (!Number.isFinite(spend)) continue;
+      if (!Number.isFinite(budget) || budget <= 0) {
+        out.set(k.teamApiKeyId, { pct: null, remainingUsd: null });
+        continue;
+      }
+      const remaining = Math.max(0, budget - spend);
+      const pct = Math.min(100, (spend / budget) * 100);
+      out.set(k.teamApiKeyId, { pct, remainingUsd: remaining });
+    }
+    return out;
+  }, [teamSpend]);
 
   return (
     <div className="space-y-8">
@@ -444,8 +506,8 @@ export function ExpenditureDashboard() {
               <h2 className="text-sm font-medium text-muted-foreground">월 예산 대비 (전체)</h2>
               {budgetUi.monthlyBudgetUsd != null ? (
                 <p className="text-xs text-muted-foreground">
-                  이번 달 지출 {formatUsd(budgetUi.totalCostUsd)} / 월 예산 ${budgetUi.monthlyBudgetUsd.toFixed(2)} (잔여 $
-                  {(budgetUi.remainingUsd ?? 0).toFixed(2)})
+                  이번 달 지출 {formatUsd(budgetUi.totalCostUsd)} / 월 예산 {formatUsd(budgetUi.monthlyBudgetUsd)} (잔여{" "}
+                  {formatUsd(budgetUi.remainingUsd ?? 0)})
                 </p>
               ) : (
                 <p className="text-xs text-muted-foreground">
@@ -507,11 +569,21 @@ export function ExpenditureDashboard() {
           <button
             type="button"
             className="ml-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm hover:bg-muted"
+            disabled={loading}
             onClick={() => void refreshPersonal()}
           >
             새로고침
           </button>
-        ) : null}
+        ) : (
+          <button
+            type="button"
+            className="ml-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
+            disabled={teamsLoading || teamLoading}
+            onClick={() => void refreshTeam()}
+          >
+            새로고침
+          </button>
+        )}
       </div>
 
       {keysLoadError ? (
@@ -528,9 +600,9 @@ export function ExpenditureDashboard() {
 
       {viewMode === "team" ? (
         <section className="space-y-4 rounded-xl border border-border bg-card p-4 shadow-sm">
-          <h2 className="text-sm font-medium">팀 당월 누적 (billing 집계)</h2>
+          <h2 className="text-sm font-medium">팀 기간별 누적 (팀 등록 키 기준)</h2>
           <p className="text-xs text-muted-foreground">
-            팀 서비스에서 멤버 목록을 불러온 뒤, 해당 사용자들의 월별 지출을 합산합니다. 팀 API는 단일 오리진(identity 경유)에서만 호출됩니다.
+            팀 서비스에 등록된 팀 API 키(teamApiKeyId)가 있는 요청만 집계합니다. 집계 월 경계는 KST(Asia/Seoul) 기준입니다.
           </p>
           <div className="flex flex-wrap items-end gap-2">
             <label className="flex flex-col gap-1 text-sm">
@@ -540,7 +612,7 @@ export function ExpenditureDashboard() {
                 value={selectedTeamId}
                 onChange={(e) => {
                   setSelectedTeamId(e.target.value);
-                  setTeamRollup(null);
+                  setTeamSpend(null);
                 }}
                 disabled={teamsLoading || teams.length === 0}
               >
@@ -557,18 +629,80 @@ export function ExpenditureDashboard() {
                 )}
               </select>
             </label>
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-muted-foreground">월</span>
-              <input
-                className="h-9 w-[160px] rounded-md border border-input bg-background px-2 text-sm"
-                type="month"
-                value={teamMonth}
-                onChange={(e) => {
-                  setTeamMonth(e.target.value);
-                  setTeamRollup(null);
-                }}
-              />
-            </label>
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">기간</p>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    className={`h-8 rounded-md border border-border px-2 text-xs ${teamRangePreset === "last7" ? "bg-muted font-medium" : "bg-background hover:bg-muted"}`}
+                    onClick={() => setTeamRangePreset("last7")}
+                  >
+                    최근 7일
+                  </button>
+                  <button
+                    type="button"
+                    className={`h-8 rounded-md border border-border px-2 text-xs ${teamRangePreset === "last30" ? "bg-muted font-medium" : "bg-background hover:bg-muted"}`}
+                    onClick={() => setTeamRangePreset("last30")}
+                  >
+                    최근 30일
+                  </button>
+                  <button
+                    type="button"
+                    className={`h-8 rounded-md border border-border px-2 text-xs ${teamRangePreset === "last90" ? "bg-muted font-medium" : "bg-background hover:bg-muted"}`}
+                    onClick={() => setTeamRangePreset("last90")}
+                  >
+                    최근 90일
+                  </button>
+                  <button
+                    type="button"
+                    className={`h-8 rounded-md border border-border px-2 text-xs ${teamRangePreset === "thisMonth" ? "bg-muted font-medium" : "bg-background hover:bg-muted"}`}
+                    onClick={() => setTeamRangePreset("thisMonth")}
+                  >
+                    이번 달
+                  </button>
+                  <button
+                    type="button"
+                    className={`h-8 rounded-md border border-border px-2 text-xs ${teamRangePreset === "custom" ? "bg-muted font-medium" : "bg-background hover:bg-muted"}`}
+                    onClick={() => setTeamRangePreset("custom")}
+                  >
+                    직접 선택
+                  </button>
+                </div>
+              </div>
+              {teamRangePreset === "custom" ? (
+                <div className="flex flex-wrap items-end gap-2">
+                  <label className="flex flex-col gap-1 text-sm">
+                    <span className="text-xs text-muted-foreground">from</span>
+                    <input
+                      className="h-8 w-[150px] rounded-md border border-input bg-background px-2 text-xs"
+                      type="date"
+                      value={teamCustomFrom}
+                      onChange={(e) => {
+                        setTeamCustomFrom(e.target.value);
+                        setTeamSpend(null);
+                      }}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-sm">
+                    <span className="text-xs text-muted-foreground">to</span>
+                    <input
+                      className="h-8 w-[150px] rounded-md border border-input bg-background px-2 text-xs"
+                      type="date"
+                      value={teamCustomTo}
+                      onChange={(e) => {
+                        setTeamCustomTo(e.target.value);
+                        setTeamSpend(null);
+                      }}
+                    />
+                  </label>
+                </div>
+              ) : null}
+              <div className="text-xs text-muted-foreground">
+                {teamRange.from} ~ {teamRange.to}
+                {teamRangeUi.ok ? ` (${teamRangeUi.days}일)` : ""}
+              </div>
+            </div>
             <button
               type="button"
               className="h-9 rounded-md border border-border bg-background px-3 text-sm hover:bg-muted disabled:opacity-50"
@@ -581,23 +715,48 @@ export function ExpenditureDashboard() {
               type="button"
               className="h-9 rounded-md bg-primary px-3 text-sm text-primary-foreground disabled:opacity-50"
               disabled={teamLoading || teamsLoading || !selectedTeamId}
-              onClick={() => void loadTeamRollup()}
+              onClick={() => void loadTeamSpend()}
             >
               {teamLoading ? "불러오는 중…" : "집계"}
             </button>
           </div>
-          <p className="text-xs text-muted-foreground">집계 월 시작일: {teamMonth}-01 (KST 기준 월)</p>
-          {teamRollup ? (
-            <div className="space-y-3">
-              <p className="text-lg font-semibold tabular-nums">
-                팀 당월 합계: {formatUsd(teamRollup.totalCostUsd)} USD
-              </p>
-              {teamMemberChart.length > 0 ? (
+          {teamSpend ? (
+            <div className="space-y-4">
+              {teamBudgetUi ? (
+                <div className="space-y-2">
+                  <p className="text-lg font-semibold tabular-nums">팀 기간 합계: {formatUsd(teamBudgetUi.totalCostUsd)} USD</p>
+                  {teamBudgetUi.monthlyBudgetUsd != null ? (
+                    <p className="text-xs text-muted-foreground">
+                      팀 예산 {formatUsd(teamBudgetUi.monthlyBudgetUsd)} / 잔여 {formatUsd(teamBudgetUi.remainingUsd ?? 0)} / 진행률{" "}
+                      {(teamBudgetUi.pct ?? 0).toFixed(1)}%
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">팀 예산: 등록된 팀 키 예산 합이 없으면 표시되지 않습니다.</p>
+                  )}
+
+                  {teamBudgetUi.pct != null ? (
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>0%</span>
+                        <span>100%</span>
+                      </div>
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-primary transition-[width]"
+                          style={{ width: `${Math.min(100, Math.max(0, teamBudgetUi.pct))}%` }}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {teamKeyChart.length > 0 ? (
                 <div className="h-72 w-full rounded-xl border border-border bg-card p-2">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={teamMemberChart}>
+                    <BarChart data={teamKeyChart}>
                       <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                      <XAxis dataKey="user" tick={{ fontSize: 10 }} interval={0} angle={-25} textAnchor="end" height={64} />
+                      <XAxis dataKey="key" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={56} />
                       <YAxis tick={{ fontSize: 11 }} width={56} />
                       <Tooltip formatter={formatUsdTooltip} />
                       <Bar dataKey="usd" fill="var(--color-chart-3)" radius={[4, 4, 0, 0]} />
@@ -607,6 +766,59 @@ export function ExpenditureDashboard() {
               ) : (
                 <p className="text-sm text-muted-foreground">이번 달 집계된 비용이 없습니다.</p>
               )}
+
+              <div className="overflow-auto rounded-lg border border-border">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/40 text-xs text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium">Provider</th>
+                      <th className="px-3 py-2 text-left font-medium">Alias</th>
+                      <th className="px-3 py-2 text-left font-medium">Status</th>
+                      <th className="px-3 py-2 text-right font-medium">월 예산 (USD)</th>
+                      <th className="px-3 py-2 text-right font-medium">기간 지출 (USD)</th>
+                      <th className="px-3 py-2 text-right font-medium">예산 진행</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {teamSpend.keys.map((k) => {
+                      const b = teamKeyBudgetById.get(k.teamApiKeyId) ?? { pct: null as number | null, remainingUsd: null as number | null };
+                      return (
+                        <tr key={k.teamApiKeyId} className="border-t border-border align-top">
+                          <td className="px-3 py-2">{k.provider}</td>
+                          <td className="px-3 py-2">{k.alias}</td>
+                          <td className="px-3 py-2">{k.status}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">{formatUsd(Number(k.monthlyBudgetUsd))}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">{formatUsd(Number(k.monthSpendUsd))}</td>
+                          <td className="px-3 py-2">
+                            {b.pct != null ? (
+                              <div className="flex min-w-[180px] flex-col items-end gap-1">
+                                <div className="text-right text-xs text-muted-foreground tabular-nums">
+                                  {b.pct.toFixed(1)}%{b.remainingUsd != null ? ` · 잔여 ${formatUsd(b.remainingUsd)}` : ""}
+                                </div>
+                                <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                                  <div
+                                    className="h-full rounded-full bg-primary transition-[width]"
+                                    style={{ width: `${Math.min(100, Math.max(0, b.pct))}%` }}
+                                  />
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="min-w-[180px] text-right text-xs text-muted-foreground">예산 없음</div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {teamSpend.keys.length === 0 ? (
+                      <tr>
+                        <td className="px-3 py-3 text-muted-foreground" colSpan={6}>
+                          등록된 팀 API 키가 없습니다.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
             </div>
           ) : null}
         </section>
@@ -638,7 +850,7 @@ export function ExpenditureDashboard() {
                 disabled={keysForProvider.length === 0}
               >
                 {keysForProvider.length === 0 ? (
-                  <option value="">사용 데이터가 없습니다</option>
+                  <option value="">등록된 API 키가 없습니다</option>
                 ) : (
                   <optgroup label="등록된 키">
                     {keysForProvider.map((k) => (
@@ -733,7 +945,7 @@ export function ExpenditureDashboard() {
                 {summary.monthlyBudgetUsd != null ? (
                   <div>
                     <p className="text-xs text-muted-foreground">월 예산 (identity 연동 시)</p>
-                    <p className="text-lg font-medium tabular-nums">${summary.monthlyBudgetUsd.toFixed(2)}</p>
+                    <p className="text-lg font-medium tabular-nums">{formatUsd(summary.monthlyBudgetUsd)}</p>
                   </div>
                 ) : (
                   <p className="text-xs text-muted-foreground">
@@ -751,8 +963,8 @@ export function ExpenditureDashboard() {
                   <h2 className="text-sm font-medium text-muted-foreground">월 예산 대비 (선택한 키)</h2>
                   {keyBudgetUi.monthlyBudgetUsd != null ? (
                     <p className="text-xs text-muted-foreground">
-                      이번 달 지출 {formatUsd(keyBudgetUi.totalCostUsd)} / 월 예산 ${keyBudgetUi.monthlyBudgetUsd.toFixed(2)} (잔여 $
-                      {(keyBudgetUi.remainingUsd ?? 0).toFixed(2)})
+                      이번 달 지출 {formatUsd(keyBudgetUi.totalCostUsd)} / 월 예산 {formatUsd(keyBudgetUi.monthlyBudgetUsd)} (잔여{" "}
+                      {formatUsd(keyBudgetUi.remainingUsd ?? 0)})
                     </p>
                   ) : (
                     <p className="text-xs text-muted-foreground">

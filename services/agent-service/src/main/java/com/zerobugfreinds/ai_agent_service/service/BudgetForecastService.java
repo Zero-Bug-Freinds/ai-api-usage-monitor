@@ -5,10 +5,15 @@ import com.zerobugfreinds.ai_agent_service.dto.BudgetForecastBatchRequest;
 import com.zerobugfreinds.ai_agent_service.dto.BudgetForecastBatchResponse;
 import com.zerobugfreinds.ai_agent_service.dto.BudgetForecastRequest;
 import com.zerobugfreinds.ai_agent_service.dto.BudgetForecastResponse;
+import com.zerobugfreinds.ai_agent_service.entity.BudgetForecastSnapshotEntity;
+import com.zerobugfreinds.ai_agent_service.repository.BudgetForecastSnapshotRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -24,15 +29,21 @@ public class BudgetForecastService {
 	private final GeminiAssistantService geminiAssistantService;
 	private final UsageRecordedTokenRollupService usageRecordedTokenRollupService;
 	private final UsagePredictionSignalSnapshotService usagePredictionSignalSnapshotService;
+	private final BudgetForecastSnapshotRepository budgetForecastSnapshotRepository;
+	private final ObjectMapper objectMapper;
 
 	public BudgetForecastService(
 			GeminiAssistantService geminiAssistantService,
 			UsageRecordedTokenRollupService usageRecordedTokenRollupService,
-			UsagePredictionSignalSnapshotService usagePredictionSignalSnapshotService
+			UsagePredictionSignalSnapshotService usagePredictionSignalSnapshotService,
+			BudgetForecastSnapshotRepository budgetForecastSnapshotRepository,
+			ObjectMapper objectMapper
 	) {
 		this.geminiAssistantService = geminiAssistantService;
 		this.usageRecordedTokenRollupService = usageRecordedTokenRollupService;
 		this.usagePredictionSignalSnapshotService = usagePredictionSignalSnapshotService;
+		this.budgetForecastSnapshotRepository = budgetForecastSnapshotRepository;
+		this.objectMapper = objectMapper;
 	}
 
 	public BudgetForecastResponse forecast(BudgetForecastRequest request) {
@@ -42,7 +53,9 @@ public class BudgetForecastService {
 		if (ai.isEmpty()) {
 			throw new IllegalStateException("AI_INFERENCE_FAILED");
 		}
-		return buildForecastResponse(normalizedRequest, context.rollupApplied(), ai.get());
+		BudgetForecastResponse response = buildForecastResponse(normalizedRequest, context.rollupApplied(), ai.get());
+		persistSnapshot(normalizedRequest, response);
+		return response;
 	}
 
 	public BudgetForecastBatchResponse forecastBatch(BudgetForecastBatchRequest request) {
@@ -64,9 +77,37 @@ public class BudgetForecastService {
 				continue;
 			}
 			BudgetForecastResponse response = buildForecastResponse(normalizedRequest, contexts.get(i).rollupApplied(), aiResult);
+			persistSnapshot(normalizedRequest, response);
 			results.add(new BudgetForecastBatchResponse.Item(normalizedRequest.keyId(), response));
 		}
 		return new BudgetForecastBatchResponse(List.copyOf(results));
+	}
+
+	private void persistSnapshot(BudgetForecastRequest request, BudgetForecastResponse response) {
+		String requestJson;
+		String responseJson;
+		try {
+			requestJson = objectMapper.writeValueAsString(request);
+			responseJson = objectMapper.writeValueAsString(response);
+		} catch (JsonProcessingException e) {
+			throw new IllegalStateException("BUDGET_FORECAST_PROJECTION_SERIALIZATION_FAILED", e);
+		}
+		boolean teamScope = request.teamId() != null && !request.teamId().isBlank();
+		String scopeType = teamScope ? "TEAM" : "PERSONAL";
+		String scopeId = teamScope ? request.teamId().trim() : request.userId().trim();
+		String keyId = request.keyId() == null ? null : String.valueOf(request.keyId());
+		Instant generatedAt = Instant.now();
+		budgetForecastSnapshotRepository.save(
+				new BudgetForecastSnapshotEntity(
+						scopeType,
+						scopeId,
+						keyId,
+						generatedAt,
+						requestJson,
+						responseJson,
+						generatedAt
+				)
+		);
 	}
 
 	private static BudgetForecastResponse buildForecastResponse(
@@ -123,7 +164,7 @@ public class BudgetForecastService {
 						scopeType,
 						scopeId
 				);
-		long observedSevenDayTokens = summary.totalInputTokens() + summary.totalOutputTokens();
+		long observedSevenDayTokens = summary.totalTokens();
 		if (observedSevenDayTokens <= 0) {
 			if (usagePredictionSnapshot == null) {
 				return new NormalizedRequestContext(request, false);
@@ -225,7 +266,7 @@ public class BudgetForecastService {
 					.limit(7)
 					.toList();
 		}
-		long totalTokens = Math.max(0L, summary.totalInputTokens() + summary.totalOutputTokens());
+		long totalTokens = summary.totalTokens();
 		long avg = totalTokens <= 0 ? 0L : Math.max(1L, totalTokens / 7);
 		List<Long> generated = new ArrayList<>();
 		for (int i = 0; i < 7; i++) {

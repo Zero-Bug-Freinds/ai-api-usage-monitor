@@ -32,10 +32,12 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
     @Query(
             value = """
                     select u from UsageRecordedLogEntity u
-                    left join fetch u.apiKeyMetadata m
+                    left join fetch u.personalKeyMetadata pm
+                    left join fetch u.teamKeyMetadata tm
                     where u.userId = :userId
                     and u.occurredAt >= :from
                     and u.occurredAt < :toExclusive
+                    and (u.teamId is null or trim(u.teamId) = '')
                     and (:provider is null or u.provider = :provider)
                     and (:apiKeyId is null or :apiKeyId = '' or u.apiKeyId = :apiKeyId)
                     and (:requestSuccessful is null or u.requestSuccessful = :requestSuccessful)
@@ -52,6 +54,7 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
                     where u.userId = :userId
                     and u.occurredAt >= :from
                     and u.occurredAt < :toExclusive
+                    and (u.teamId is null or trim(u.teamId) = '')
                     and (:provider is null or u.provider = :provider)
                     and (:apiKeyId is null or :apiKeyId = '' or u.apiKeyId = :apiKeyId)
                     and (:requestSuccessful is null or u.requestSuccessful = :requestSuccessful)
@@ -63,7 +66,58 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
                     )
                     """
     )
-    Page<UsageRecordedLogEntity> pageLogs(
+    Page<UsageRecordedLogEntity> pageLogsPersonal(
+            @Param("userId") String userId,
+            @Param("from") Instant from,
+            @Param("toExclusive") Instant toExclusive,
+            @Param("provider") AiProvider provider,
+            @Param("apiKeyId") String apiKeyId,
+            @Param("requestSuccessful") Boolean requestSuccessful,
+            @Param("modelMask") String modelMask,
+            @Param("reasoningPresence") String reasoningPresence,
+            Pageable pageable
+    );
+
+    @Query(
+            value = """
+                    select u from UsageRecordedLogEntity u
+                    left join fetch u.personalKeyMetadata pm
+                    left join fetch u.teamKeyMetadata tm
+                    where u.userId = :userId
+                    and u.occurredAt >= :from
+                    and u.occurredAt < :toExclusive
+                    and u.teamId is not null
+                    and trim(u.teamId) <> ''
+                    and (:provider is null or u.provider = :provider)
+                    and (:apiKeyId is null or :apiKeyId = '' or u.apiKeyId = :apiKeyId)
+                    and (:requestSuccessful is null or u.requestSuccessful = :requestSuccessful)
+                    and (:modelMask is null or :modelMask = '' or lower(coalesce(u.model, '')) like lower(concat('%', :modelMask, '%')))
+                    and (
+                        :reasoningPresence is null or :reasoningPresence = ''
+                        or (:reasoningPresence = 'present' and u.estimatedReasoningTokens is not null and u.estimatedReasoningTokens > 0)
+                        or (:reasoningPresence = 'absent' and (u.estimatedReasoningTokens is null or u.estimatedReasoningTokens <= 0))
+                    )
+                    order by u.occurredAt desc
+                    """,
+            countQuery = """
+                    select count(u) from UsageRecordedLogEntity u
+                    where u.userId = :userId
+                    and u.occurredAt >= :from
+                    and u.occurredAt < :toExclusive
+                    and u.teamId is not null
+                    and trim(u.teamId) <> ''
+                    and (:provider is null or u.provider = :provider)
+                    and (:apiKeyId is null or :apiKeyId = '' or u.apiKeyId = :apiKeyId)
+                    and (:requestSuccessful is null or u.requestSuccessful = :requestSuccessful)
+                    and (:modelMask is null or :modelMask = '' or lower(coalesce(u.model, '')) like lower(concat('%', :modelMask, '%')))
+                    and (
+                        :reasoningPresence is null or :reasoningPresence = ''
+                        or (:reasoningPresence = 'present' and u.estimatedReasoningTokens is not null and u.estimatedReasoningTokens > 0)
+                        or (:reasoningPresence = 'absent' and (u.estimatedReasoningTokens is null or u.estimatedReasoningTokens <= 0))
+                    )
+                    """
+    )
+    Page<UsageRecordedLogEntity> pageLogsTeamMember(
             @Param("userId") String userId,
             @Param("from") Instant from,
             @Param("toExclusive") Instant toExclusive,
@@ -78,23 +132,58 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
     @Query(
             """
                     select new com.eevee.usageservice.api.dto.UsageLogApiKeyItemResponse(
-                        u.apiKeyId,
-                        m.alias,
-                        m.status
+                        coalesce(u.teamApiKeyId, u.apiKeyId),
+                        coalesce(tm.alias, pm.alias),
+                        coalesce(tm.status, pm.status)
                     )
                     from UsageRecordedLogEntity u
-                    left join u.apiKeyMetadata m
+                    left join u.personalKeyMetadata pm
+                    left join u.teamKeyMetadata tm
                     where u.userId = :userId
                     and u.occurredAt >= :from
                     and u.occurredAt < :toExclusive
-                    and u.apiKeyId is not null
-                    and trim(u.apiKeyId) <> ''
+                    and (
+                        (u.apiKeyId is not null and trim(u.apiKeyId) <> '')
+                        or (u.teamApiKeyId is not null and trim(u.teamApiKeyId) <> '')
+                    )
                     and (:provider is null or u.provider = :provider)
-                    group by u.apiKeyId, m.alias, m.status
-                    order by u.apiKeyId
+                    and (u.teamId is null or trim(u.teamId) = '')
+                    group by coalesce(u.teamApiKeyId, u.apiKeyId), coalesce(tm.alias, pm.alias), coalesce(tm.status, pm.status)
+                    order by coalesce(u.teamApiKeyId, u.apiKeyId)
                     """
     )
-    List<UsageLogApiKeyItemResponse> findDistinctApiKeysForUserInRange(
+    List<UsageLogApiKeyItemResponse> findDistinctApiKeysForUserPersonalInRange(
+            @Param("userId") String userId,
+            @Param("from") Instant from,
+            @Param("toExclusive") Instant toExclusive,
+            @Param("provider") AiProvider provider
+    );
+
+    @Query(
+            """
+                    select new com.eevee.usageservice.api.dto.UsageLogApiKeyItemResponse(
+                        coalesce(u.teamApiKeyId, u.apiKeyId),
+                        coalesce(tm.alias, pm.alias),
+                        coalesce(tm.status, pm.status)
+                    )
+                    from UsageRecordedLogEntity u
+                    left join u.personalKeyMetadata pm
+                    left join u.teamKeyMetadata tm
+                    where u.userId = :userId
+                    and u.occurredAt >= :from
+                    and u.occurredAt < :toExclusive
+                    and (
+                        (u.apiKeyId is not null and trim(u.apiKeyId) <> '')
+                        or (u.teamApiKeyId is not null and trim(u.teamApiKeyId) <> '')
+                    )
+                    and (:provider is null or u.provider = :provider)
+                    and u.teamId is not null
+                    and trim(u.teamId) <> ''
+                    group by coalesce(u.teamApiKeyId, u.apiKeyId), coalesce(tm.alias, pm.alias), coalesce(tm.status, pm.status)
+                    order by coalesce(u.teamApiKeyId, u.apiKeyId)
+                    """
+    )
+    List<UsageLogApiKeyItemResponse> findDistinctApiKeysForUserTeamMemberInRange(
             @Param("userId") String userId,
             @Param("from") Instant from,
             @Param("toExclusive") Instant toExclusive,
@@ -104,7 +193,8 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
     @Query(
             value = """
                     select u from UsageRecordedLogEntity u
-                    left join fetch u.apiKeyMetadata m
+                    left join fetch u.personalKeyMetadata pm
+                    left join fetch u.teamKeyMetadata tm
                     where u.teamId = :teamId
                     and u.occurredAt >= :from
                     and u.occurredAt < :toExclusive
@@ -150,7 +240,8 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
     @Query(
             value = """
                     select u from UsageRecordedLogEntity u
-                    left join fetch u.apiKeyMetadata m
+                    left join fetch u.personalKeyMetadata pm
+                    left join fetch u.teamKeyMetadata tm
                     where u.teamId = :teamId
                     and u.userId = :userId
                     and u.occurredAt >= :from

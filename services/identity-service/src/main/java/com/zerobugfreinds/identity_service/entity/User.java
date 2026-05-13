@@ -71,4 +71,18 @@ public class User {
 	public void setPassword(String password) {
 		this.password = password;
 	}
+
+	/**
+	 * 프로필 수정(이메일 변경) 시에만 사용한다. 정규화된 소문자 이메일을 넣는다.
+	 */
+	public void setEmail(String email) {
+		this.email = email;
+	}
+
+	/**
+	 * 프로필 수정(표시 이름 변경) 시에만 사용한다.
+	 */
+	public void setName(String name) {
+		this.name = name;
+	}
 }

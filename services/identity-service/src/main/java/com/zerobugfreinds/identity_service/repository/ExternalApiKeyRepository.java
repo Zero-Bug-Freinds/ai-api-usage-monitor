@@ -59,6 +59,18 @@ public interface ExternalApiKeyRepository extends JpaRepository<ExternalApiKeyEn
 			ExternalApiKeyProvider provider
 	);
 
+	Optional<ExternalApiKeyEntity> findByIdAndUserIdAndProviderAndDeletionRequestedAtIsNull(
+			Long id,
+			Long userId,
+			ExternalApiKeyProvider provider
+	);
+
+	Optional<ExternalApiKeyEntity> findFirstByUserIdAndProviderAndKeyAliasAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(
+			Long userId,
+			ExternalApiKeyProvider provider,
+			String keyAlias
+	);
+
 	@Query("""
 			select coalesce(sum(e.monthlyBudgetUsd), 0)
 			from ExternalApiKeyEntity e
@@ -81,6 +93,13 @@ public interface ExternalApiKeyRepository extends JpaRepository<ExternalApiKeyEn
 	Optional<ExternalApiKeyEntity> findByIdAndUserIdAndDeletionRequestedAtIsNull(Long id, Long userId);
 
 	List<ExternalApiKeyEntity> findAllByPermanentDeletionAtIsNotNullAndPermanentDeletionAtBefore(Instant now);
+
+	/**
+	 * Proxy 등 내부 호출에서 사용자 ID 없이 (provider, keyHash) 만으로 역조회할 때 사용한다.
+	 * 유일 제약은 (user_id, provider, key_hash) 이므로 이론상 여러 사용자가 동일한 외부 키를
+	 * 등록한 경우 2건 이상 조회될 수 있다. 호출자에서 결과 건수를 검증한다.
+	 */
+	List<ExternalApiKeyEntity> findAllByProviderAndKeyHash(ExternalApiKeyProvider provider, String keyHash);
 
 	void deleteAllByUserId(Long userId);
 }

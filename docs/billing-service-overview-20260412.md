@@ -1,4 +1,6 @@
-# billing-service 개요 (구현 스냅샷, 2026-04-12 · 본문 갱신 2026-05-03)
+# billing-service 개요 (구현 스냅샷, 2026-04-12 · 본문 갱신 2026-05-12)
+
+- **최근 반영(2026-05-12):** `UsageRecordedEvent.apiKeySource=team` 인 호출은 **개인** `daily_expenditure_agg` / `monthly_expenditure_agg` / `billing_user_api_key_seen` 및 **Identity 키별 월 예산 임계**(`billing.budget.threshold.reached`) 경로에서 제외되고, 팀 키 전용 집계·`billing.team.budget.threshold.reached`만 갱신한다. Identity **`EXTERNAL_API_KEY_DELETED`**·팀 도메인 **`TEAM_API_KEY_DELETED`** 인바운드로 해당 키 집계·read model을 정리한다(§4.1·§6.2).
 
 ## 1) 목적·범위
 
@@ -12,7 +14,7 @@
 
 | 항목 | 경로 |
 |------|------|
-| 백엔드 (Spring Boot) | `services/billing-service/` (Gradle 단일 모듈, `usage-events` 로컬 프로젝트 의존) |
+| 백엔드 (Spring Boot) | `services/billing-service/` (Gradle 복합 빌드: `settings.gradle`에 `libs/usage-events`·`libs/identity-events` 포함) |
 | 프론트 (Next.js, 선택) | `services/billing-service/web/` |
 | 공유 이벤트 타입 | `libs/usage-events` (`UsageRecordedEvent`, `UsageCostFinalizedEvent`, `UsageCostEventAmqp`, `TokenUsage`, `AiProvider` 등) |
 
@@ -25,7 +27,7 @@
 | 패키지/영역 | 역할 |
 |-------------|------|
 | `config` | `application.yml` 바인딩(`BillingProperties`, `BillingRabbitProperties`, `IdentityProperties`), RabbitMQ 인바운드 큐·아웃바운드 topic(`billing.rabbit.cost-out.*`, `budget-out.*`, `correction-out.*` 등), Jackson, 시드(`ProviderModelPriceSeed`) |
-| `consumer` | RabbitMQ에서 `UsageRecordedEvent` JSON 수신·역직렬화 |
+| `consumer` | RabbitMQ 인바운드: `UsageRecordedEvent`(`usage.recorded`), 선택적으로 Identity 외부 키 삭제(`identity.events`), 팀 도메인 `TEAM_API_KEY_DELETED`(`team.events` / `team.api.key.#`) 등 |
 | `service` | 비용 계산(`ExpenditureCostCalculator`), 이벤트 처리·집계(`BillingRecordedService`, `BillingAggregationJdbc`), 비용 확정·예산 임계·정정 완료 발행(`UsageCostFinalizedEventPublisher`, `BudgetThresholdEventPublisher`, `BillingCostCorrectedEventPublisher`), 정정 적용(`BillingCostCorrectionService`), 지출 조회(`ExpenditureQueryService`), 팀 월 롤업(`ExpenditureTeamRollupService`) |
 | `repository` / `domain` | JPA 엔티티·리포지토리 (`provider_model_price`, 집계·멱등 테이블 등) |
 | `pricing` | 초기 단가 시드용 `OfficialProviderModelPriceCatalog`(공식 URL·as-of 메타와 금액 스냅샷) |
@@ -44,11 +46,13 @@
 - **단가**: `ProviderModelPriceRepository.findActivePrices`로 `provider` + `model` + 시각에 맞는 `provider_model_price` 행 조회. 테이블이 비어 있으면 기동 시 `ProviderModelPriceSeed`가 `OfficialProviderModelPriceCatalog` 기준으로 초기 행 삽입.
 - **비용**: `ExpenditureCostCalculator.compute` — prompt/completion 토큰 × 입·출력 USD/1M 토큰(합산). 단가 행이 없으면 비용 `0`.
 - **토큰 정규화**: prompt/completion이 비어 있고 total만 있으면 절반씩 나누어 추정(`normalizeTokens`).
-- **집계**: `BillingAggregationJdbc`로 `daily_expenditure_agg`, `monthly_expenditure_agg` upsert, `billing_user_api_key_seen`에 API Key 노출 정보 반영.
-- **OpenAI 모델 스냅샷 접미사**: 모델 문자열이 `…-YYYY-MM-DD` 형태(공급사 dated snapshot)이면, 카탈로그 단가는 **접미사를 뗀 베이스 모델**로 조회하고, 필요 시 동일 유효기간의 **별칭 `provider_model_price` 행**을 자동 삽입해 이후 이벤트도 동일 단가로 계산한다(`BillingRecordedService.resolveAliasedPrice`).
+- **집계(개인·관리 키)**: `apiKeySource`가 **`team`이 아닌** `UsageRecordedEvent`에 한해 `BillingAggregationJdbc`로 `daily_expenditure_agg`, `monthly_expenditure_agg` upsert, `billing_user_api_key_seen`에 API Key 노출 정보를 반영한다. **`team` 소스** 호출은 위 개인 집계 테이블을 건드리지 않아, 개인 지출 UI·Identity 키별 월 예산이 팀 키 사용량으로 부풀려지지 않는다.
+- **집계(팀 API 키)**: `apiKeySource=team` 이고 `teamId`·`teamApiKeyId`가 유효하면 `TeamApiKeyAggregationJdbc` 등으로 **팀 키 전용** 일·월 집계와 `billing_team_api_key` read model을 갱신하고, `TeamApiKeyBudgetThresholdEventPublisher`로 **`billing.team.budget.threshold.reached`** 를 발행할 수 있다(플래그·예산 양수 전제).
+- **모델 문자열 별칭(단가 매칭)**: 정확 `(provider, model)` 행이 없을 때, **OPENAI**(dated snapshot `-YYYY-MM-DD`), **GOOGLE**(`models/` 접두·`-NNN` 등), **ANTHROPIC**(`-YYYYMMDD` 접미사)에 대해 베이스 모델을 추가로 조회하고, 찾으면 **별칭 `provider_model_price` 행**을 자동 삽입해 이후 이벤트도 동일 단가로 계산한다(`BillingRecordedService`). 여전히 없으면 비용 `0`이며, 누락 조합은 **한 번 WARN·이후 DEBUG** 로 관측한다.
 - **멱등**: `billing_processed_event`로 `eventId` 단위 중복 처리 방지.
 - **비용 확정 발행(선택)**: `billing.rabbit.cost-out.enabled=true`(기본)일 때, 과금 가능 경로에서 집계·멱등 저장 **커밋 후** `UsageCostFinalizedEvent`를 `billing.events` / `usage.cost.finalized`로 발행하고, `cost_event_published_at`을 기록한다. 비과금·스킵 경로는 `cost_event_applicable=false`로 끝난다.
-- **월 예산 임계 발행(선택)**: `billing.rabbit.budget-out.enabled=true`이고 Identity에서 **해당 사용 이벤트의 키·프로바이더**에 대한 월 예산이 **0보다 클 때만**, KST 달력 월에 대해 `daily_expenditure_agg`를 **프로바이더 한정으로 합산**한 누적 지출이 **임계 단위(기본 10%; 테스트 시 1%)**를 **처음** 넘는 경우마다 트랜잭션 **커밋 후** `BillingBudgetThresholdReachedEvent`를 발행한다. 분자·분모 정의·JSON 계약은 [`docs/billing-outbound-events.md`](billing-outbound-events.md) §2.
+- **월 예산 임계 발행(선택, 개인·Identity 키)**: `billing.rabbit.budget-out.enabled=true`이고 **`apiKeySource`가 `team`이 아닌** 사용 이벤트에 대해서만, Identity에서 **해당 키·프로바이더** 월 예산이 **0보다 클 때**, KST 달력 월에 대해 `daily_expenditure_agg`를 **프로바이더 한정으로 합산**한 누적 지출이 **임계 단위(기본 10%; 테스트 시 1%)**를 **처음** 넘는 경우마다 트랜잭션 **커밋 후** `BillingBudgetThresholdReachedEvent`를 발행한다. 팀 키 사용량은 [`docs/billing-outbound-events.md`](billing-outbound-events.md) §2.1 경로에서만 다룬다. 분자·분모·JSON 계약은 동 문서 §2.
+- **키 삭제 시 집계 정리(인바운드 AMQP)**: Identity `identity.events` / `identity.external-api-key.status-changed`에서 **`EXTERNAL_API_KEY_DELETED`** 만 처리해, 해당 `userId`·`apiKeyId`의 개인 일·월 집계·`billing_user_api_key_seen` 행을 삭제한다(`PersonalExternalApiKeyExpenditurePurgeService`). 팀 도메인 `team.events` / `team.api.key.#`에서 **`TEAM_API_KEY_DELETED`** 만 처리해 팀 키 일·월 집계와 `billing_team_api_key` 등을 정리한다(`TeamApiKeyExpenditurePurgeService`). 비삭제·다른 `eventType` 페이로드는 무시한다. 토글·큐·exchange 기본값은 §6.2.
 
 ### 4.2 지출 조회 HTTP API
 
@@ -69,6 +73,7 @@
 ### 4.4 웹(BFF)
 
 - `billing-service/web`은 지출 대시보드 UI 및 BFF 패턴으로 Gateway의 billing API를 호출하는 구성을 따른다(세부는 해당 `web` 디렉터리 및 팀 문서 참고).
+- **팀 모드 새로고침**: 지출 화면에서 **개인** 모드의 「새로고침」과 대등하게, **팀** 모드에서도 상단 「새로고침」으로 **내 팀 목록 갱신 + 현재 선택 팀·기간 집계**를 한 번에 다시 불러온다(기존 「팀 목록 새로고침」「집계」 버튼과 병행 가능).
 - **제품 범위(로드맵 대비)**: 개인·팀 모드 지출 UX(예산 게이지, 일별/인당 차트, 비결제 시뮬레이션 고지)는 구현·검증 대상에 포함한다. **조직 단위 집계 UI**는 동일 로드맵에서 범위 밖(취소)으로 두었다.
 
 ### 4.5 이벤트 처리 파이프라인 상세 (`BillingRecordedService`)
@@ -83,12 +88,13 @@
 | Provider 누락 | `event.provider()`가 null이면 집계 스킵. |
 | 모델 결정 | `event.model()`이 있으면 사용, 없으면 `tokenUsage.model()` 사용. 둘 다 없으면 집계 스킵. |
 | 집계 일자 | `occurredAt`을 **Asia/Seoul**로 변환한 **로컬 날짜**를 일 집계 키로 사용. 월 집계는 그 날짜가 속한 달의 **1일**(`monthStart`). |
-| 단가 조회 | `ProviderModelPriceRepository.findActivePrices(provider, model, occurredAt, PageRequest(0,1))` — `validFrom <= occurredAt`이고 `validTo`가 null이거나 `> occurredAt`인 행 중 **가장 최근 `validFrom`**. 없으면 OpenAI **dated snapshot** 모델이면 베이스 모델로 재조회·별칭 시드(§4.1). 그래도 없으면 비용 **0**. |
-| 비용·토큰 | `ExpenditureCostCalculator.compute` 및 `normalizeTokens` 결과로 일·월 upsert. |
-| 예산 임계(선택) | 집계 커밋 전에 `sumDailyCostUsdForKstCalendarMonthAndProvider`(이벤트 적용 전·후)와 `IdentityBudgetClient.fetchMonthlyBudgetUsdForKey`로 비교; `budget-out`이 켜져 있고 키 예산이 양수일 때만 **커밋 후** `BudgetThresholdEventPublisher` 호출. |
-| API Key 시드 | `billing_user_api_key_seen`에 `(userId, apiKeyId, provider)`별 **최초 관측 시각** 유지(`LEAST`로 더 이른 시각 보존). |
+| 단가 조회 | `ProviderModelPriceRepository.findActivePrices(provider, model, occurredAt, PageRequest(0,1))` — `validFrom <= occurredAt`이고 `validTo`가 null이거나 `> occurredAt`인 행 중 **가장 최근 `validFrom`**. 없으면 §4.1의 **모델 별칭 규칙**(OPENAI / GOOGLE / ANTHROPIC)으로 베이스 모델 재조회·별칭 시드. 그래도 없으면 비용 **0**(누락은 로그로 관측). |
+| 비용·토큰 | `ExpenditureCostCalculator.compute` 및 `normalizeTokens`로 비용을 산출한 뒤, **`team`이 아니면** 개인 `daily`/`monthly` upsert, **`team`이면** 팀 키 전용 집계 upsert(§4.1). |
+| 예산 임계(선택, 개인 키) | **`apiKeySource`가 `team`이 아닐 때만**: 집계 커밋 전에 `sumDailyCostUsdForKstCalendarMonthAndProvider`(이벤트 적용 전·후)와 Identity 키별 예산으로 비교; `budget-out`이 켜져 있고 키 예산이 양수일 때만 **커밋 후** `BudgetThresholdEventPublisher` 호출. |
+| API Key 시드 | **`team` 소스가 아닐 때만** `billing_user_api_key_seen`에 `(userId, apiKeyId, provider)`별 **최초 관측 시각** 유지(`LEAST`로 더 이른 시각 보존). |
 | 완료 | `billing_processed_event`에 `eventId`·`cost_event_applicable` 등 저장. |
-| 비용 확정(선택) | `cost-out`이 켜져 있고 과금 가능이면 트랜잭션 **커밋 후** `UsageCostFinalizedEvent` 발행·`cost_event_published_at` 갱신(발행 실패 시 재시도는 `handleAlreadyProcessed` 경로에서 미발행 행 보정). |
+| 비용 확정(선택) | `cost-out`이 켜져 있고 과금 가능이면 트랜잭션 **커밋 후** `UsageCostFinalizedEvent` 발행·`cost_event_published_at` 갱신(발행 실패 시 재시도는 `handleAlreadyProcessed` 경로에서 미발행 행 보정). 팀·개인 모두 동일 `eventId`로 발행될 수 있으나, 위 집계 분기와 일치한다. |
+| 팀 키 예산 임계(선택) | `apiKeySource=team`이면 `maybeProcessTeamKeyBudgetThreshold`에서 팀 키 월 집계·Team DB 예산을 갱신하고, `team-budget-out`이 켜져 있으면 **커밋 후** `TeamApiKeyBudgetThresholdEventPublisher` 호출. |
 
 ### 4.6 비용 계산 상세 (`ExpenditureCostCalculator`)
 
@@ -223,9 +229,11 @@
 
 ### 6.2 RabbitMQ
 
-- **소비**: Topic 교환기 `usage.events`, 라우팅 키 `usage.recorded`, 큐 `billing-service.queue`에 바인딩 (`BillingRabbitConfiguration`, `billing.rabbit.*` 설정).
+- **소비(사용 기록)**: Topic 교환기 `usage.events`, 라우팅 키 `usage.recorded`, 큐 `billing-service.queue`에 바인딩 (`BillingRabbitConfiguration`, `billing.rabbit.*` 설정).
+- **소비(Identity 외부 키 삭제, 선택·기본 켬)**: 교환기 `identity.events`(기본), 라우팅 키 `identity.external-api-key.status-changed`, 전용 큐(기본 `billing-service.identity.external-api-key.queue`). `billing.rabbit.identity-external-api-key-in.enabled`로 끌 수 있다. 본문 `eventType`이 **`EXTERNAL_API_KEY_DELETED`** 인 경우만 개인 집계 purge.
+- **소비(팀 도메인 키 삭제, 선택·기본 켬)**: 교환기 `team.events`(기본), 라우팅 키 패턴 `team.api.key.#`(YAML에서는 `#`가 주석이 되지 않도록 **따옴표로 감싼** 기본값), 큐(기본 `billing-service.team.api-key.domain.queue`). `billing.rabbit.team-domain-in.enabled`로 끌 수 있다. 본문 `eventType`이 **`TEAM_API_KEY_DELETED`** 이고 `apiKeyId`가 있을 때만 팀 키 집계 purge. (`team.api-key.exchange` / `team.api-key.status.changed` 는 키 상태 동기화용 별 스트림이며, 삭제 purge는 본 `team.events` 경로를 쓴다.)
 - **발행(비용 확정 스트림)**: Topic 교환기 `billing.events`(기본값, `UsageCostEventAmqp.TOPIC_EXCHANGE_NAME`와 동일), 라우팅 키 `usage.cost.finalized`. `billing.rabbit.cost-out.enabled`로 끌 수 있으며, `billing.rabbit.cost-out.exchange` / `routing-key`로 오버라이드 가능(`application.yml` 참고). 소비 스트림 `usage.recorded`와 **분리**되어 있어 동일 큐에 이중 바인딩하지 않는다.
-- **발행(예산 임계·정정 완료 등)**: 동일 교환기 주변에 `billing.budget.threshold.reached`, `billing.cost.corrected` 등이 있으며, 토글·라우팅 키·페이로드 표는 [`docs/billing-outbound-events.md`](billing-outbound-events.md)가 정본이다.
+- **발행(예산 임계·정정 완료 등)**: 동일 교환기 주변에 `billing.budget.threshold.reached`, `billing.team.budget.threshold.reached`, `billing.cost.corrected` 등이 있으며, 토글·라우팅 키·페이로드 표는 [`docs/billing-outbound-events.md`](billing-outbound-events.md)가 정본이다.
 
 ### 6.3 기타
 
@@ -304,7 +312,7 @@ X-Gateway-Auth: local-dev-gateway-shared-secret-do-not-use-in-prod
 | 항목 | 내용 |
 |------|------|
 | **설정** | `billing.identity.enabled`, `billing.identity.base-url`, `billing.identity.budget-path-template` (`application.yml` / env). |
-| **호출** | `IdentityBudgetClient`가 `RestClient`로 GET; 경로에 `{userId}` 치환을 지원. Identity 응답은 `monthlyBudgetUsd`(합계)와 `monthlyBudgetsByKey`(키별 예산) 확장을 포함할 수 있다. **지출 요약 API** 등에서는 루트 `monthlyBudgetUsd`를 주로 반영하고, **예산 임계 AMQP**는 `fetchMonthlyBudgetUsdForKey(userId, provider, apiKeyId)`로 `monthlyBudgetsByKey`에서 **해당 외부 키 ID·프로바이더** 행만 매칭한다(`apiKeyId`는 숫자 문자열로 파싱 가능해야 함; billing `AiProvider.GOOGLE`은 Identity JSON의 `GEMINI`와 매칭). |
+| **호출** | `IdentityBudgetClient`가 `RestClient`로 GET; 경로에 `{userId}` 치환을 지원. Identity 응답은 `monthlyBudgetUsd`(합계)와 `monthlyBudgetsByKey`(키별 예산) 확장을 포함할 수 있다. **지출 요약 API** 등에서는 루트 `monthlyBudgetUsd`를 주로 반영하고, **예산 임계 AMQP**는 `fetchMonthlyBudgetUsdForKey(userId, provider, apiKeyId)`로 `monthlyBudgetsByKey`에서 **해당 외부 키 ID·프로바이더** 행만 매칭한다(`apiKeyId`는 숫자 문자열로 파싱 가능해야 함; billing `AiProvider.GOOGLE`은 Identity JSON의 **`GOOGLE`** 행과 매칭하고, 레거시 **`GEMINI`** 행도 호환한다). |
 | **실패 시** | 404 및 기타 오류는 **예산 없음**으로 취급(지출 합계 API는 계속 동작). |
 | **용도** | `GET /expenditure/summary` 응답에 **예산 vs 지출** 표시를 풍부히 하기 위한 선택적 연동이다. |
 
@@ -328,7 +336,7 @@ X-Gateway-Auth: local-dev-gateway-shared-secret-do-not-use-in-prod
 
 | 방향 | 방식 | 설명 |
 |------|------|------|
-| **인바운드 (비동기)** | **AMQP 구독** | `UsageRecordedEvent` JSON → 비용·집계 처리 |
+| **인바운드 (비동기)** | **AMQP 구독** | `UsageRecordedEvent` JSON → 비용·집계 처리; 선택적으로 Identity·팀 도메인 삭제 이벤트 → 집계 purge(§6.2) |
 | **인바운드 (동기)** | **HTTP** | 지출 조회 REST; 클라이언트는 보통 **API Gateway** 경유 |
 | **아웃바운드 (동기, 선택)** | **HTTP** | `BILLING_IDENTITY_ENABLED=true`일 때 Identity에서 월 예산 USD 조회 |
 | **아웃바운드 (비동기)** | **AMQP 발행** | `UsageCostFinalizedEvent` — `billing.events` / `usage.cost.finalized` (usage-service가 소비해 `usage_recorded_log.estimated_cost` 갱신). 추가로 예산 임계·비용 정정 완료 등 — [`docs/billing-outbound-events.md`](billing-outbound-events.md). 비용 확정 요약은 부록 A, `docs/billing-pricing-catalog-ops.md`, `docs/billing-identity-budget.md`. |

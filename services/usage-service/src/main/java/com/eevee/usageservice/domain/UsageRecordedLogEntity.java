@@ -2,18 +2,18 @@ package com.eevee.usageservice.domain;
 
 import com.eevee.usage.events.AiProvider;
 import jakarta.persistence.Column;
-import jakarta.persistence.ConstraintMode;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
-import jakarta.persistence.ForeignKey;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
-import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.annotations.JoinColumnOrFormula;
+import org.hibernate.annotations.JoinColumnsOrFormulas;
+import org.hibernate.annotations.JoinFormula;
 import org.hibernate.annotations.NotFound;
 import org.hibernate.annotations.NotFoundAction;
 import org.hibernate.type.SqlTypes;
@@ -27,7 +27,9 @@ import java.util.UUID;
         name = "usage_recorded_log",
         indexes = {
                 @Index(name = "idx_url_team_occurred", columnList = "team_id, occurred_at"),
-                @Index(name = "idx_url_user_team_occurred", columnList = "user_id, team_id, occurred_at")
+                @Index(name = "idx_url_user_team_occurred", columnList = "user_id, team_id, occurred_at"),
+                @Index(name = "idx_url_team_team_api_key_occurred", columnList = "team_id, team_api_key_id, occurred_at"),
+                @Index(name = "idx_url_user_team_team_api_key", columnList = "user_id, team_id, team_api_key_id")
         }
 )
 public class UsageRecordedLogEntity {
@@ -54,16 +56,29 @@ public class UsageRecordedLogEntity {
     @Column(name = "team_api_key_id")
     private String teamApiKeyId;
 
+    /**
+     * Join literals ({@code 'PERSONAL'} / {@code 'TEAM'}) must match {@link ApiKeyMetadataScope} enum names in
+     * {@code api_key_metadata.key_scope} (JPA {@link EnumType#STRING}). Applies to {@link #personalKeyMetadata} and
+     * {@link #teamKeyMetadata}.
+     */
     @ManyToOne(fetch = FetchType.LAZY)
     @NotFound(action = NotFoundAction.IGNORE)
-    @JoinColumn(
-            name = "api_key_id",
-            referencedColumnName = "key_id",
-            insertable = false,
-            updatable = false,
-            foreignKey = @ForeignKey(ConstraintMode.NO_CONSTRAINT)
-    )
-    private ApiKeyMetadataEntity apiKeyMetadata;
+    @JoinColumnsOrFormulas({
+            // Join formulas only: @JoinColumn on user_id/api_key_id would duplicate basic field mappings (Hibernate 7).
+            @JoinColumnOrFormula(formula = @JoinFormula(value = "'PERSONAL'", referencedColumnName = "key_scope")),
+            @JoinColumnOrFormula(formula = @JoinFormula(value = "api_key_id", referencedColumnName = "key_id")),
+            @JoinColumnOrFormula(formula = @JoinFormula(value = "user_id", referencedColumnName = "user_id"))
+    })
+    private ApiKeyMetadataEntity personalKeyMetadata;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @NotFound(action = NotFoundAction.IGNORE)
+    @JoinColumnsOrFormulas({
+            @JoinColumnOrFormula(formula = @JoinFormula(value = "'TEAM'", referencedColumnName = "key_scope")),
+            @JoinColumnOrFormula(formula = @JoinFormula(value = "team_api_key_id", referencedColumnName = "key_id")),
+            @JoinColumnOrFormula(formula = @JoinFormula(value = "user_id", referencedColumnName = "user_id"))
+    })
+    private ApiKeyMetadataEntity teamKeyMetadata;
 
     private String apiKeyFingerprint;
 
@@ -242,7 +257,16 @@ public class UsageRecordedLogEntity {
     public String getTeamId() { return teamId; }
     public String getApiKeyId() { return apiKeyId; }
     public String getTeamApiKeyId() { return teamApiKeyId; }
-    public ApiKeyMetadataEntity getApiKeyMetadata() { return apiKeyMetadata; }
+    /**
+     * Resolved metadata for this log row: team traffic joins on {@code team_api_key_id} + member {@code user_id};
+     * personal traffic on {@code api_key_id} + {@code user_id}.
+     */
+    public ApiKeyMetadataEntity getApiKeyMetadata() {
+        if (teamApiKeyId != null && !teamApiKeyId.isBlank()) {
+            return teamKeyMetadata;
+        }
+        return personalKeyMetadata;
+    }
     public String getApiKeyFingerprint() { return apiKeyFingerprint; }
     public String getApiKeySource() { return apiKeySource; }
     public AiProvider getProvider() { return provider; }

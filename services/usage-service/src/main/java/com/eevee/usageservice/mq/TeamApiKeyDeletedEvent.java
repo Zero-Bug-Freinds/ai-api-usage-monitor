@@ -1,10 +1,12 @@
 package com.eevee.usageservice.mq;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.time.Instant;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record TeamApiKeyDeletedEvent(
         @JsonProperty("eventType")
         String eventType,
@@ -13,6 +15,8 @@ public record TeamApiKeyDeletedEvent(
         Instant occurredAt,
         @JsonProperty("apiKeyId")
         Long apiKeyId,
+        @JsonProperty("teamId")
+        Long teamId,
         @JsonProperty("provider")
         String provider,
         @JsonProperty("alias")

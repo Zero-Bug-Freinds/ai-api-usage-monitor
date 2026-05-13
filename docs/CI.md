@@ -33,7 +33,7 @@
 ## Docker 빌드 캐시 (로컬 vs CI)
 
 - **로컬 (`docker compose build` / `up --build`)**: 루트 `docker-compose.yml`에는 **container registry 기반 `cache_from` / `cache_to`를 두지 않는다**. 즉, **팀원은 GHCR 로그인 없이도** 동일한 Compose 명령으로 개발을 시작할 수 있다. 캐시는 각 서비스 Dockerfile의 `RUN --mount=type=cache`(pnpm store, Gradle, Next `.next/cache` 등)로 처리해 반복 빌드 시간을 줄인다.
-- **CI (GitHub Actions)**: 서비스별 job에서 `docker/build-push-action@v6` + BuildKit **`type=gha` cache**를 사용한다. `scope`는 이미지 단위(`api-gateway-service`, `proxy-service`, `usage-service`, `usage-web`, `billing-service`, `billing-web`, `notification-service`, `notification-web`, `identity-web`, `agent-web`, `agent-service`)로 분리한다.
+- **CI (GitHub Actions)**: 서비스별 job에서 `docker/build-push-action@v6` + BuildKit **`type=gha` cache**를 사용한다. `scope`는 이미지 단위(`api-gateway-service`, `proxy-service`, `usage-service`, `usage-web`, `billing-service`, `billing-web`, `notification-service`, `notification-web`, `identity-web`, `team-web-mfe`)로 분리한다.
 
 - **권한 최소화(보안)**: 전역 권한은 `contents: read`, `actions: read`를 유지하고, `cache-to: type=gha`를 사용하는 서비스 빌드 잡에서만 `actions: write`를 잡 단위로 부여한다.
 
@@ -57,7 +57,7 @@
 
 - **네이밍 규칙**: 이미지 태그(`*-web:ci`)와 동일한 문자열을 `scope`로 사용한다.
   - 예: `identity-web` → `scope=identity-web`, `usage-web` → `scope=usage-web`, `billing-web` → `scope=billing-web`, `notification-web` → `scope=notification-web`
-  - MFE(remote) 등 추가 이미지를 CI에 넣을 때도 동일 규칙으로 `scope`를 이미지 이름과 맞춘다.
+  - MFE(remote)도 동일 규칙 적용: `team-web-mfe` → `scope=team-web-mfe`
   - 현재 `ci.yml` 기준 공통 Stage A 캐시는 사용하지 않고, 서비스별 scope 중심으로 운영한다.
 - **용량 정책(무료 티어 10GB)**:
   - 기본값은 **`cache-to: type=gha,mode=min`** (폭증 방지).
@@ -92,10 +92,10 @@ pnpm run build:web
 
 ## `.env` / `hybrid.env` 운용 기준
 
-- 기본 로컬 값은 루트 `.env`(원본 Compose 모드) 기준으로 유지한다.
-- `hybrid.env`는 **로컬 오버라이드 변수만** 담는다(예: `GATEWAY_*_URI`, `WEB_IDENTITY_SERVICE_URL`).
+- 기본 로컬 값은 루트 `.env`(루트 `docker-compose.yml`) 기준으로 유지한다.
+- `hybrid.env`는 **`docker-compose_local.yml` 전용**이다. 인프라·웹 컨테이너에 필요한 변수만 담으며, 호스트에서 IDE로 백엔드를 띄울 때는 파일 상단 주석의 `docker compose -f docker-compose_local.yml --env-file hybrid.env …` 예시를 따른다.
 - Compose 환경 변수 우선순위는 일반적으로 **셸 환경 변수 > `--env-file` > `.env` > 파일 내 기본값** 순서를 따른다.
-- 같은 키를 여러 곳에 중복 정의하면 실행 시점 값이 달라질 수 있으므로, 하이브리드 전용 키만 `hybrid.env`에 둔다.
+- 같은 키를 여러 곳에 중복 정의하면 실행 시점 값이 달라질 수 있으므로, `docker-compose_local.yml`과 겹치는 키만 `hybrid.env`에 둔다.
 
 ## 통합 테스트·브로커/DB (향후)
 

@@ -142,6 +142,28 @@ services:
       retries: 10
       start_period: 10s
 
+  postgres-agent:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+      AGENT_POSTGRES_DB: ${AGENT_POSTGRES_DB:-agent_db}
+      AGENT_POSTGRES_USER: ${AGENT_POSTGRES_USER:-agent_app}
+      AGENT_POSTGRES_PASSWORD: ${AGENT_POSTGRES_PASSWORD:-agent_app}
+    ports:
+      - "${AGENT_POSTGRES_PORT:-5437}:5432"
+    volumes:
+      - postgres_agent_data:/var/lib/postgresql/data
+      - ./docker/postgres/init/05-create-agent-db.sh:/docker-entrypoint-initdb.d/05-create-agent-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
   rabbitmq:
     image: rabbitmq:3-management-alpine
     restart: unless-stopped
@@ -185,6 +207,7 @@ services:
       DATABASE_URL: postgresql://${NOTIFICATION_POSTGRES_USER:-notification_app}:${NOTIFICATION_POSTGRES_PASSWORD:-notification_app}@postgres-notification:5432/${NOTIFICATION_POSTGRES_DB:-notification_db}
       PORT: 8096
       NOTIFICATION_INTERNAL_SECRET: ${NOTIFICATION_INTERNAL_SECRET:-}
+      TEAM_SERVICE_BASE_URL: ${TEAM_SERVICE_BASE_URL:-http://team-service:8093}
       TEAM_SERVICE_INTERNAL_BASE_URL: ${TEAM_SERVICE_INTERNAL_BASE_URL:-http://team-service:8093}
       # team-service TeamDomainEventPublisher: exchange team.events, routing key team-member-added (application.properties)
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672
@@ -193,6 +216,12 @@ services:
       TEAM_EVENTS_ASSERT_TOPOLOGY: ${TEAM_EVENTS_ASSERT_TOPOLOGY:-true}
       TEAM_EVENTS_EXCHANGE_NAME: ${TEAM_EVENTS_EXCHANGE_NAME:-team.events}
       TEAM_EVENTS_BINDING_KEYS: ${TEAM_EVENTS_BINDING_KEYS:-team-member-added}
+      # identity-service ExternalApiKeyStatusChangedEventPublisher — usage-service `usage.rabbit.identity-api-key` defaults
+      IDENTITY_EXTERNAL_API_KEY_EVENTS_CONSUMER_ENABLED: ${IDENTITY_EXTERNAL_API_KEY_EVENTS_CONSUMER_ENABLED:-true}
+      IDENTITY_EXTERNAL_API_KEY_EVENTS_QUEUE_NAME: ${IDENTITY_EXTERNAL_API_KEY_EVENTS_QUEUE_NAME:-notification.identity.external-api-key.queue}
+      IDENTITY_EXTERNAL_API_KEY_EVENTS_ASSERT_TOPOLOGY: ${IDENTITY_EXTERNAL_API_KEY_EVENTS_ASSERT_TOPOLOGY:-true}
+      IDENTITY_EXTERNAL_API_KEY_EVENTS_EXCHANGE_NAME: ${IDENTITY_EXTERNAL_API_KEY_EVENTS_EXCHANGE_NAME:-identity.events}
+      IDENTITY_EXTERNAL_API_KEY_EVENTS_BINDING_KEYS: ${IDENTITY_EXTERNAL_API_KEY_EVENTS_BINDING_KEYS:-identity.external-api-key.status-changed}
     ports:
       - "${NOTIFICATION_SERVICE_PORT:-8096}:8096"
 
@@ -213,6 +242,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-app}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
       JWT_SECRET: ${GATEWAY_JWT_SECRET:-change-this-secret-key-to-at-least-32-bytes}
+      TEAM_SERVICE_INTERNAL_URL: ${TEAM_SERVICE_INTERNAL_URL:-http://team-service:8093}
+      # team-service `team.internal.api-token` 과 동일 값 권장 (루트 .env 의 PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN)
+      IDENTITY_TEAM_SERVICE_INTERNAL_API_TOKEN: ${PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN:-change-this-team-internal-api-token}
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_PORT: 5672
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
@@ -228,10 +260,17 @@ services:
       context: .
       dockerfile: services/agent-service/Dockerfile
     depends_on:
+      postgres-agent:
+        condition: service_healthy
       rabbitmq:
         condition: service_healthy
     environment:
       AI_AGENT_SERVICE_PORT: 8096
+      AGENT_POSTGRES_HOST: postgres-agent
+      AGENT_POSTGRES_PORT: 5432
+      AGENT_POSTGRES_DB: ${AGENT_POSTGRES_DB:-agent_db}
+      AGENT_POSTGRES_USER: ${AGENT_POSTGRES_USER:-agent_app}
+      AGENT_POSTGRES_PASSWORD: ${AGENT_POSTGRES_PASSWORD:-agent_app}
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_PORT: 5672
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
@@ -239,6 +278,9 @@ services:
       AI_AGENT_GEMINI_API_KEY: ${AI_AGENT_GEMINI_API_KEY:-}
       AI_AGENT_GEMINI_MODEL: ${AI_AGENT_GEMINI_MODEL:-gemini-2.5-flash}
       AI_AGENT_GEMINI_BASE_URL: ${AI_AGENT_GEMINI_BASE_URL:-https://generativelanguage.googleapis.com}
+      AI_AGENT_DEEPSEEK_API_KEY: ${AI_AGENT_DEEPSEEK_API_KEY:-}
+      AI_AGENT_DEEPSEEK_BASE_URL: ${AI_AGENT_DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      AI_AGENT_DEEPSEEK_MODEL: ${AI_AGENT_DEEPSEEK_MODEL:-deepseek-chat}
       AI_AGENT_RECOMMENDATION_CATALOG_URL: ${AI_AGENT_RECOMMENDATION_CATALOG_URL:-}
       AI_AGENT_RECOMMENDATION_CATALOG_API_KEY: ${AI_AGENT_RECOMMENDATION_CATALOG_API_KEY:-}
       AI_AGENT_RECOMMENDATION_CATALOG_OPENROUTER_REFERER: ${AI_AGENT_RECOMMENDATION_CATALOG_OPENROUTER_REFERER:-}
@@ -292,11 +334,21 @@ services:
       SPRING_RABBITMQ_PORT: 5672
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      BILLING_RABBIT_IDENTITY_EXTERNAL_API_KEY_IN_ENABLED: ${BILLING_RABBIT_IDENTITY_EXTERNAL_API_KEY_IN_ENABLED:-true}
+      BILLING_RABBIT_IDENTITY_EXTERNAL_API_KEY_IN_EXCHANGE: ${BILLING_RABBIT_IDENTITY_EXTERNAL_API_KEY_IN_EXCHANGE:-identity.events}
+      BILLING_RABBIT_IDENTITY_EXTERNAL_API_KEY_IN_ROUTING_KEY: ${BILLING_RABBIT_IDENTITY_EXTERNAL_API_KEY_IN_ROUTING_KEY:-identity.external-api-key.status-changed}
+      BILLING_RABBIT_IDENTITY_EXTERNAL_API_KEY_IN_QUEUE: ${BILLING_RABBIT_IDENTITY_EXTERNAL_API_KEY_IN_QUEUE:-billing-service.identity.external-api-key.queue}
+      BILLING_RABBIT_TEAM_DOMAIN_IN_ENABLED: ${BILLING_RABBIT_TEAM_DOMAIN_IN_ENABLED:-true}
+      BILLING_RABBIT_TEAM_DOMAIN_IN_EXCHANGE: ${BILLING_RABBIT_TEAM_DOMAIN_IN_EXCHANGE:-team.events}
+      BILLING_RABBIT_TEAM_DOMAIN_IN_ROUTING_KEY: "${BILLING_RABBIT_TEAM_DOMAIN_IN_ROUTING_KEY:-team.api.key.#}"
+      BILLING_RABBIT_TEAM_DOMAIN_IN_QUEUE: ${BILLING_RABBIT_TEAM_DOMAIN_IN_QUEUE:-billing-service.team.api-key.domain.queue}
       BILLING_SERVICE_PORT: 8095
       GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET:-}
       BILLING_IDENTITY_ENABLED: ${BILLING_IDENTITY_ENABLED:-false}
       BILLING_IDENTITY_BASE_URL: ${BILLING_IDENTITY_BASE_URL:-http://identity-service:8080}
       BILLING_IDENTITY_BUDGET_PATH: "${BILLING_IDENTITY_BUDGET_PATH:-/api/identity/v1/users/budget?email={userId}}"
+      # 로컬 볼륨 DB에 카탈로그 신규 모델 row만 비어 있는 경우 멱등 보강(운영은 보통 false)
+      BILLING_PRICING_SEED_MISSING: ${BILLING_PRICING_SEED_MISSING:-true}
     ports:
       - "${BILLING_SERVICE_PORT:-8095}:8095"
 
@@ -311,6 +363,8 @@ services:
       SPRING_PROFILES_ACTIVE: docker
       PROXY_KEY_SERVICE_BASE_URL: ${PROXY_KEY_SERVICE_BASE_URL:-http://identity-service:8080}
       PROXY_TEAM_KEY_SERVICE_BASE_URL: ${PROXY_TEAM_KEY_SERVICE_BASE_URL:-http://team-service:8093}
+      # proxy.jar 수정 없이 Spring 이 기존 설정으로 읽음 — team-service 내부 토큰과 동일해야 함
+      PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN: ${PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN:-change-this-team-internal-api-token}
       PROXY_OPENAI_TEST_API_KEY: ${PROXY_OPENAI_TEST_API_KEY:-}
       PROXY_GOOGLE_TEST_API_KEY: ${PROXY_GOOGLE_TEST_API_KEY:-}
       PROXY_MOCK_KEY_FALLBACK: ${PROXY_MOCK_KEY_FALLBACK:-}
@@ -492,7 +546,10 @@ services:
       IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
       SECURITY_JWT_SECRET: ${JWT_SECRET:-change-this-secret-key-to-at-least-32-bytes}
       TEAM_API_KEY_ENCRYPTION_SECRET: ${TEAM_API_KEY_ENCRYPTION_SECRET:-change-this-team-api-key-encryption-secret-min-32-chars}
+      PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN: ${PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN:-change-this-team-internal-api-token}
       TEAM_SERVICE_PORT: 8093
+      # team-service → billing (month-rollup BFF). Override on host if billing is not on this URL.
+      TEAM_BILLING_SERVICE_BASE_URL: ${TEAM_BILLING_SERVICE_BASE_URL:-http://billing-service:8095}
     depends_on:
       postgres-team:
         condition: service_healthy
@@ -554,3 +611,4 @@ volumes:
   postgres_usage_data:
   postgres_billing_data:
   postgres_notification_data:
+  postgres_agent_data:

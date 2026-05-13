@@ -81,7 +81,14 @@ public class ProxyRelayService {
         ProviderHandler handler = providerRegistry.get(provider);
 
         return userContextResolver.fromExchange(exchange)
-                .flatMap(ctx -> apiKeyClient.resolveApiKey(ctx.keyLookupUserId(), ctx.teamId(), provider)
+                .flatMap(ctx -> apiKeyClient.resolveApiKey(
+                                ctx.keyLookupUserId(),
+                                ctx.teamId(),
+                                provider,
+                                ctx.requestedApiKeyId(),
+                                ctx.requestedApiKeyAlias(),
+                                ctx.rawApiKey()
+                        )
                         .flatMap(resolvedApiKey -> forward(exchange, ctx, handler, provider, remainder, resolvedApiKey)));
     }
 
@@ -213,6 +220,10 @@ public class ProxyRelayService {
     ) {
         boolean successful = upstreamStatus.is2xxSuccessful();
         Integer statusCode = upstreamStatus.value();
+        /*
+         * UsageRecordedEvent contract: for team calls, apiKeyId and teamApiKeyId may both be set to the same team key
+         * row id; usage-service treats teamApiKeyId as the primary team-scope identifier when non-blank.
+         */
         UsageRecordedEvent event = new UsageRecordedEvent(
                 null,
                 null,
@@ -221,6 +232,7 @@ public class ProxyRelayService {
                 ctx.organizationId(),
                 ctx.teamId(),
                 resolvedApiKey.keyId(),
+                resolvedApiKey.alias(),
                 resolvedApiKey.teamApiKeyId(),
                 resolvedApiKey.keyFingerprint(),
                 resolvedApiKey.keySource(),
@@ -233,7 +245,8 @@ public class ProxyRelayService {
                 latencyMs,
                 streaming,
                 successful,
-                statusCode
+                statusCode,
+                ctx.keyLookupUserId()
         );
         return usageEventPublisher.publish(event);
     }

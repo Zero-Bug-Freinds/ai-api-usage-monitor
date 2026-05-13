@@ -2,8 +2,11 @@ package com.zerobugfreinds.team_service.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.zerobugfreinds.team_service.config.IdentityServiceUrlSupport;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.IOException;
@@ -21,16 +24,21 @@ public class IdentityUserLookupClient {
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final String identityServiceBaseUrl;
+    private final Duration requestTimeout;
+    private final Duration bulkRequestTimeout;
 
     public IdentityUserLookupClient(
             ObjectMapper objectMapper,
-            @Value("${identity.service.url:http://host.docker.internal:8090}") String identityServiceBaseUrl
+            @Qualifier("identityServiceHttpClient") HttpClient httpClient,
+            IdentityServiceUrlSupport identityServiceUrlSupport,
+            @Value("${identity.http.read-timeout-ms:5000}") int readTimeoutMs,
+            @Value("${identity.http.read-timeout-bulk-ms:10000}") int readTimeoutBulkMs
     ) {
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(3))
-                .build();
         this.objectMapper = objectMapper;
-        this.identityServiceBaseUrl = identityServiceBaseUrl.replaceAll("/+$", "");
+        this.httpClient = httpClient;
+        this.identityServiceBaseUrl = identityServiceUrlSupport.primaryBaseUrl();
+        this.requestTimeout = Duration.ofMillis(Math.max(1, readTimeoutMs));
+        this.bulkRequestTimeout = Duration.ofMillis(Math.max(1, readTimeoutBulkMs));
     }
 
     public boolean existsByEmail(String email) {
@@ -41,7 +49,7 @@ public class IdentityUserLookupClient {
                 .toUri();
 
         HttpRequest request = HttpRequest.newBuilder(uri)
-                .timeout(Duration.ofSeconds(5))
+                .timeout(requestTimeout)
                 .GET()
                 .header("Accept", "application/json")
                 .build();
@@ -73,7 +81,7 @@ public class IdentityUserLookupClient {
             return Set.of();
         }
         HttpRequest request = HttpRequest.newBuilder(uri)
-                .timeout(Duration.ofSeconds(10))
+                .timeout(bulkRequestTimeout)
                 .header("Accept", "application/json")
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(requestBody))
@@ -101,6 +109,87 @@ public class IdentityUserLookupClient {
             return Set.of();
         } catch (IOException ex) {
             return Set.of();
+        }
+    }
+
+    /**
+     * identity 내부 API로 숫자 userId와 이메일을 한 번에 받아, 멤버십 조회 후보 집합에 합친다.
+     * 동기화 테이블에 행이 없어도 동일 사용자를 id·이메일 어느 쪽으로 저장했든 매칭 가능하게 한다.
+     */
+    public void addResolvedPrincipalIdentifiers(String userIdOrEmail, Set<String> candidates) {
+        if (!StringUtils.hasText(userIdOrEmail) || candidates == null) {
+            return;
+        }
+        URI uri = UriComponentsBuilder
+                .fromUriString(identityServiceBaseUrl + "/internal/users/principal")
+                .queryParam("q", userIdOrEmail.trim())
+                .build(true)
+                .toUri();
+
+        HttpRequest request = HttpRequest.newBuilder(uri)
+                .timeout(requestTimeout)
+                .GET()
+                .header("Accept", "application/json")
+                .build();
+
+        try {
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                return;
+            }
+            JsonNode root = objectMapper.readTree(response.body());
+            JsonNode data = root.path("data");
+            if (data.isMissingNode() || data.isNull()) {
+                return;
+            }
+            JsonNode userIdNode = data.path("userId");
+            JsonNode emailNode = data.path("email");
+            if (userIdNode.isTextual()) {
+                candidates.add(userIdNode.asText().trim());
+            }
+            if (emailNode.isTextual()) {
+                candidates.add(emailNode.asText().trim().toLowerCase());
+            }
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+        } catch (IOException ignored) {
+            // 동일 네트워크 장애 시 로컬 후보만으로 진행
+        }
+    }
+
+    public String findEmailByUserId(String userId) {
+        if (userId == null || userId.isBlank()) {
+            return null;
+        }
+        URI uri = UriComponentsBuilder
+                .fromUriString(identityServiceBaseUrl + "/internal/users/email")
+                .queryParam("userId", userId.trim())
+                .build(true)
+                .toUri();
+
+        HttpRequest request = HttpRequest.newBuilder(uri)
+                .timeout(requestTimeout)
+                .GET()
+                .header("Accept", "application/json")
+                .build();
+
+        try {
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                return null;
+            }
+            JsonNode root = objectMapper.readTree(response.body());
+            JsonNode data = root.path("data");
+            if (!data.isTextual()) {
+                return null;
+            }
+            String email = data.asText();
+            return (email == null || email.isBlank()) ? null : email.trim().toLowerCase();
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            return null;
+        } catch (IOException ex) {
+            return null;
         }
     }
 

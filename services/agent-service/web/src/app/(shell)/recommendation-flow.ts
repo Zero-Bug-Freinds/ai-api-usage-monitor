@@ -1,6 +1,6 @@
 import type { AnalysisScope, AvailableKeyContext } from "./agent-key-shared"
 import type { AnalysisResult } from "./agent-result-shared"
-import { requestRecommendationsBatch } from "./recommendation-service"
+import { requestRecommendationsBatch, type RecommendationPriority } from "./recommendation-service"
 
 export async function runRecommendationFlow(params: {
   scope: AnalysisScope
@@ -8,14 +8,18 @@ export async function runRecommendationFlow(params: {
   currentUserId: number | null
   selectedTeamId: number | null
   selectedTeamLabel: string
+  recommendationPriority: RecommendationPriority
   setLoadingMessage: (message: string) => void
 }): Promise<AnalysisResult[]> {
-  const { scope, targetKeys, currentUserId, selectedTeamId, selectedTeamLabel, setLoadingMessage } = params
+  const { scope, targetKeys, currentUserId, selectedTeamId, selectedTeamLabel, recommendationPriority, setLoadingMessage } = params
   const nextResults: AnalysisResult[] = []
+  const primaryLabel = targetKeys[0]?.keyLabel ?? ""
   setLoadingMessage(
-    scope === "PERSONAL"
-      ? `개인 API 키 모델 추천을 배치 분석 중입니다... (1/${targetKeys.length})`
-      : `${selectedTeamLabel || `Team ${selectedTeamId}`} 키 모델 추천을 배치 분석 중입니다... (1/${targetKeys.length})`,
+    targetKeys.length === 1
+      ? `${primaryLabel} 모델 추천 분석 중...`
+      : scope === "PERSONAL"
+        ? `개인 API 키 모델 추천을 배치 분석 중입니다... (1/${targetKeys.length})`
+        : `${selectedTeamLabel || `Team ${selectedTeamId}`} 키 모델 추천을 배치 분석 중입니다... (1/${targetKeys.length})`,
   )
   if (scope === "PERSONAL" && currentUserId == null) {
     return targetKeys.map((keyItem) => ({
@@ -40,6 +44,7 @@ export async function runRecommendationFlow(params: {
       keyItems: targetKeys,
       currentUserId,
       resolvedTeamIdNumber: Number(resolvedTeamId ?? 0),
+      recommendationPriority,
     })
     for (const keyItem of targetKeys) {
       const recommendation = recommendationByKeyId[keyItem.keyId]

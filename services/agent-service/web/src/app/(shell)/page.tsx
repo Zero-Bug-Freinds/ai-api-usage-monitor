@@ -1,18 +1,27 @@
 "use client"
 
-import { type ChangeEvent, useEffect, useMemo, useState } from "react"
+import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react"
 import {
   type AnalysisScope,
   type AvailableKeyContext,
   type TeamBoardItem,
   type TeamGroup,
-  resolveTargetKeys,
+  teamBoardItemToAvailableKeyContext,
 } from "./agent-key-shared"
-import type { AnalysisResult } from "./agent-result-shared"
+import type { AnalysisHistorySnapshot, AnalysisResult } from "./agent-result-shared"
+import { AnalysisHistoryDayPanel } from "./analysis-history-day-panel"
+import { AnalysisResultArticles } from "./analysis-result-articles"
 import { runBudgetAnalysisFlow } from "./analysis-flow"
 import { runRecommendationFlow } from "./recommendation-flow"
+import type { RecommendationPriority } from "./recommendation-service"
 
 type AnalysisAction = "ANALYSIS" | "RECOMMENDATION"
+
+type LoadingTarget = {
+  scope: AnalysisScope
+  keyId: number
+  action: AnalysisAction
+}
 
 type ModelCatalogSnapshot = {
   source: string
@@ -30,81 +39,16 @@ type ModelCatalogSnapshot = {
 }
 
 
-function parseInputOutputRatio(value: string | null | undefined): { input: number; output: number } | null {
-  if (!value) return null
-  const [inputRaw, outputRaw] = value.split(":")
-  const input = Number(inputRaw)
-  const output = Number(outputRaw)
-  if (!Number.isFinite(input) || !Number.isFinite(output) || input < 0 || output < 0) return null
-  return { input, output }
-}
-
-function estimateSavingsUsd(
-  estimatedSavingsPct: number | string,
-  recommendedMonthlyCostUsd: number | string,
-): number | null {
-  const pct = Number(estimatedSavingsPct)
-  const recommended = Number(recommendedMonthlyCostUsd)
-  if (!Number.isFinite(pct) || !Number.isFinite(recommended)) return null
-  if (pct <= 0 || pct >= 100 || recommended < 0) return null
-  const estimatedCurrent = recommended / (1 - pct / 100)
-  const estimatedSavingsUsd = estimatedCurrent - recommended
-  if (!Number.isFinite(estimatedSavingsUsd) || estimatedSavingsUsd < 0) return null
-  return estimatedSavingsUsd
-}
-
-function latencyStatus(latencyMs: number): { label: string; className: string; progress: number } {
-  if (latencyMs <= 600) {
-    return { label: "빠름", className: "bg-emerald-100 text-emerald-700", progress: 25 }
-  }
-  if (latencyMs <= 1200) {
-    return { label: "보통", className: "bg-amber-100 text-amber-700", progress: 55 }
-  }
-  if (latencyMs <= 2000) {
-    return { label: "지연", className: "bg-orange-100 text-orange-700", progress: 78 }
-  }
-  return { label: "높은 지연", className: "bg-red-100 text-red-700", progress: 92 }
-}
-
-function latencyStatusNullable(latencyMs: number | null | undefined): { label: string; className: string; progress: number } {
-  if (latencyMs == null || !Number.isFinite(latencyMs) || latencyMs < 0) {
-    return { label: "지표 없음", className: "bg-muted text-muted-foreground", progress: 0 }
-  }
-  return latencyStatus(latencyMs)
-}
-
-function ratioDominance(ratio: { input: number; output: number } | null): {
-  label: string
-  className: string
-  inputPct: number
-  outputPct: number
-} {
-  if (!ratio) {
-    return { label: "지표 없음", className: "bg-muted text-muted-foreground", inputPct: 0, outputPct: 0 }
-  }
-  const total = ratio.input + ratio.output
-  if (total <= 0) {
-    return { label: "지표 없음", className: "bg-muted text-muted-foreground", inputPct: 0, outputPct: 0 }
-  }
-  const inputPct = (ratio.input / total) * 100
-  const outputPct = 100 - inputPct
-  if (inputPct >= 80) {
-    return { label: "입력 중심", className: "bg-blue-100 text-blue-700", inputPct, outputPct }
-  }
-  if (outputPct >= 80) {
-    return { label: "출력 중심", className: "bg-violet-100 text-violet-700", inputPct, outputPct }
-  }
-  return { label: "균형형", className: "bg-slate-100 text-slate-700", inputPct, outputPct }
-}
-
 type AvailableContextKeyPayload = {
   keyId: number
+  mergedKeyIds?: number[]
   alias: string
   provider: string
   monthlyBudgetUsd: number
   status: string
   budgetStats?: {
     currentSpendUsd: number
+    lifetimeSpendUsd?: number
     remainingBudgetUsd: number
     budgetUsagePercent: number
     isBudgetExceeded: boolean
@@ -124,11 +68,68 @@ type AvailableContextPayload = {
   data?: AvailableContextKeyPayload[]
 }
 
-function formatBillingMetric(value: number | null | undefined): string {
-  if (value == null) {
-    return "표시 불가 — 결제일 미입력"
+/** 과금 웹 `formatUsd`와 동일 규칙(소액 4자리, 미만은 임계 라벨). */
+function formatAgentUsd(value: number): string {
+  if (!Number.isFinite(value)) {
+    return "—"
   }
-  return `${value}일`
+  const decimals = 4
+  const minLabel = 0.0001
+  if (value > 0 && value < minLabel) {
+    return `<$${minLabel.toFixed(decimals)}`
+  }
+  return `$${value.toFixed(decimals)}`
+}
+
+function isCredentialDeletedStatus(status: string): boolean {
+  const u = (status ?? "").toUpperCase()
+  return u === "DELETED" || u === "DELETION_REQUESTED"
+}
+
+function AgentKeyBudgetSummary({
+  monthlyBudgetUsd,
+  budgetStats,
+}: {
+  monthlyBudgetUsd: number
+  budgetStats?: AvailableKeyContext["budgetStats"]
+}) {
+  const monthSpend = budgetStats?.currentSpendUsd ?? 0
+  const lifetimeSpend = budgetStats?.lifetimeSpendUsd ?? 0
+  const monthly = Number.isFinite(monthlyBudgetUsd) ? monthlyBudgetUsd : 0
+  const remaining = budgetStats?.remainingBudgetUsd ?? Math.max(0, monthly - monthSpend)
+  const pct =
+    budgetStats?.budgetUsagePercent ??
+    (monthly > 0 && Number.isFinite(monthSpend) ? (monthSpend / monthly) * 100 : 0)
+
+  if (monthly <= 0) {
+    return (
+      <div className="space-y-0.5 text-xs text-muted-foreground">
+        <p className="leading-snug">
+          누적 지출(최근 400일) {formatAgentUsd(lifetimeSpend)}
+          <span className="text-[10px] text-muted-foreground"> · 월 예산 미설정</span>
+        </p>
+        <p className="text-[10px] leading-snug">
+          당월 지출 {formatAgentUsd(monthSpend)} (진행률·잔여는 월 예산이 있을 때만 계산)
+        </p>
+        <p className="text-[10px] leading-snug">월 예산은 identity·과금 요약에 값이 있으면 여기에도 맞춰집니다.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-0.5 text-xs text-muted-foreground">
+      <p className="leading-snug">
+        누적 지출(최근 400일) {formatAgentUsd(lifetimeSpend)} / 월 예산 ${monthly.toFixed(2)} (당월 잔여 ${remaining.toFixed(2)})
+      </p>
+      <p className="text-[10px] leading-snug text-muted-foreground">
+        당월 지출 {formatAgentUsd(monthSpend)} · 진행률은 당월 기준
+      </p>
+      <div className="flex items-center justify-between gap-2 text-[11px]">
+        <span className="text-muted-foreground">진행률(당월)</span>
+        <span className="tabular-nums font-medium text-foreground">{pct.toFixed(1)}%</span>
+      </div>
+    </div>
+  )
 }
 
 const MANUAL_BILLING_STORAGE_PREFIX = "agent.manualBillingCycleEnd."
@@ -198,6 +199,112 @@ function writeAnalysisResultsToStorage(results: AnalysisResult[]): void {
   }
 }
 
+const ANALYSIS_HISTORY_STORAGE_KEY = "agent.analysisHistory.v1"
+const MAX_ANALYSIS_HISTORY_SNAPSHOTS = 80
+
+function toLocalDateKey(iso: string): string {
+  const d = new Date(iso)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, "0")
+  const day = String(d.getDate()).padStart(2, "0")
+  return `${y}-${m}-${day}`
+}
+
+function formatDateKeyForDisplay(dateKey: string): string {
+  const parts = dateKey.split("-").map((p) => Number(p))
+  const y = parts[0]
+  const m = parts[1]
+  const day = parts[2]
+  if (!y || !m || !day) return dateKey
+  const dt = new Date(y, m - 1, day)
+  return dt.toLocaleDateString("ko-KR", { weekday: "short", year: "numeric", month: "long", day: "numeric" })
+}
+
+function readAnalysisHistoryFromStorage(): AnalysisHistorySnapshot[] {
+  if (typeof window === "undefined") return []
+  try {
+    const raw = window.localStorage.getItem(ANALYSIS_HISTORY_STORAGE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as AnalysisHistorySnapshot[]
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter(
+      (row) =>
+        row != null &&
+        typeof row.id === "string" &&
+        typeof row.savedAt === "string" &&
+        typeof row.dateKey === "string" &&
+        Array.isArray(row.results),
+    )
+  } catch {
+    return []
+  }
+}
+
+function writeAnalysisHistoryToStorage(rows: AnalysisHistorySnapshot[]): void {
+  if (typeof window === "undefined") return
+  try {
+    if (rows.length === 0) {
+      window.localStorage.removeItem(ANALYSIS_HISTORY_STORAGE_KEY)
+      return
+    }
+    window.localStorage.setItem(ANALYSIS_HISTORY_STORAGE_KEY, JSON.stringify(rows))
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+function createAnalysisHistorySnapshot(
+  results: AnalysisResult[],
+  mutation: { keyId: number; action: AnalysisAction } | null,
+): AnalysisHistorySnapshot {
+  const savedAt = new Date().toISOString()
+  let rows = JSON.parse(JSON.stringify(results)) as AnalysisResult[]
+  if (mutation != null) {
+    rows = rows.map((row: AnalysisResult) => {
+      if (row.keyId !== mutation.keyId) {
+        return row
+      }
+      if (mutation.action === "RECOMMENDATION") {
+        const next: AnalysisResult = { ...row }
+        delete next.data
+        delete next.error
+        delete next.forecastGaps
+        return next
+      }
+      if (mutation.action === "ANALYSIS") {
+        const next: AnalysisResult = { ...row }
+        delete next.recommendation
+        delete next.recommendationError
+        return next
+      }
+      return row
+    })
+  }
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    savedAt,
+    dateKey: toLocalDateKey(savedAt),
+    results: rows,
+  }
+}
+
+function mergeAnalysisResults(prev: AnalysisResult[], nextResult: AnalysisResult): AnalysisResult[] {
+  const previous = prev.find((item: AnalysisResult) => item.keyId === nextResult.keyId)
+  if (!previous) {
+    return [...prev, nextResult]
+  }
+  const merged: AnalysisResult = {
+    ...previous,
+    ...nextResult,
+    data: nextResult.error ? nextResult.data : (nextResult.data ?? previous.data),
+    recommendation: nextResult.recommendationError
+      ? nextResult.recommendation
+      : (nextResult.recommendation ?? previous.recommendation),
+    forecastGaps: nextResult.error ? nextResult.forecastGaps : (nextResult.forecastGaps ?? previous.forecastGaps),
+  }
+  return prev.map((item: AnalysisResult) => (item.keyId === nextResult.keyId ? merged : item))
+}
+
 function resolveForecastInputs(
   stats: AvailableKeyContext["providerStats"],
   monthlyBudgetUsd: number,
@@ -210,20 +317,28 @@ function resolveForecastInputs(
   modelUsageDistribution7d: Array<{ model: string; percentage: number }>
   hourlyTokenUsage24h: number[]
   gaps: string[]
-  sufficientForForecast: boolean
+  insufficientForForecast: boolean
 } {
   const gaps: string[] = []
   const spendFromPrediction = stats.averageDailySpendUsd
   const tokensFromPrediction = stats.averageDailyTokenUsage
   const billedSpend = stats.currentSpendUsd
+  const recentDailySpendUsd = (stats.recentDailySpendUsd ?? [])
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value >= 0)
+    .slice(-7)
+  const hasUsageEvidence =
+    spendFromPrediction > 0 || tokensFromPrediction > 0 || billedSpend > 0 || recentDailySpendUsd.some((value) => value > 0)
+  const insufficientForForecast = !hasUsageEvidence
+  if (insufficientForForecast) {
+    gaps.push("사용량 이벤트가 없어 소진 예측을 계산할 수 없습니다. 키를 사용한 뒤 다시 시도해 주세요.")
+  }
 
   let averageDailySpendUsd = spendFromPrediction
   if (averageDailySpendUsd <= 0 && billedSpend > 0) {
     averageDailySpendUsd = billedSpend / 7
-  } else if (averageDailySpendUsd <= 0 && billedSpend <= 0 && monthlyBudgetUsd > 0) {
-    averageDailySpendUsd = monthlyBudgetUsd / 30
   } else if (averageDailySpendUsd <= 0) {
-    averageDailySpendUsd = 0.01
+    averageDailySpendUsd = 0.000001
   }
 
   const averageDailyTokenUsage = tokensFromPrediction > 0 ? tokensFromPrediction : 1
@@ -231,11 +346,6 @@ function resolveForecastInputs(
   const estimatedDaysByBudget =
     averageDailySpendUsd > 0 ? Math.max(remainingBudgetUsd / averageDailySpendUsd, 0) : 0
   const remainingTokens = Math.max(Math.round(averageDailyTokenUsage * estimatedDaysByBudget), 1)
-
-  const recentDailySpendUsd = (stats.recentDailySpendUsd ?? [])
-    .map((value) => Number(value))
-    .filter((value) => Number.isFinite(value) && value >= 0)
-    .slice(-7)
 
   const recentDailyTokenUsage7d = Array.from({ length: 7 }, (_, index) => {
     const spend = recentDailySpendUsd[index] ?? averageDailySpendUsd
@@ -252,8 +362,6 @@ function resolveForecastInputs(
     return Math.max(0, Math.round((averageDailyTokenUsage / 24) * multiplier))
   })
 
-  const sufficientForForecast = true
-
   return {
     averageDailySpendUsd,
     averageDailyTokenUsage,
@@ -263,40 +371,12 @@ function resolveForecastInputs(
     modelUsageDistribution7d,
     hourlyTokenUsage24h,
     gaps,
-    sufficientForForecast,
+    insufficientForForecast,
   }
 }
 
-function statusClassName(status: string): string {
-  if (status === "CRITICAL") return "bg-red-100 text-red-700"
-  if (status === "WARNING") return "bg-amber-100 text-amber-700"
-  return "bg-emerald-100 text-emerald-700"
-}
-
-function localizedHealthStatus(status: string): string {
-  if (status === "CRITICAL") return "위험"
-  if (status === "WARNING") return "주의"
-  if (status === "HEALTHY") return "양호"
-  return status
-}
-
-function localizedConfidenceLevel(level: string | null | undefined): string {
-  if (level == null) return "미표시"
-  if (level === "HIGH") return "높음"
-  if (level === "MEDIUM") return "보통"
-  if (level === "LOW") return "낮음"
-  return level
-}
-
-function localizeAssistantMessage(message: string): string {
-  return message
-    .replaceAll("CRITICAL", "위험")
-    .replaceAll("WARNING", "주의")
-    .replaceAll("HEALTHY", "양호")
-}
-
 export default function AgentPage() {
-  const [loadingAction, setLoadingAction] = useState<AnalysisAction | null>(null)
+  const [loadingTarget, setLoadingTarget] = useState<LoadingTarget | null>(null)
   const [loadingMessage, setLoadingMessage] = useState<string>("")
   const [results, setResults] = useState<AnalysisResult[]>([])
   const [keys, setKeys] = useState<AvailableKeyContext[]>([])
@@ -306,8 +386,18 @@ export default function AgentPage() {
   const [showTeamList, setShowTeamList] = useState<boolean>(true)
   const [bootstrapError, setBootstrapError] = useState<string>("")
   const [currentUserId, setCurrentUserId] = useState<number | null>(null)
+  const [recommendationPriority, setRecommendationPriority] = useState<RecommendationPriority>("BALANCED")
+  const [hideDeletedKeys, setHideDeletedKeys] = useState<boolean>(false)
   const [modelCatalog, setModelCatalog] = useState<ModelCatalogSnapshot | null>(null)
   const [resultsHydrated, setResultsHydrated] = useState<boolean>(false)
+  const [contextRefreshing, setContextRefreshing] = useState<boolean>(false)
+  const [analysisHistory, setAnalysisHistory] = useState<AnalysisHistorySnapshot[]>([])
+  const [mainResultsTab, setMainResultsTab] = useState<"current" | "history">("current")
+  const [historySelectedDateKey, setHistorySelectedDateKey] = useState<string | null>(null)
+  const [historySortNewestFirst, setHistorySortNewestFirst] = useState<boolean>(true)
+  const resultsHistoryBaselineCapturedRef = useRef(false)
+  const resultsHistorySigRef = useRef<string>("")
+  const lastHistoryMutationRef = useRef<{ keyId: number; action: AnalysisAction } | null>(null)
   const modelCatalogStats = useMemo(() => {
     if (!modelCatalog) return null
     const activeModels = modelCatalog.models.filter((model: ModelCatalogSnapshot["models"][number]) => {
@@ -331,13 +421,55 @@ export default function AgentPage() {
     () => (selectedTeamId == null ? [] : teamBoard.filter((item: TeamBoardItem) => item.teamId === selectedTeamId)),
     [teamBoard, selectedTeamId],
   )
+  const visiblePersonalKeys = useMemo(
+    () =>
+      hideDeletedKeys ? keys.filter((item: AvailableKeyContext) => !isCredentialDeletedStatus(item.status)) : keys,
+    [hideDeletedKeys, keys],
+  )
+  const visibleSelectedTeamKeys = useMemo(
+    () =>
+      hideDeletedKeys
+        ? selectedTeamKeys.filter((item: TeamBoardItem) => !isCredentialDeletedStatus(item.status))
+        : selectedTeamKeys,
+    [hideDeletedKeys, selectedTeamKeys],
+  )
   const selectedTeamLabel = useMemo(
     () => teamGroups.find((group: TeamGroup) => group.teamId === selectedTeamId)?.teamName ?? "",
     [teamGroups, selectedTeamId],
   )
 
+  const historyByDate = useMemo(() => {
+    const map = new Map<string, AnalysisHistorySnapshot[]>()
+    for (const row of analysisHistory) {
+      const list = map.get(row.dateKey) ?? []
+      list.push(row)
+      map.set(row.dateKey, list)
+    }
+    for (const list of map.values()) {
+      list.sort((a: AnalysisHistorySnapshot, b: AnalysisHistorySnapshot) => b.savedAt.localeCompare(a.savedAt))
+    }
+    return map
+  }, [analysisHistory])
+
+  const historyDateKeys = useMemo(() => {
+    const keys = Array.from(historyByDate.keys())
+    return keys.sort((a: string, b: string) =>
+      historySortNewestFirst ? b.localeCompare(a) : a.localeCompare(b),
+    )
+  }, [historyByDate, historySortNewestFirst])
+
+  /** 선택한 날짜의 스냅샷 전체 — 정렬은 최신순/오래된순 토글에 따름 */
+  const snapshotsForSelectedDate = useMemo(() => {
+    if (!historySelectedDateKey) return []
+    const list = historyByDate.get(historySelectedDateKey) ?? []
+    return [...list].sort((a: AnalysisHistorySnapshot, b: AnalysisHistorySnapshot) =>
+      historySortNewestFirst ? b.savedAt.localeCompare(a.savedAt) : a.savedAt.localeCompare(b.savedAt),
+    )
+  }, [historyByDate, historySelectedDateKey, historySortNewestFirst])
+
   useEffect(() => {
     setResults(readAnalysisResultsFromStorage())
+    setAnalysisHistory(readAnalysisHistoryFromStorage())
     setResultsHydrated(true)
   }, [])
 
@@ -349,6 +481,36 @@ export default function AgentPage() {
     if (!resultsHydrated) return
     writeAnalysisResultsToStorage(results)
   }, [results, resultsHydrated])
+
+  useEffect(() => {
+    if (!resultsHydrated) return
+    const sig = JSON.stringify(results)
+    if (!resultsHistoryBaselineCapturedRef.current) {
+      resultsHistoryBaselineCapturedRef.current = true
+      resultsHistorySigRef.current = sig
+      return
+    }
+    if (resultsHistorySigRef.current === sig) return
+    resultsHistorySigRef.current = sig
+    if (results.length === 0) {
+      lastHistoryMutationRef.current = null
+      return
+    }
+    const mutation = lastHistoryMutationRef.current
+    lastHistoryMutationRef.current = null
+    setAnalysisHistory((prev: AnalysisHistorySnapshot[]) => {
+      const snap = createAnalysisHistorySnapshot(results, mutation)
+      const next = [...prev, snap].slice(-MAX_ANALYSIS_HISTORY_SNAPSHOTS)
+      writeAnalysisHistoryToStorage(next)
+      return next
+    })
+  }, [results, resultsHydrated])
+
+  useEffect(() => {
+    if (mainResultsTab !== "history") return
+    if (historyDateKeys.length === 0) return
+    setHistorySelectedDateKey((d: string | null) => (d && historyByDate.has(d) ? d : historyDateKeys[0]))
+  }, [mainResultsTab, historyDateKeys, historyByDate])
 
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -404,6 +566,7 @@ export default function AgentPage() {
 
       const normalized = (payload.data ?? []).map((item: AvailableContextKeyPayload) => ({
         keyId: item.keyId,
+        mergedKeyIds: item.mergedKeyIds,
         keyLabel: item.alias,
         provider: item.provider,
         monthlyBudgetUsd: item.monthlyBudgetUsd,
@@ -427,14 +590,31 @@ export default function AgentPage() {
     }
   }
 
-  const runAnalysis = async (scope: AnalysisScope, action: AnalysisAction) => {
+  const refreshAvailableContext = async () => {
+    if (contextRefreshing) {
+      return
+    }
+    setContextRefreshing(true)
+    try {
+      await loadAvailableContext()
+    } finally {
+      setContextRefreshing(false)
+    }
+  }
+
+  const runAnalysisForKey = async (scope: AnalysisScope, targetKey: AvailableKeyContext, action: AnalysisAction) => {
     if (scope === "TEAM" && selectedTeamId == null) {
       return
     }
-    const targetKeys: AvailableKeyContext[] = resolveTargetKeys(scope, keys, selectedTeamKeys)
-    if (targetKeys.length === 0) return
+    const targetKeys: AvailableKeyContext[] = [targetKey]
+    const teamIdForFlow =
+      scope === "TEAM" ? (targetKey.teamIdForBilling ?? selectedTeamId) : selectedTeamId
+    const teamLabelForFlow =
+      scope === "TEAM"
+        ? teamGroups.find((group: TeamGroup) => group.teamId === teamIdForFlow)?.teamName ?? selectedTeamLabel
+        : selectedTeamLabel
 
-    setLoadingAction(action)
+    setLoadingTarget({ scope, keyId: targetKey.keyId, action })
     try {
       const nextResults =
         action === "ANALYSIS"
@@ -442,8 +622,8 @@ export default function AgentPage() {
               scope,
               targetKeys,
               currentUserId,
-              selectedTeamId,
-              selectedTeamLabel,
+              selectedTeamId: teamIdForFlow,
+              selectedTeamLabel: teamLabelForFlow,
               billingByLedgerKey,
               personalLedgerKey: ledgerKeyPersonal,
               teamLedgerKey: ledgerKeyTeam,
@@ -454,47 +634,134 @@ export default function AgentPage() {
               scope,
               targetKeys,
               currentUserId,
-              selectedTeamId,
-              selectedTeamLabel,
+              selectedTeamId: teamIdForFlow,
+              selectedTeamLabel: teamLabelForFlow,
+              recommendationPriority,
               setLoadingMessage,
             })
 
-      // 버튼을 누를 때마다 해당 요청 결과만 화면에 표시한다 (이전 결과는 보관하지 않음).
-      setResults(nextResults)
+      const nextResult = nextResults[0]
+      if (nextResult) {
+        lastHistoryMutationRef.current = { keyId: targetKey.keyId, action }
+        setResults((prev: AnalysisResult[]) => mergeAnalysisResults(prev, nextResult))
+      } else {
+        lastHistoryMutationRef.current = null
+      }
     } finally {
-      setLoadingAction(null)
+      setLoadingTarget(null)
       setLoadingMessage("")
     }
   }
 
+  const isRowLoading = (scope: AnalysisScope, keyId: number, action: AnalysisAction): boolean =>
+    loadingTarget?.scope === scope && loadingTarget.keyId === keyId && loadingTarget.action === action
+
+  const isAnyLoading = loadingTarget != null
+  const contextActionsDisabled = contextRefreshing || isAnyLoading
   return (
     <div className="grid min-h-[70vh] gap-4 p-4 md:grid-cols-12">
       <aside className="space-y-4 rounded-xl border bg-card p-4 md:col-span-3">
-        <div className="space-y-2">
-          <h3 className="text-sm font-semibold">개인 API 키</h3>
+        {isAnyLoading ? (
+          <div
+            className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs shadow-sm"
+            role="status"
+            aria-live="polite"
+          >
+            <p className="font-semibold text-foreground">
+              {loadingTarget?.action === "ANALYSIS" ? "예산·사용량 분석 중" : "모델 추천 분석 중"}
+            </p>
+            <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+              {loadingMessage || "잠시만 기다려 주세요. 완료되면 오른쪽에 결과가 표시됩니다."}
+            </p>
+          </div>
+        ) : null}
+        <div className="space-y-1 rounded-md border border-border/70 bg-muted/20 p-2">
+          <label htmlFor="recommendation-priority" className="text-[11px] font-medium text-foreground">
+            모델 추천 우선순위
+          </label>
+          <select
+            id="recommendation-priority"
+            className="h-8 w-full rounded border bg-background px-2 text-xs"
+            value={recommendationPriority}
+            onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+              setRecommendationPriority(event.target.value as RecommendationPriority)
+            }
+            disabled={isAnyLoading}
+          >
+            <option value="BALANCED">균형</option>
+            <option value="COST">비용 절감 우선</option>
+            <option value="QUALITY">품질/추론 우선</option>
+            <option value="LATENCY">응답 속도 우선</option>
+          </select>
+        </div>
+
+        <div className="-mt-1.5 space-y-2">
+          <h3 className="text-sm font-semibold leading-tight">개인 API 키</h3>
           <p className="text-[11px] leading-snug text-muted-foreground">
             키마다 콘솔의 다음 결제·청구일을 넣으면 해당 키 예측에만 반영됩니다. 이 브라우저에만 저장됩니다.
           </p>
+          <div className="flex flex-wrap justify-end gap-1">
+            <button
+              type="button"
+              className="rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium text-foreground hover:bg-muted/60 disabled:opacity-60"
+              disabled={isAnyLoading}
+              onClick={() => setHideDeletedKeys((prev: boolean) => !prev)}
+            >
+              {hideDeletedKeys ? "삭제된 키 표시" : "삭제된 키 숨기기"}
+            </button>
+            <button
+              type="button"
+              className="rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium text-foreground hover:bg-muted/60 disabled:opacity-60"
+              disabled={contextActionsDisabled}
+              onClick={() => void refreshAvailableContext()}
+            >
+              {contextRefreshing ? "불러오는 중…" : "목록 새로고침"}
+            </button>
+          </div>
           {bootstrapError ? (
             <div className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700">{bootstrapError}</div>
           ) : null}
           <ul className="space-y-1 text-sm text-muted-foreground">
-            {keys.map((item: AvailableKeyContext) => (
+            {visiblePersonalKeys.map((item: AvailableKeyContext) => (
               <li key={item.keyId} className="rounded-md border px-2 py-1">
-                {item.keyLabel}
-                <span className="text-xs"> ({item.provider})</span>
-                <div className="text-xs text-muted-foreground">
-                  예산 ${((item.budgetStats?.remainingBudgetUsd ?? item.monthlyBudgetUsd) || 0).toFixed(2)} / 사용률{" "}
-                  {((item.budgetStats?.budgetUsagePercent ?? 0) || 0).toFixed(1)}%
+                <div className="flex flex-wrap items-baseline gap-1">
+                  <span>
+                    {item.keyLabel}
+                    <span className="text-xs"> ({item.provider})</span>
+                  </span>
+                  {isCredentialDeletedStatus(item.status) ? (
+                    <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                      삭제된 키
+                    </span>
+                  ) : null}
                 </div>
+                {item.mergedKeyIds != null && item.mergedKeyIds.length > 1 ? (
+                  <p className="mt-0.5 text-[10px] leading-snug text-muted-foreground">
+                    동일 키 해시(동일 시크릿)·또는 동일 제공자·별칭으로 병합 (키 ID: {item.mergedKeyIds.join(", ")}) — 아래 누적·당월 수치는 병합 합산입니다.
+                  </p>
+                ) : null}
+                <AgentKeyBudgetSummary monthlyBudgetUsd={item.monthlyBudgetUsd} budgetStats={item.budgetStats} />
                 <div className="mt-1 flex flex-col gap-1 border-t border-border/60 pt-1">
-                  <label className="text-[11px] text-muted-foreground" htmlFor={`billing-p-${item.keyId}`}>
-                    다음 결제일
-                  </label>
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-[11px] text-muted-foreground" htmlFor={`billing-p-${item.keyId}`}>
+                      다음 결제일
+                    </label>
+                    <span
+                      className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                        (billingByLedgerKey[ledgerKeyPersonal(item.keyId)] ?? "").trim()
+                          ? "bg-emerald-100 text-emerald-800"
+                          : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {(billingByLedgerKey[ledgerKeyPersonal(item.keyId)] ?? "").trim() ? "선택됨" : "미선택"}
+                    </span>
+                  </div>
                   <div className="flex flex-wrap items-center gap-1">
                     <input
                       id={`billing-p-${item.keyId}`}
                       type="date"
+                      title="달력에서 결제일 선택"
+                      aria-label={`${item.keyLabel} 다음 결제일 선택`}
                       className="min-w-0 flex-1 rounded border bg-background px-1 py-0.5 text-xs"
                       value={billingByLedgerKey[ledgerKeyPersonal(item.keyId)] ?? ""}
                       onChange={(event: ChangeEvent<HTMLInputElement>) => {
@@ -519,10 +786,32 @@ export default function AgentPage() {
                     ) : null}
                   </div>
                 </div>
+                <div className="mt-2 flex flex-wrap gap-1">
+                  <button
+                    type="button"
+                    className="rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground disabled:opacity-60"
+                    disabled={isAnyLoading}
+                    onClick={() => void runAnalysisForKey("PERSONAL", item, "ANALYSIS")}
+                  >
+                    {isRowLoading("PERSONAL", item.keyId, "ANALYSIS") ? "분석 중..." : "분석"}
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium disabled:opacity-60"
+                    disabled={isAnyLoading}
+                    onClick={() => void runAnalysisForKey("PERSONAL", item, "RECOMMENDATION")}
+                  >
+                    {isRowLoading("PERSONAL", item.keyId, "RECOMMENDATION") ? "추천 중..." : "추천"}
+                  </button>
+                </div>
               </li>
             ))}
-            {keys.length === 0 ? (
-              <li className="rounded-md border border-dashed px-2 py-1 text-xs">표시할 개인 API 키가 없습니다.</li>
+            {visiblePersonalKeys.length === 0 ? (
+              <li className="rounded-md border border-dashed px-2 py-1 text-xs">
+                {keys.length === 0
+                  ? "표시할 개인 API 키가 없습니다."
+                  : "삭제된 키만 있어 목록이 비었습니다. 위에서 「삭제된 키 표시」를 눌러 보세요."}
+              </li>
             ) : null}
           </ul>
         </div>
@@ -560,24 +849,51 @@ export default function AgentPage() {
           </select>
           {showTeamList ? (
             <ul className="space-y-1 text-sm text-muted-foreground">
-              {selectedTeamKeys.map((item: TeamBoardItem) => (
+              {visibleSelectedTeamKeys.map((item: TeamBoardItem) => (
                 <li key={`${item.teamId}-${item.teamApiKeyId}`} className="rounded-md border px-2 py-1">
-                  {item.alias}
-                  <div className="text-xs text-muted-foreground">
-                    예산 ${((item.budgetStats?.remainingBudgetUsd ?? item.monthlyBudgetUsd ?? 0) || 0).toFixed(2)} / 사용률{" "}
-                    {((item.budgetStats?.budgetUsagePercent ?? 0) || 0).toFixed(1)}%
+                  <div className="flex flex-wrap items-baseline gap-1">
+                    <span>{item.alias}</span>
+                    {isCredentialDeletedStatus(item.status) ? (
+                      <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                        삭제된 키
+                      </span>
+                    ) : null}
                   </div>
+                  {item.mergedTeamApiKeyIds != null && item.mergedTeamApiKeyIds.length > 1 ? (
+                    <p className="mt-0.5 text-[10px] leading-snug text-muted-foreground">
+                      동일 키 해시(동일 시크릿)·또는 동일 팀·제공자·별칭으로 병합 (팀 키 ID: {item.mergedTeamApiKeyIds.join(", ")}) — 아래 수치는 병합 합산입니다.
+                    </p>
+                  ) : null}
+                  <AgentKeyBudgetSummary
+                    monthlyBudgetUsd={item.monthlyBudgetUsd ?? 0}
+                    budgetStats={item.budgetStats}
+                  />
                   <div className="mt-1 flex flex-col gap-1 border-t border-border/60 pt-1">
-                    <label
-                      className="text-[11px] text-muted-foreground"
-                      htmlFor={`billing-t-${item.teamId}-${item.teamApiKeyId}`}
-                    >
-                      다음 결제일
-                    </label>
+                    <div className="flex items-center justify-between gap-2">
+                      <label
+                        className="text-[11px] text-muted-foreground"
+                        htmlFor={`billing-t-${item.teamId}-${item.teamApiKeyId}`}
+                      >
+                        다음 결제일
+                      </label>
+                      <span
+                        className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                          (billingByLedgerKey[ledgerKeyTeam(item.teamId, item.teamApiKeyId)] ?? "").trim()
+                            ? "bg-emerald-100 text-emerald-800"
+                            : "bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        {(billingByLedgerKey[ledgerKeyTeam(item.teamId, item.teamApiKeyId)] ?? "").trim()
+                          ? "선택됨"
+                          : "미선택"}
+                      </span>
+                    </div>
                     <div className="flex flex-wrap items-center gap-1">
                       <input
                         id={`billing-t-${item.teamId}-${item.teamApiKeyId}`}
                         type="date"
+                        title="달력에서 결제일 선택"
+                        aria-label={`${item.alias} 다음 결제일 선택`}
                         className="min-w-0 flex-1 rounded border bg-background px-1 py-0.5 text-xs"
                         value={billingByLedgerKey[ledgerKeyTeam(item.teamId, item.teamApiKeyId)] ?? ""}
                         onChange={(event: ChangeEvent<HTMLInputElement>) => {
@@ -602,10 +918,34 @@ export default function AgentPage() {
                       ) : null}
                     </div>
                   </div>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    <button
+                      type="button"
+                      className="rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground disabled:opacity-60"
+                      disabled={isAnyLoading}
+                      onClick={() => void runAnalysisForKey("TEAM", teamBoardItemToAvailableKeyContext(item), "ANALYSIS")}
+                    >
+                      {isRowLoading("TEAM", item.teamApiKeyId, "ANALYSIS") ? "분석 중..." : "분석"}
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium disabled:opacity-60"
+                      disabled={isAnyLoading}
+                      onClick={() =>
+                        void runAnalysisForKey("TEAM", teamBoardItemToAvailableKeyContext(item), "RECOMMENDATION")
+                      }
+                    >
+                      {isRowLoading("TEAM", item.teamApiKeyId, "RECOMMENDATION") ? "추천 중..." : "추천"}
+                    </button>
+                  </div>
                 </li>
               ))}
-              {selectedTeamId != null && selectedTeamKeys.length === 0 ? (
-                <li className="rounded-md border border-dashed px-2 py-1 text-xs">선택된 팀의 키가 없습니다.</li>
+              {selectedTeamId != null && visibleSelectedTeamKeys.length === 0 ? (
+                <li className="rounded-md border border-dashed px-2 py-1 text-xs">
+                  {selectedTeamKeys.length === 0
+                    ? "선택된 팀의 키가 없습니다."
+                    : "삭제된 키만 있어 목록이 비었습니다. 위에서 「삭제된 키 표시」를 눌러 보세요."}
+                </li>
               ) : null}
               {selectedTeamId == null ? (
                 <li className="rounded-md border border-dashed px-2 py-1 text-xs">팀을 선택하면 팀 키를 보여줍니다.</li>
@@ -619,51 +959,23 @@ export default function AgentPage() {
           )}
         </div>
 
-        <div className="grid gap-2">
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60"
-              onClick={() => void runAnalysis("PERSONAL", "ANALYSIS")}
-              disabled={loadingAction != null || keys.length === 0}
-            >
-              {loadingAction === "ANALYSIS" ? "분석 로딩..." : "개인 키 분석"}
-            </button>
-            <button
-              type="button"
-              className="w-full rounded-md border bg-background px-4 py-2 text-sm font-medium disabled:opacity-60"
-              onClick={() => void runAnalysis("PERSONAL", "RECOMMENDATION")}
-              disabled={loadingAction != null || keys.length === 0}
-            >
-              {loadingAction === "RECOMMENDATION" ? "추천 로딩..." : "개인 키 추천"}
-            </button>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60"
-              onClick={() => void runAnalysis("TEAM", "ANALYSIS")}
-              disabled={loadingAction != null || selectedTeamId == null || selectedTeamKeys.length === 0}
-            >
-              {loadingAction === "ANALYSIS" ? "분석 로딩..." : "팀 키 분석"}
-            </button>
-            <button
-              type="button"
-              className="w-full rounded-md border bg-background px-4 py-2 text-sm font-medium disabled:opacity-60"
-              onClick={() => void runAnalysis("TEAM", "RECOMMENDATION")}
-              disabled={loadingAction != null || selectedTeamId == null || selectedTeamKeys.length === 0}
-            >
-              {loadingAction === "RECOMMENDATION" ? "추천 로딩..." : "팀 키 추천"}
-            </button>
-          </div>
-        </div>
         <div className="rounded-md border border-dashed bg-muted/30 px-2 py-1.5 text-xs text-muted-foreground">
-          분석/추천 버튼은 각각 해당 요청만 호출합니다.
+          <p>각 키의 분석·추천은 해당 키의 데이터만 AI 요청에 포함합니다.</p>
+          <p className="mt-1 text-[11px] leading-snug">
+            <span className="font-medium">누적 지출(최근 400일)</span>은 billing `summary(from,to)`를 활용한 최근 400일 합입니다.{" "}
+            <span className="font-medium">당월 지출·진행률·잔여</span>는{" "}
+            <span className="font-medium">월 1일~오늘</span>과 동일한 방식으로, 요약·스냅샷을 합친 값입니다.
+            과금 서비스가 오래되면 누적 API가 없을 수 있으니 배포를 맞추고, 숫자가 비면{" "}
+            <span className="font-medium">목록 새로고침</span>을 눌러 보세요.
+          </p>
         </div>
         {modelCatalog ? (
           <div className="rounded-md border border-dashed bg-muted/30 p-2 text-xs text-muted-foreground">
-            <p>
-              모델 카탈로그: <span className="font-medium">{modelCatalog.source || "unknown"}</span>
+            <p className="leading-snug">
+              모델 카탈로그:{" "}
+              <span className="block break-all font-medium sm:inline">
+                {modelCatalog.source || "unknown"}
+              </span>
             </p>
             <p>모델 수: {modelCatalog.models?.length ?? 0}개</p>
             <p>ACTIVE 모델 수: {modelCatalogStats?.activeCount ?? 0}개</p>
@@ -679,223 +991,105 @@ export default function AgentPage() {
       </aside>
 
       <section className="space-y-4 md:col-span-9">
-        {results.length > 0
-          ? results.map((result: AnalysisResult) => (
-              <article key={result.keyId} className="space-y-3 rounded-xl border bg-card p-4">
-                <div className="flex items-center justify-between gap-2">
-                  <h2 className="text-lg font-semibold">{result.keyLabel} ({result.provider})</h2>
-                  {result.data ? (
-                    <span className={`rounded-full px-2 py-1 text-xs font-semibold ${statusClassName(result.data.healthStatus)}`}>
-                      {result.data.healthStatusLabel || localizedHealthStatus(result.data.healthStatus)}
-                    </span>
-                  ) : null}
-                </div>
+        <div className="flex flex-wrap gap-1 border-b border-border pb-2" role="tablist" aria-label="분석 결과 보기">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mainResultsTab === "current"}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+              mainResultsTab === "current" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted/60"
+            }`}
+            onClick={() => setMainResultsTab("current")}
+          >
+            현재 결과
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mainResultsTab === "history"}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+              mainResultsTab === "history" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted/60"
+            }`}
+            onClick={() => setMainResultsTab("history")}
+          >
+            과거 기록
+          </button>
+        </div>
 
-                {result.error ? (
-                  <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{result.error}</div>
-                ) : null}
-
-                {result.forecastGaps != null && result.forecastGaps.length > 0 ? (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                    <p className="font-medium">일부는 이벤트가 없어 표시·추정이 제한됩니다.</p>
-                    <ul className="mt-2 list-disc space-y-1 pl-5">
-                      {result.forecastGaps.map((line: string) => (
-                        <li key={`${result.keyId}-gap-${line}`}>{line}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-
-                <div className="grid gap-3 lg:grid-cols-2">
-                  <div className="space-y-2 rounded-md border border-dashed bg-muted/20 p-3 lg:order-2">
-                    <p className="text-xs font-medium text-muted-foreground">모델 추천</p>
-                    {loadingAction === "RECOMMENDATION" ? (
-                      <div className="rounded-md border bg-background p-3 text-xs text-muted-foreground">
-                        {loadingMessage || "추천 로딩 중..."}
-                      </div>
-                    ) : null}
-                    {result.recommendationError ? (
-                      <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                        모델 추천 조회에 실패했습니다: {result.recommendationError}
-                      </div>
-                    ) : null}
-
-                    {result.recommendation?.status === "RECOMMENDATION_AVAILABLE" &&
-                    result.recommendation.recommendationDetails ? (
-                      <div className="space-y-2 rounded-md border bg-background p-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="text-sm font-semibold">{result.recommendation.recommendationDetails.title}</p>
-                          <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700">
-                            신뢰도 {result.recommendation.recommendationDetails.confidenceLevel}
-                          </span>
-                        </div>
-                        <p className="text-sm text-muted-foreground">{result.recommendation.recommendationDetails.reasonMessage}</p>
-                        <p className="text-sm">
-                          예상 절감률:{" "}
-                          {typeof result.recommendation.recommendationDetails.estimatedSavingsPct === "number"
-                            ? result.recommendation.recommendationDetails.estimatedSavingsPct.toFixed(2)
-                            : result.recommendation.recommendationDetails.estimatedSavingsPct}
-                          %
-                        </p>
-                        {(() => {
-                          const primaryCandidate = result.recommendation?.recommendationDetails?.candidates?.[0]
-                          const estimatedSavingsUsd = primaryCandidate
-                            ? estimateSavingsUsd(
-                                result.recommendation.recommendationDetails.estimatedSavingsPct,
-                                primaryCandidate.expectedMonthlyCostUsd,
-                              )
-                            : null
-                          return estimatedSavingsUsd != null ? (
-                            <p className="text-sm font-medium text-emerald-700">
-                              예상 절감액(월): ${estimatedSavingsUsd.toFixed(2)}
-                            </p>
-                          ) : null
-                        })()}
-                        {result.recommendation.recommendationDetails.disclaimer ? (
-                          <p className="text-xs text-amber-700">{result.recommendation.recommendationDetails.disclaimer}</p>
-                        ) : null}
-                        {result.recommendation.metricsContext ? (
-                          <div className="space-y-2 rounded-md border border-dashed bg-muted/30 p-2">
-                            <p className="text-xs font-medium text-muted-foreground">추천 근거 지표</p>
-                            <div className="grid gap-2 md:grid-cols-2">
-                              {(() => {
-                                const ratio = parseInputOutputRatio(result.recommendation?.metricsContext?.inputOutputRatio)
-                                const dominance = ratioDominance(ratio)
-                                return (
-                                  <div className="space-y-1 rounded border bg-background px-2 py-1.5">
-                                    <div className="flex items-center justify-between">
-                                      <p className="text-xs font-medium">입출력 비율</p>
-                                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${dominance.className}`}>
-                                        {dominance.label}
-                                      </span>
-                                    </div>
-                                    <p className="text-xs text-muted-foreground">
-                                      {result.recommendation?.metricsContext?.inputOutputRatio ?? "N/A"}
-                                    </p>
-                                    <div className="h-1.5 w-full overflow-hidden rounded bg-muted">
-                                      <div className="h-full bg-blue-500" style={{ width: `${dominance.inputPct}%` }} />
-                                    </div>
-                                    <p className="text-[10px] text-muted-foreground">
-                                      input {dominance.inputPct.toFixed(0)}% / output {dominance.outputPct.toFixed(0)}%
-                                    </p>
-                                  </div>
-                                )
-                              })()}
-                              {(() => {
-                                const rawLatency = result.recommendation?.metricsContext?.averageLatencyMs
-                                const latency = rawLatency == null ? null : Number(rawLatency)
-                                const latencyMeta = latencyStatusNullable(latency)
-                                return (
-                                  <div className="space-y-1 rounded border bg-background px-2 py-1.5">
-                                    <div className="flex items-center justify-between">
-                                      <p className="text-xs font-medium">최근 평균 지연</p>
-                                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${latencyMeta.className}`}>
-                                        {latencyMeta.label}
-                                      </span>
-                                    </div>
-                                    <p className="text-xs text-muted-foreground">
-                                      {latency == null || !Number.isFinite(latency) ? "N/A" : `${latency.toFixed(0)} ms`}
-                                    </p>
-                                    <div className="h-1.5 w-full overflow-hidden rounded bg-muted">
-                                      <div className="h-full bg-amber-500" style={{ width: `${latencyMeta.progress}%` }} />
-                                    </div>
-                                  </div>
-                                )
-                              })()}
-                            </div>
-                          </div>
-                        ) : null}
-                        <ul className="space-y-1 text-sm">
-                          {result.recommendation.recommendationDetails.candidates.map((candidate) => (
-                            <li key={`${result.keyId}-${candidate.modelName}`} className="rounded border px-2 py-1">
-                              <p className="font-medium">{candidate.modelName}</p>
-                              <p className="text-xs text-muted-foreground">{candidate.keyFeature}</p>
-                              <p className="text-xs text-muted-foreground">
-                                예상 월 비용 ${Number(candidate.expectedMonthlyCostUsd).toFixed(2)} / 변화율{" "}
-                                {typeof candidate.expectedCostDiffPct === "number"
-                                  ? candidate.expectedCostDiffPct.toFixed(2)
-                                  : candidate.expectedCostDiffPct}
-                                %
-                              </p>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">추천 결과가 없습니다. 상단의 추천 버튼을 눌러주세요.</p>
-                    )}
-                  </div>
-
-                  <div className="space-y-2 rounded-md border border-dashed bg-muted/20 p-3 lg:order-1">
-                    <p className="text-xs font-medium text-muted-foreground">예산 분석</p>
-                    {loadingAction === "ANALYSIS" ? (
-                      <div className="rounded-md border bg-background p-3 text-xs text-muted-foreground">
-                        {loadingMessage || "분석 로딩 중..."}
-                      </div>
-                    ) : null}
-                    {result.data ? (
-                      <>
-                        <div className="grid gap-2 text-sm md:grid-cols-2">
-                          <p>예상 소진일: {result.data.predictedRunOutDate}</p>
-                          <p>소진까지 남은 일수: {result.data.daysUntilRunOut}일</p>
-                          <p>결제일까지 남은 일수: {formatBillingMetric(result.data.daysUntilBillingCycleEnd)}</p>
-                          <p>결제일 차이(결제일-소진일): {formatBillingMetric(result.data.billingDateGapDays)}</p>
-                          <p>
-                            예산 사용률:{" "}
-                            {typeof result.data.budgetUtilizationPercent === "number"
-                              ? result.data.budgetUtilizationPercent.toFixed(2)
-                              : result.data.budgetUtilizationPercent}
-                            %
-                          </p>
-                          <p>신뢰도: {localizedConfidenceLevel(result.data.confidenceLevel)}</p>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          소진까지 남은 일수 = 하루에 얼마나 쓰는지(소모 속도, velocity)로 미래를 예측한 값
-                        </p>
-                        {result.data.riskCriteria || result.data.confidenceCriteria ? (
-                          <div className="rounded-md border border-dashed bg-muted/40 p-3 text-xs text-muted-foreground">
-                            {result.data.riskCriteria ? <p>판정 기준: {result.data.riskCriteria}</p> : null}
-                            {result.data.confidenceCriteria ? <p>신뢰도 기준: {result.data.confidenceCriteria}</p> : null}
-                          </div>
-                        ) : null}
-
-                        <div className="rounded-md bg-muted p-3 text-sm">
-                          {localizeAssistantMessage(result.data.assistantMessage)}
-                        </div>
-                        {result.data.anomalySummary ? (
-                          <div className="rounded-md border border-orange-200 bg-orange-50 p-3 text-sm text-orange-900">
-                            이상 탐지: {result.data.anomalySummary}
-                          </div>
-                        ) : null}
-                        {result.data.routingRecommendation ? (
-                          <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
-                            비용 라우팅: {result.data.routingRecommendation}
-                            {result.data.estimatedRoutingSavingsPercent != null ? (
-                              <span className="ml-1">
-                                (예상 절감률{" "}
-                                {typeof result.data.estimatedRoutingSavingsPercent === "number"
-                                  ? result.data.estimatedRoutingSavingsPercent.toFixed(2)
-                                  : result.data.estimatedRoutingSavingsPercent}
-                                %)
-                              </span>
-                            ) : null}
-                          </div>
-                        ) : null}
-
-                        <ul className="list-disc space-y-1 pl-5 text-sm">
-                          {result.data.recommendedActions.map((action: string) => (
-                            <li key={`${result.keyId}-${action}`}>{action}</li>
-                          ))}
-                        </ul>
-                      </>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">분석 결과가 없습니다. 상단의 분석 버튼을 눌러주세요.</p>
-                    )}
-                  </div>
-                </div>
-              </article>
-            ))
-          : null}
+        {mainResultsTab === "current" ? (
+          <AnalysisResultArticles
+            results={results}
+            loadingTarget={loadingTarget}
+            loadingMessage={loadingMessage}
+            emptyLabel="분석·추천을 실행하면 여기에 결과가 나타납니다."
+          />
+        ) : (
+          <div className="space-y-3 pt-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-medium text-muted-foreground">정렬</span>
+              <button
+                type="button"
+                className={`rounded-md border px-2.5 py-1 text-[11px] font-medium ${
+                  historySortNewestFirst
+                    ? "border-primary bg-primary/10 text-foreground"
+                    : "border-border bg-background text-muted-foreground hover:bg-muted/50"
+                }`}
+                onClick={() => setHistorySortNewestFirst(true)}
+              >
+                최신순
+              </button>
+              <button
+                type="button"
+                className={`rounded-md border px-2.5 py-1 text-[11px] font-medium ${
+                  !historySortNewestFirst
+                    ? "border-primary bg-primary/10 text-foreground"
+                    : "border-border bg-background text-muted-foreground hover:bg-muted/50"
+                }`}
+                onClick={() => setHistorySortNewestFirst(false)}
+              >
+                오래된순
+              </button>
+            </div>
+            <div className="grid gap-4 md:grid-cols-12">
+            <div className="space-y-2 md:col-span-3">
+              <p className="text-xs font-medium text-muted-foreground">날짜</p>
+              {historyDateKeys.length === 0 ? (
+                <p className="rounded-md border border-dashed px-2 py-2 text-xs text-muted-foreground">
+                  저장된 과거 기록이 없습니다. 분석 또는 추천을 실행할 때마다 이 브라우저에 날짜별로 쌓입니다.
+                </p>
+              ) : (
+                <ul className="space-y-1 text-sm">
+                  {historyDateKeys.map((dk: string) => (
+                    <li key={dk}>
+                      <button
+                        type="button"
+                        className={`w-full rounded-md border px-2 py-1.5 text-left text-xs ${
+                          historySelectedDateKey === dk
+                            ? "border-primary bg-primary/10 font-medium"
+                            : "border-border bg-background hover:bg-muted/50"
+                        }`}
+                        onClick={() => setHistorySelectedDateKey(dk)}
+                      >
+                        {formatDateKeyForDisplay(dk)}
+                        <span className="ml-1 text-[10px] text-muted-foreground">
+                          ({historyByDate.get(dk)?.length ?? 0})
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="min-w-0 md:col-span-9">
+              {historyDateKeys.length === 0 ? null : historySelectedDateKey ? (
+                <AnalysisHistoryDayPanel snapshots={snapshotsForSelectedDate} />
+              ) : (
+                <p className="text-xs text-muted-foreground">날짜를 선택해 주세요.</p>
+              )}
+            </div>
+          </div>
+          </div>
+        )}
       </section>
     </div>
   )

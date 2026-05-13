@@ -5,8 +5,12 @@ import com.zerobugfreinds.identity.events.ExternalApiKeyDeletedEvent;
 import com.zerobugfreinds.identity.events.ExternalApiKeyBudgetChangedEvent;
 import com.zerobugfreinds.identity.events.ExternalApiKeyStatus;
 import com.zerobugfreinds.identity.events.ExternalApiKeyStatusChangedEvent;
+import com.zerobugfreinds.identity_service.dto.InternalApiKeyLookupResponse;
 import com.zerobugfreinds.identity_service.dto.InternalApiKeyResponse;
+import com.zerobugfreinds.identity_service.dto.InternalApiKeyHashEntry;
 import com.zerobugfreinds.identity_service.entity.ExternalApiKeyEntity;
+import com.zerobugfreinds.identity_service.entity.User;
+import com.zerobugfreinds.identity_service.exception.AmbiguousExternalApiKeyHashException;
 import com.zerobugfreinds.identity_service.exception.DuplicateExternalApiKeyAliasException;
 import com.zerobugfreinds.identity_service.exception.DuplicateExternalApiKeyException;
 import com.zerobugfreinds.identity_service.exception.ExternalApiKeyAlreadyPendingDeletionException;
@@ -18,6 +22,7 @@ import com.zerobugfreinds.identity_service.repository.UserRepository;
 import com.zerobugfreinds.identity_service.util.EncryptionUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +32,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 
 import static com.zerobugfreinds.identity_service.domain.ExternalApiKeyDeletionPolicy.DEFAULT_GRACE_DAYS;
@@ -45,17 +51,20 @@ public class ExternalApiKeyService {
 	private final UserRepository userRepository;
 	private final EncryptionUtil encryptionUtil;
 	private final ApplicationEventPublisher applicationEventPublisher;
+	private final TeamApiKeyLookupClient teamApiKeyLookupClient;
 
 	public ExternalApiKeyService(
 			ExternalApiKeyRepository externalApiKeyRepository,
 			UserRepository userRepository,
 			EncryptionUtil encryptionUtil,
-			ApplicationEventPublisher applicationEventPublisher
+			ApplicationEventPublisher applicationEventPublisher,
+			TeamApiKeyLookupClient teamApiKeyLookupClient
 	) {
 		this.externalApiKeyRepository = externalApiKeyRepository;
 		this.userRepository = userRepository;
 		this.encryptionUtil = encryptionUtil;
 		this.applicationEventPublisher = applicationEventPublisher;
+		this.teamApiKeyLookupClient = teamApiKeyLookupClient;
 	}
 
 	@Transactional
@@ -85,16 +94,35 @@ public class ExternalApiKeyService {
 			throw new IllegalArgumentException("monthlyBudgetUsd는 필수입니다");
 		}
 
-		if (externalApiKeyRepository.existsByUserIdAndKeyAlias(userId, trimmedAlias)) {
-			throw new DuplicateExternalApiKeyAliasException("이미 사용 중인 별칭입니다");
-		}
-
 		String keyHash = encryptionUtil.sha256HexForUniqueness(normalizedProvider.name(), normalizedKey);
+		verifyNoTeamScopeDuplicate(normalizedProvider, normalizedKey, keyHash);
 		Optional<ExternalApiKeyEntity> existingSameHash =
 				externalApiKeyRepository.findByUserIdAndProviderAndKeyHash(userId, normalizedProvider, keyHash);
 		if (existingSameHash.isPresent()) {
-			if (existingSameHash.get().isPendingDeletion()) {
-				throw new DuplicateExternalApiKeyException("삭제예정키와 중복된 키");
+			ExternalApiKeyEntity existing = existingSameHash.get();
+			if (existing.isPendingDeletion()) {
+				if (externalApiKeyRepository.existsByUserIdAndKeyAliasAndIdNot(userId, trimmedAlias, existing.getId())) {
+					throw new DuplicateExternalApiKeyAliasException("이미 사용 중인 별칭입니다");
+				}
+				String encrypted = encryptionUtil.encryptAes256Gcm(normalizedKey);
+				existing.clearPendingDeletion();
+				existing.updateCredential(normalizedProvider, trimmedAlias, keyHash, encrypted, monthlyBudgetUsd);
+				ExternalApiKeyEntity reactivated;
+				try {
+					reactivated = externalApiKeyRepository.saveAndFlush(existing);
+				} catch (DataIntegrityViolationException ex) {
+					throw toDuplicateException(userId, normalizedProvider, trimmedAlias, keyHash, ex);
+				}
+				log.info(
+						"[AUDIT] external_api_key_reactivated userId={} provider={} alias={} keyId={}",
+						userId,
+						normalizedProvider.name(),
+						trimmedAlias,
+						reactivated.getId()
+				);
+				publishExternalApiKeyStatusChanged(reactivated, ExternalApiKeyStatus.ACTIVE);
+				publishExternalApiKeyBudgetChanged(reactivated, ExternalApiKeyStatus.ACTIVE);
+				return reactivated;
 			}
 			log.warn(
 					"[AUDIT] external_api_key_duplicate_detected userId={} provider={} alias={} hashPrefix={}",
@@ -104,6 +132,9 @@ public class ExternalApiKeyService {
 					keyHash.substring(0, 8)
 			);
 			throw new DuplicateExternalApiKeyException("이미 등록된 API 키입니다");
+		}
+		if (externalApiKeyRepository.existsByUserIdAndKeyAlias(userId, trimmedAlias)) {
+			throw new DuplicateExternalApiKeyAliasException("이미 사용 중인 별칭입니다");
 		}
 
 		String encrypted = encryptionUtil.encryptAes256Gcm(normalizedKey);
@@ -115,7 +146,12 @@ public class ExternalApiKeyService {
 				encrypted,
 				monthlyBudgetUsd
 		);
-		ExternalApiKeyEntity saved = externalApiKeyRepository.save(entity);
+		ExternalApiKeyEntity saved;
+		try {
+			saved = externalApiKeyRepository.saveAndFlush(entity);
+		} catch (DataIntegrityViolationException ex) {
+			throw toDuplicateException(userId, normalizedProvider, trimmedAlias, keyHash, ex);
+		}
 
 		log.info(
 				"[AUDIT] external_api_key_registered userId={} provider={} alias={} keyId={}",
@@ -187,6 +223,7 @@ public class ExternalApiKeyService {
 			}
 			ExternalApiKeyProvider normalizedProvider = normalizeProvider(provider);
 			String keyHash = encryptionUtil.sha256HexForUniqueness(normalizedProvider.name(), normalizedKey);
+			verifyNoTeamScopeDuplicate(normalizedProvider, normalizedKey, keyHash);
 			Optional<ExternalApiKeyEntity> otherSameHash =
 					externalApiKeyRepository.findByUserIdAndProviderAndKeyHash(userId, normalizedProvider, keyHash);
 			if (otherSameHash.isPresent() && !otherSameHash.get().getId().equals(externalKeyId)) {
@@ -200,6 +237,13 @@ public class ExternalApiKeyService {
 			entity.updateCredential(normalizedProvider, trimmedAlias, keyHash, encrypted, monthlyBudgetUsd);
 		} else {
 			entity.updateAliasAndBudget(trimmedAlias, monthlyBudgetUsd);
+		}
+		try {
+			externalApiKeyRepository.saveAndFlush(entity);
+		} catch (DataIntegrityViolationException ex) {
+			ExternalApiKeyProvider providerForCheck = entity.getProvider();
+			String keyHashForCheck = entity.getKeyHash();
+			throw toDuplicateException(userId, providerForCheck, trimmedAlias, keyHashForCheck, ex);
 		}
 
 		log.info(
@@ -215,20 +259,129 @@ public class ExternalApiKeyService {
 		return entity;
 	}
 
+	/**
+	 * Proxy 등 내부 호출자가 클라이언트에게서 받은 외부 API 키의 해시값으로
+	 * 어느 사용자의 어떤 키인지 역추적할 때 사용한다.
+	 *
+	 * <p>해시는 등록 시 사용한 {@link com.zerobugfreinds.identity_service.util.EncryptionUtil#sha256HexForUniqueness}
+	 * 와 동일한 방식(provider name + NUL + 평문 키 → SHA-256 hex)을 가정한다.</p>
+	 *
+	 * <p>활성 키와 삭제 예정 키 모두 결과에 포함하여, 호출자가 상태값(ACTIVE / DELETION_REQUESTED)
+	 * 을 보고 게이트 처리할 수 있게 한다. 동일 해시로 여러 행이 매칭되면
+	 * {@link AmbiguousExternalApiKeyHashException} 으로 409 Conflict 를 유도한다.</p>
+	 */
 	@Transactional(readOnly = true)
-	public InternalApiKeyResponse resolveInternalKey(Long userId, ExternalApiKeyProvider provider) {
-		if (userId == null) {
+	public InternalApiKeyLookupResponse lookupByHashedKey(ExternalApiKeyProvider provider, String hashedKey) {
+		if (provider == null) {
+			throw new IllegalArgumentException("provider는 필수입니다");
+		}
+		if (!StringUtils.hasText(hashedKey)) {
+			throw new IllegalArgumentException("hashedKey는 필수입니다");
+		}
+		ExternalApiKeyProvider normalizedProvider = normalizeProvider(provider);
+		String normalizedHash = hashedKey.trim().toLowerCase();
+		List<ExternalApiKeyEntity> matches =
+				externalApiKeyRepository.findAllByProviderAndKeyHash(normalizedProvider, normalizedHash);
+		if (matches.isEmpty()) {
+			throw new ExternalApiKeyNotFoundException("해당 해시값에 매칭되는 외부 API 키를 찾을 수 없습니다");
+		}
+		if (matches.size() > 1) {
+			log.warn(
+					"[AUDIT] external_api_key_lookup_ambiguous provider={} matchCount={} hashPrefix={}",
+					normalizedProvider.name(),
+					matches.size(),
+					normalizedHash.length() >= 8 ? normalizedHash.substring(0, 8) : normalizedHash
+			);
+			throw new AmbiguousExternalApiKeyHashException(
+					"동일한 해시값에 매칭되는 외부 API 키가 2건 이상입니다"
+			);
+		}
+		ExternalApiKeyEntity entity = matches.get(0);
+		ExternalApiKeyStatus status = entity.isPendingDeletion()
+				? ExternalApiKeyStatus.DELETION_REQUESTED
+				: ExternalApiKeyStatus.ACTIVE;
+		return new InternalApiKeyLookupResponse(
+				String.valueOf(entity.getId()),
+				entity.getUserId(),
+				status.name(),
+				entity.getKeyAlias(),
+				InternalApiKeyLookupResponse.SCOPE_USER
+		);
+	}
+
+	@Transactional(readOnly = true)
+	public InternalApiKeyResponse resolveInternalKey(
+			String userId,
+			ExternalApiKeyProvider provider,
+			String apiKeyId,
+			String alias
+	) {
+		Long resolvedUserId = resolveInternalLookupUserId(userId);
+		if (resolvedUserId == null) {
 			throw new IllegalArgumentException("userId는 필수입니다");
 		}
 		if (provider == null) {
 			throw new IllegalArgumentException("provider는 필수입니다");
 		}
 		ExternalApiKeyProvider normalizedProvider = normalizeProvider(provider);
-		ExternalApiKeyEntity entity = externalApiKeyRepository
-				.findTopByUserIdAndProviderAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(userId, normalizedProvider)
-				.orElseThrow(() -> new ExternalApiKeyNotFoundException("등록된 API 키를 찾을 수 없습니다"));
+		ExternalApiKeyEntity entity = selectInternalKey(resolvedUserId, normalizedProvider, apiKeyId, alias);
 		String plainKey = encryptionUtil.decryptAes256Gcm(entity.getEncryptedKey());
 		return new InternalApiKeyResponse(plainKey, String.valueOf(entity.getId()));
+	}
+
+	/**
+	 * 사용자 범위의 활성 외부 API 키만 조회한다. 팀 키로의 폴백은 하지 않는다.
+	 *
+	 * <p>우선순위: {@code apiKeyId}가 있으면 ID 매칭, 없으면 {@code alias} 최신 건, 둘 다 없으면 해당
+	 * provider의 최신 활성 키.</p>
+	 */
+	private ExternalApiKeyEntity selectInternalKey(
+			Long userId,
+			ExternalApiKeyProvider provider,
+			String apiKeyId,
+			String alias
+	) {
+		if (StringUtils.hasText(apiKeyId)) {
+			long keyId;
+			try {
+				keyId = Long.parseLong(apiKeyId.trim());
+			} catch (NumberFormatException ex) {
+				throw new IllegalArgumentException("apiKeyId는 숫자여야 합니다", ex);
+			}
+			return externalApiKeyRepository
+					.findByIdAndUserIdAndProviderAndDeletionRequestedAtIsNull(keyId, userId, provider)
+					.orElseThrow(() -> new ExternalApiKeyNotFoundException("등록된 API 키를 찾을 수 없습니다"));
+		}
+		if (StringUtils.hasText(alias)) {
+			return externalApiKeyRepository
+					.findFirstByUserIdAndProviderAndKeyAliasAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(
+							userId,
+							provider,
+							alias.trim()
+					)
+					.orElseThrow(() -> new ExternalApiKeyNotFoundException("등록된 API 키를 찾을 수 없습니다"));
+		}
+		return externalApiKeyRepository
+				.findTopByUserIdAndProviderAndDeletionRequestedAtIsNullOrderByCreatedAtDesc(userId, provider)
+				.orElseThrow(() -> new ExternalApiKeyNotFoundException("등록된 API 키를 찾을 수 없습니다"));
+	}
+
+	private Long resolveInternalLookupUserId(String userIdOrEmail) {
+		if (!StringUtils.hasText(userIdOrEmail)) {
+			return null;
+		}
+		String normalized = userIdOrEmail.trim();
+		if (normalized.contains("@")) {
+			String emailKey = normalized.toLowerCase(Locale.ROOT);
+			return userRepository.findByEmail(emailKey)
+					.map(user -> user.getId())
+					.orElse(null);
+		}
+		try {
+			return Long.parseLong(normalized);
+		} catch (NumberFormatException ignored) {
+			return null;
+		}
 	}
 
 	@Transactional(readOnly = true)
@@ -259,7 +412,7 @@ public class ExternalApiKeyService {
 		if (!StringUtils.hasText(email)) {
 			throw new IllegalArgumentException("email은 필수입니다");
 		}
-		String normalizedEmail = email.trim();
+		String normalizedEmail = email.trim().toLowerCase(Locale.ROOT);
 		Optional<Long> userId = userRepository.findByEmail(normalizedEmail).map(user -> user.getId());
 		if (userId.isEmpty()) {
 			return Optional.empty();
@@ -378,16 +531,17 @@ public class ExternalApiKeyService {
 		ExternalApiKeyStatusChangedEvent event = ExternalApiKeyStatusChangedEvent.of(
 				entity.getId(),
 				entity.getKeyAlias(),
-				entity.getUserId(),
+				principalSubForUser(entity.getUserId()),
 				providerName(entity.getProvider()),
-				status
+				status,
+				entity.getKeyHash()
 		);
 		applicationEventPublisher.publishEvent(event);
 	}
 
 	private void publishExternalApiKeyDeleted(ExternalApiKeyEntity entity, boolean retainLogs) {
 		ExternalApiKeyDeletedEvent event = ExternalApiKeyDeletedEvent.of(
-				entity.getUserId(),
+				principalSubForUser(entity.getUserId()),
 				entity.getId(),
 				Instant.now(),
 				retainLogs,
@@ -401,12 +555,20 @@ public class ExternalApiKeyService {
 		ExternalApiKeyBudgetChangedEvent event = ExternalApiKeyBudgetChangedEvent.of(
 				entity.getId(),
 				entity.getKeyAlias(),
-				entity.getUserId(),
+				principalSubForUser(entity.getUserId()),
 				providerName(entity.getProvider()),
 				status,
-				entity.getMonthlyBudgetUsd()
+				entity.getMonthlyBudgetUsd(),
+				entity.getKeyHash()
 		);
 		applicationEventPublisher.publishEvent(event);
+	}
+
+	private String principalSubForUser(Long userId) {
+		return userRepository.findById(userId)
+				.map(User::getEmail)
+				.map(email -> email.trim().toLowerCase(Locale.ROOT))
+				.orElseThrow(() -> new IllegalStateException("user not found for external API key owner userId=" + userId));
 	}
 
 	private static ExternalApiKeyProvider normalizeProvider(ExternalApiKeyProvider provider) {
@@ -425,5 +587,52 @@ public class ExternalApiKeyService {
 			);
 		}
 		return days;
+	}
+
+	private RuntimeException toDuplicateException(
+			Long userId,
+			ExternalApiKeyProvider provider,
+			String alias,
+			String keyHash,
+			DataIntegrityViolationException ex
+	) {
+		if (externalApiKeyRepository.existsByUserIdAndKeyAlias(userId, alias)) {
+			return new DuplicateExternalApiKeyAliasException("이미 사용 중인 별칭입니다");
+		}
+		Optional<ExternalApiKeyEntity> existingSameHash =
+				externalApiKeyRepository.findByUserIdAndProviderAndKeyHash(userId, provider, keyHash);
+		if (existingSameHash.isPresent()) {
+			if (existingSameHash.get().isPendingDeletion()) {
+				return new DuplicateExternalApiKeyException("삭제예정키와 중복된 키");
+			}
+			return new DuplicateExternalApiKeyException("이미 등록된 API 키입니다");
+		}
+		return ex;
+	}
+
+	private void verifyNoTeamScopeDuplicate(
+			ExternalApiKeyProvider provider,
+			String normalizedKey,
+			String keyHash
+	) {
+		if (teamApiKeyLookupClient.existsByHashedKey(provider.name(), keyHash)) {
+			throw new DuplicateExternalApiKeyException("팀에 이미 등록된 API 키입니다");
+		}
+		if (provider == ExternalApiKeyProvider.ANTHROPIC) {
+			String claudeHash = encryptionUtil.sha256HexForUniqueness("CLAUDE", normalizedKey);
+			if (teamApiKeyLookupClient.existsByHashedKey("CLAUDE", claudeHash)) {
+				throw new DuplicateExternalApiKeyException("팀에 이미 등록된 API 키입니다");
+			}
+		}
+	}
+
+	@Transactional(readOnly = true)
+	public List<InternalApiKeyHashEntry> listKeyHashesForInternal(Long userId) {
+		if (userId == null || userId <= 0) {
+			return List.of();
+		}
+		return externalApiKeyRepository.findAllByUserIdOrderByCreatedAtDesc(userId).stream()
+				.map(e -> new InternalApiKeyHashEntry(e.getId(), e.getKeyHash()))
+				.toList();
 	}
 }

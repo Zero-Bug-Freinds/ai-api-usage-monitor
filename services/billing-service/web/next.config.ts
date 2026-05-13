@@ -7,9 +7,13 @@ import path from "path";
  */
 const basePath = "/billing";
 
+const isWin32 = process.platform === "win32";
+
 const nextConfig: NextConfig = {
   basePath,
-  output: "standalone",
+  // On Windows without Developer Mode/admin, creating symlinks for standalone output
+  // may fail with EPERM. Keep standalone for Linux/containers, but allow local Windows builds.
+  ...(isWin32 ? {} : { output: "standalone" as const }),
   outputFileTracingRoot: path.join(__dirname, "../../.."),
   transpilePackages: ["@ai-usage/ui", "@ai-usage/shell"],
   env: {

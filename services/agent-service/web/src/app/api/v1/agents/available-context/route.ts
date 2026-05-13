@@ -2,12 +2,14 @@ import { NextResponse } from "next/server"
 
 type IdentitySnapshot = {
   keyId: number
-  userId: number
+  userId: number | string
   alias: string
   provider: string
   visibility?: string
   status: string
   monthlyBudgetUsd?: number | null
+  /** identity 저장소의 SHA-256 해시; 동일 시크릿 재등록·별칭 변경 시 병합용 */
+  keyHash?: string | null
 }
 
 type TeamApiKeySnapshot = {
@@ -20,11 +22,16 @@ type TeamApiKeySnapshot = {
   provider: string
   status: string
   monthlyBudgetUsd?: number | null
+  keyHash?: string | null
 }
 
 type BillingSignal = {
-  apiKeyId: string
+  /** Backend uses string id; normalize with String() when indexing maps. */
+  apiKeyId: string | number
   latestEstimatedCostUsd?: number | null
+  /** Sum of usage.cost.finalized event costs; retained after key delete. */
+  accumulatedCostUsd?: number | null
+  provider?: string | null
 }
 
 type UsagePredictionSignal = {
@@ -44,7 +51,10 @@ type DailyCumulativeTokenSignal = {
 }
 
 type BudgetStats = {
+  /** 서울 달력 당월 1일~오늘 과금 요약(월 예산·진행률·잔여 계산용). */
   currentSpendUsd: number
+  /** `daily_expenditure_agg` 전 기간 합(표시용 누적 지출). */
+  lifetimeSpendUsd: number
   remainingBudgetUsd: number
   budgetUsagePercent: number
   isBudgetExceeded: boolean
@@ -100,8 +110,58 @@ type IdentityBudgetResponse = {
   } | null
 }
 
+function billingSignalMapKey(raw: string | number | null | undefined): string {
+  if (raw === undefined || raw === null) return ""
+  return String(raw).trim()
+}
+
+function lifetimeSpendForKey(
+  keyId: number,
+  lifetimeSpendByKey: Map<number, number>,
+  signal?: BillingSignal,
+): number {
+  const fromBillingRange = toNumber(lifetimeSpendByKey.get(keyId), 0)
+  const fromEventSum = toNumber(signal?.accumulatedCostUsd, 0)
+  const fromLastEvent = toNumber(signal?.latestEstimatedCostUsd, 0)
+  return Math.max(fromBillingRange, fromEventSum, fromLastEvent)
+}
+
+/** Identity/팀 스냅샷 + billing 신호에 등장하는 모든 키로 과금 요약을 조회한다(삭제된 키·해시 병합 시 누락 방지). */
+function collectAllKnownKeysForBillingFetch(
+  keys: IdentitySnapshot[],
+  teamApiKeys: TeamApiKeySnapshot[],
+  billingSignals: BillingSignal[],
+): Array<{ apiKeyId: number; provider: string }> {
+  const byId = new Map<number, string>()
+  for (const item of keys) {
+    const id = toNumber(item.keyId, 0)
+    if (id <= 0) continue
+    const p = (item.provider ?? "").trim() || "UNKNOWN"
+    byId.set(id, p)
+  }
+  for (const item of teamApiKeys) {
+    const id = toNumber(item.teamApiKeyId, 0)
+    if (id <= 0) continue
+    if (byId.has(id)) continue
+    const p = (item.provider ?? "").trim() || "UNKNOWN"
+    byId.set(id, p)
+  }
+  for (const s of billingSignals) {
+    const id = toNumber(s.apiKeyId, 0)
+    if (id <= 0) continue
+    if (byId.has(id)) continue
+    const p = (s.provider ?? "").trim() || "UNKNOWN"
+    byId.set(id, p)
+  }
+  return Array.from(byId.entries()).map(([apiKeyId, provider]) => ({ apiKeyId, provider }))
+}
+
 const ORIGIN_PROBE_TIMEOUT_MS = 3000
 const CONTEXT_FETCH_TIMEOUT_MS = 10000
+
+function hasUsableKeyAlias(alias: string | null | undefined): boolean {
+  return (alias ?? "").trim().length > 0
+}
 
 type SessionApiResponse = {
   success?: boolean
@@ -201,11 +261,12 @@ async function fetchWithTimeout(url: string, timeoutMs: number, init?: RequestIn
   }
 }
 
-function buildForwardHeaders(request: Request, email: string | null): HeadersInit {
+function buildForwardHeaders(request: Request, email: string | null, fallbackUserId?: string): HeadersInit {
   const headers: HeadersInit = {}
   const authorization = request.headers.get("authorization")?.trim() ?? ""
   const cookie = request.headers.get("cookie")?.trim() ?? ""
-  const userId = userIdFromHeaders(request).trim()
+  const userIdFromRequest = userIdFromHeaders(request).trim()
+  const userId = userIdFromRequest.length > 0 ? userIdFromRequest : (fallbackUserId ?? "").trim()
 
   if (authorization.length > 0) {
     headers.Authorization = authorization
@@ -222,6 +283,58 @@ function buildForwardHeaders(request: Request, email: string | null): HeadersIni
   return headers
 }
 
+/**
+ * Billing 내부 호출은 사용자 식별 헤더만 전달한다.
+ * 브라우저 cookie/authorization 전달로 사용자 컨텍스트가 뒤집히는 문제를 방지한다.
+ */
+function buildBillingForwardHeaders(request: Request, email: string | null, fallbackUserId?: string): Record<string, string> {
+  const headers: Record<string, string> = {}
+  const userIdFromRequest = userIdFromHeaders(request).trim()
+  const userId = resolveBillingUserId(userIdFromRequest, fallbackUserId)
+  if (userId.length > 0) {
+    headers["x-user-id"] = userId
+  }
+  if (email && email.trim().length > 0) {
+    headers["x-user-email"] = email.trim()
+  }
+  return headers
+}
+
+function resolveBillingUserId(primaryUserId?: string, fallbackUserId?: string): string {
+  const primary = (primaryUserId ?? "").trim()
+  const fallback = (fallbackUserId ?? "").trim()
+  // billing 집계는 이메일 userId 기준으로 저장된 레코드가 있어, 숫자형 userId보다 이메일을 우선한다.
+  if (primary.includes("@")) return primary
+  if (fallback.includes("@")) return fallback
+  if (primary.length > 0) return primary
+  return fallback
+}
+
+function billingUserIdCandidates(
+  request: Request,
+  email: string | null,
+  fallbackUserId?: string,
+  extraCandidates: string[] = [],
+): string[] {
+  const primary = userIdFromHeaders(request).trim()
+  const fallback = (fallbackUserId ?? "").trim()
+  const mail = (email ?? "").trim()
+  const ordered = [resolveBillingUserId(primary, fallback), mail, fallback, primary, ...extraCandidates.map((v) => v.trim())]
+  return Array.from(new Set(ordered.filter((value) => value.length > 0)))
+}
+
+function billingProviderCandidates(rawProvider: string): string[] {
+  const normalized = (rawProvider ?? "").trim().toUpperCase()
+  const supported = ["OPENAI", "ANTHROPIC", "GOOGLE"]
+  /** Billing aggregates Gemini usage under {@link AiProvider#GOOGLE}; Identity may still store GEMINI. */
+  if (normalized === "GEMINI") {
+    return ["GOOGLE"]
+  }
+  if (supported.includes(normalized)) {
+    return [normalized]
+  }
+  return supported
+}
 function userIdFromHeaders(request: Request): string {
   const candidates = [
     "x-user-id",
@@ -319,9 +432,11 @@ function resolveCurrentUserId(
     return fromHeader
   }
 
-  const fromKeys = keys.find((item) => Number.isFinite(item.userId) && item.userId > 0)?.userId ?? null
-  if (fromKeys != null) {
-    return fromKeys
+  const fromKeysRaw = keys
+    .map((item) => Number(String(item.userId).trim()))
+    .find((value) => Number.isFinite(value) && value > 0)
+  if (fromKeysRaw != null) {
+    return fromKeysRaw
   }
   const fallbackUserId = (process.env.AI_AGENT_FALLBACK_USER_ID ?? "1").trim()
   const parsedFallback = Number(fallbackUserId)
@@ -329,6 +444,34 @@ function resolveCurrentUserId(
     return parsedFallback
   }
   return 1
+}
+
+function identityUserIdCandidates(
+  request: Request,
+  currentUserId: number | null,
+  resolvedEmail: string | null,
+): string[] {
+  const rawHeaderUserId = userIdFromHeadersStrict(request)?.trim() ?? ""
+  const normalizedHeaderUserId =
+    rawHeaderUserId.length > 0
+      ? Number.isFinite(Number(rawHeaderUserId))
+        ? String(Number(rawHeaderUserId))
+        : rawHeaderUserId
+      : ""
+  const numericCurrent = currentUserId != null ? String(currentUserId) : ""
+  const email = (resolvedEmail ?? "").trim()
+  return Array.from(new Set([numericCurrent, normalizedHeaderUserId, rawHeaderUserId, email].filter((v) => v.length > 0)))
+}
+
+function matchesIdentityUserId(snapshotUserId: number | string, candidates: string[]): boolean {
+  const raw = String(snapshotUserId ?? "").trim()
+  if (!raw) return false
+  if (candidates.includes(raw)) return true
+  const numeric = Number(raw)
+  if (Number.isFinite(numeric)) {
+    return candidates.includes(String(numeric))
+  }
+  return false
 }
 
 async function fetchIdentityBudgetKeys(
@@ -367,6 +510,60 @@ async function fetchIdentityBudgetKeys(
     }
   }
   return []
+}
+
+async function fetchIdentityKeyHashesForUser(
+  request: Request,
+  userId: number,
+  email: string | null,
+): Promise<Map<number, string>> {
+  const map = new Map<number, string>()
+  const headers = buildForwardHeaders(request, email)
+  for (const origin of identityServiceOriginCandidates()) {
+    try {
+      const response = await fetchWithTimeout(
+        `${origin}/internal/v1/api-keys/users/${encodeURIComponent(String(userId))}/key-hashes`,
+        CONTEXT_FETCH_TIMEOUT_MS,
+        { method: "GET", headers },
+      )
+      if (!response.ok) continue
+      const rows = (await response.json()) as Array<{ keyId?: number; keyHash?: string | null }>
+      for (const row of rows ?? []) {
+        const id = toNumber(row.keyId, 0)
+        const h = (row.keyHash ?? "").trim()
+        if (id > 0 && h.length > 0) {
+          map.set(id, h)
+        }
+      }
+      return map
+    } catch {
+      // try next origin
+    }
+  }
+  return map
+}
+
+async function enrichIdentitySnapshotsWithKeyHashes(
+  request: Request,
+  keys: IdentitySnapshot[],
+  userId: number,
+  email: string | null,
+): Promise<IdentitySnapshot[]> {
+  const hashByKeyId = await fetchIdentityKeyHashesForUser(request, userId, email)
+  if (hashByKeyId.size === 0) {
+    return keys
+  }
+  return keys.map((k) => {
+    const existing = (k.keyHash ?? "").trim()
+    if (existing.length > 0) {
+      return k
+    }
+    const h = hashByKeyId.get(k.keyId)
+    if (h != null && h.length > 0) {
+      return { ...k, keyHash: h }
+    }
+    return k
+  })
 }
 
 async function fetchTeamCatalogFromTeamService(request: Request, candidateUserIds: string[]): Promise<TeamCatalog> {
@@ -409,13 +606,15 @@ async function fetchTeamCatalogFromTeamService(request: Request, candidateUserId
           for (const key of teamKeys) {
             const teamApiKeyId = toNumber(key.apiKeyId, 0)
             if (teamApiKeyId <= 0) continue
+            const aliasTrimmed = (key.alias ?? "").trim()
+            if (!hasUsableKeyAlias(aliasTrimmed)) continue
             keys.push({
               teamId,
               teamName,
               teamApiKeyId,
               ownerUserId: userId,
               visibility: "TEAM",
-              alias: (key.alias ?? "").trim() || `team-key-${teamApiKeyId}`,
+              alias: aliasTrimmed,
               provider: (key.provider ?? "").trim() || "UNKNOWN",
               status: "ACTIVE",
               monthlyBudgetUsd: toNumber(key.monthlyBudgetUsd, 0),
@@ -439,7 +638,46 @@ function toNumber(value: unknown, fallback = 0): number {
     const parsed = Number(value)
     if (Number.isFinite(parsed)) return parsed
   }
+  if (typeof value === "bigint") {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
   return fallback
+}
+
+/** Agent `BillingKeySignal` JSON: camelCase 기본 + snake_case·프록시 변형 대비. */
+function firstDefined<T>(...values: (T | null | undefined)[]): T | undefined {
+  for (const v of values) {
+    if (v !== undefined && v !== null) return v
+  }
+  return undefined
+}
+
+function parseBillingSignalRow(raw: unknown): BillingSignal | null {
+  if (!raw || typeof raw !== "object") return null
+  const o = raw as Record<string, unknown>
+  const idRaw = firstDefined(o.apiKeyId, o.api_key_id)
+  if (idRaw === undefined || idRaw === null || String(idRaw).trim() === "") return null
+  const latestRaw = firstDefined(o.latestEstimatedCostUsd, o.latest_estimated_cost_usd)
+  const accumRaw = firstDefined(o.accumulatedCostUsd, o.accumulated_cost_usd)
+  const providerRaw = firstDefined(o.provider, o.Provider)
+  return {
+    apiKeyId: idRaw as string | number,
+    latestEstimatedCostUsd:
+      latestRaw === undefined || latestRaw === null || String(latestRaw).trim() === ""
+        ? undefined
+        : toNumber(latestRaw, 0),
+    accumulatedCostUsd:
+      accumRaw === undefined || accumRaw === null || String(accumRaw).trim() === ""
+        ? undefined
+        : toNumber(accumRaw, 0),
+    provider: providerRaw === undefined || providerRaw === null ? undefined : String(providerRaw),
+  }
+}
+
+function normalizeBillingSignalsFromApi(raw: unknown): BillingSignal[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map(parseBillingSignalRow).filter((item): item is BillingSignal => item != null)
 }
 
 function normalizeTeamName(value: string | null | undefined, teamId: number): string {
@@ -469,30 +707,58 @@ function currentMonthRangeKstMonthToDate(): { from: string; to: string } {
   return { from, to: today }
 }
 
+/**
+ * Billing summary API currently requires from/to and enforces max range days.
+ * We align with current billing maxRangeDays default(400) to compute practical cumulative spend.
+ */
+function rollingRangeKst(days: number): { from: string; to: string } {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+  const parts = formatter.formatToParts(new Date())
+  const y = Number(parts.find((p) => p.type === "year")?.value ?? "1970")
+  const m = Number(parts.find((p) => p.type === "month")?.value ?? "01")
+  const d = Number(parts.find((p) => p.type === "day")?.value ?? "01")
+  const end = new Date(Date.UTC(y, Math.max(0, m - 1), d))
+  const safeDays = Math.max(1, Math.min(days, 400))
+  const start = new Date(end)
+  start.setUTCDate(start.getUTCDate() - (safeDays - 1))
+  const toIso = (value: Date): string => {
+    const yy = value.getUTCFullYear()
+    const mm = String(value.getUTCMonth() + 1).padStart(2, "0")
+    const dd = String(value.getUTCDate()).padStart(2, "0")
+    return `${yy}-${mm}-${dd}`
+  }
+  return { from: toIso(start), to: toIso(end) }
+}
+
 async function fetchBillingSummaryByKey(
   request: Request,
   keys: Array<{ apiKeyId: number; provider: string }>,
   email: string | null,
+  fallbackUserId?: string,
+  extraBillingUserIds: string[] = [],
 ): Promise<Map<number, BillingSummaryRow>> {
   const byKeyId = new Map<number, BillingSummaryRow>()
   const uniqueKeys = Array.from(
-    new Set(
+    new Map(
       keys
         .map((item) => ({
           apiKeyId: toNumber(item.apiKeyId, 0),
           provider: (item.provider ?? "").trim().toUpperCase(),
         }))
-        .filter((item) => item.apiKeyId > 0 && item.provider.length > 0)
-        .map((item) => `${item.apiKeyId}|${item.provider}`),
-    ),
-  ).map((item) => {
-    const [apiKeyId, provider] = item.split("|")
-    return { apiKeyId: Number(apiKeyId), provider }
-  })
+        .filter((item) => item.apiKeyId > 0)
+        .map((item) => [item.apiKeyId, item]),
+    ).values(),
+  )
   if (uniqueKeys.length === 0) return byKeyId
 
   const { from, to } = currentMonthRangeKstMonthToDate()
-  const baseHeaders = buildForwardHeaders(request, email) as Record<string, string>
+  const userIdCandidates = billingUserIdCandidates(request, email, fallbackUserId, extraBillingUserIds)
+  const baseHeaders = buildBillingForwardHeaders(request, email, userIdCandidates[0] ?? fallbackUserId)
   const gatewaySharedSecret = (
     process.env.GATEWAY_SHARED_SECRET ?? "local-dev-gateway-shared-secret-do-not-use-in-prod"
   ).trim()
@@ -500,32 +766,115 @@ async function fetchBillingSummaryByKey(
     baseHeaders["x-gateway-auth"] = gatewaySharedSecret
   }
 
-  for (const key of uniqueKeys) {
-    const query = `/api/v1/expenditure/summary?apiKeyId=${encodeURIComponent(String(key.apiKeyId))}&provider=${encodeURIComponent(key.provider)}&from=${from}&to=${to}`
-    for (const origin of billingServiceOriginCandidates()) {
-      try {
-        const response = await fetchWithTimeout(`${origin}${query}`, CONTEXT_FETCH_TIMEOUT_MS, {
-          method: "GET",
-          headers: baseHeaders,
-        })
-        if (!response.ok) continue
-        const payload = (await response.json()) as ExpenditureSummaryResponse
-        const totalCostUsd = toNumber(payload.totalCostUsd, 0)
-        const rawBudget = payload.monthlyBudgetUsd
-        const monthlyBudgetUsd =
-          rawBudget === null || rawBudget === undefined || String(rawBudget).trim() === ""
-            ? null
-            : toNumber(rawBudget, 0)
-        byKeyId.set(key.apiKeyId, {
-          totalCostUsd,
-          monthlyBudgetUsd: monthlyBudgetUsd != null && monthlyBudgetUsd > 0 ? monthlyBudgetUsd : null,
-        })
-        break
-      } catch {
-        // try next candidate
+  await Promise.all(
+    uniqueKeys.map(async (key) => {
+      const providerCandidates = billingProviderCandidates(key.provider)
+      const queries = providerCandidates.map(
+        (provider) =>
+          `/api/v1/expenditure/summary?apiKeyId=${encodeURIComponent(String(key.apiKeyId))}&provider=${encodeURIComponent(provider)}&from=${from}&to=${to}`,
+      )
+      let bestTotalCostUsd = -1
+      let bestMonthlyBudgetUsd: number | null = null
+      for (const origin of billingServiceOriginCandidates()) {
+        for (const userId of userIdCandidates) {
+          for (const query of queries) {
+            try {
+              const headers = { ...baseHeaders, "x-user-id": userId }
+              const response = await fetchWithTimeout(`${origin}${query}`, CONTEXT_FETCH_TIMEOUT_MS, {
+                method: "GET",
+                headers,
+              })
+              if (!response.ok) continue
+              const payload = (await response.json()) as ExpenditureSummaryResponse
+              const totalCostUsd = toNumber(payload.totalCostUsd, 0)
+              const rawBudget = payload.monthlyBudgetUsd
+              const monthlyBudgetUsd =
+                rawBudget === null || rawBudget === undefined || String(rawBudget).trim() === ""
+                  ? null
+                  : toNumber(rawBudget, 0)
+              if (totalCostUsd > bestTotalCostUsd) {
+                bestTotalCostUsd = totalCostUsd
+                bestMonthlyBudgetUsd = monthlyBudgetUsd != null && monthlyBudgetUsd > 0 ? monthlyBudgetUsd : null
+              }
+            } catch {
+              // try next query/origin/user candidate
+            }
+          }
+        }
       }
-    }
+      if (bestTotalCostUsd >= 0) {
+        byKeyId.set(key.apiKeyId, {
+          totalCostUsd: bestTotalCostUsd,
+          monthlyBudgetUsd: bestMonthlyBudgetUsd,
+        })
+      }
+    }),
+  )
+  return byKeyId
+}
+
+async function fetchBillingLifetimeSpendByKey(
+  request: Request,
+  keys: Array<{ apiKeyId: number; provider: string }>,
+  email: string | null,
+  fallbackUserId?: string,
+  extraBillingUserIds: string[] = [],
+): Promise<Map<number, number>> {
+  const byKeyId = new Map<number, number>()
+  const uniqueKeys = Array.from(
+    new Map(
+      keys
+        .map((item) => ({
+          apiKeyId: toNumber(item.apiKeyId, 0),
+          provider: (item.provider ?? "").trim().toUpperCase(),
+        }))
+        .filter((item) => item.apiKeyId > 0)
+        .map((item) => [item.apiKeyId, item]),
+    ).values(),
+  )
+  if (uniqueKeys.length === 0) return byKeyId
+
+  const userIdCandidates = billingUserIdCandidates(request, email, fallbackUserId, extraBillingUserIds)
+  const baseHeaders = buildBillingForwardHeaders(request, email, userIdCandidates[0] ?? fallbackUserId)
+  const gatewaySharedSecret = (
+    process.env.GATEWAY_SHARED_SECRET ?? "local-dev-gateway-shared-secret-do-not-use-in-prod"
+  ).trim()
+  if (gatewaySharedSecret.length > 0) {
+    baseHeaders["x-gateway-auth"] = gatewaySharedSecret
   }
+  const { from, to } = rollingRangeKst(400)
+
+  await Promise.all(
+    uniqueKeys.map(async (key) => {
+      const providerCandidates = billingProviderCandidates(key.provider)
+      const queries = providerCandidates.map(
+        (provider) =>
+          `/api/v1/expenditure/summary?apiKeyId=${encodeURIComponent(String(key.apiKeyId))}&provider=${encodeURIComponent(provider)}&from=${from}&to=${to}`,
+      )
+      let bestTotalCostUsd = -1
+      for (const origin of billingServiceOriginCandidates()) {
+        for (const userId of userIdCandidates) {
+          for (const query of queries) {
+            try {
+              const headers = { ...baseHeaders, "x-user-id": userId }
+              const response = await fetchWithTimeout(`${origin}${query}`, CONTEXT_FETCH_TIMEOUT_MS, {
+                method: "GET",
+                headers,
+              })
+              if (!response.ok) continue
+              const payload = (await response.json()) as ExpenditureSummaryResponse
+              bestTotalCostUsd = Math.max(bestTotalCostUsd, toNumber(payload.totalCostUsd, 0))
+            } catch {
+              // try next query/origin/user candidate
+            }
+          }
+        }
+      }
+      if (bestTotalCostUsd >= 0) {
+        byKeyId.set(key.apiKeyId, bestTotalCostUsd)
+      }
+    }),
+  )
   return byKeyId
 }
 
@@ -538,21 +887,306 @@ function spendAndBudgetForKey(
   const fromSummary = toNumber(billingRow?.totalCostUsd, 0)
   const currentSpendUsd = Math.max(fromSignal, fromSummary)
   const billingBudget = billingRow?.monthlyBudgetUsd != null ? toNumber(billingRow.monthlyBudgetUsd, 0) : 0
-  const monthlyBudgetUsd = billingBudget > 0 ? billingBudget : toNumber(snapshotMonthlyBudgetUsd, 0)
+  const snapshotBudget = toNumber(snapshotMonthlyBudgetUsd, 0)
+  const monthlyBudgetUsd = snapshotBudget >= 0 ? snapshotBudget : billingBudget
   return { currentSpendUsd, monthlyBudgetUsd }
 }
 
-function buildBudgetStats(monthlyBudgetUsd: number, currentSpendUsd: number): BudgetStats {
+function buildBudgetStats(
+  monthlyBudgetUsd: number,
+  currentSpendUsd: number,
+  lifetimeSpendUsd: number,
+): BudgetStats {
   const normalizedBudget = monthlyBudgetUsd > 0 ? monthlyBudgetUsd : 0
   const normalizedSpend = currentSpendUsd > 0 ? currentSpendUsd : 0
+  const normalizedLifetime = Math.max(0, Number.isFinite(lifetimeSpendUsd) ? lifetimeSpendUsd : 0)
   const remainingBudgetUsd = Math.max(normalizedBudget - normalizedSpend, 0)
   const budgetUsagePercent = normalizedBudget > 0 ? (normalizedSpend / normalizedBudget) * 100 : 0
   return {
     currentSpendUsd: normalizedSpend,
+    lifetimeSpendUsd: normalizedLifetime,
     remainingBudgetUsd,
     budgetUsagePercent: Math.max(budgetUsagePercent, 0),
     isBudgetExceeded: normalizedBudget > 0 && normalizedSpend >= normalizedBudget,
   }
+}
+
+type PersonalContextRow = {
+  keyId: number
+  alias: string
+  provider: string
+  monthlyBudgetUsd: number
+  status: string
+  budgetStats: BudgetStats
+  providerStats: {
+    currentSpendUsd: number
+    averageDailySpendUsd: number
+    averageDailyTokenUsage: number
+    recentDailySpendUsd: number[]
+  }
+  mergedKeyIds?: number[]
+  /** agent 스냅샷 key_hash; 있으면 별칭과 무관하게 동일 키로 병합 */
+  keyHash?: string | null
+}
+
+type TeamContextRow = {
+  teamId: number
+  teamName: string
+  teamApiKeyId: number
+  ownerUserId?: string | null
+  visibility?: string
+  alias: string
+  provider: string
+  status: string
+  monthlyBudgetUsd: number
+  budgetStats: BudgetStats
+  providerStats: {
+    currentSpendUsd: number
+    averageDailySpendUsd: number
+    averageDailyTokenUsage: number
+    recentDailySpendUsd: number[]
+  }
+  mergedTeamApiKeyIds?: number[]
+  keyHash?: string | null
+}
+
+function normalizeCredentialSegment(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ")
+}
+
+/** 재등록 등으로 keyId만 다른 동일 별칭·제공자 조합을 묶을 때(구버전 스냅샷) fallback 지문. */
+function personalCredentialFingerprint(provider: string, alias: string): string {
+  const p = normalizeCredentialSegment(provider || "UNKNOWN")
+  const a = normalizeCredentialSegment(alias || "")
+  return `${p}::${a}`
+}
+
+/** 동일 외부 시크릿(키 해시) 우선; 해시 없으면 별칭·제공자 fallback. */
+function personalKeyMergeFingerprint(provider: string, alias: string, keyHash?: string | null): string {
+  const h = (keyHash ?? "").trim()
+  if (h.length > 0) {
+    return `hash:${h}`
+  }
+  return `legacy:${personalCredentialFingerprint(provider, alias)}`
+}
+
+function teamKeyMergeFingerprint(
+  teamId: number,
+  provider: string,
+  alias: string,
+  keyHash?: string | null,
+): string {
+  const h = (keyHash ?? "").trim()
+  if (h.length > 0) {
+    return `${teamId}::hash:${h}`
+  }
+  return `${teamId}::legacy:${personalCredentialFingerprint(provider, alias)}`
+}
+
+function credentialStatusRank(status: string): number {
+  const u = (status ?? "").toUpperCase()
+  if (u === "ACTIVE") return 0
+  if (u === "DELETION_REQUESTED") return 1
+  if (u === "DELETED") return 2
+  return 3
+}
+
+/**
+ * 동일 자격증명 병합 시 최신 keyId를 대표 상태로 본다.
+ * 재등록/재삭제 반복에서 ACTIVE가 과거 이력인데도 대표로 남는 현상을 방지한다.
+ */
+function pickLatestPersonalRow(group: PersonalContextRow[]): PersonalContextRow {
+  return [...group].sort((a, b) => {
+    const byKeyId = b.keyId - a.keyId
+    if (byKeyId !== 0) return byKeyId
+    return credentialStatusRank(b.status) - credentialStatusRank(a.status)
+  })[0]
+}
+
+function pickLatestTeamRow(group: TeamContextRow[]): TeamContextRow {
+  return [...group].sort((a, b) => {
+    const byKeyId = b.teamApiKeyId - a.teamApiKeyId
+    if (byKeyId !== 0) return byKeyId
+    return credentialStatusRank(b.status) - credentialStatusRank(a.status)
+  })[0]
+}
+
+function mergeProviderStatsBundle(
+  stats: PersonalContextRow["providerStats"][],
+): PersonalContextRow["providerStats"] {
+  let currentSpendUsd = 0
+  let averageDailySpendUsd = 0
+  let averageDailyTokenUsage = 0
+  const recentDailySpendUsd: number[] = []
+  for (const p of stats) {
+    currentSpendUsd += p.currentSpendUsd
+    averageDailySpendUsd += p.averageDailySpendUsd
+    averageDailyTokenUsage += p.averageDailyTokenUsage
+    const arr = p.recentDailySpendUsd ?? []
+    for (let i = 0; i < arr.length; i++) {
+      recentDailySpendUsd[i] = (recentDailySpendUsd[i] ?? 0) + (arr[i] ?? 0)
+    }
+  }
+  return { currentSpendUsd, averageDailySpendUsd, averageDailyTokenUsage, recentDailySpendUsd }
+}
+
+function dedupePersonalKeysByCredential(
+  rows: PersonalContextRow[],
+  lifetimeSpendByKey: Map<number, number>,
+  billingByKeyId: Map<string, BillingSignal>,
+): PersonalContextRow[] {
+  const byFp = new Map<string, PersonalContextRow[]>()
+  const hashGroupByLegacy = new Map<string, string[]>()
+  for (const row of rows) {
+    const legacyFp = `legacy:${personalCredentialFingerprint(row.provider, row.alias)}`
+    const fp = personalKeyMergeFingerprint(row.provider, row.alias, row.keyHash)
+    const list = byFp.get(fp) ?? []
+    list.push(row)
+    byFp.set(fp, list)
+    if (fp.startsWith("hash:")) {
+      const hashGroups = hashGroupByLegacy.get(legacyFp) ?? []
+      if (!hashGroups.includes(fp)) {
+        hashGroups.push(fp)
+        hashGroupByLegacy.set(legacyFp, hashGroups)
+      }
+    }
+  }
+
+  // keyHash가 없는 legacy 행은, 동일 alias/provider의 hash 그룹이 정확히 1개면 그쪽으로 흡수한다.
+  for (const row of rows) {
+    const hasHash = (row.keyHash ?? "").trim().length > 0
+    if (hasHash) continue
+    const legacyFp = `legacy:${personalCredentialFingerprint(row.provider, row.alias)}`
+    const hashTargets = hashGroupByLegacy.get(legacyFp) ?? []
+    if (hashTargets.length !== 1) continue
+    const legacyGroup = byFp.get(legacyFp) ?? []
+    if (!legacyGroup.some((item) => item.keyId === row.keyId)) continue
+    byFp.set(
+      legacyFp,
+      legacyGroup.filter((item) => item.keyId !== row.keyId),
+    )
+    const hashGroupKey = hashTargets[0]
+    const hashGroup = byFp.get(hashGroupKey) ?? []
+    hashGroup.push(row)
+    byFp.set(hashGroupKey, hashGroup)
+  }
+
+  const out: PersonalContextRow[] = []
+  for (const [fp, group] of byFp) {
+    if (group.length === 0) continue
+    if (group.length === 1) {
+      const single = group[0]
+      out.push({ ...single, mergedKeyIds: [single.keyId] })
+      continue
+    }
+    const primary = pickLatestPersonalRow(group)
+    const mergedKeyIds = [...new Set(group.map((g) => g.keyId))].sort((a, b) => a - b)
+    const monthlyBudgetUsd = toNumber(primary.monthlyBudgetUsd, 0)
+    let totalCurrent = 0
+    let totalLifetime = 0
+    for (const r of group) {
+      totalCurrent += r.budgetStats?.currentSpendUsd ?? 0
+      const sig = billingByKeyId.get(billingSignalMapKey(r.keyId))
+      totalLifetime += lifetimeSpendForKey(r.keyId, lifetimeSpendByKey, sig)
+    }
+    const mergedBudget = buildBudgetStats(monthlyBudgetUsd, totalCurrent, totalLifetime)
+    const mergedProvider = mergeProviderStatsBundle(group.map((g) => g.providerStats))
+    console.info("[agent available-context] merged personal keys (same keyHash or legacy provider+alias)", {
+      fingerprint: fp,
+      canonicalKeyId: primary.keyId,
+      mergedKeyIds,
+      statuses: group.map((g) => ({ keyId: g.keyId, status: g.status })),
+    })
+    out.push({
+      ...primary,
+      monthlyBudgetUsd,
+      status: primary.status,
+      budgetStats: mergedBudget,
+      providerStats: mergedProvider,
+      mergedKeyIds,
+    })
+  }
+  return out
+}
+
+function dedupeTeamBoardByCredential(
+  rows: TeamContextRow[],
+  lifetimeSpendByKey: Map<number, number>,
+  billingByKeyId: Map<string, BillingSignal>,
+): TeamContextRow[] {
+  const byFp = new Map<string, TeamContextRow[]>()
+  const hashGroupByLegacy = new Map<string, string[]>()
+  for (const row of rows) {
+    const legacyFp = `${row.teamId}::legacy:${personalCredentialFingerprint(row.provider, row.alias)}`
+    const fp = teamKeyMergeFingerprint(row.teamId, row.provider, row.alias, row.keyHash)
+    const list = byFp.get(fp) ?? []
+    list.push(row)
+    byFp.set(fp, list)
+    if (fp.includes("::hash:")) {
+      const hashGroups = hashGroupByLegacy.get(legacyFp) ?? []
+      if (!hashGroups.includes(fp)) {
+        hashGroups.push(fp)
+        hashGroupByLegacy.set(legacyFp, hashGroups)
+      }
+    }
+  }
+
+  // 팀 키도 개인 키와 동일: 무해시 legacy 행은 동일 팀+alias/provider의 hash 그룹이 1개면 흡수.
+  for (const row of rows) {
+    const hasHash = (row.keyHash ?? "").trim().length > 0
+    if (hasHash) continue
+    const legacyFp = `${row.teamId}::legacy:${personalCredentialFingerprint(row.provider, row.alias)}`
+    const hashTargets = hashGroupByLegacy.get(legacyFp) ?? []
+    if (hashTargets.length !== 1) continue
+    const legacyGroup = byFp.get(legacyFp) ?? []
+    if (!legacyGroup.some((item) => item.teamApiKeyId === row.teamApiKeyId)) continue
+    byFp.set(
+      legacyFp,
+      legacyGroup.filter((item) => item.teamApiKeyId !== row.teamApiKeyId),
+    )
+    const hashGroupKey = hashTargets[0]
+    const hashGroup = byFp.get(hashGroupKey) ?? []
+    hashGroup.push(row)
+    byFp.set(hashGroupKey, hashGroup)
+  }
+
+  const out: TeamContextRow[] = []
+  for (const [fp, group] of byFp) {
+    if (group.length === 0) continue
+    if (group.length === 1) {
+      const single = group[0]
+      out.push({ ...single, mergedTeamApiKeyIds: [single.teamApiKeyId] })
+      continue
+    }
+    const primary = pickLatestTeamRow(group)
+    const mergedTeamApiKeyIds = [...new Set(group.map((g) => g.teamApiKeyId))].sort((a, b) => a - b)
+    const monthlyBudgetUsd = toNumber(primary.monthlyBudgetUsd, 0)
+    let totalCurrent = 0
+    let totalLifetime = 0
+    for (const r of group) {
+      totalCurrent += r.budgetStats?.currentSpendUsd ?? 0
+      const sig = billingByKeyId.get(billingSignalMapKey(r.teamApiKeyId))
+      totalLifetime += lifetimeSpendForKey(r.teamApiKeyId, lifetimeSpendByKey, sig)
+    }
+    const mergedBudget = buildBudgetStats(monthlyBudgetUsd, totalCurrent, totalLifetime)
+    const mergedProvider = mergeProviderStatsBundle(group.map((g) => g.providerStats))
+    console.info("[agent available-context] merged team keys (same keyHash or legacy team+provider+alias)", {
+      fingerprint: fp,
+      canonicalTeamApiKeyId: primary.teamApiKeyId,
+      mergedTeamApiKeyIds,
+      teamId: primary.teamId,
+      statuses: group.map((g) => ({ teamApiKeyId: g.teamApiKeyId, status: g.status })),
+    })
+    out.push({
+      ...primary,
+      monthlyBudgetUsd,
+      status: primary.status,
+      budgetStats: mergedBudget,
+      providerStats: mergedProvider,
+      mergedTeamApiKeyIds,
+    })
+  }
+  return out
 }
 
 export async function GET(request: Request) {
@@ -567,7 +1201,7 @@ export async function GET(request: Request) {
       strictUserId != null
         ? `/api/v1/agents/identity-api-keys/${strictUserId}`
         : "/api/v1/agents/identity-api-keys"
-    const [keys, billingSignals, usagePredictionSignals, dailyCumulativeTokens, snapshotTeamApiKeys] = backendOrigin
+    const [keysInitial, billingSignals, usagePredictionSignals, dailyCumulativeTokens, snapshotTeamApiKeys] = backendOrigin
       ? await Promise.all([
           fetchWithTimeout(`${backendOrigin}${identityApiKeyPath}`, CONTEXT_FETCH_TIMEOUT_MS, {
             method: "GET",
@@ -576,7 +1210,9 @@ export async function GET(request: Request) {
           fetchWithTimeout(`${backendOrigin}/api/v1/agents/billing-signals`, CONTEXT_FETCH_TIMEOUT_MS, {
             method: "GET",
             headers: forwardedHeaders,
-          }).then(async (response) => (response.ok ? (((await response.json()) as BillingSignal[]) ?? []) : [])),
+          }).then(async (response) =>
+            response.ok ? normalizeBillingSignalsFromApi(await response.json()) : [],
+          ),
           fetchWithTimeout(`${backendOrigin}/api/v1/agents/usage-prediction-signals`, CONTEXT_FETCH_TIMEOUT_MS, {
             method: "GET",
             headers: forwardedHeaders,
@@ -591,12 +1227,16 @@ export async function GET(request: Request) {
           }).then(async (response) => (response.ok ? (((await response.json()) as TeamApiKeySnapshot[]) ?? []) : [])),
         ])
       : [[], [], [], [], []]
+    let keys: IdentitySnapshot[] = keysInitial
     const headerIdentifier = userIdentifierFromHeaders(request)
     const resolvedIdentifier = {
       userId: headerIdentifier.userId,
       email: resolvedEmailHeader ?? headerIdentifier.email,
     }
     const currentUserId = resolveCurrentUserId(request, keys)
+    if (currentUserId != null && keys.length > 0) {
+      keys = await enrichIdentitySnapshotsWithKeyHashes(request, keys, currentUserId, resolvedEmailHeader)
+    }
     const fallbackUserId = (process.env.AI_AGENT_FALLBACK_USER_ID ?? "").trim()
     const teamCatalogOverrideUserId = (process.env.AI_AGENT_TEAM_CATALOG_USER_ID ?? "").trim()
     const teamCatalogUserIds = [
@@ -607,7 +1247,8 @@ export async function GET(request: Request) {
       fallbackUserId,
     ]
     const teamCatalog = await fetchTeamCatalogFromTeamService(request, teamCatalogUserIds)
-    const keysForCurrentUser = currentUserId == null ? [] : keys.filter((key) => key.userId === currentUserId)
+    const currentUserCandidates = identityUserIdCandidates(request, currentUserId, resolvedIdentifier.email)
+    const keysForCurrentUser = keys.filter((key) => matchesIdentityUserId(key.userId, currentUserCandidates))
 
     const teamApiKeyByCompositeKey = new Map<string, TeamApiKeySnapshot>()
     for (const item of snapshotTeamApiKeys) {
@@ -624,12 +1265,25 @@ export async function GET(request: Request) {
           .filter((value) => value.includes("@")),
       ),
     )
-    const billingByKeyId = new Map<string, BillingSignal>(billingSignals.map((item) => [item.apiKeyId, item]))
-    const allKnownKeys = [
-      ...keys.map((item) => ({ apiKeyId: item.keyId, provider: item.provider })),
-      ...teamApiKeys.map((item) => ({ apiKeyId: item.teamApiKeyId, provider: item.provider })),
-    ]
-    const billingSummaryByKey = await fetchBillingSummaryByKey(request, allKnownKeys, resolvedEmailHeader)
+    const billingByKeyId = new Map<string, BillingSignal>()
+    for (const item of billingSignals) {
+      const id = billingSignalMapKey(item.apiKeyId)
+      if (!id) continue
+      billingByKeyId.set(id, item)
+    }
+    const allKnownKeys = collectAllKnownKeysForBillingFetch(keys, teamApiKeys, billingSignals)
+    const fallbackBillingUserId = resolvedIdentifier.email ?? (currentUserId != null ? String(currentUserId) : undefined)
+    const extraBillingUserIds = Array.from(
+      new Set(
+        keys
+          .map((item) => String(item.userId ?? "").trim())
+          .filter((value) => value.length > 0),
+      ),
+    )
+    const [billingSummaryByKey, lifetimeSpendByKey] = await Promise.all([
+      fetchBillingSummaryByKey(request, allKnownKeys, resolvedEmailHeader, fallbackBillingUserId, extraBillingUserIds),
+      fetchBillingLifetimeSpendByKey(request, allKnownKeys, resolvedEmailHeader, fallbackBillingUserId, extraBillingUserIds),
+    ])
     const usageSignalByTeamAndUser = new Map<string, UsagePredictionSignal>()
     const usageSignalByTeam = new Map<string, UsagePredictionSignal>()
     for (const signal of usagePredictionSignals) {
@@ -688,7 +1342,7 @@ export async function GET(request: Request) {
     const personalUsageSignal =
       currentUserId == null ? null : usageSignalByTeamAndUser.get(`|${String(currentUserId)}`) ?? null
 
-    const personalKeysFromSnapshot = keysForCurrentUser.map((key) => {
+    const personalKeysFromSnapshot = keysForCurrentUser.filter((key) => hasUsableKeyAlias(key.alias)).map((key) => {
       const signal = billingByKeyId.get(String(key.keyId))
       const billingRow = billingSummaryByKey.get(key.keyId)
       const { currentSpendUsd, monthlyBudgetUsd } = spendAndBudgetForKey(
@@ -696,7 +1350,11 @@ export async function GET(request: Request) {
         toNumber(key.monthlyBudgetUsd, 0),
         billingRow,
       )
-      const budgetStats = buildBudgetStats(monthlyBudgetUsd, currentSpendUsd)
+      const budgetStats = buildBudgetStats(
+        monthlyBudgetUsd,
+        currentSpendUsd,
+        lifetimeSpendForKey(key.keyId, lifetimeSpendByKey, signal),
+      )
       const averageDailySpendUsd = toNumber(personalUsageSignal?.averageDailySpendUsd7d, 0)
       const averageDailyTokenUsage = Math.max(
         toNumber(personalUsageSignal?.averageDailyTokenUsage7d, 0),
@@ -708,10 +1366,11 @@ export async function GET(request: Request) {
 
       return {
         keyId: key.keyId,
-        alias: key.alias,
+        alias: (key.alias ?? "").trim(),
         provider: key.provider,
         monthlyBudgetUsd,
         status: key.status,
+        keyHash: key.keyHash ?? null,
         budgetStats,
         providerStats: {
           currentSpendUsd: budgetStats.currentSpendUsd,
@@ -740,7 +1399,11 @@ export async function GET(request: Request) {
           toNumber(key.monthlyBudgetUsd, 0),
           billingRow,
         )
-        const budgetStats = buildBudgetStats(monthlyBudgetUsd, currentSpendUsd)
+        const budgetStats = buildBudgetStats(
+          monthlyBudgetUsd,
+          currentSpendUsd,
+          lifetimeSpendForKey(keyId, lifetimeSpendByKey, signal),
+        )
         const averageDailySpendUsd = toNumber(personalUsageSignal?.averageDailySpendUsd7d, 0)
         const averageDailyTokenUsage = Math.max(
           toNumber(personalUsageSignal?.averageDailyTokenUsage7d, 0),
@@ -749,12 +1412,17 @@ export async function GET(request: Request) {
         const recentDailySpendUsd = (personalUsageSignal?.recentDailySpendUsd ?? [])
           .map((value) => toNumber(value, 0))
           .filter((value) => value >= 0)
+        const aliasTrimmed = (key.alias ?? "").trim()
+        if (!hasUsableKeyAlias(aliasTrimmed)) {
+          return null
+        }
         return {
           keyId,
-          alias: (key.alias ?? "").trim() || `key-${keyId}`,
+          alias: aliasTrimmed,
           provider: (key.provider ?? "").trim() || "UNKNOWN",
           monthlyBudgetUsd,
           status: "ACTIVE",
+          keyHash: null,
           budgetStats,
           providerStats: {
             currentSpendUsd: budgetStats.currentSpendUsd,
@@ -775,17 +1443,21 @@ export async function GET(request: Request) {
         personalKeysById.set(key.keyId, key)
         continue
       }
-      const snapshotBudget = Math.max(key.monthlyBudgetUsd, current.monthlyBudgetUsd)
+      const snapshotBudget = toNumber(current.monthlyBudgetUsd, 0)
       const merged = spendAndBudgetForKey(
         billingByKeyId.get(String(key.keyId)),
         snapshotBudget,
         billingSummaryByKey.get(key.keyId),
       )
-      const mergedBudgetStats = buildBudgetStats(merged.monthlyBudgetUsd, merged.currentSpendUsd)
+      const mergedBudgetStats = buildBudgetStats(
+        merged.monthlyBudgetUsd,
+        merged.currentSpendUsd,
+        lifetimeSpendForKey(key.keyId, lifetimeSpendByKey, billingByKeyId.get(String(key.keyId))),
+      )
       personalKeysById.set(key.keyId, {
         ...current,
         ...key,
-        alias: key.alias?.trim() ? key.alias : current.alias,
+        alias: (key.alias ?? "").trim() || (current.alias ?? "").trim(),
         provider: key.provider?.trim() ? key.provider : current.provider,
         monthlyBudgetUsd: merged.monthlyBudgetUsd,
         budgetStats: mergedBudgetStats,
@@ -795,9 +1467,13 @@ export async function GET(request: Request) {
         },
       })
     }
-    const personalKeys = Array.from(personalKeysById.values())
+    const personalKeysMerged = dedupePersonalKeysByCredential(
+      Array.from(personalKeysById.values()) as PersonalContextRow[],
+      lifetimeSpendByKey,
+      billingByKeyId,
+    ).filter((row) => hasUsableKeyAlias(row.alias))
 
-    const teamBoard = teamApiKeys.map((item) => {
+    const teamBoardRaw = teamApiKeys.filter((item) => hasUsableKeyAlias(item.alias)).map((item) => {
       const signal = billingByKeyId.get(String(item.teamApiKeyId))
       const billingRow = billingSummaryByKey.get(item.teamApiKeyId)
       const { currentSpendUsd, monthlyBudgetUsd } = spendAndBudgetForKey(
@@ -805,7 +1481,11 @@ export async function GET(request: Request) {
         toNumber(item.monthlyBudgetUsd, 0),
         billingRow,
       )
-      const budgetStats = buildBudgetStats(monthlyBudgetUsd, currentSpendUsd)
+      const budgetStats = buildBudgetStats(
+        monthlyBudgetUsd,
+        currentSpendUsd,
+        lifetimeSpendForKey(item.teamApiKeyId, lifetimeSpendByKey, signal),
+      )
       const usageSignal =
         currentUserId == null
           ? usageSignalByTeam.get(String(item.teamId)) ?? null
@@ -826,9 +1506,10 @@ export async function GET(request: Request) {
         teamApiKeyId: item.teamApiKeyId,
         ownerUserId: item.ownerUserId,
         visibility: item.visibility ?? "TEAM",
-        alias: item.alias,
+        alias: (item.alias ?? "").trim(),
         provider: item.provider,
         status: item.status,
+        keyHash: item.keyHash ?? null,
         monthlyBudgetUsd,
         budgetStats,
         providerStats: {
@@ -839,6 +1520,14 @@ export async function GET(request: Request) {
         },
       }
     })
+
+    const teamBoard = dedupeTeamBoardByCredential(
+      teamBoardRaw as TeamContextRow[],
+      lifetimeSpendByKey,
+      billingByKeyId,
+    ).filter((row) =>
+      hasUsableKeyAlias(row.alias),
+    )
 
     const teamNameById = new Map<number, string>()
     for (const item of teamCatalog.teams) {
@@ -860,7 +1549,7 @@ export async function GET(request: Request) {
     }))
 
     return NextResponse.json({
-      data: personalKeys,
+      data: personalKeysMerged,
       currentUserId,
       userContext: null,
       teamBoard,

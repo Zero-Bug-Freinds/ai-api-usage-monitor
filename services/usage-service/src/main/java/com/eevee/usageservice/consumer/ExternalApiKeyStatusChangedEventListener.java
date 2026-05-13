@@ -1,9 +1,9 @@
 package com.eevee.usageservice.consumer;
 
 import com.eevee.usageservice.service.ApiKeyMetadataSyncService;
-import com.eevee.usageservice.mq.ExternalApiKeyDeletedEvent;
-import com.eevee.usageservice.mq.ExternalApiKeyStatusChangedEvent;
-import com.eevee.usageservice.mq.IdentityExternalApiKeyEventTypes;
+import com.zerobugfreinds.identity.events.ExternalApiKeyDeletedEvent;
+import com.zerobugfreinds.identity.events.ExternalApiKeyStatusChangedEvent;
+import com.zerobugfreinds.identity.events.IdentityExternalApiKeyEventTypes;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -43,6 +43,14 @@ public class ExternalApiKeyStatusChangedEventListener {
                 ExternalApiKeyDeletedEvent deleted = objectMapper.treeToValue(root, ExternalApiKeyDeletedEvent.class);
                 apiKeyMetadataSyncService.handleExternalApiKeyDeleted(deleted);
                 return;
+            }
+            if (root.has("eventType")) {
+                String eventType = root.get("eventType").asText();
+                if (IdentityExternalApiKeyEventTypes.EXTERNAL_API_KEY_BUDGET_CHANGED.equals(eventType)
+                        || IdentityExternalApiKeyEventTypes.USER_CONTEXT_CHANGED.equals(eventType)) {
+                    log.debug("Ignoring identity message for api_key_metadata eventType={}", eventType);
+                    return;
+                }
             }
             if (root.has("schemaVersion")) {
                 ExternalApiKeyStatusChangedEvent changed = objectMapper.readValue(json, ExternalApiKeyStatusChangedEvent.class);

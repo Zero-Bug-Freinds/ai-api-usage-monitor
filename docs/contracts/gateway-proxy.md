@@ -1,12 +1,14 @@
 # Gateway ↔ Proxy 서비스 간 계약
 
-버전: 1.4  
+버전: 1.6  
 관련: [docs/architecture.md](../architecture.md) §4.1, §4.2, §8.2, §10.1, §10.2, 루트 [`docker-compose.yml`](../../docker-compose.yml)(`web-edge`, `docker/web-edge/nginx.conf.template`), 루트 [`.env.example`](../../.env.example), [`services/usage-service/web/.env.example`](../../services/usage-service/web/.env.example), [Web·Gateway Usage BFF](./web-gateway-bff.md)(Usage BFF 브라우저 경로·`basePath`는 [web-split-boundary.md](./web-split-boundary.md))
 
 **v1.1:** `application.yml` 라우트·`RemoveRequestHeader=Authorization`·Bearer 검증·Web `API_GATEWAY_URL` 합의를 §1.1·§3·§9에 명시(게이트웨이·Usage BFF 담당 정합).  
 **v1.2:** §4.2 Identity JWT `sub`(이메일)·Usage 원장 `user_id`·BFF `GATEWAY_DEV_MODE` 세션 이메일 정합·게이트웨이 회귀 테스트 위치 명시.  
 **v1.3:** 웹 BFF 소재를 `services/*/web` 목표 구조·풀스택 소유에 맞게 서술 보강.  
 **v1.4:** §5.1 Docker Compose·루트 `.env`와 `GATEWAY_SHARED_SECRET` 빈 값 주의, 로컬 기본 문자열을 게이트웨이·Proxy·usage와 정합.
+**v1.5:** `/api/v1/ai/ext/**` key-only ingress(HMAC+timestamp+nonce) 경로를 추가하고 기존 `/api/v1/ai/**` JWT 경로와 분리.
+**v1.6:** §6.1 `UsageRecordedEvent.metadataOwnerUserId` — PERSONAL `api_key_metadata` upsert 시 Identity MQ와 동일한 소유 `user_id`(플랫폼 사용자 id 문자열)를 쓰기 위한 선택 필드; Proxy는 `UserContext.keyLookupUserId()` 로 채운다.
 
 ---
 
@@ -51,6 +53,7 @@
 
 | Route ID | Predicate | Upstream URI (환경 변수) | 필터 |
 |----------|-----------|--------------------------|------|
+| `proxy-ai-ext` | `Path=/api/v1/ai/ext/**` | `GATEWAY_PROXY_URI` (기본 `http://localhost:8081`) | `RemoveRequestHeader=Authorization`, `RewritePath=/api/v1/ai/ext/(?<segment>.*), /proxy/${segment}` |
 | `proxy-ai` | `Path=/api/v1/ai/**` | `GATEWAY_PROXY_URI` (기본 `http://localhost:8081`) | `RemoveRequestHeader=Authorization`, `RewritePath=/api/v1/ai/(?<segment>.*), /proxy/${segment}` |
 | `usage-http` | `Path=/api/v1/usage/**` | `GATEWAY_USAGE_URI` (기본 `http://localhost:8092`) | `RemoveRequestHeader=Authorization` |
 
@@ -69,6 +72,35 @@
 **AI 라우트 필터:** Gateway는 `/api/v1/ai/**` 에 대해 **`RemoveRequestHeader=Authorization`** 을 적용한다. 클라이언트가 보낸 플랫폼 JWT(또는 기타 `Authorization`)는 **Proxy로 전달되지 않는다**(게이트웨이 보안 체인에서 소비·검증 후 라우팅). 구현: [`api-gateway-service` `application.yml`](../../services/api-gateway-service/src/main/resources/application.yml).
 
 **로컬 개발(`gateway.dev-mode=true`):** JWT 없이 호출할 수 있으며, 이 경우 **`X-User-Id`** 는 클라이언트가 보낸 값을 게이트웨이 필터가 그대로 신뢰 경로에 실어 Proxy로 넘긴다(`ProxyTrustHeadersWebFilter`). Mock 키(`PROXY_GOOGLE_TEST_API_KEY` 등)를 쓰면 Key Service의 `userId`는 사실상 mock 분기에서 무시되기 쉽다.
+
+### 3.3 외부 key-only ingress (`/api/v1/ai/ext/**`)
+
+- 목적: 우리 전용 사용자 헤더 없이도 외부 클라이언트가 API 호출을 보낼 수 있도록, **JWT 경로와 분리된 확장 ingress** 제공.
+- web-edge: `auth_request`를 사용하지 않고 ext 검증 헤더만 gateway로 전달한다.
+- gateway: `ExtAiHmacAuthWebFilter`가 아래 헤더를 검증한다.
+  - `X-Ext-Key-Id`
+  - `X-Ext-Timestamp` (epoch seconds)
+  - `X-Ext-Nonce` (재사용 금지)
+  - `X-Ext-Body-Sha256` (없으면 empty-body hash)
+  - `X-Ext-Signature` (Base64 HMAC-SHA256)
+  - optional `X-Ext-User-Id` (있으면 내부 사용자 식별자로 우선 사용)
+  - optional `X-Team-Id`
+
+Canonical string:
+
+`METHOD + "\\n" + PATH + "\\n" + RAW_QUERY + "\\n" + BODY_SHA256 + "\\n" + TIMESTAMP + "\\n" + NONCE + "\\n" + KEY_ID + "\\n" + EXT_USER_ID_OR_EMPTY + "\\n" + TEAM_ID_OR_EMPTY`
+
+오류 코드:
+- `401`: 필수 헤더 누락, 키 ID 불일치, 서명 불일치, 타임스탬프 만료, body hash 형식 오류
+- `403`: ext ingress 비활성화
+- `409`: nonce 재사용(Replay)
+
+Proxy key selection priority for ext/JWT 공통:
+
+- `X-Api-Key-Id` > `X-Api-Key-Alias` > raw key reverse lookup > latest fallback lookup
+- `ACTIVE` 상태 키만 허용 (inactive/deleted는 `404`)
+- reverse lookup 경로는 현재 identity/team 정식 API 미지원으로, `proxy.key-service.reverse-lookup-mocks`(테스트/임시 운영)로 보완한다.
+- 동일 raw key hash를 personal/team에 동시에 등록하는 구성은 금지한다(기동 시 예외).
 
 ---
 
@@ -156,6 +188,8 @@ Usage 소비 코드: [`UsageRecordedEventListener`](../../services/usage-service
 | `organizationId` | `String` | 선택 |
 | `teamId` | `String` | 선택 |
 | `apiKeyId` | `String` | 선택 |
+| `apiKeyAlias` | `String` | 선택 |
+| `teamApiKeyId` | `String` | 선택; 팀 키 메타데이터 식별 시 사용 |
 | `apiKeyFingerprint` | `String` | 선택 |
 | `apiKeySource` | `String` | 선택 |
 | `provider` | `AiProvider` | `OPENAI/GOOGLE/ANTHROPIC` 등 |
@@ -164,9 +198,11 @@ Usage 소비 코드: [`UsageRecordedEventListener`](../../services/usage-service
 | `estimatedCost` | `BigDecimal` | 선택 |
 | `requestPath` | `String` | Proxy 내부 path |
 | `upstreamHost` | `String` | 선택 |
+| `latencyMs` | `Long` | 선택 |
 | `streaming` | `Boolean` | 선택 |
 | `requestSuccessful` | `Boolean` | null이면 `true` |
 | `upstreamStatusCode` | `Integer` | 선택 |
+| `metadataOwnerUserId` | `String` | 선택; 아래 §6.1.4 |
 
 Team API Key 요청 식별 규약:
 
@@ -174,7 +210,13 @@ Team API Key 요청 식별 규약:
 - `apiKeyId=String(teamApiKeyId)` (`team-service`의 팀 키 PK 문자열)
 - Billing/Usage는 팀 키 집계·예산 임계 판단 시 `apiKeySource + apiKeyId` 조합으로 팀 키를 식별한다.
 
-### 6.1.3 Usage 서비스의 HTTP 소비 API(조회)
+### 6.1.4 `metadataOwnerUserId` (PERSONAL `api_key_metadata` 소유자 키)
+
+- **역할:** Usage 로그·비용 집계에 쓰는 `userId`와 별도로, Identity MQ가 채우는 **PERSONAL** 메타데이터 행의 복합 PK `(key_id, user_id, PERSONAL)` 에 들어갈 **`user_id` 후보**를 알려준다.
+- **발행:** Proxy `publishUsage` 가 [`UserContext.keyLookupUserId()`](../../services/proxy-service/src/main/java/com/eevee/proxyservice/security/UserContext.java) 로 설정한다. JWT에 플랫폼 사용자 PK 문자열이 있으면 그 값이 우선하고, 없으면 게이트웨이 `X-User-Id`(예: 이메일 `sub`)와 동일하게 둔다.
+- **소비:** usage-service `ApiKeyMetadataSyncService` 는 값이 있으면 이것으로 PERSONAL 메타 upsert를 하고, 없으면 기존처럼 `userId`만 사용한다. 원장(`usage_recorded_log.user_id`)과 대시보드 호출 주체는 계속 **`UsageRecordedEvent.userId`** 정본을 따른다(§4.2).
+
+### 6.1.5 Usage 서비스의 HTTP 소비 API(조회)
 
 Usage는 MQ로 적재 후 HTTP 조회를 제공한다(컨트롤러: `UsageAnalyticsController`):
 

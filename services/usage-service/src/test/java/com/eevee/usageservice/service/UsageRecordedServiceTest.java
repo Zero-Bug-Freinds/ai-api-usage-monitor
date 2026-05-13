@@ -35,6 +35,8 @@ class UsageRecordedServiceTest {
     private UsageAggregationService aggregationService;
     @Mock
     private DailyCumulativeTokensAfterRecordedService dailyCumulativeTokensAfterRecordedService;
+    @Mock
+    private ApiKeyMetadataSyncService apiKeyMetadataSyncService;
 
     private UsageRecordedService usageRecordedService;
 
@@ -45,7 +47,8 @@ class UsageRecordedServiceTest {
                 new ObjectMapper(),
                 eventPublisher,
                 aggregationService,
-                dailyCumulativeTokensAfterRecordedService
+                dailyCumulativeTokensAfterRecordedService,
+                apiKeyMetadataSyncService
         );
     }
 
@@ -285,6 +288,41 @@ class UsageRecordedServiceTest {
         verify(repository).save(captor.capture());
         verify(dailyCumulativeTokensAfterRecordedService).onRecorded(captor.getValue());
         assertThat(captor.getValue().getModel()).isEqualTo("openai_unknown");
+    }
+
+    @Test
+    void teamEvent_normalizesBlankTeamFields() {
+        UUID eventId = UUID.randomUUID();
+        UsageRecordedEvent event = new UsageRecordedEvent(
+                eventId,
+                Instant.parse("2025-01-01T00:00:00Z"),
+                "corr-team",
+                "user-1",
+                null,
+                "   ",
+                "key-1",
+                null,
+                "  ",
+                "deadbeef00112233",
+                "team",
+                AiProvider.OPENAI,
+                "gpt-4o-mini",
+                new TokenUsage("gpt-4o-mini", 1L, 2L, 3L, null, null, null, null, null, null),
+                BigDecimal.ZERO,
+                "/proxy/openai/v1/chat/completions",
+                "api.openai.com",
+                false,
+                true,
+                200
+        );
+        when(repository.existsByEventId(eventId)).thenReturn(false);
+
+        usageRecordedService.persist(event);
+
+        ArgumentCaptor<UsageRecordedLogEntity> captor = ArgumentCaptor.forClass(UsageRecordedLogEntity.class);
+        verify(repository).save(captor.capture());
+        assertThat(captor.getValue().getTeamId()).isNull();
+        assertThat(captor.getValue().getTeamApiKeyId()).isNull();
     }
 
     @Test

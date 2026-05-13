@@ -1,7 +1,7 @@
 # Web(Next.js) ↔ Team Service BFF 계약
 
-버전: 0.12  
-관련: [web-split-boundary.md](./web-split-boundary.md), [web-identity-bff.md](./web-identity-bff.md) — `/teams` UI 소유·경로: §2.3
+버전: 0.17  
+관련: [web-split-boundary.md](./web-split-boundary.md), [web-identity-bff.md](./web-identity-bff.md) — `/teams` UI 소유·경로: §2.3, [identity-auth-api-contract.md](../identity-auth-api-contract.md) §14(Identity → Team 사용자 동기화 MQ)
 
 ---
 
@@ -28,8 +28,9 @@
 | `POST /api/team/v1/me/team-invitations/{invitationId}/reject` | Team BFF `POST ...` → Gateway `POST ...` → Team Service `POST /api/v1/me/team-invitations/{invitationId}/reject` |
 | `GET /api/team/v1/teams/{id}/api-keys` | Team BFF `GET /api/team/v1/teams/{id}/api-keys` → Gateway `GET ...` → Team Service `GET /api/v1/teams/{id}/api-keys` |
 | `POST /api/team/v1/teams/{id}/api-keys` | Team BFF `POST /api/team/v1/teams/{id}/api-keys` → Gateway `POST ...` → Team Service `POST /api/v1/teams/{id}/api-keys` |
+| `GET /api/team/v1/teams/{id}/expenditure/team-api-keys/month-spend` | Team BFF `GET ...` → Gateway `GET ...` → Team Service `GET /api/v1/teams/{id}/expenditure/team-api-keys/month-spend` → Team Service 내부 Billing 호출 `POST /api/v1/expenditure/team/month-rollup` |
 | `PUT /api/team/v1/teams/{teamId}/api-keys/{keyId}` | Team BFF `PUT ...` → Gateway `PUT ...` → Team Service `PUT /api/v1/teams/{teamId}/api-keys/{keyId}` |
-| `DELETE /api/team/v1/teams/{teamId}/api-keys/{keyId}` | Team BFF `DELETE ...` → Gateway `DELETE ...` → Team Service `DELETE /api/v1/teams/{teamId}/api-keys/{keyId}` (선택 쿼리 `gracePeriodDays`) |
+| `DELETE /api/team/v1/teams/{teamId}/api-keys/{keyId}` | Team BFF `DELETE ...` → Gateway `DELETE ...` → Team Service `DELETE /api/v1/teams/{teamId}/api-keys/{keyId}` (선택 쿼리 `gracePeriodDays`, `retainLogs`) |
 | `POST /api/team/v1/teams/{teamId}/api-keys/{keyId}/deletion/cancel` | Team BFF `POST ...` → Gateway `POST ...` → Team Service `POST /api/v1/teams/{teamId}/api-keys/{keyId}/deletion/cancel` |
 
 - **팀 콘솔 UI**는 `web-edge`의 **`/teams` → `team-web`** 에서 렌더링한다.
@@ -64,7 +65,7 @@
   - `PUT /api/v1/teams/{teamId}/api-keys/{keyId}` (별칭·예산 등 수정)
   - `POST /api/v1/teams/{teamId}/api-keys/{keyId}/deletion/cancel` (삭제 예정 해제)
 - 팀원 초대 시 Team Service는 아래 순서로 사용자 존재 여부를 확인한다.
-  1) `identity_user_sync` 로컬 캐시(`IdentityUserSyncListener`가 RabbitMQ로 수신한 사용자 동기화 이벤트 기반)
+  1) `identity_user_sync` 로컬 캐시(identity-service가 RabbitMQ로 발행한 사용자 동기화 이벤트를 `IdentityUserSyncListener`가 수신해 반영)
   2) Identity 내부 API fallback (`GET /internal/users/exists?email=...` 또는 user-id 일괄 확인)
   → 둘 다 실패/미존재면 초대를 거부한다.
 - 팀 API Key는 Team Service DB에 **평문 저장하지 않고 암호화 저장**한다.
@@ -80,17 +81,6 @@
 - 존재하지 않는 아이디(이메일)이면 Team Service는 초대를 거부한다.
 - Identity 연동 실패(네트워크/5xx/비정상 응답) 시 안전하게 초대를 거부한다.
 - Team Service는 사용자 전체 프로필을 복제하지 않고, 존재성 판단에 필요한 최소 필드만 `identity_user_sync` 테이블에 저장한다(`userId`, `email`, `displayName`, `lastEventType`, `updatedAt`).
-
-### 5.2 identity → team 사용자 동기화 이벤트
-
-- Queue/Binding 설정 정본:
-  - `identity.user-sync.exchange` (기본 `identity.events`)
-  - `identity.user-sync.routing-key` (기본 `identity.user.sync`)
-  - `identity.user-sync.queue` (기본 `team.identity.user-sync.queue`)
-- 리스너: `IdentityUserSyncListener` (`@RabbitListener`)
-- DTO: `IdentityUserSyncEvent`
-  - `@JsonAlias`로 필드명 변형(`eventType/type`, `userId/identityUserId/id`, `email/userEmail`, `name/displayName/username`, `occurredAt/createdAt/updatedAt`)을 허용한다.
-- 장애 분석을 위해 리스너는 실패 시 payload 원문과 stacktrace를 함께 기록한다.
 
 ### 5.1 실패 응답 예시
 
@@ -109,7 +99,28 @@
   - `409` (`success=false`): 팀 API Key가 남아 있어 삭제 선행조건 미충족
   - `404` (`success=false`): 대상 팀이 존재하지 않는 경우
 
-### 5.2 팀 초대·수락/거절/만료 (현행 구현)
+### 5.2 identity → team 사용자 동기화 (RabbitMQ)
+
+- **목적:** 숫자 플랫폼 `userId`와 이메일 식별자를 team 도메인에서 동일 사용자로 해석할 수 있도록 `identity_user_sync` 행을 유지한다.
+- **발행(identity-service)**
+  - Exchange: Topic **`identity.events`** (기본값).
+  - Routing key: **`identity.user.sync`** (`libs/identity-events`의 `IdentityUserSyncRoutingKeys.USER_SYNC`).
+  - Spring 설정 키(기본값이 team-service와 동일해야 한다):
+    - `identity.user-sync.exchange` → 환경 변수 **`IDENTITY_USER_SYNC_EVENT_EXCHANGE`**
+    - `identity.user-sync.routing-key` → 환경 변수 **`IDENTITY_USER_SYNC_EVENT_ROUTING_KEY`**
+  - 구현: `IdentityUserSyncEventPublisher` — 일반 경로는 DB 커밋 후 RabbitMQ로 전송(`@TransactionalEventListener` AFTER_COMMIT, 비트랜잭션 시 `fallbackExecution=true`). 백필·운영 재처리는 **`publishImmediately()`** 로 동일 exchange/routing key에 JSON을 보낸다.
+  - **페이로드 정본:** `libs/identity-events`의 **`IdentityUserSyncEvent`** (JSON: `eventType`, `userId`, `email`, `name`, `occurredAt`). 수신 측 호환을 위해 `@JsonAlias`로 `type`, `identityUserId`/`id`, `userEmail`, `displayName`/`username`, `createdAt`/`updatedAt` 등 변형 필드명을 허용한다.
+  - **`IdentityUserSyncEventTypes`:** `USER_REGISTERED`(가입 완료), `USER_FIRST_LOGIN_RECORDED`(해당 사용자의 **첫** 리프레시 토큰 발급·첫 세션에 해당), `USER_PROFILE_UPDATED`(이메일·표시명 변경용; identity에 프로필 변경 API가 붙으면 동일 스키마로 발행), `USER_SYNC_BACKFILL`(일괄 백필·재발행).
+- **소비(team-service)**
+  - Queue/Binding 정본:
+    - `identity.user-sync.exchange` (기본 `identity.events`)
+    - `identity.user-sync.routing-key` (기본 `identity.user.sync`)
+    - `identity.user-sync.queue` (기본 `team.identity.user-sync.queue`)
+  - `IdentityUserSyncListener` (`@RabbitListener`) → `IdentityUserSyncService`가 payload를 역직렬화해 `identity_user_sync`를 upsert한다.
+- **기존 사용자 백필:** 타 DB에 JDBC로 직접 이관하지 않고, identity가 MQ로 이벤트를 재발행해 team이 적재하는 방식을 권장한다. **`POST /internal/users/sync-events/publish-all`** (identity-service)가 전 사용자에 대해 `USER_SYNC_BACKFILL`을 `publishImmediately`로 발행한다. 응답 `data`는 발행 건수(정수). 이 경로는 **`/internal/users/**`** 노출 정책에 포함되므로 운영에서는 네트워크·게이트웨이에서 내부 전용으로 제한할 것(`SecurityConfig`는 로컬 편의상 해당 패턴을 허용할 수 있음).
+- 장애 분석을 위해 리스너는 실패 시 payload 원문과 stacktrace를 함께 기록한다.
+
+### 5.3 팀 초대·수락/거절/만료 (현행 구현)
 
 - `POST /api/team/v1/teams/{id}/members` 호출 시 Team Service는 **PENDING 초대 행**을 만들고 RabbitMQ로 초대 이벤트(`TEAM_INVITE_CREATED`)를 발행한다. 이 단계에서는 **팀 멤버를 추가하지 않는다**.
 - `GET /api/team/v1/me/team-invitations` 로 내 초대 목록을 조회한다. 기본은 **대기(PENDING)**만 반환한다.
@@ -130,7 +141,7 @@
   - `team.invitation.lifecycle-initial-delay-ms` (기본 60000)
   - `team.invitation.cleanup-retention-days` (기본 30): `ACCEPTED`/`REJECTED`/`EXPIRED` 상태 중 `respondedAt`이 보존 기간을 지난 행 삭제
 
-### 5.3 팀 API Key 등록/조회/수정·삭제 예정
+### 5.4 팀 API Key 등록/조회/수정·삭제 예정
 
 #### 팀 API Key 요약 객체 (`data` 및 목록 항목)
 
@@ -149,7 +160,7 @@
   - 요청 본문: `provider` (`OPENAI`/`GOOGLE`/`ANTHROPIC`), `alias`, `externalKey`, `monthlyBudgetUsd` (0 이상, USD 월 예산 한도 — identity-service 외부 키와 동일 개념)
   - 성공: `201`, `data`에 등록된 키 요약(위 표의 활성 키에 해당하는 필드)
   - 실패:
-    - `400` (`success=false`): 필수값 누락, alias 중복, 동일 provider+키 값(해시)이 **이미 활성**인 경우 `이미 등록된 API Key입니다`, 동일 해시가 **삭제 예정** 행에 있으면 `삭제 예정키와 중복입니다`
+    - `400` (`success=false`): 필수값 누락, alias 중복, 동일 provider+키 값(해시)이 **이미 활성**인 경우 `이미 등록된 API Key입니다`, 또는 동일 키가 Identity 개인 키로 이미 등록된 경우 `Identity에 이미 등록된 API Key입니다`
     - `403` (`success=false`): 팀장이 아닌 경우(팀 멤버만인 경우 등)
     - `404` (`success=false`): 대상 팀이 존재하지 않는 경우
 
@@ -157,7 +168,7 @@
   - 요청 본문: `alias`, `monthlyBudgetUsd` (필수). Identity `/teams`·team `web` UI는 별칭·예산만 보낸다. 서버는 `externalKey`가 비어 있지 않을 때에만 키 값·provider 갱신을 허용한다(내부·다른 클라이언트용).
   - 권한: **팀 멤버**(팀장 아님 포함).
   - 성공: `200`, 수정된 키 요약
-  - 실패: `400` (검증/중복/대상 없음, **삭제 예정인 키는 수정 불가**), `403`, `404`
+  - 실패: `400` (검증/중복/대상 없음, **삭제 예정인 키는 수정 불가**, Identity 개인 키와의 해시 중복), `403`, `404`
 
 - `DELETE /api/team/v1/teams/{teamId}/api-keys/{keyId}`
   - 선택 쿼리: `gracePeriodDays` (정수, 생략 시 **기본 7일**). 허용 범위는 **0~365일**.
@@ -179,6 +190,16 @@
   - 실패:
     - `403` (`success=false`): 팀 멤버가 아닌 사용자의 조회 시도
     - `404` (`success=false`): 대상 팀이 존재하지 않는 경우
+- `GET /api/team/v1/teams/{id}/expenditure/team-api-keys/month-spend`
+  - 목적: 팀 멤버 집합 기준 월 지출 롤업(`billing-service` `POST /api/v1/expenditure/team/month-rollup`) 조회
+  - 쿼리: `month` (선택, `YYYY-MM-01`). 생략 시 KST 기준 현재 월의 1일 사용
+  - 처리 규칙:
+    - Team Service가 요청 사용자(`X-User-Id`)의 팀 접근 권한을 검증한다.
+    - 전달 월은 **달의 1일만 허용**한다(아니면 `400`).
+    - Team Service가 팀 멤버 userId 목록을 만든 뒤 Billing으로 서버 간 호출한다.
+    - Gateway가 넣은 `X-User-Id`와 `X-Gateway-Auth`를 Billing 호출로 전달한다.
+  - 성공: `200`, `data = { totalCostUsd, byUser[] }`
+  - 실패: `400`(유효하지 않은 month/teamId), `403`(팀 접근 불가), `401`(`X-User-Id` 누락), `502`(Billing 연결 실패)
 - 레거시 호환: 내부 저장값/경로에 `GEMINI`가 남아 있어도 외부 BFF 계약의 provider 표기는 `GOOGLE`로 통일한다.
   - 내부 키 조회 API(`GET /internal/team-api-keys/{provider}`)는 `provider=gemini` 별칭을 입력받아 `GOOGLE`로 정규화한다(코드: `TeamInternalApiKeyResolveService`).
   - 부팅 시 `TeamApiKeyProviderMigrationInitializer`가 `team_api_keys`의 `GEMINI` 값을 `GOOGLE`로 정리한다.
@@ -191,12 +212,19 @@
 ### 6.1 내부 API (notification/billing/agent 등 서비스 간 조회)
 
 - Team Service는 내부 호출용으로 `GET /internal/teams/{id}`를 제공한다.
+- **notification-service(팀 API 키 예산 임계 인앱):** Billing이 `billing.team.budget.threshold.reached`를 발행하면 notification-service가 팀 표시명을 위해 **`GET /internal/teams/{id}`** 를, 수신자 fan-out을 위해 **`GET /api/v1/teams/{teamId}/members`**(`X-User-Id`: 이벤트의 `triggerUserId`)를 호출한다. HTTP 베이스 URL은 notification의 **`TEAM_SERVICE_BASE_URL`**(기본 `http://localhost:8093`)·**`TEAM_SERVICE_TIMEOUT_MS`** 를 쓴다(팀 초대 액션용 `TEAM_SERVICE_INTERNAL_BASE_URL`과는 별도 설정일 수 있다). AMQP 페이로드 정본은 [`docs/billing-outbound-events.md`](../billing-outbound-events.md) §2.1.
+- Team Service는 Billing 월 롤업 내부 호출을 위해 `team.billing.base-url` 설정을 사용한다(환경 변수 `TEAM_BILLING_SERVICE_BASE_URL`, 기본 `http://localhost:8095`).
 - 응답 `data`는 `teamId`, `teamName`, `createdBy`, `createdAt`를 포함한다.
 - 내부 멤버십 검증용으로 `GET /internal/v1/teams/{teamId}/members/{userId}/verify`를 제공한다.
   - 응답 `data`: `teamId`, `userId`, `isValid`
   - `userId`는 identity 동기화 후보(`email/userId` 등)까지 확장해 검증한다.
 - 내부 사용자 팀 목록 조회용으로 `GET /internal/v1/users/{userId}/teams`를 제공한다.
   - 응답 `data`: `TeamSummaryResponse[]` (`id`, `name`, `createdAt`)
+  - **식별자 정렬(멤버십 조회):** 구현은 `TeamService#getMyTeams` → `resolveLookupCandidates` → `IdentityUserSyncService#resolveMembershipLookupCandidates` 이후 **`team_members`를 `findAllByUserIdIn(후보들)`** 로 조회한다. 따라서 경로 변수 `{userId}`만으로는 부족하고, **DB에 저장된 `team_members.user_id` 형태(이메일 문자열 vs Identity 사용자 ID 숫자 문자열 등)** 와 요청 식별자가 다를 때는 후보 집합에 상대 방식이 포함되어야 행이 매칭된다.
+  - **후보 확장 규칙(요약):** 이메일 형 입력이면 동기화 테이블에서 연결된 `userId`를 추가하고, 비이메일(숫자 ID 문자열 등)이면 `identity_user_sync`의 해당 `user_id` 행 이메일과 **Identity 내부 API** `GET /internal/users/email?userId={userId}` 결과 이메일을 후보에 넣는다(team-service `IdentityUserLookupClient`).
+  - **usage-service 연동:** Usage BFF `GET /api/v1/usage/bff/teams`는 게이트웨이가 넣은 **`X-User-Id`** 를 신뢰 필터로 받아 동일 문자열을 **`GET …/internal/v1/users/{userId}/teams`** 의 `{userId}` 로 전달한다(`TeamServiceClient#fetchUserTeamsInternal`). 경로만 전달되며, 이 내부 호출에는 별도 `X-User-Id` 헤더를 붙이지 않는다.
+  - **빈 목록(`data: []`)이 의심될 때:** `team_members`에는 행이 있는데 응답만 비면, (1) 게이트웨이·Usage가 넘기는 식별자가 멤버십 행의 `user_id`와 다른 형태인지, (2) **`identity_user_sync`** 에 해당 사용자 매핑이 있는지, (3) team-service의 **`identity.service.url`** 이 올바르고 Identity `GET /internal/users/email` 이 성공하는지를 순서대로 확인한다.
+  - **`identity.user.sync` 이벤트:** team-service는 RabbitMQ로 사용자 동기화 메시지를 소비해 `identity_user_sync`를 채운다(큐·바인딩·DTO는 동일 문서 §5의 **identity → team 사용자 동기화 이벤트** 절). **현재 본 저장소의 identity-service에는 동일 라우팅 키로 발행하는 구현이 없으며**, 로컬 캐시가 비어 있는 환경에서는 위 Identity HTTP fallback에 더 의존한다. 발행 측이 추가되면 본 문서와 배포 설정을 함께 갱신한다.
 - Billing 연동용으로 `GET /internal/teams/users/{userId}/billing-summaries`를 제공한다.
   - 응답 목록의 각 팀 항목은 `teamId`, `teamAlias`, `monthlyBudgetUsd`, `monthlyBudgetsByKey`, `apiKeys`를 포함한다.
   - `monthlyBudgetUsd`: 팀 API 키 월 예산 합계(USD)
@@ -214,9 +242,11 @@
 - 설정 정본: `services/team-service/src/main/resources/application.properties` — `team.member-added-event.exchange`, `team.member-added-event.routing-key`(기본값 `team-member-added`), `spring.rabbitmq.*`.
 - **동일 TopicExchange·라우팅 키**로 팀 도메인 이벤트 JSON이 발행된다. 각 메시지 본문에 **`eventType`**(필수)과 공통 필드(`teamId`, `teamName`, `actorUserId`, `occurredAt`, `recipientUserIds` 등)가 포함되며, AMQP **헤더 `eventType`**에도 동일 문자열이 실린다. 구독자는 헤더 또는 본문 `eventType`으로 분기한다.
 - 주요 `eventType` 값: `TEAM_CREATED`, `TEAM_INVITE_CREATED`, `TEAM_INVITATION_ACCEPTED`, `TEAM_INVITATION_REJECTED`, `TEAM_MEMBER_JOINED`, `TEAM_MEMBER_REMOVED`, `TEAM_DELETED`, `TEAM_API_KEY_REGISTERED`, `TEAM_API_KEY_UPDATED`, `TEAM_API_KEY_DELETED`, `TEAM_API_KEY_DELETION_SCHEDULED`, `TEAM_API_KEY_DELETION_CANCELLED`.
+- 유예 삭제 만료로 키가 물리 삭제될 때도 `TEAM_API_KEY_STATUS_CHANGED(status=DELETED, retainLogs=...)`가 함께 발행되며, usage/agent 소비자는 이 이벤트를 기준으로 로그 보존 정책을 적용한다.
 - 하위 호환: `TEAM_INVITE_CREATED` 페이로드에 기존 `invitationId`, `receiverId`, `inviterId`, `createdAt` 필드가 유지된다. `TEAM_MEMBER_JOINED`에 `receiverId`, `inviterId`, `createdAt`(레거시)가 유지된다.
 - 목적: notification 등이 알림·감사 로그를 비동기로 처리할 수 있도록 전달
-- **소비(인앱):** **notification-service**(`services/notification-service/src/team-events/`)가 RabbitMQ 큐를 구독해 위 이벤트별로 `InAppNotification`을 생성하고, `NotificationDelivery.dedupeKey`로 멱등을 보장한다. `TEAM_MEMBER_JOINED`는 제품 규칙상 **참여 사용자(`receiverId`)에게만** 인앱을 생성한다(초대자는 `TEAM_INVITATION_ACCEPTED`로 별도 통지). 상세·환경 변수는 [`services/notification-service/README.md`](../../services/notification-service/README.md), 아키텍처 요약은 [`architecture.md`](../architecture.md) §4.9·§6.
+- **소비(인앱):** **notification-service**(`services/notification-service/src/team-events/`)가 RabbitMQ 큐를 구독해 위 이벤트별로 `InAppNotification`을 생성하고, `NotificationDelivery.dedupeKey`로 멱등을 보장한다. `TEAM_MEMBER_JOINED`는 제품 규칙상 **참여 사용자(`receiverId`)에게만** 인앱을 생성한다(초대자는 `TEAM_INVITATION_ACCEPTED`로 별도 통지). **`TEAM_DELETED`:** 동일 `teamId`의 `team:TEAM_INVITE_CREATED` 인앱을 void 처리해 초대 버튼이 남지 않게 한다. 상세·환경 변수는 [`services/notification-service/README.md`](../../services/notification-service/README.md), 아키텍처 요약은 [`architecture.md`](../architecture.md) §4.9·§6.
+- **소비(billing 집계 정리):** **billing-service**는 `team.events` + **`team.api.key.#`** 전용 큐에서 **`TEAM_API_KEY_DELETED`** 만 처리해 팀 API 키 비용 집계·read model을 삭제한다([`docs/billing-service-overview-20260412.md`](../billing-service-overview-20260412.md) §6.2; 키 상태 동기화용 `team.api-key.status.changed`와는 별도).
 
 ---
 
@@ -259,9 +289,11 @@
 구현: `team-management-view.tsx`. 팀 API Key **등록/수정/삭제 예약/삭제 취소**는 Team `web`에서 제공하며, 서버 기본 유예 **7일**, `gracePeriodDays` 허용 범위 **0~365일**(`0` = 즉시 삭제)이다.
 
 1. **삭제 예약/즉시 삭제** — 활성 키 행에서 **`삭제`** → 모달에서 유예 기간(일) 입력(기본 7일, **0이면 즉시 삭제**) 및 로그 보존 여부 선택 후 `DELETE .../api-keys/{keyId}?gracePeriodDays=...&retainLogs=...` 호출.
+   - `retainLogs=false`: 키 삭제 완료 시 Agent/Usage의 키 기준 지출·사용 로그 프로젝션도 삭제 대상.
+   - `retainLogs=true`: 키는 삭제되더라도 Agent/Usage의 지출·사용 기록은 보존.
 2. **삭제 예정 표시** — 해당 행에 `(삭제 예정)` 안내, **영구 삭제 예정 시각**·유예 일수 표시, **`수정` 비활성**.
 3. **삭제 취소** — **`삭제 취소`** → 확인 후 `POST .../api-keys/{keyId}/deletion/cancel`. 성공 시 다시 활성 키로 표시.
-4. **동일 키 재등록** — 삭제 예정 중인 키와 같은 provider+키 값으로 등록 시 서버 메시지 `삭제 예정키와 중복입니다`.
+4. **동일 키 재등록** — 삭제 예정 중인 키와 같은 provider+키 값으로 등록하면 실패하지 않고, 기존 삭제 예정 키를 ACTIVE로 복구(재활성화)한다.
 
 ### 7.5 Team `web` (`services/team-service/web/`) 보완 설명
 

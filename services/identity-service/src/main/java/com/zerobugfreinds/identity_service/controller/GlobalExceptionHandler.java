@@ -1,6 +1,7 @@
 package com.zerobugfreinds.identity_service.controller;
 
 import com.zerobugfreinds.identity_service.common.ApiResponse;
+import com.zerobugfreinds.identity_service.exception.AmbiguousExternalApiKeyHashException;
 import com.zerobugfreinds.identity_service.exception.ApiKeyLimitExceededException;
 import com.zerobugfreinds.identity_service.exception.AuthContractViolationException;
 import com.zerobugfreinds.identity_service.exception.DuplicateExternalApiKeyAliasException;
@@ -13,6 +14,7 @@ import com.zerobugfreinds.identity_service.exception.ExternalApiKeyPendingDeleti
 import com.zerobugfreinds.identity_service.exception.InvalidCredentialsException;
 import com.zerobugfreinds.identity_service.exception.InvalidPasswordResetTokenException;
 import com.zerobugfreinds.identity_service.exception.InvalidSignupRequestException;
+import com.zerobugfreinds.identity_service.exception.TeamApiKeyLookupUnavailableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -66,6 +68,13 @@ public class GlobalExceptionHandler {
 		return failWithFallback(ex.getMessage(), "인증 계약 위반이 발생했습니다");
 	}
 
+	@ExceptionHandler(TeamApiKeyLookupUnavailableException.class)
+	@ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+	public ApiResponse<Void> handleTeamApiKeyLookupUnavailable(TeamApiKeyLookupUnavailableException ex) {
+		log.warn("team api key duplicate check unavailable message={}", ex.getMessage());
+		return failWithFallback(ex.getMessage(), "팀 API 키 중복 검증을 수행할 수 없습니다. 잠시 후 다시 시도해 주세요");
+	}
+
 	@ExceptionHandler(ApiKeyLimitExceededException.class)
 	@ResponseStatus(HttpStatus.BAD_REQUEST)
 	public ApiResponse<Void> handleApiKeyLimitExceeded(ApiKeyLimitExceededException ex) {
@@ -89,6 +98,13 @@ public class GlobalExceptionHandler {
 	@ResponseStatus(HttpStatus.CONFLICT)
 	public ApiResponse<Void> handleDuplicateExternalApiKeyAlias(DuplicateExternalApiKeyAliasException ex) {
 		return failWithFallback(ex.getMessage(), "이미 사용 중인 API 키 별칭입니다");
+	}
+
+	@ExceptionHandler(AmbiguousExternalApiKeyHashException.class)
+	@ResponseStatus(HttpStatus.CONFLICT)
+	public ApiResponse<Void> handleAmbiguousExternalApiKeyHash(AmbiguousExternalApiKeyHashException ex) {
+		log.warn("identity ambiguous external api key lookup message={}", ex.getMessage());
+		return failWithFallback(ex.getMessage(), "동일 해시값에 매칭되는 외부 API 키가 2건 이상입니다");
 	}
 
 	@ExceptionHandler(ExternalApiKeyNotFoundException.class)

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { CircleHelp, ChevronDown, ChevronRight, Filter, RotateCcw, X } from "lucide-react"
+import { CircleHelp, ChevronDown, ChevronRight, Filter, Loader2, RotateCcw, X } from "lucide-react"
 
 import {
   Button,
@@ -9,10 +9,7 @@ import {
   Label,
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
-  SelectSeparator,
   SelectTrigger,
   SelectValue,
   Tooltip,
@@ -20,7 +17,17 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@ai-usage/ui"
+import { UsageFilterBar } from "@/components/usage/usage-filter-bar"
 import { buildUsageQuery, fetchUsageJson } from "@/lib/usage/fetch-usage"
+import { DASHBOARD_API_KEY_ALL, DASHBOARD_API_KEY_NONE } from "@/lib/usage/dashboard-api-key-constants"
+import {
+  DASHBOARD_PROVIDER_ALL,
+  filterTeamBffRowsByProvider,
+  teamBffRowsToUsageMenuItems,
+} from "@/lib/usage/dashboard-provider-api-keys"
+import { defaultSettingsFor, useFilterStorage, type UsageFilterMode } from "@/lib/usage/use-filter-storage"
+import { useDashboardAggregateApiKeySync } from "@/lib/usage/use-dashboard-aggregate-api-key"
+import { useTeamBffTeamsAndApiKeys } from "@/lib/usage/use-team-bff-teams-and-api-keys"
 import { formatOccurredAtKst } from "@/lib/usage/format-occurred-at-kst"
 import type {
   PagedLogsResponse,
@@ -28,7 +35,13 @@ import type {
   UsageLogEntryResponse,
   UsageProviderFilter,
 } from "@/lib/usage/types"
-import { addKstDays, formatKstIsoDate } from "@/lib/usage/kst-dates"
+import { formatKstIsoDate } from "@/lib/usage/kst-dates"
+import {
+  logDataTabToDataContext,
+  persistLogDataTab,
+  readStoredLogDataTab,
+  type UsageLogDataTab,
+} from "@/lib/usage/usage-log-tab-storage"
 
 const LOGS_PAGE_SIZE = 20
 const LOG_PROVIDER_ALL = "__all__"
@@ -36,14 +49,9 @@ const LOG_API_KEY_ALL = "__all__"
 const LOG_REASONING_ALL = "__all__"
 const LOG_SUCCESS_ALL = "__all__"
 
-function toApiKeyLabel(item: UsageLogApiKeyItemResponse): string {
-  const alias = item.alias?.trim()
-  if (!alias) return "별칭 없음"
-  return item.status === "DELETED" ? `${alias} (삭제)` : alias
-}
-
-function isDeletedApiKeyItem(item: UsageLogApiKeyItemResponse): boolean {
-  return item.status === "DELETED"
+function logProviderToTeamDashboardFilter(provider: string): string {
+  if (provider === LOG_PROVIDER_ALL) return DASHBOARD_PROVIDER_ALL
+  return provider
 }
 
 function toLongOrZero(v: number | null | undefined): number {
@@ -84,21 +92,37 @@ function outputTokensTooltipContent() {
 }
 
 export function UsageLogPanel() {
+  const [logDataTab, setLogDataTab] = React.useState<UsageLogDataTab>("personal")
+  const [clientReady, setClientReady] = React.useState(false)
+  React.useLayoutEffect(() => {
+    setClientReady(true)
+  }, [])
+  const filterMode = logDataTab === "team" ? "log-team" : "log-personal"
+  const { settings, patch, replace } = useFilterStorage("usagelog", filterMode, { clientReady })
+  const logProvider = settings.provider
   const [logs, setLogs] = React.useState<PagedLogsResponse | null>(null)
   const [logsLoading, setLogsLoading] = React.useState(true)
   const [logsError, setLogsError] = React.useState<string | null>(null)
   const [logsPage, setLogsPage] = React.useState(0)
-  const [logProvider, setLogProvider] = React.useState<string>(LOG_PROVIDER_ALL)
-  const [apiKeyFilter, setApiKeyFilter] = React.useState<string>(LOG_API_KEY_ALL)
   const [reasoningFilter, setReasoningFilter] = React.useState<string>(LOG_REASONING_ALL)
   const [successFilter, setSuccessFilter] = React.useState<string>(LOG_SUCCESS_ALL)
-  const [apiKeyOptions, setApiKeyOptions] = React.useState<UsageLogApiKeyItemResponse[]>([])
+  const [personalApiKeyOptions, setPersonalApiKeyOptions] = React.useState<UsageLogApiKeyItemResponse[]>([])
   const [modelDraft, setModelDraft] = React.useState("")
   const [logRefresh, setLogRefresh] = React.useState(0)
   const [openAiDetailsRow, setOpenAiDetailsRow] = React.useState<UsageLogEntryResponse | null>(null)
   const [showAdvancedFilters, setShowAdvancedFilters] = React.useState(false)
 
   const appliedModelMask = modelDraft.trim()
+
+  React.useLayoutEffect(() => {
+    setLogDataTab(readStoredLogDataTab())
+  }, [])
+
+  const onLogDataTabChange = React.useCallback((tab: UsageLogDataTab) => {
+    persistLogDataTab(tab)
+    setLogDataTab(tab)
+    setLogsPage(0)
+  }, [])
 
   React.useEffect(() => {
     if (!openAiDetailsRow) return
@@ -118,49 +142,125 @@ export function UsageLogPanel() {
   const reasoningPresenceParam =
     reasoningFilter === "present" ? "present" : reasoningFilter === "absent" ? "absent" : undefined
 
-  const activeApiKeyOptions = React.useMemo(
-    () => apiKeyOptions.filter((x) => !isDeletedApiKeyItem(x)),
-    [apiKeyOptions]
-  )
-  const deletedApiKeyOptions = React.useMemo(
-    () => apiKeyOptions.filter((x) => isDeletedApiKeyItem(x)),
-    [apiKeyOptions]
+  const logDataContext = logDataTabToDataContext(logDataTab)
+
+  const teamBff = useTeamBffTeamsAndApiKeys(logDataTab === "team")
+
+  const teamApiKeyMenuItems = React.useMemo(() => {
+    if (logDataTab !== "team") return [] as UsageLogApiKeyItemResponse[]
+    return teamBffRowsToUsageMenuItems(
+      filterTeamBffRowsByProvider(
+        teamBff.teamMemberRawApiKeyRows,
+        logProviderToTeamDashboardFilter(logProvider),
+      ),
+    )
+  }, [logDataTab, teamBff.teamMemberRawApiKeyRows, logProvider])
+
+  useDashboardAggregateApiKeySync(
+    teamApiKeyMenuItems,
+    settings.apiKeyId,
+    (id: string) => patch({ apiKeyId: id }),
+    logDataTab === "team" && Boolean(teamBff.teamMemberTeamId),
   )
 
+  /* eslint-disable react-hooks/exhaustive-deps -- `teamBff` wrapper is a new object each render; only listed fields are used. */
   React.useEffect(() => {
+    if (!clientReady || logDataTab !== "team") return
+    const id = settings.teamId?.trim()
+    if (!id) return
+    if (!teamBff.memberTeams.some((x) => x.id === id)) return
+    if (teamBff.teamMemberTeamId === id) return
+    teamBff.setTeamMemberTeamId(id)
+  }, [
+    clientReady,
+    logDataTab,
+    settings.teamId,
+    teamBff.memberTeams,
+    teamBff.teamMemberTeamId,
+    teamBff.setTeamMemberTeamId,
+  ])
+  /* eslint-enable react-hooks/exhaustive-deps */
+
+  const apiKeyOptions = logDataTab === "team" ? teamApiKeyMenuItems : personalApiKeyOptions
+
+  React.useEffect(() => {
+    if (logDataTab !== "personal") return
     let cancelled = false
     ;(async () => {
       try {
-        const q = buildUsageQuery({ provider: providerParam })
+        const q = buildUsageQuery({ provider: providerParam, dataContext: logDataContext })
         const data = await fetchUsageJson<UsageLogApiKeyItemResponse[]>(`logs/api-keys${q}`)
         if (!cancelled) {
-          setApiKeyOptions(Array.isArray(data) ? data : [])
+          setPersonalApiKeyOptions(Array.isArray(data) ? data : [])
         }
       } catch {
-        if (!cancelled) setApiKeyOptions([])
+        if (!cancelled) setPersonalApiKeyOptions([])
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [logProvider, providerParam, logRefresh])
+  }, [logDataTab, logProvider, providerParam, logRefresh, logDataContext])
 
   React.useEffect(() => {
     let cancelled = false
+
+    if (logDataTab === "team") {
+      if (teamBff.memberTeamsLoading) {
+        setLogsLoading(true)
+        return () => {
+          cancelled = true
+        }
+      }
+      if (teamBff.memberTeams.length === 0) {
+        if (!cancelled) {
+          setLogsLoading(false)
+          setLogsError(null)
+          setLogs({
+            content: [],
+            page: 0,
+            size: LOGS_PAGE_SIZE,
+            totalElements: 0,
+            totalPages: 1,
+          })
+        }
+        return () => {
+          cancelled = true
+        }
+      }
+      if (!teamBff.teamMemberTeamId || teamBff.teamMemberKeysLoading) {
+        setLogsLoading(true)
+        return () => {
+          cancelled = true
+        }
+      }
+    }
+
     setLogsLoading(true)
     setLogsError(null)
     ;(async () => {
       try {
-        const t = formatKstIsoDate()
-        const f30 = addKstDays(t, -29)
+        const from = settings.period.from
+        const to = settings.period.to
+        const apiKeyId =
+          logDataTab === "team"
+            ? settings.apiKeyId !== DASHBOARD_API_KEY_ALL && settings.apiKeyId !== DASHBOARD_API_KEY_NONE
+              ? settings.apiKeyId
+              : undefined
+            : settings.apiKeyId !== LOG_API_KEY_ALL && settings.apiKeyId
+              ? settings.apiKeyId
+              : undefined
+        const teamId =
+          logDataTab === "team" && teamBff.teamMemberTeamId ? teamBff.teamMemberTeamId : undefined
         const q = buildUsageQuery({
-          from: f30,
-          to: t,
+          from,
+          to,
           page: logsPage,
           size: LOGS_PAGE_SIZE,
           provider: providerParam,
-          apiKeyId:
-            apiKeyFilter !== LOG_API_KEY_ALL && apiKeyFilter ? apiKeyFilter : undefined,
+          dataContext: logDataContext,
+          apiKeyId,
+          teamId,
           reasoningPresence: reasoningPresenceParam,
           requestSuccessful: requestSuccessfulParam,
           model: appliedModelMask || undefined,
@@ -181,12 +281,22 @@ export function UsageLogPanel() {
   }, [
     logsPage,
     modelDraft,
+    appliedModelMask,
     logProvider,
     providerParam,
-    apiKeyFilter,
+    settings.apiKeyId,
+    logDataTab,
+    teamBff.memberTeamsLoading,
+    teamBff.memberTeams.length,
+    teamBff.teamMemberTeamId,
+    teamBff.teamMemberKeysLoading,
     reasoningPresenceParam,
     requestSuccessfulParam,
     logRefresh,
+    logDataContext,
+    settings.period.from,
+    settings.period.to,
+    settings.period.mode,
   ])
 
   const hasAdvancedReasoning = reasoningFilter !== LOG_REASONING_ALL
@@ -194,17 +304,58 @@ export function UsageLogPanel() {
   const hasAnyAdvancedFilter = hasAdvancedReasoning || hasAdvancedSuccess
 
   const resetAllFilters = React.useCallback(() => {
+    const mode: UsageFilterMode = logDataTab === "team" ? "log-team" : "log-personal"
+    const t = formatKstIsoDate()
+    const base = defaultSettingsFor("usagelog", mode, t)
+    if (mode === "log-team" && teamBff.teamMemberTeamId) {
+      replace({ ...base, teamId: teamBff.teamMemberTeamId })
+    } else {
+      replace(base)
+    }
     setLogsPage(0)
-    setLogProvider(LOG_PROVIDER_ALL)
-    setApiKeyFilter(LOG_API_KEY_ALL)
     setReasoningFilter(LOG_REASONING_ALL)
     setSuccessFilter(LOG_SUCCESS_ALL)
     setModelDraft("")
     setLogRefresh((n) => n + 1)
-  }, [])
+  }, [logDataTab, replace, teamBff.teamMemberTeamId])
 
   return (
-    <div className="mx-auto w-full max-w-[86rem] rounded-lg border border-border p-4 shadow-sm">
+    <div className="w-full max-w-none rounded-lg border border-border p-4 shadow-sm">
+      <div
+        className="mb-5 flex gap-0 border-b border-border"
+        role="tablist"
+        aria-label="로그 범위"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={logDataTab === "personal"}
+          className={[
+            "-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
+            logDataTab === "personal"
+              ? "border-primary text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground",
+          ].join(" ")}
+          onClick={() => onLogDataTabChange("personal")}
+        >
+          개인 로그
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={logDataTab === "team"}
+          className={[
+            "-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
+            logDataTab === "team"
+              ? "border-primary text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground",
+          ].join(" ")}
+          onClick={() => onLogDataTabChange("team")}
+        >
+          팀 로그
+        </button>
+      </div>
+
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">발생 시각은 한국 표준시(KST)입니다.</p>
         <Button type="button" variant="outline" size="sm" onClick={() => setLogRefresh((n) => n + 1)}>
@@ -213,62 +364,61 @@ export function UsageLogPanel() {
       </div>
 
       <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
-        <div className="space-y-2 sm:w-40">
-          <Label htmlFor="log-provider">공급자</Label>
-          <Select
-            value={logProvider}
-            onValueChange={(v) => {
+        <UsageFilterBar
+          variant="usageLog"
+          idPrefix="log"
+          provider={logProvider}
+          onProviderChange={(v) => {
+            setLogsPage(0)
+            patch({
+              provider: v,
+              apiKeyId: logDataTab === "team" ? DASHBOARD_API_KEY_ALL : LOG_API_KEY_ALL,
+            })
+          }}
+          period={settings.period}
+          onPeriodChange={(p) => {
+            setLogsPage(0)
+            patch({ period: p })
+          }}
+          periodCustomNote="기간 지정 조회는 최대 1년(366일)까지 가능합니다."
+          showTeam={logDataTab === "team"}
+          team={
+            logDataTab === "team"
+              ? {
+                  value: teamBff.teamMemberTeamId,
+                  onValueChange: (id) => {
+                    setLogsPage(0)
+                    teamBff.setTeamMemberTeamId(id)
+                    patch({
+                      teamId: id,
+                      provider: LOG_PROVIDER_ALL,
+                      apiKeyId: DASHBOARD_API_KEY_ALL,
+                    })
+                  },
+                  teams: teamBff.memberTeams,
+                  loading: teamBff.memberTeamsLoading,
+                  selectId: "log-team",
+                  footer: teamBff.memberTeamsErr ? (
+                    <p className="text-xs text-destructive">{teamBff.memberTeamsErr}</p>
+                  ) : null,
+                }
+              : undefined
+          }
+          apiKey={{
+            value: settings.apiKeyId,
+            onValueChange: (v) => {
               setLogsPage(0)
-              setLogProvider(v)
-              setApiKeyFilter(LOG_API_KEY_ALL)
-            }}
-          >
-            <SelectTrigger id="log-provider" className="w-full">
-              <SelectValue placeholder="전체" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={LOG_PROVIDER_ALL}>전체</SelectItem>
-              <SelectItem value="OPENAI">OpenAI</SelectItem>
-              <SelectItem value="ANTHROPIC">Anthropic</SelectItem>
-              <SelectItem value="GOOGLE">Google</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-2 sm:w-56">
-          <Label htmlFor="log-apikey">API Key</Label>
-          <Select value={apiKeyFilter} onValueChange={(v) => { setLogsPage(0); setApiKeyFilter(v) }}>
-            <SelectTrigger id="log-apikey" className="w-full">
-              <SelectValue placeholder="전체" />
-            </SelectTrigger>
-            <SelectContent className="max-h-[min(70vh,26rem)]">
-              <SelectItem value={LOG_API_KEY_ALL}>전체</SelectItem>
-              {activeApiKeyOptions.length > 0 ? (
-                <SelectGroup>
-                  <SelectLabel>사용 중</SelectLabel>
-                  {activeApiKeyOptions.map((item) => (
-                    <SelectItem key={item.apiKeyId} value={item.apiKeyId}>
-                      {toApiKeyLabel(item)}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              ) : null}
-              {deletedApiKeyOptions.length > 0 ? (
-                <>
-                  {activeApiKeyOptions.length > 0 ? <SelectSeparator /> : null}
-                  <SelectGroup>
-                    <SelectLabel>삭제됨 (로그 보존)</SelectLabel>
-                    {deletedApiKeyOptions.map((item) => (
-                      <SelectItem key={item.apiKeyId} value={item.apiKeyId}>
-                        {toApiKeyLabel(item)}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </>
-              ) : null}
-            </SelectContent>
-          </Select>
-        </div>
+              patch({ apiKeyId: v })
+            },
+            menuItems: apiKeyOptions,
+            keysLoading: logDataTab === "team" ? teamBff.teamMemberKeysLoading : false,
+            allValue: logDataTab === "team" ? DASHBOARD_API_KEY_ALL : LOG_API_KEY_ALL,
+            showAllOption: true,
+            noneValue: DASHBOARD_API_KEY_NONE,
+            showNoneOption: logDataTab === "team" && apiKeyOptions.length === 0,
+            selectId: "log-apikey",
+          }}
+        />
 
         <div className="space-y-2 sm:w-56">
           <Label htmlFor="log-model">모델 (부분 일치)</Label>
@@ -422,7 +572,20 @@ export function UsageLogPanel() {
       ) : null}
 
       {logsLoading ? (
-        <p className="text-sm text-muted-foreground">로그 불러오는 중…</p>
+        <div
+          className="space-y-3 rounded-md border border-border bg-muted/15 p-4"
+          aria-busy="true"
+          aria-label="로그 로딩 중"
+        >
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
+            <span>로그를 불러오는 중입니다…</span>
+          </div>
+          <div className="space-y-2">
+            <div className="h-3 max-w-xs w-[40%] rounded bg-muted animate-pulse" />
+            <div className="h-40 rounded bg-muted/70 animate-pulse" />
+          </div>
+        </div>
       ) : !logs || logs.content.length === 0 ? (
         <p className="text-sm text-muted-foreground">사용 데이터가 없습니다</p>
       ) : (

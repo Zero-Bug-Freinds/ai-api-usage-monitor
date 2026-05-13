@@ -2,6 +2,7 @@ package com.zerobugfreinds.ai_agent_service.mq;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.zerobugfreinds.ai_agent_service.service.ApiKeyUsageDataCleanupService;
 import com.zerobugfreinds.ai_agent_service.service.EventDebugService;
 import com.zerobugfreinds.ai_agent_service.service.TeamApiKeySnapshotService;
 import org.slf4j.Logger;
@@ -30,15 +31,18 @@ public class TeamApiKeyStatusEventListener {
 
 	private final ObjectMapper objectMapper;
 	private final TeamApiKeySnapshotService snapshotService;
+	private final ApiKeyUsageDataCleanupService apiKeyUsageDataCleanupService;
 	private final EventDebugService eventDebugService;
 
 	public TeamApiKeyStatusEventListener(
 			ObjectMapper objectMapper,
 			TeamApiKeySnapshotService snapshotService,
+			ApiKeyUsageDataCleanupService apiKeyUsageDataCleanupService,
 			EventDebugService eventDebugService
 	) {
 		this.objectMapper = objectMapper;
 		this.snapshotService = snapshotService;
+		this.apiKeyUsageDataCleanupService = apiKeyUsageDataCleanupService;
 		this.eventDebugService = eventDebugService;
 	}
 
@@ -64,6 +68,8 @@ public class TeamApiKeyStatusEventListener {
 			Instant occurredAt = root.hasNonNull("occurredAt")
 					? Instant.parse(root.get("occurredAt").asText())
 					: Instant.now();
+			String status = asText(root, "status");
+			Boolean retainLogs = asBoolean(root, "retainLogs");
 
 			snapshotService.upsert(
 					new TeamApiKeySnapshotService.TeamApiKeySnapshot(
@@ -74,11 +80,15 @@ public class TeamApiKeyStatusEventListener {
 							asText(root, "visibility"),
 							asText(root, "alias"),
 							asText(root, "provider"),
-							asText(root, "status"),
-							asBoolean(root, "retainLogs"),
+							status,
+							retainLogs,
+							asText(root, "keyHash"),
 							occurredAt
 					)
 			);
+			if ("DELETED".equals(status) && Boolean.FALSE.equals(retainLogs)) {
+				apiKeyUsageDataCleanupService.purgeUsageProjectionsExcludingBillingSignals(String.valueOf(teamApiKeyId));
+			}
 		} catch (Exception ex) {
 			log.error("Failed to handle team API key status event", ex);
 			throw new IllegalStateException("team api key status event handling failed", ex);

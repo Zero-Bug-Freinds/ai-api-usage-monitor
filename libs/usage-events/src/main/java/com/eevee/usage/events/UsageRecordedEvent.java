@@ -11,6 +11,9 @@ import java.util.UUID;
 /**
  * Published by Proxy Service when usage is known (or partially known) after an upstream call.
  * Consumers: Usage Tracking, Billing, Analytics, Quota.
+ * <p>
+ * {@code metadataOwnerUserId}: optional canonical owner id for {@code api_key_metadata} PERSONAL rows (aligns with
+ * Identity MQ when set). When null, usage-service falls back to {@link #userId}. Logs still use {@link #userId}.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -22,6 +25,7 @@ public record UsageRecordedEvent(
         String organizationId,
         String teamId,
         String apiKeyId,
+        String apiKeyAlias,
         String teamApiKeyId,
         String apiKeyFingerprint,
         String apiKeySource,
@@ -34,7 +38,8 @@ public record UsageRecordedEvent(
         Long latencyMs,
         Boolean streaming,
         Boolean requestSuccessful,
-        Integer upstreamStatusCode
+        Integer upstreamStatusCode,
+        String metadataOwnerUserId
 ) {
     public UsageRecordedEvent {
         if (eventId == null) {
@@ -46,6 +51,105 @@ public record UsageRecordedEvent(
         if (requestSuccessful == null) {
             requestSuccessful = Boolean.TRUE;
         }
+        if (metadataOwnerUserId != null && metadataOwnerUserId.isBlank()) {
+            metadataOwnerUserId = null;
+        }
+    }
+
+    public UsageRecordedEvent(
+            UUID eventId,
+            Instant occurredAt,
+            String correlationId,
+            String userId,
+            String organizationId,
+            String teamId,
+            String apiKeyId,
+            String apiKeyAlias,
+            String teamApiKeyId,
+            String apiKeyFingerprint,
+            String apiKeySource,
+            AiProvider provider,
+            String model,
+            TokenUsage tokenUsage,
+            BigDecimal estimatedCost,
+            String requestPath,
+            String upstreamHost,
+            Boolean streaming,
+            Boolean requestSuccessful,
+            Integer upstreamStatusCode
+    ) {
+        this(
+                eventId,
+                occurredAt,
+                correlationId,
+                userId,
+                organizationId,
+                teamId,
+                apiKeyId,
+                apiKeyAlias,
+                teamApiKeyId,
+                apiKeyFingerprint,
+                apiKeySource,
+                provider,
+                model,
+                tokenUsage,
+                estimatedCost,
+                requestPath,
+                upstreamHost,
+                null,
+                streaming,
+                requestSuccessful,
+                upstreamStatusCode,
+                null
+        );
+    }
+
+    public UsageRecordedEvent(
+            UUID eventId,
+            Instant occurredAt,
+            String correlationId,
+            String userId,
+            String organizationId,
+            String teamId,
+            String apiKeyId,
+            String teamApiKeyId,
+            String apiKeyFingerprint,
+            String apiKeySource,
+            AiProvider provider,
+            String model,
+            TokenUsage tokenUsage,
+            BigDecimal estimatedCost,
+            String requestPath,
+            String upstreamHost,
+            Long latencyMs,
+            Boolean streaming,
+            Boolean requestSuccessful,
+            Integer upstreamStatusCode
+    ) {
+        this(
+                eventId,
+                occurredAt,
+                correlationId,
+                userId,
+                organizationId,
+                teamId,
+                apiKeyId,
+                null,
+                teamApiKeyId,
+                apiKeyFingerprint,
+                apiKeySource,
+                provider,
+                model,
+                tokenUsage,
+                estimatedCost,
+                requestPath,
+                upstreamHost,
+                latencyMs,
+                streaming,
+                requestSuccessful,
+                upstreamStatusCode,
+                null
+        );
     }
 
     public UsageRecordedEvent(
@@ -77,6 +181,7 @@ public record UsageRecordedEvent(
                 organizationId,
                 teamId,
                 apiKeyId,
+                null,
                 teamApiKeyId,
                 apiKeyFingerprint,
                 apiKeySource,
@@ -89,7 +194,8 @@ public record UsageRecordedEvent(
                 null,
                 streaming,
                 requestSuccessful,
-                upstreamStatusCode
+                upstreamStatusCode,
+                null
         );
     }
 }
