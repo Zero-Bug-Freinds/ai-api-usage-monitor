@@ -78,8 +78,10 @@ public class IdentityApiKeySnapshotService {
 		);
 	}
 
-<<<<<<< Updated upstream
 	public void delete(ExternalApiKeyDeletedEvent event) {
+		if (event == null || event.userId() == null || event.apiKeyId() == null) {
+			return;
+		}
 		Map<Long, ApiKeySnapshot> userKeys = snapshotsByUserId.get(event.userId());
 		if (userKeys == null) {
 			return;
@@ -88,52 +90,6 @@ public class IdentityApiKeySnapshotService {
 		if (userKeys.isEmpty()) {
 			snapshotsByUserId.remove(event.userId());
 		}
-=======
-	/**
-	 * 물리 삭제 이벤트: {@code retainLogs=false} 면 projection 행 제거(usage 로그·집계 purge 는 리스너).
-	 * {@code retainLogs=true} 면 usage-service {@code ApiKeyMetadataSyncService} 와 같이 행을 유지하고
-	 * 상태만 {@code DELETED} 로 남겨 대시보드·비서 UI에서 “삭제됐지만 로그 보존” 키를 계속 조회할 수 있게 한다.
-	 */
-	public void handleExternalApiKeyDeleted(ExternalApiKeyDeletedEvent event) {
-		if (event.userId() == null || event.userId().isBlank() || event.apiKeyId() == null) {
-			throw new IllegalArgumentException("userId and apiKeyId are required");
-		}
-		if (!event.retainLogs()) {
-			snapshotRepository.deleteByUserIdAndKeyId(event.userId(), event.apiKeyId());
-			return;
-		}
-		Instant updatedAt = event.occurredAt() != null ? event.occurredAt() : Instant.now();
-		IdentityApiKeySnapshotEntity current = snapshotRepository
-				.findByUserIdAndKeyId(event.userId(), event.apiKeyId())
-				.orElse(null);
-
-		String alias = textOrElse(event.alias(), current != null ? current.getAlias() : null);
-		String provider = textOrElse(event.provider(), current != null ? current.getProvider() : null);
-		String visibility = current != null ? current.getVisibility() : null;
-		BigDecimal budget = current != null ? current.getMonthlyBudgetUsd() : null;
-		String keyHash = current != null ? current.getKeyHash() : null;
-
-		snapshotRepository.save(
-				new IdentityApiKeySnapshotEntity(
-						event.userId(),
-						event.apiKeyId(),
-						alias,
-						provider,
-						visibility,
-						"DELETED",
-						budget,
-						keyHash,
-						updatedAt
-				)
-		);
-	}
-
-	private static String textOrElse(String preferred, String fallback) {
-		if (preferred != null && !preferred.isBlank()) {
-			return preferred.trim();
-		}
-		return fallback != null ? fallback : "";
->>>>>>> Stashed changes
 	}
 
 	public List<ApiKeySnapshot> findByUserId(Long userId) {

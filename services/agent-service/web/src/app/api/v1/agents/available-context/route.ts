@@ -259,23 +259,20 @@ function resolveCurrentUserId(
     return fromHeader
   }
 
-<<<<<<< Updated upstream
-  const fromKeys = keys.find((item) => Number.isFinite(item.userId) && item.userId > 0)?.userId ?? null
-  return fromKeys
-=======
   const fromKeysEntry = keys.find(
     (item) => typeof item.userId === "number" && Number.isFinite(item.userId) && item.userId > 0,
   )
   if (fromKeysEntry != null && typeof fromKeysEntry.userId === "number") {
     return fromKeysEntry.userId
   }
-  const fallbackUserId = (process.env.AI_AGENT_FALLBACK_USER_ID ?? "1").trim()
-  const parsedFallback = Number(fallbackUserId)
-  if (Number.isFinite(parsedFallback) && parsedFallback > 0) {
-    return parsedFallback
+  const fallbackRaw = (process.env.AI_AGENT_FALLBACK_USER_ID ?? "").trim()
+  if (fallbackRaw.length > 0) {
+    const parsedFallback = Number(fallbackRaw)
+    if (Number.isFinite(parsedFallback) && parsedFallback > 0) {
+      return parsedFallback
+    }
   }
-  return 1
->>>>>>> Stashed changes
+  return null
 }
 
 function identitySnapshotBelongsToViewer(
@@ -434,7 +431,6 @@ export async function GET(request: Request) {
     const derivedHeaderEmail = emailFromHeaders(request)
     const resolvedEmailHeader = sessionEmail ?? derivedHeaderEmail
     const backendOrigin = await resolveBackendOrigin()
-<<<<<<< Updated upstream
     const forwardedUserId = userIdFromHeaders(request)
     const forwardedHeaders: HeadersInit = {}
     if (forwardedUserId.trim().length > 0) {
@@ -443,20 +439,14 @@ export async function GET(request: Request) {
     if (resolvedEmailHeader && resolvedEmailHeader.trim().length > 0) {
       forwardedHeaders["x-user-email"] = resolvedEmailHeader.trim()
     }
-    const [keys, billingSignals, usagePredictionSignals, dailyCumulativeTokens, snapshotTeamApiKeys] = backendOrigin
-=======
-    const forwardedHeaders = buildForwardHeaders(request, resolvedEmailHeader)
     const strictUserId = userIdAsNumber(request)
-    const mailForIdentityKeys = (resolvedEmailHeader ?? "").trim()
-    const identityApiKeyPath = mailForIdentityKeys.includes("@")
-      ? `/api/v1/agents/identity-api-keys/${encodeURIComponent(mailForIdentityKeys)}`
-      : strictUserId != null
+    const identityApiKeysPath =
+      strictUserId != null
         ? `/api/v1/agents/identity-api-keys/${strictUserId}`
         : "/api/v1/agents/identity-api-keys"
-    const [keysInitial, billingSignals, usagePredictionSignals, dailyCumulativeTokens, snapshotTeamApiKeys] = backendOrigin
->>>>>>> Stashed changes
+    const [keys, billingSignals, usagePredictionSignals, dailyCumulativeTokens, snapshotTeamApiKeys] = backendOrigin
       ? await Promise.all([
-          fetchWithTimeout(`${backendOrigin}/api/v1/agents/identity-api-keys`, CONTEXT_FETCH_TIMEOUT_MS, {
+          fetchWithTimeout(`${backendOrigin}${identityApiKeysPath}`, CONTEXT_FETCH_TIMEOUT_MS, {
             method: "GET",
             headers: forwardedHeaders,
           }).then(async (response) => (response.ok ? (((await response.json()) as IdentitySnapshot[]) ?? []) : [])),
