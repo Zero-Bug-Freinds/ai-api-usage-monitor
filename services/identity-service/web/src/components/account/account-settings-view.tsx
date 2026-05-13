@@ -625,6 +625,8 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
                             onChange={(e) => setEditAliasValue(e.target.value)}
                             disabled={saveEditLoadingId === row.id}
                             autoComplete="off"
+                            required
+                            aria-label="별칭 (필수)"
                           />
                           <input
                             className="h-8 rounded-md border border-input bg-background px-2 text-sm"
@@ -744,7 +746,7 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
 
           <div className="grid gap-1.5">
             <label className="text-sm font-medium" htmlFor="external-key-alias">
-              별칭(alias)
+              별칭(alias) (필수)
             </label>
             <input
               id="external-key-alias"
