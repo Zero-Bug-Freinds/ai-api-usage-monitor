@@ -25,7 +25,14 @@ public class BillingSignalSnapshotEntity {
 	@Column(length = 40)
 	private String subjectType;
 
+	@Column(precision = 19, scale = 4)
 	private BigDecimal latestEstimatedCostUsd;
+
+	/**
+	 * Sum of {@code UsageCostFinalizedEvent.estimatedCostUsd} for this api key (survives key deletion when billing stops emitting).
+	 */
+	@Column(precision = 19, scale = 4)
+	private BigDecimal accumulatedCostUsd;
 
 	private Instant latestFinalizedAt;
 
@@ -83,6 +90,10 @@ public class BillingSignalSnapshotEntity {
 		return latestEstimatedCostUsd;
 	}
 
+	public BigDecimal getAccumulatedCostUsd() {
+		return accumulatedCostUsd;
+	}
+
 	public Instant getLatestFinalizedAt() {
 		return latestFinalizedAt;
 	}
@@ -113,6 +124,10 @@ public class BillingSignalSnapshotEntity {
 
 	public void setLatestEstimatedCostUsd(BigDecimal latestEstimatedCostUsd) {
 		this.latestEstimatedCostUsd = latestEstimatedCostUsd;
+	}
+
+	public void setAccumulatedCostUsd(BigDecimal accumulatedCostUsd) {
+		this.accumulatedCostUsd = accumulatedCostUsd;
 	}
 
 	public void setLatestFinalizedAt(Instant latestFinalizedAt) {

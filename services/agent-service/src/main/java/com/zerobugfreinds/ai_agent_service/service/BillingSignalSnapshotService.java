@@ -32,16 +32,26 @@ public class BillingSignalSnapshotService {
 			UsageCostFinalizedEvent event
 	) {
 		if (apiKeyId == null || apiKeyId.isBlank()) {
+			log.warn("upsertUsageCost skipped: blank apiKeyId");
 			return;
 		}
+		String normalizedKey = apiKeyId.trim();
+		if (event == null) {
+			log.warn("upsertUsageCost skipped: null event for apiKeyId={}", normalizedKey);
+			return;
+		}
+		BigDecimal incomingCost = event.estimatedCostUsd() != null ? event.estimatedCostUsd() : BigDecimal.ZERO;
+		if (event.estimatedCostUsd() == null) {
+			log.warn("upsertUsageCost apiKeyId={}: estimatedCostUsd was null, using 0", normalizedKey);
+		}
 
-		BillingSignalSnapshotEntity entity = snapshotRepository.findByApiKeyId(apiKeyId)
+		BillingSignalSnapshotEntity entity = snapshotRepository.findByApiKeyId(normalizedKey)
 				.orElse(new BillingSignalSnapshotEntity(
-						apiKeyId,
+						normalizedKey,
 						userId,
 						teamId,
 						subjectType,
-						event.estimatedCostUsd(),
+						incomingCost,
 						event.finalizedAt(),
 						event.provider() != null ? event.provider().name() : null,
 						event.model(),
@@ -50,7 +60,10 @@ public class BillingSignalSnapshotService {
 		entity.setUserId(userId);
 		entity.setTeamId(teamId);
 		entity.setSubjectType(subjectType);
-		entity.setLatestEstimatedCostUsd(event.estimatedCostUsd());
+		entity.setLatestEstimatedCostUsd(incomingCost);
+		BigDecimal prevAccum =
+				entity.getAccumulatedCostUsd() != null ? entity.getAccumulatedCostUsd() : BigDecimal.ZERO;
+		entity.setAccumulatedCostUsd(prevAccum.add(incomingCost));
 		entity.setLatestFinalizedAt(event.finalizedAt());
 		entity.setProvider(event.provider() != null ? event.provider().name() : null);
 		entity.setModel(event.model());
@@ -79,6 +92,14 @@ public class BillingSignalSnapshotService {
 			correctedCost = BigDecimal.ZERO;
 		}
 
+		BigDecimal prevAccum = current != null && current.getAccumulatedCostUsd() != null
+				? current.getAccumulatedCostUsd()
+				: BigDecimal.ZERO;
+		BigDecimal correctedAccum = prevAccum.add(delta);
+		if (correctedAccum.signum() < 0) {
+			correctedAccum = BigDecimal.ZERO;
+		}
+
 		String nextUserId = userId != null && !userId.isBlank() ? userId : (current != null ? current.getUserId() : null);
 		String nextTeamId = teamId != null && !teamId.isBlank() ? teamId : (current != null ? current.getTeamId() : null);
 		String nextSubjectType = subjectType != null && !subjectType.isBlank()
@@ -101,6 +122,7 @@ public class BillingSignalSnapshotService {
 		entity.setTeamId(nextTeamId);
 		entity.setSubjectType(nextSubjectType);
 		entity.setLatestEstimatedCostUsd(correctedCost);
+		entity.setAccumulatedCostUsd(correctedAccum);
 		entity.setLatestFinalizedAt(nextFinalizedAt);
 		entity.setProvider(nextProvider);
 		entity.setModel(nextModel);
@@ -157,6 +179,7 @@ public class BillingSignalSnapshotService {
 			String teamId,
 			String subjectType,
 			BigDecimal latestEstimatedCostUsd,
+			BigDecimal accumulatedCostUsd,
 			Instant latestFinalizedAt,
 			String provider,
 			String model,
@@ -171,6 +194,7 @@ public class BillingSignalSnapshotService {
 				entity.getTeamId(),
 				entity.getSubjectType(),
 				entity.getLatestEstimatedCostUsd(),
+				entity.getAccumulatedCostUsd(),
 				entity.getLatestFinalizedAt(),
 				entity.getProvider(),
 				entity.getModel(),

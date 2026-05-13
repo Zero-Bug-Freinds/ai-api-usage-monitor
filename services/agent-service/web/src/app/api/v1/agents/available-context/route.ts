@@ -26,8 +26,12 @@ type TeamApiKeySnapshot = {
 }
 
 type BillingSignal = {
-  apiKeyId: string
+  /** Backend uses string id; normalize with String() when indexing maps. */
+  apiKeyId: string | number
   latestEstimatedCostUsd?: number | null
+  /** Sum of usage.cost.finalized event costs; retained after key delete. */
+  accumulatedCostUsd?: number | null
+  provider?: string | null
 }
 
 type UsagePredictionSignal = {
@@ -106,8 +110,58 @@ type IdentityBudgetResponse = {
   } | null
 }
 
+function billingSignalMapKey(raw: string | number | null | undefined): string {
+  if (raw === undefined || raw === null) return ""
+  return String(raw).trim()
+}
+
+function lifetimeSpendForKey(
+  keyId: number,
+  lifetimeSpendByKey: Map<number, number>,
+  signal?: BillingSignal,
+): number {
+  const fromBillingRange = toNumber(lifetimeSpendByKey.get(keyId), 0)
+  const fromEventSum = toNumber(signal?.accumulatedCostUsd, 0)
+  const fromLastEvent = toNumber(signal?.latestEstimatedCostUsd, 0)
+  return Math.max(fromBillingRange, fromEventSum, fromLastEvent)
+}
+
+/** Identity/팀 스냅샷 + billing 신호에 등장하는 모든 키로 과금 요약을 조회한다(삭제된 키·해시 병합 시 누락 방지). */
+function collectAllKnownKeysForBillingFetch(
+  keys: IdentitySnapshot[],
+  teamApiKeys: TeamApiKeySnapshot[],
+  billingSignals: BillingSignal[],
+): Array<{ apiKeyId: number; provider: string }> {
+  const byId = new Map<number, string>()
+  for (const item of keys) {
+    const id = toNumber(item.keyId, 0)
+    if (id <= 0) continue
+    const p = (item.provider ?? "").trim() || "UNKNOWN"
+    byId.set(id, p)
+  }
+  for (const item of teamApiKeys) {
+    const id = toNumber(item.teamApiKeyId, 0)
+    if (id <= 0) continue
+    if (byId.has(id)) continue
+    const p = (item.provider ?? "").trim() || "UNKNOWN"
+    byId.set(id, p)
+  }
+  for (const s of billingSignals) {
+    const id = toNumber(s.apiKeyId, 0)
+    if (id <= 0) continue
+    if (byId.has(id)) continue
+    const p = (s.provider ?? "").trim() || "UNKNOWN"
+    byId.set(id, p)
+  }
+  return Array.from(byId.entries()).map(([apiKeyId, provider]) => ({ apiKeyId, provider }))
+}
+
 const ORIGIN_PROBE_TIMEOUT_MS = 3000
 const CONTEXT_FETCH_TIMEOUT_MS = 10000
+
+function hasUsableKeyAlias(alias: string | null | undefined): boolean {
+  return (alias ?? "").trim().length > 0
+}
 
 type SessionApiResponse = {
   success?: boolean
@@ -256,12 +310,30 @@ function resolveBillingUserId(primaryUserId?: string, fallbackUserId?: string): 
   return fallback
 }
 
-function billingUserIdCandidates(request: Request, email: string | null, fallbackUserId?: string): string[] {
+function billingUserIdCandidates(
+  request: Request,
+  email: string | null,
+  fallbackUserId?: string,
+  extraCandidates: string[] = [],
+): string[] {
   const primary = userIdFromHeaders(request).trim()
   const fallback = (fallbackUserId ?? "").trim()
   const mail = (email ?? "").trim()
-  const ordered = [resolveBillingUserId(primary, fallback), mail, fallback, primary]
+  const ordered = [resolveBillingUserId(primary, fallback), mail, fallback, primary, ...extraCandidates.map((v) => v.trim())]
   return Array.from(new Set(ordered.filter((value) => value.length > 0)))
+}
+
+function billingProviderCandidates(rawProvider: string): string[] {
+  const normalized = (rawProvider ?? "").trim().toUpperCase()
+  const supported = ["OPENAI", "ANTHROPIC", "GOOGLE"]
+  /** Billing aggregates Gemini usage under {@link AiProvider#GOOGLE}; Identity may still store GEMINI. */
+  if (normalized === "GEMINI") {
+    return ["GOOGLE"]
+  }
+  if (supported.includes(normalized)) {
+    return [normalized]
+  }
+  return supported
 }
 function userIdFromHeaders(request: Request): string {
   const candidates = [
@@ -534,13 +606,15 @@ async function fetchTeamCatalogFromTeamService(request: Request, candidateUserId
           for (const key of teamKeys) {
             const teamApiKeyId = toNumber(key.apiKeyId, 0)
             if (teamApiKeyId <= 0) continue
+            const aliasTrimmed = (key.alias ?? "").trim()
+            if (!hasUsableKeyAlias(aliasTrimmed)) continue
             keys.push({
               teamId,
               teamName,
               teamApiKeyId,
               ownerUserId: userId,
               visibility: "TEAM",
-              alias: (key.alias ?? "").trim() || `team-key-${teamApiKeyId}`,
+              alias: aliasTrimmed,
               provider: (key.provider ?? "").trim() || "UNKNOWN",
               status: "ACTIVE",
               monthlyBudgetUsd: toNumber(key.monthlyBudgetUsd, 0),
@@ -564,7 +638,46 @@ function toNumber(value: unknown, fallback = 0): number {
     const parsed = Number(value)
     if (Number.isFinite(parsed)) return parsed
   }
+  if (typeof value === "bigint") {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
   return fallback
+}
+
+/** Agent `BillingKeySignal` JSON: camelCase 기본 + snake_case·프록시 변형 대비. */
+function firstDefined<T>(...values: (T | null | undefined)[]): T | undefined {
+  for (const v of values) {
+    if (v !== undefined && v !== null) return v
+  }
+  return undefined
+}
+
+function parseBillingSignalRow(raw: unknown): BillingSignal | null {
+  if (!raw || typeof raw !== "object") return null
+  const o = raw as Record<string, unknown>
+  const idRaw = firstDefined(o.apiKeyId, o.api_key_id)
+  if (idRaw === undefined || idRaw === null || String(idRaw).trim() === "") return null
+  const latestRaw = firstDefined(o.latestEstimatedCostUsd, o.latest_estimated_cost_usd)
+  const accumRaw = firstDefined(o.accumulatedCostUsd, o.accumulated_cost_usd)
+  const providerRaw = firstDefined(o.provider, o.Provider)
+  return {
+    apiKeyId: idRaw as string | number,
+    latestEstimatedCostUsd:
+      latestRaw === undefined || latestRaw === null || String(latestRaw).trim() === ""
+        ? undefined
+        : toNumber(latestRaw, 0),
+    accumulatedCostUsd:
+      accumRaw === undefined || accumRaw === null || String(accumRaw).trim() === ""
+        ? undefined
+        : toNumber(accumRaw, 0),
+    provider: providerRaw === undefined || providerRaw === null ? undefined : String(providerRaw),
+  }
+}
+
+function normalizeBillingSignalsFromApi(raw: unknown): BillingSignal[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map(parseBillingSignalRow).filter((item): item is BillingSignal => item != null)
 }
 
 function normalizeTeamName(value: string | null | undefined, teamId: number): string {
@@ -627,26 +740,24 @@ async function fetchBillingSummaryByKey(
   keys: Array<{ apiKeyId: number; provider: string }>,
   email: string | null,
   fallbackUserId?: string,
+  extraBillingUserIds: string[] = [],
 ): Promise<Map<number, BillingSummaryRow>> {
   const byKeyId = new Map<number, BillingSummaryRow>()
   const uniqueKeys = Array.from(
-    new Set(
+    new Map(
       keys
         .map((item) => ({
           apiKeyId: toNumber(item.apiKeyId, 0),
           provider: (item.provider ?? "").trim().toUpperCase(),
         }))
-        .filter((item) => item.apiKeyId > 0 && item.provider.length > 0)
-        .map((item) => `${item.apiKeyId}|${item.provider}`),
-    ),
-  ).map((item) => {
-    const [apiKeyId, provider] = item.split("|")
-    return { apiKeyId: Number(apiKeyId), provider }
-  })
+        .filter((item) => item.apiKeyId > 0)
+        .map((item) => [item.apiKeyId, item]),
+    ).values(),
+  )
   if (uniqueKeys.length === 0) return byKeyId
 
   const { from, to } = currentMonthRangeKstMonthToDate()
-  const userIdCandidates = billingUserIdCandidates(request, email, fallbackUserId)
+  const userIdCandidates = billingUserIdCandidates(request, email, fallbackUserId, extraBillingUserIds)
   const baseHeaders = buildBillingForwardHeaders(request, email, userIdCandidates[0] ?? fallbackUserId)
   const gatewaySharedSecret = (
     process.env.GATEWAY_SHARED_SECRET ?? "local-dev-gateway-shared-secret-do-not-use-in-prod"
@@ -655,42 +766,50 @@ async function fetchBillingSummaryByKey(
     baseHeaders["x-gateway-auth"] = gatewaySharedSecret
   }
 
-  for (const key of uniqueKeys) {
-    const query = `/api/v1/expenditure/summary?apiKeyId=${encodeURIComponent(String(key.apiKeyId))}&provider=${encodeURIComponent(key.provider)}&from=${from}&to=${to}`
-    let bestTotalCostUsd = -1
-    let bestMonthlyBudgetUsd: number | null = null
-    for (const origin of billingServiceOriginCandidates()) {
-      for (const userId of userIdCandidates) {
-        try {
-          const headers = { ...baseHeaders, "x-user-id": userId }
-          const response = await fetchWithTimeout(`${origin}${query}`, CONTEXT_FETCH_TIMEOUT_MS, {
-            method: "GET",
-            headers,
-          })
-          if (!response.ok) continue
-          const payload = (await response.json()) as ExpenditureSummaryResponse
-          const totalCostUsd = toNumber(payload.totalCostUsd, 0)
-          const rawBudget = payload.monthlyBudgetUsd
-          const monthlyBudgetUsd =
-            rawBudget === null || rawBudget === undefined || String(rawBudget).trim() === ""
-              ? null
-              : toNumber(rawBudget, 0)
-          if (totalCostUsd > bestTotalCostUsd) {
-            bestTotalCostUsd = totalCostUsd
-            bestMonthlyBudgetUsd = monthlyBudgetUsd != null && monthlyBudgetUsd > 0 ? monthlyBudgetUsd : null
+  await Promise.all(
+    uniqueKeys.map(async (key) => {
+      const providerCandidates = billingProviderCandidates(key.provider)
+      const queries = providerCandidates.map(
+        (provider) =>
+          `/api/v1/expenditure/summary?apiKeyId=${encodeURIComponent(String(key.apiKeyId))}&provider=${encodeURIComponent(provider)}&from=${from}&to=${to}`,
+      )
+      let bestTotalCostUsd = -1
+      let bestMonthlyBudgetUsd: number | null = null
+      for (const origin of billingServiceOriginCandidates()) {
+        for (const userId of userIdCandidates) {
+          for (const query of queries) {
+            try {
+              const headers = { ...baseHeaders, "x-user-id": userId }
+              const response = await fetchWithTimeout(`${origin}${query}`, CONTEXT_FETCH_TIMEOUT_MS, {
+                method: "GET",
+                headers,
+              })
+              if (!response.ok) continue
+              const payload = (await response.json()) as ExpenditureSummaryResponse
+              const totalCostUsd = toNumber(payload.totalCostUsd, 0)
+              const rawBudget = payload.monthlyBudgetUsd
+              const monthlyBudgetUsd =
+                rawBudget === null || rawBudget === undefined || String(rawBudget).trim() === ""
+                  ? null
+                  : toNumber(rawBudget, 0)
+              if (totalCostUsd > bestTotalCostUsd) {
+                bestTotalCostUsd = totalCostUsd
+                bestMonthlyBudgetUsd = monthlyBudgetUsd != null && monthlyBudgetUsd > 0 ? monthlyBudgetUsd : null
+              }
+            } catch {
+              // try next query/origin/user candidate
+            }
           }
-        } catch {
-          // try next candidate
         }
       }
-    }
-    if (bestTotalCostUsd >= 0) {
-      byKeyId.set(key.apiKeyId, {
-        totalCostUsd: bestTotalCostUsd,
-        monthlyBudgetUsd: bestMonthlyBudgetUsd,
-      })
-    }
-  }
+      if (bestTotalCostUsd >= 0) {
+        byKeyId.set(key.apiKeyId, {
+          totalCostUsd: bestTotalCostUsd,
+          monthlyBudgetUsd: bestMonthlyBudgetUsd,
+        })
+      }
+    }),
+  )
   return byKeyId
 }
 
@@ -699,25 +818,23 @@ async function fetchBillingLifetimeSpendByKey(
   keys: Array<{ apiKeyId: number; provider: string }>,
   email: string | null,
   fallbackUserId?: string,
+  extraBillingUserIds: string[] = [],
 ): Promise<Map<number, number>> {
   const byKeyId = new Map<number, number>()
   const uniqueKeys = Array.from(
-    new Set(
+    new Map(
       keys
         .map((item) => ({
           apiKeyId: toNumber(item.apiKeyId, 0),
           provider: (item.provider ?? "").trim().toUpperCase(),
         }))
-        .filter((item) => item.apiKeyId > 0 && item.provider.length > 0)
-        .map((item) => `${item.apiKeyId}|${item.provider}`),
-    ),
-  ).map((item) => {
-    const [apiKeyId, provider] = item.split("|")
-    return { apiKeyId: Number(apiKeyId), provider }
-  })
+        .filter((item) => item.apiKeyId > 0)
+        .map((item) => [item.apiKeyId, item]),
+    ).values(),
+  )
   if (uniqueKeys.length === 0) return byKeyId
 
-  const userIdCandidates = billingUserIdCandidates(request, email, fallbackUserId)
+  const userIdCandidates = billingUserIdCandidates(request, email, fallbackUserId, extraBillingUserIds)
   const baseHeaders = buildBillingForwardHeaders(request, email, userIdCandidates[0] ?? fallbackUserId)
   const gatewaySharedSecret = (
     process.env.GATEWAY_SHARED_SECRET ?? "local-dev-gateway-shared-secret-do-not-use-in-prod"
@@ -727,29 +844,37 @@ async function fetchBillingLifetimeSpendByKey(
   }
   const { from, to } = rollingRangeKst(400)
 
-  for (const key of uniqueKeys) {
-    const query = `/api/v1/expenditure/summary?apiKeyId=${encodeURIComponent(String(key.apiKeyId))}&provider=${encodeURIComponent(key.provider)}&from=${from}&to=${to}`
-    let bestTotalCostUsd = -1
-    for (const origin of billingServiceOriginCandidates()) {
-      for (const userId of userIdCandidates) {
-        try {
-          const headers = { ...baseHeaders, "x-user-id": userId }
-          const response = await fetchWithTimeout(`${origin}${query}`, CONTEXT_FETCH_TIMEOUT_MS, {
-            method: "GET",
-            headers,
-          })
-          if (!response.ok) continue
-          const payload = (await response.json()) as ExpenditureSummaryResponse
-          bestTotalCostUsd = Math.max(bestTotalCostUsd, toNumber(payload.totalCostUsd, 0))
-        } catch {
-          // try next candidate
+  await Promise.all(
+    uniqueKeys.map(async (key) => {
+      const providerCandidates = billingProviderCandidates(key.provider)
+      const queries = providerCandidates.map(
+        (provider) =>
+          `/api/v1/expenditure/summary?apiKeyId=${encodeURIComponent(String(key.apiKeyId))}&provider=${encodeURIComponent(provider)}&from=${from}&to=${to}`,
+      )
+      let bestTotalCostUsd = -1
+      for (const origin of billingServiceOriginCandidates()) {
+        for (const userId of userIdCandidates) {
+          for (const query of queries) {
+            try {
+              const headers = { ...baseHeaders, "x-user-id": userId }
+              const response = await fetchWithTimeout(`${origin}${query}`, CONTEXT_FETCH_TIMEOUT_MS, {
+                method: "GET",
+                headers,
+              })
+              if (!response.ok) continue
+              const payload = (await response.json()) as ExpenditureSummaryResponse
+              bestTotalCostUsd = Math.max(bestTotalCostUsd, toNumber(payload.totalCostUsd, 0))
+            } catch {
+              // try next query/origin/user candidate
+            }
+          }
         }
       }
-    }
-    if (bestTotalCostUsd >= 0) {
-      byKeyId.set(key.apiKeyId, bestTotalCostUsd)
-    }
-  }
+      if (bestTotalCostUsd >= 0) {
+        byKeyId.set(key.apiKeyId, bestTotalCostUsd)
+      }
+    }),
+  )
   return byKeyId
 }
 
@@ -762,7 +887,8 @@ function spendAndBudgetForKey(
   const fromSummary = toNumber(billingRow?.totalCostUsd, 0)
   const currentSpendUsd = Math.max(fromSignal, fromSummary)
   const billingBudget = billingRow?.monthlyBudgetUsd != null ? toNumber(billingRow.monthlyBudgetUsd, 0) : 0
-  const monthlyBudgetUsd = billingBudget > 0 ? billingBudget : toNumber(snapshotMonthlyBudgetUsd, 0)
+  const snapshotBudget = toNumber(snapshotMonthlyBudgetUsd, 0)
+  const monthlyBudgetUsd = snapshotBudget >= 0 ? snapshotBudget : billingBudget
   return { currentSpendUsd, monthlyBudgetUsd }
 }
 
@@ -904,7 +1030,11 @@ function mergeProviderStatsBundle(
   return { currentSpendUsd, averageDailySpendUsd, averageDailyTokenUsage, recentDailySpendUsd }
 }
 
-function dedupePersonalKeysByCredential(rows: PersonalContextRow[]): PersonalContextRow[] {
+function dedupePersonalKeysByCredential(
+  rows: PersonalContextRow[],
+  lifetimeSpendByKey: Map<number, number>,
+  billingByKeyId: Map<string, BillingSignal>,
+): PersonalContextRow[] {
   const byFp = new Map<string, PersonalContextRow[]>()
   const hashGroupByLegacy = new Map<string, string[]>()
   for (const row of rows) {
@@ -951,13 +1081,13 @@ function dedupePersonalKeysByCredential(rows: PersonalContextRow[]): PersonalCon
     }
     const primary = pickLatestPersonalRow(group)
     const mergedKeyIds = [...new Set(group.map((g) => g.keyId))].sort((a, b) => a - b)
-    let monthlyBudgetUsd = 0
+    const monthlyBudgetUsd = toNumber(primary.monthlyBudgetUsd, 0)
     let totalCurrent = 0
     let totalLifetime = 0
     for (const r of group) {
-      monthlyBudgetUsd = Math.max(monthlyBudgetUsd, r.monthlyBudgetUsd ?? 0)
       totalCurrent += r.budgetStats?.currentSpendUsd ?? 0
-      totalLifetime += r.budgetStats?.lifetimeSpendUsd ?? 0
+      const sig = billingByKeyId.get(billingSignalMapKey(r.keyId))
+      totalLifetime += lifetimeSpendForKey(r.keyId, lifetimeSpendByKey, sig)
     }
     const mergedBudget = buildBudgetStats(monthlyBudgetUsd, totalCurrent, totalLifetime)
     const mergedProvider = mergeProviderStatsBundle(group.map((g) => g.providerStats))
@@ -979,16 +1109,50 @@ function dedupePersonalKeysByCredential(rows: PersonalContextRow[]): PersonalCon
   return out
 }
 
-function dedupeTeamBoardByCredential(rows: TeamContextRow[]): TeamContextRow[] {
+function dedupeTeamBoardByCredential(
+  rows: TeamContextRow[],
+  lifetimeSpendByKey: Map<number, number>,
+  billingByKeyId: Map<string, BillingSignal>,
+): TeamContextRow[] {
   const byFp = new Map<string, TeamContextRow[]>()
+  const hashGroupByLegacy = new Map<string, string[]>()
   for (const row of rows) {
+    const legacyFp = `${row.teamId}::legacy:${personalCredentialFingerprint(row.provider, row.alias)}`
     const fp = teamKeyMergeFingerprint(row.teamId, row.provider, row.alias, row.keyHash)
     const list = byFp.get(fp) ?? []
     list.push(row)
     byFp.set(fp, list)
+    if (fp.includes("::hash:")) {
+      const hashGroups = hashGroupByLegacy.get(legacyFp) ?? []
+      if (!hashGroups.includes(fp)) {
+        hashGroups.push(fp)
+        hashGroupByLegacy.set(legacyFp, hashGroups)
+      }
+    }
   }
+
+  // 팀 키도 개인 키와 동일: 무해시 legacy 행은 동일 팀+alias/provider의 hash 그룹이 1개면 흡수.
+  for (const row of rows) {
+    const hasHash = (row.keyHash ?? "").trim().length > 0
+    if (hasHash) continue
+    const legacyFp = `${row.teamId}::legacy:${personalCredentialFingerprint(row.provider, row.alias)}`
+    const hashTargets = hashGroupByLegacy.get(legacyFp) ?? []
+    if (hashTargets.length !== 1) continue
+    const legacyGroup = byFp.get(legacyFp) ?? []
+    if (!legacyGroup.some((item) => item.teamApiKeyId === row.teamApiKeyId)) continue
+    byFp.set(
+      legacyFp,
+      legacyGroup.filter((item) => item.teamApiKeyId !== row.teamApiKeyId),
+    )
+    const hashGroupKey = hashTargets[0]
+    const hashGroup = byFp.get(hashGroupKey) ?? []
+    hashGroup.push(row)
+    byFp.set(hashGroupKey, hashGroup)
+  }
+
   const out: TeamContextRow[] = []
   for (const [fp, group] of byFp) {
+    if (group.length === 0) continue
     if (group.length === 1) {
       const single = group[0]
       out.push({ ...single, mergedTeamApiKeyIds: [single.teamApiKeyId] })
@@ -996,13 +1160,13 @@ function dedupeTeamBoardByCredential(rows: TeamContextRow[]): TeamContextRow[] {
     }
     const primary = pickLatestTeamRow(group)
     const mergedTeamApiKeyIds = [...new Set(group.map((g) => g.teamApiKeyId))].sort((a, b) => a - b)
-    let monthlyBudgetUsd = 0
+    const monthlyBudgetUsd = toNumber(primary.monthlyBudgetUsd, 0)
     let totalCurrent = 0
     let totalLifetime = 0
     for (const r of group) {
-      monthlyBudgetUsd = Math.max(monthlyBudgetUsd, r.monthlyBudgetUsd ?? 0)
       totalCurrent += r.budgetStats?.currentSpendUsd ?? 0
-      totalLifetime += r.budgetStats?.lifetimeSpendUsd ?? 0
+      const sig = billingByKeyId.get(billingSignalMapKey(r.teamApiKeyId))
+      totalLifetime += lifetimeSpendForKey(r.teamApiKeyId, lifetimeSpendByKey, sig)
     }
     const mergedBudget = buildBudgetStats(monthlyBudgetUsd, totalCurrent, totalLifetime)
     const mergedProvider = mergeProviderStatsBundle(group.map((g) => g.providerStats))
@@ -1046,7 +1210,9 @@ export async function GET(request: Request) {
           fetchWithTimeout(`${backendOrigin}/api/v1/agents/billing-signals`, CONTEXT_FETCH_TIMEOUT_MS, {
             method: "GET",
             headers: forwardedHeaders,
-          }).then(async (response) => (response.ok ? (((await response.json()) as BillingSignal[]) ?? []) : [])),
+          }).then(async (response) =>
+            response.ok ? normalizeBillingSignalsFromApi(await response.json()) : [],
+          ),
           fetchWithTimeout(`${backendOrigin}/api/v1/agents/usage-prediction-signals`, CONTEXT_FETCH_TIMEOUT_MS, {
             method: "GET",
             headers: forwardedHeaders,
@@ -1099,15 +1265,24 @@ export async function GET(request: Request) {
           .filter((value) => value.includes("@")),
       ),
     )
-    const billingByKeyId = new Map<string, BillingSignal>(billingSignals.map((item) => [item.apiKeyId, item]))
-    const allKnownKeys = [
-      ...keys.map((item) => ({ apiKeyId: item.keyId, provider: item.provider })),
-      ...teamApiKeys.map((item) => ({ apiKeyId: item.teamApiKeyId, provider: item.provider })),
-    ]
+    const billingByKeyId = new Map<string, BillingSignal>()
+    for (const item of billingSignals) {
+      const id = billingSignalMapKey(item.apiKeyId)
+      if (!id) continue
+      billingByKeyId.set(id, item)
+    }
+    const allKnownKeys = collectAllKnownKeysForBillingFetch(keys, teamApiKeys, billingSignals)
     const fallbackBillingUserId = resolvedIdentifier.email ?? (currentUserId != null ? String(currentUserId) : undefined)
+    const extraBillingUserIds = Array.from(
+      new Set(
+        keys
+          .map((item) => String(item.userId ?? "").trim())
+          .filter((value) => value.length > 0),
+      ),
+    )
     const [billingSummaryByKey, lifetimeSpendByKey] = await Promise.all([
-      fetchBillingSummaryByKey(request, allKnownKeys, resolvedEmailHeader, fallbackBillingUserId),
-      fetchBillingLifetimeSpendByKey(request, allKnownKeys, resolvedEmailHeader, fallbackBillingUserId),
+      fetchBillingSummaryByKey(request, allKnownKeys, resolvedEmailHeader, fallbackBillingUserId, extraBillingUserIds),
+      fetchBillingLifetimeSpendByKey(request, allKnownKeys, resolvedEmailHeader, fallbackBillingUserId, extraBillingUserIds),
     ])
     const usageSignalByTeamAndUser = new Map<string, UsagePredictionSignal>()
     const usageSignalByTeam = new Map<string, UsagePredictionSignal>()
@@ -1167,7 +1342,7 @@ export async function GET(request: Request) {
     const personalUsageSignal =
       currentUserId == null ? null : usageSignalByTeamAndUser.get(`|${String(currentUserId)}`) ?? null
 
-    const personalKeysFromSnapshot = keysForCurrentUser.map((key) => {
+    const personalKeysFromSnapshot = keysForCurrentUser.filter((key) => hasUsableKeyAlias(key.alias)).map((key) => {
       const signal = billingByKeyId.get(String(key.keyId))
       const billingRow = billingSummaryByKey.get(key.keyId)
       const { currentSpendUsd, monthlyBudgetUsd } = spendAndBudgetForKey(
@@ -1178,7 +1353,7 @@ export async function GET(request: Request) {
       const budgetStats = buildBudgetStats(
         monthlyBudgetUsd,
         currentSpendUsd,
-        lifetimeSpendByKey.get(key.keyId) ?? 0,
+        lifetimeSpendForKey(key.keyId, lifetimeSpendByKey, signal),
       )
       const averageDailySpendUsd = toNumber(personalUsageSignal?.averageDailySpendUsd7d, 0)
       const averageDailyTokenUsage = Math.max(
@@ -1191,7 +1366,7 @@ export async function GET(request: Request) {
 
       return {
         keyId: key.keyId,
-        alias: key.alias,
+        alias: (key.alias ?? "").trim(),
         provider: key.provider,
         monthlyBudgetUsd,
         status: key.status,
@@ -1227,7 +1402,7 @@ export async function GET(request: Request) {
         const budgetStats = buildBudgetStats(
           monthlyBudgetUsd,
           currentSpendUsd,
-          lifetimeSpendByKey.get(keyId) ?? 0,
+          lifetimeSpendForKey(keyId, lifetimeSpendByKey, signal),
         )
         const averageDailySpendUsd = toNumber(personalUsageSignal?.averageDailySpendUsd7d, 0)
         const averageDailyTokenUsage = Math.max(
@@ -1237,9 +1412,13 @@ export async function GET(request: Request) {
         const recentDailySpendUsd = (personalUsageSignal?.recentDailySpendUsd ?? [])
           .map((value) => toNumber(value, 0))
           .filter((value) => value >= 0)
+        const aliasTrimmed = (key.alias ?? "").trim()
+        if (!hasUsableKeyAlias(aliasTrimmed)) {
+          return null
+        }
         return {
           keyId,
-          alias: (key.alias ?? "").trim() || `key-${keyId}`,
+          alias: aliasTrimmed,
           provider: (key.provider ?? "").trim() || "UNKNOWN",
           monthlyBudgetUsd,
           status: "ACTIVE",
@@ -1264,7 +1443,7 @@ export async function GET(request: Request) {
         personalKeysById.set(key.keyId, key)
         continue
       }
-      const snapshotBudget = Math.max(key.monthlyBudgetUsd, current.monthlyBudgetUsd)
+      const snapshotBudget = toNumber(current.monthlyBudgetUsd, 0)
       const merged = spendAndBudgetForKey(
         billingByKeyId.get(String(key.keyId)),
         snapshotBudget,
@@ -1273,12 +1452,12 @@ export async function GET(request: Request) {
       const mergedBudgetStats = buildBudgetStats(
         merged.monthlyBudgetUsd,
         merged.currentSpendUsd,
-        lifetimeSpendByKey.get(key.keyId) ?? 0,
+        lifetimeSpendForKey(key.keyId, lifetimeSpendByKey, billingByKeyId.get(String(key.keyId))),
       )
       personalKeysById.set(key.keyId, {
         ...current,
         ...key,
-        alias: key.alias?.trim() ? key.alias : current.alias,
+        alias: (key.alias ?? "").trim() || (current.alias ?? "").trim(),
         provider: key.provider?.trim() ? key.provider : current.provider,
         monthlyBudgetUsd: merged.monthlyBudgetUsd,
         budgetStats: mergedBudgetStats,
@@ -1290,9 +1469,11 @@ export async function GET(request: Request) {
     }
     const personalKeysMerged = dedupePersonalKeysByCredential(
       Array.from(personalKeysById.values()) as PersonalContextRow[],
-    )
+      lifetimeSpendByKey,
+      billingByKeyId,
+    ).filter((row) => hasUsableKeyAlias(row.alias))
 
-    const teamBoardRaw = teamApiKeys.map((item) => {
+    const teamBoardRaw = teamApiKeys.filter((item) => hasUsableKeyAlias(item.alias)).map((item) => {
       const signal = billingByKeyId.get(String(item.teamApiKeyId))
       const billingRow = billingSummaryByKey.get(item.teamApiKeyId)
       const { currentSpendUsd, monthlyBudgetUsd } = spendAndBudgetForKey(
@@ -1303,7 +1484,7 @@ export async function GET(request: Request) {
       const budgetStats = buildBudgetStats(
         monthlyBudgetUsd,
         currentSpendUsd,
-        lifetimeSpendByKey.get(item.teamApiKeyId) ?? 0,
+        lifetimeSpendForKey(item.teamApiKeyId, lifetimeSpendByKey, signal),
       )
       const usageSignal =
         currentUserId == null
@@ -1325,7 +1506,7 @@ export async function GET(request: Request) {
         teamApiKeyId: item.teamApiKeyId,
         ownerUserId: item.ownerUserId,
         visibility: item.visibility ?? "TEAM",
-        alias: item.alias,
+        alias: (item.alias ?? "").trim(),
         provider: item.provider,
         status: item.status,
         keyHash: item.keyHash ?? null,
@@ -1340,7 +1521,13 @@ export async function GET(request: Request) {
       }
     })
 
-    const teamBoard = dedupeTeamBoardByCredential(teamBoardRaw as TeamContextRow[])
+    const teamBoard = dedupeTeamBoardByCredential(
+      teamBoardRaw as TeamContextRow[],
+      lifetimeSpendByKey,
+      billingByKeyId,
+    ).filter((row) =>
+      hasUsableKeyAlias(row.alias),
+    )
 
     const teamNameById = new Map<number, string>()
     for (const item of teamCatalog.teams) {

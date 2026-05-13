@@ -2,6 +2,7 @@ package com.zerobugfreinds.ai_agent_service.mq;
 
 import com.eevee.usage.events.UsageCostFinalizedEvent;
 import com.zerobugfreinds.ai_agent_service.dto.BillingCostCorrectedEvent;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zerobugfreinds.ai_agent_service.service.BillingSignalSnapshotService;
 import com.zerobugfreinds.ai_agent_service.service.EventDebugService;
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 
 @Component
@@ -40,15 +42,22 @@ public class BillingOutboundEventListener {
 	public void onUsageCostFinalized(Message message) {
 		try {
 			String body = new String(message.getBody(), StandardCharsets.UTF_8);
-			UsageCostFinalizedEvent event = objectMapper.readValue(body, UsageCostFinalizedEvent.class);
+			JsonNode root = objectMapper.readTree(body);
+			UsageCostFinalizedEvent event = objectMapper.treeToValue(root, UsageCostFinalizedEvent.class);
 			Map<String, String> headers = toStringHeaders(message);
-			// 리스너에서 한 줄 추가 예시: eventDebugService.record(eventType, headers, body);
 			eventDebugService.record("UsageCostFinalizedEvent", headers, body);
-			String apiKeyId = resolveApiKeyId(message);
+			String apiKeyId = resolveApiKeyId(message, root);
+			if (apiKeyId == null || apiKeyId.isBlank()) {
+				log.error(
+						"UsageCostFinalizedEvent missing apiKeyId after header and JSON payload lookup; headers={}",
+						headers
+				);
+				throw new IllegalStateException("UsageCostFinalizedEvent missing apiKeyId");
+			}
 			String userId = headerAsString(message, "userId");
 			String teamId = headerAsString(message, "teamId");
 			String subjectType = headerAsString(message, "subjectType");
-			billingSignalSnapshotService.upsertUsageCost(apiKeyId, userId, teamId, subjectType, event);
+			billingSignalSnapshotService.upsertUsageCost(apiKeyId.trim(), userId, teamId, subjectType, event);
 		} catch (Exception ex) {
 			log.error("Failed to handle UsageCostFinalizedEvent", ex);
 			throw new IllegalStateException("usage cost finalized handling failed", ex);
@@ -63,30 +72,93 @@ public class BillingOutboundEventListener {
 			BillingCostCorrectedEvent event = objectMapper.readValue(body, BillingCostCorrectedEvent.class);
 			Map<String, String> headers = toStringHeaders(message);
 			eventDebugService.record("BillingCostCorrectedEvent", headers, body);
-			String apiKeyId = event.apiKeyId() != null ? event.apiKeyId() : resolveApiKeyId(message);
+			String apiKeyId = event.apiKeyId() != null && !event.apiKeyId().isBlank()
+					? event.apiKeyId().trim()
+					: resolveApiKeyIdFromHeaders(message);
+			if (apiKeyId == null || apiKeyId.isBlank()) {
+				log.error(
+						"BillingCostCorrectedEvent missing apiKeyId after event payload and header lookup; headers={}",
+						headers
+				);
+				throw new IllegalStateException("BillingCostCorrectedEvent missing apiKeyId");
+			}
 			String userId = event.userId() != null ? event.userId() : headerAsString(message, "userId");
 			String teamId = headerAsString(message, "teamId");
 			String subjectType = headerAsString(message, "subjectType");
-			billingSignalSnapshotService.applyCostCorrection(apiKeyId, userId, teamId, subjectType, event);
+			billingSignalSnapshotService.applyCostCorrection(apiKeyId.trim(), userId, teamId, subjectType, event);
 		} catch (Exception ex) {
 			log.error("Failed to handle BillingCostCorrectedEvent", ex);
 			throw new IllegalStateException("billing cost corrected handling failed", ex);
 		}
 	}
 
-	private static String headerAsString(Message message, String key) {
-		Object value = message.getMessageProperties().getHeaders().get(key);
-		return value != null ? String.valueOf(value) : null;
+	/**
+	 * Resolves AMQP headers case-insensitively and treats {@code api_key_id} style as equivalent to {@code apiKeyId}.
+	 * Brokers/clients may normalize header names, which would otherwise skip {@link BillingSignalSnapshotService} upserts.
+	 */
+	private static String headerAsString(Message message, String logicalKey) {
+		String normalizedTarget = normalizeAmqpHeaderKey(logicalKey);
+		for (Map.Entry<String, Object> e : message.getMessageProperties().getHeaders().entrySet()) {
+			String k = e.getKey();
+			if (k == null) {
+				continue;
+			}
+			if (normalizeAmqpHeaderKey(k).equals(normalizedTarget)) {
+				Object v = e.getValue();
+				if (v != null) {
+					String s = String.valueOf(v).trim();
+					if (!s.isEmpty()) {
+						return s;
+					}
+				}
+			}
+		}
+		return null;
 	}
 
-	private static String resolveApiKeyId(Message message) {
+	private static String normalizeAmqpHeaderKey(String key) {
+		if (key == null) {
+			return "";
+		}
+		return key.replace("_", "").toLowerCase(Locale.ROOT);
+	}
+
+	/**
+	 * Resolves key id from AMQP headers first, then optional JSON fields (for envelopes that duplicate ids in body).
+	 */
+	private static String resolveApiKeyId(Message message, JsonNode payload) {
+		String fromHeaders = resolveApiKeyIdFromHeaders(message);
+		if (fromHeaders != null) {
+			return fromHeaders;
+		}
+		if (payload != null && payload.isObject()) {
+			for (String field : new String[] {"apiKeyId", "keyId", "teamApiKeyId", "externalApiKeyId"}) {
+				if (!payload.hasNonNull(field)) {
+					continue;
+				}
+				JsonNode n = payload.get(field);
+				if (n.isIntegralNumber()) {
+					return String.valueOf(n.asLong());
+				}
+				if (n.isTextual()) {
+					String t = n.asText().trim();
+					if (!t.isEmpty()) {
+						return t;
+					}
+				}
+			}
+		}
+		return null;
+	}
+
+	private static String resolveApiKeyIdFromHeaders(Message message) {
 		String apiKeyId = headerAsString(message, "apiKeyId");
 		if (apiKeyId != null && !apiKeyId.isBlank()) {
-			return apiKeyId;
+			return apiKeyId.trim();
 		}
 		String teamApiKeyId = headerAsString(message, "teamApiKeyId");
 		if (teamApiKeyId != null && !teamApiKeyId.isBlank()) {
-			return teamApiKeyId;
+			return teamApiKeyId.trim();
 		}
 		return null;
 	}

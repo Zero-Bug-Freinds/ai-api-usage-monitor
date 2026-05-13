@@ -67,4 +67,29 @@ class IdentityExternalApiKeyEventListenerTest {
 		verify(apiKeyUsageDataCleanupService, never()).purgeByApiKeyId("101");
 		assertThat(captor.getValue().retainLogs()).isTrue();
 	}
+
+	@Test
+	void deletedEvent_withRetainLogsFalse_stillDoesNotPurgeCostData() {
+		String payload = """
+				{
+				  "eventType": "EXTERNAL_API_KEY_DELETED",
+				  "userId": "user-1",
+				  "apiKeyId": 102,
+				  "occurredAt": "2026-05-13T07:10:00Z",
+				  "retainLogs": false,
+				  "provider": "openai",
+				  "alias": "deleted-key-2"
+				}
+				""";
+		Message message = MessageBuilder
+				.withBody(payload.getBytes(StandardCharsets.UTF_8))
+				.build();
+
+		listener.onMessage(message);
+
+		ArgumentCaptor<ExternalApiKeyDeletedEvent> captor = ArgumentCaptor.forClass(ExternalApiKeyDeletedEvent.class);
+		verify(snapshotService).applyDeleted(captor.capture());
+		verify(apiKeyUsageDataCleanupService, never()).purgeByApiKeyId("102");
+		assertThat(captor.getValue().retainLogs()).isFalse();
+	}
 }

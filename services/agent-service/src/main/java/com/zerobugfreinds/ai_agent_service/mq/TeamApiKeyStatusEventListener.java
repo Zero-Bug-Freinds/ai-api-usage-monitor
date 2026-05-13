@@ -87,7 +87,7 @@ public class TeamApiKeyStatusEventListener {
 					)
 			);
 			if ("DELETED".equals(status) && Boolean.FALSE.equals(retainLogs)) {
-				apiKeyUsageDataCleanupService.purgeByApiKeyId(String.valueOf(teamApiKeyId));
+				apiKeyUsageDataCleanupService.purgeUsageProjectionsExcludingBillingSignals(String.valueOf(teamApiKeyId));
 			}
 		} catch (Exception ex) {
 			log.error("Failed to handle team API key status event", ex);

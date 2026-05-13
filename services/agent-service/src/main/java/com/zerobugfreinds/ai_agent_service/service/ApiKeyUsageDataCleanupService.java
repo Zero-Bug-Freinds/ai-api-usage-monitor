@@ -31,6 +31,33 @@ public class ApiKeyUsageDataCleanupService {
 		this.recommendationSnapshotRepository = recommendationSnapshotRepository;
 	}
 
+	/**
+	 * Removes token rollups, daily token snapshots, and recommendation rows for a key.
+	 * <p><strong>Does not</strong> delete {@code billing_signal_projection} so cumulative cost from
+	 * {@code UsageCostFinalizedEvent} survives team/personal key deletion (same policy as personal external keys).
+	 */
+	@Transactional
+	public void purgeUsageProjectionsExcludingBillingSignals(String apiKeyId) {
+		if (apiKeyId == null || apiKeyId.isBlank()) {
+			return;
+		}
+		String normalizedApiKeyId = apiKeyId.trim();
+		long removedTokenRollups = usageRecordedTokenRollupRepository.deleteByKeyId(normalizedApiKeyId);
+		long removedDailyTokens = dailyCumulativeTokenSnapshotRepository.deleteByApiKeyId(normalizedApiKeyId);
+		long removedRecommendations = recommendationSnapshotRepository.deleteByKeyId(normalizedApiKeyId);
+		log.info(
+				"Purged agent usage projections (billing signals retained) for apiKeyId={} tokenRollups={} dailyTokens={} recommendations={}",
+				normalizedApiKeyId,
+				removedTokenRollups,
+				removedDailyTokens,
+				removedRecommendations
+		);
+	}
+
+	/**
+	 * Full purge including {@code billing_signal_projection}. Prefer
+	 * {@link #purgeUsageProjectionsExcludingBillingSignals(String)} for delete flows that must keep spend history.
+	 */
 	@Transactional
 	public void purgeByApiKeyId(String apiKeyId) {
 		if (apiKeyId == null || apiKeyId.isBlank()) {
