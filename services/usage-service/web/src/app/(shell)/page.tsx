@@ -1,6 +1,11 @@
+import type { Metadata } from "next"
 import { Suspense } from "react"
 
 import { UsageDashboard } from "@/components/usage/usage-dashboard"
+
+export const metadata: Metadata = {
+  title: "사용량",
+}
 
 export default function UsageDashboardPage() {
   return (

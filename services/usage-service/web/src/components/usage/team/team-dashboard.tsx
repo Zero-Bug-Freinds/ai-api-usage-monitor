@@ -16,17 +16,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
-import {
-  Button,
-  Input,
-  Label,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@ai-usage/ui"
-import { formatKstIsoDate, addKstDays } from "@/lib/usage/kst-dates"
+import { Button } from "@ai-usage/ui"
 import { formatRequestCount, formatTokenCount, formatUsd, toNumber } from "@/lib/usage/format"
 import { EMPTY_MEMBER_MODEL_USAGE_MSG } from "@/lib/usage/team-dashboard-empty"
 import { teamUsageBffBase } from "@/lib/usage/team-usage-bff-base"
@@ -38,8 +28,10 @@ import {
   parseTeamBffApiKeysPayload,
   teamBffRowsToUsageMenuItems,
 } from "@/lib/usage/dashboard-provider-api-keys"
-import { DashboardApiKeySelectMenu } from "@/components/usage/dashboard-api-key-select-menu"
+import { UsageFilterBar } from "@/components/usage/usage-filter-bar"
 import { useDashboardAggregateApiKeySync } from "@/lib/usage/use-dashboard-aggregate-api-key"
+import { useFilterStorage } from "@/lib/usage/use-filter-storage"
+
 const LAST_TEAM_STORAGE_KEY = "last_team_id"
 
 export type TeamDashboardProps = {
@@ -80,7 +72,6 @@ type BffResponse = {
 }
 
 type TeamSummary = { id: string; name: string; createdAt?: string }
-type PeriodMode = "today" | "7d" | "30d" | "custom"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const AnyLegend = Legend as any
@@ -101,19 +92,6 @@ function buildUsageDashboardQuery(params: Record<string, string | undefined | nu
     sp.set(k, String(v))
   }
   return sp.toString()
-}
-
-function presetRange(mode: PeriodMode, todayKst: string): { from: string; to: string } {
-  switch (mode) {
-    case "today":
-      return { from: todayKst, to: todayKst }
-    case "7d":
-      return { from: addKstDays(todayKst, -6), to: todayKst }
-    case "30d":
-      return { from: addKstDays(todayKst, -29), to: todayKst }
-    default:
-      return { from: todayKst, to: todayKst }
-  }
 }
 
 function pickOldestTeamId(list: TeamSummary[]): string {
@@ -203,22 +181,20 @@ export default function TeamDashboard({
   onSelectUser,
   onEffectiveTeamChange,
 }: TeamDashboardProps) {
-  const todayKst = formatKstIsoDate()
-  const [dashProvider, setDashProvider] = React.useState(DASHBOARD_PROVIDER_ALL)
-  const [periodMode, setPeriodMode] = React.useState<PeriodMode>("today")
-  const [customFrom, setCustomFrom] = React.useState(todayKst)
-  const [customTo, setCustomTo] = React.useState(todayKst)
-  const range = React.useMemo(
-    () => (periodMode === "custom" ? { from: customFrom, to: customTo } : presetRange(periodMode, todayKst)),
-    [periodMode, customFrom, customTo, todayKst],
-  )
+  const [clientReady, setClientReady] = React.useState(false)
+  React.useLayoutEffect(() => {
+    setClientReady(true)
+  }, [])
+  const { settings, patch } = useFilterStorage("team", "team-dashboard", { clientReady })
+  const dashProvider = settings.provider
+  const range = { from: settings.period.from, to: settings.period.to }
   const [teams, setTeams] = React.useState<TeamSummary[]>([])
   const [teamsLoading, setTeamsLoading] = React.useState(true)
   const [teamsErr, setTeamsErr] = React.useState<string | null>(null)
   const [selectedTeamId, setSelectedTeamId] = React.useState("")
   const [apiKeyRows, setApiKeyRows] = React.useState<TeamBffApiKeyRow[]>([])
   const [keysLoading, setKeysLoading] = React.useState(false)
-  const [selectedApiKeyId, setSelectedApiKeyId] = React.useState<string>(DASHBOARD_API_KEY_ALL)
+  const selectedApiKeyId = settings.apiKeyId
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [data, setData] = React.useState<BffResponse | null>(null)
@@ -325,7 +301,7 @@ export default function TeamDashboard({
     [filteredApiKeyRows],
   )
 
-  useDashboardAggregateApiKeySync(apiKeyMenuItems, selectedApiKeyId, setSelectedApiKeyId, true)
+  useDashboardAggregateApiKeySync(apiKeyMenuItems, selectedApiKeyId, (id) => patch({ apiKeyId: id }), true)
 
   const effectiveTeamId = selectedTeamId
   React.useEffect(() => {
@@ -422,8 +398,6 @@ export default function TeamDashboard({
   const hasTeamMembership = teams.length > 0
   /** 팀 소속 없음 안내: 목록 로드 완료 후 비었고, 오류가 아닐 때만 */
   const showNoTeamBanner = !teamsLoading && !hasTeamMembership && !teamsErr
-  /** 필터 비활성화는 팀 미소속일 때만 (사용량·API 키 유무와 무관) */
-  const teamSelectDisabled = teamsLoading || !hasTeamMembership
   const shouldShowNoDataGuide =
     hasTeamMembership &&
     !!effectiveTeamId &&
@@ -456,79 +430,34 @@ export default function TeamDashboard({
         </div>
         <Button type="button" variant="outline" size="sm" disabled={loading || teamsLoading} onClick={() => setRefresh((n) => n + 1)}>새로고침</Button>
       </header>
-      <div className="mb-6 flex flex-row flex-wrap items-end gap-4">
-        <div className="space-y-2 sm:w-52">
-          <Label htmlFor="team-dash-provider">공급사</Label>
-          <Select value={dashProvider} onValueChange={setDashProvider}>
-            <SelectTrigger id="team-dash-provider"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value={DASHBOARD_PROVIDER_ALL}>전체</SelectItem>
-              <SelectItem value="GOOGLE">Gemini (Google)</SelectItem>
-              <SelectItem value="OPENAI">OpenAI</SelectItem>
-              <SelectItem value="ANTHROPIC">Anthropic</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2 sm:w-52">
-          <Label>팀</Label>
-          <Select
-            value={selectedTeamId}
-            onValueChange={setSelectedTeamId}
-            disabled={teamSelectDisabled}
-          >
-            <SelectTrigger>
-              <SelectValue
-                placeholder={
-                  teamsLoading ? "팀 목록 불러오는 중…" : !hasTeamMembership ? "소속 팀 없음" : "팀 선택"
-                }
-              />
-            </SelectTrigger>
-            <SelectContent>{teams.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}</SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2 sm:w-52">
-          <Label>API Key</Label>
-          <Select value={selectedApiKeyId} onValueChange={setSelectedApiKeyId} disabled={keysLoading}>
-            <SelectTrigger>
-              <SelectValue placeholder={keysLoading ? "불러오는 중…" : apiKeyMenuItems.length === 0 ? "없음" : "전체"} />
-            </SelectTrigger>
-            <SelectContent className="max-h-[min(70vh,26rem)]">
-              <DashboardApiKeySelectMenu
-                items={apiKeyMenuItems}
-                allValue={DASHBOARD_API_KEY_ALL}
-                showAllOption={apiKeyMenuItems.length > 0}
-                noneValue={DASHBOARD_API_KEY_NONE}
-                showNoneOption={apiKeyMenuItems.length === 0}
-              />
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2 sm:w-44">
-          <Label htmlFor="team-dash-period">기간</Label>
-          <Select value={periodMode} onValueChange={(v) => {
-            const next = v as PeriodMode
-            setPeriodMode(next)
-            if (next !== "custom") {
-              const pr = presetRange(next, todayKst)
-              setCustomFrom(pr.from)
-              setCustomTo(pr.to)
-            }
-          }}>
-            <SelectTrigger id="team-dash-period"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="today">오늘</SelectItem>
-              <SelectItem value="7d">최근 7일</SelectItem>
-              <SelectItem value="30d">최근 30일</SelectItem>
-              <SelectItem value="custom">사용자 지정</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        {periodMode === "custom" ? (
-          <div className="flex flex-wrap gap-3">
-            <div className="space-y-2"><Label htmlFor="team-from">시작</Label><Input id="team-from" type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} /></div>
-            <div className="space-y-2"><Label htmlFor="team-to">종료</Label><Input id="team-to" type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} /></div>
-          </div>
-        ) : null}
+      <div className="mb-6 flex flex-col gap-4">
+        <UsageFilterBar
+          idPrefix="team-dash"
+          provider={dashProvider}
+          onProviderChange={(v) => patch({ provider: v })}
+          period={settings.period}
+          onPeriodChange={(p) => patch({ period: p })}
+          showTeam
+          team={{
+            value: selectedTeamId,
+            onValueChange: (id) => {
+              setSelectedTeamId(id)
+              patch({ apiKeyId: DASHBOARD_API_KEY_ALL })
+            },
+            teams,
+            loading: teamsLoading,
+          }}
+          apiKey={{
+            value: selectedApiKeyId,
+            onValueChange: (id) => patch({ apiKeyId: id }),
+            menuItems: apiKeyMenuItems,
+            keysLoading,
+            allValue: DASHBOARD_API_KEY_ALL,
+            showAllOption: apiKeyMenuItems.length > 0,
+            noneValue: DASHBOARD_API_KEY_NONE,
+            showNoneOption: apiKeyMenuItems.length === 0,
+          }}
+        />
       </div>
 
       {teamsErr ? <p className="mb-4 text-sm text-amber-700">{teamsErr}</p> : null}
