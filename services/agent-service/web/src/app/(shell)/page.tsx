@@ -381,6 +381,7 @@ export default function AgentPage() {
   const [bootstrapError, setBootstrapError] = useState<string>("")
   const [currentUserId, setCurrentUserId] = useState<number | null>(null)
   const [recommendationPriority, setRecommendationPriority] = useState<RecommendationPriority>("BALANCED")
+  const [hideDeletedKeys, setHideDeletedKeys] = useState<boolean>(false)
   const [modelCatalog, setModelCatalog] = useState<ModelCatalogSnapshot | null>(null)
   const [resultsHydrated, setResultsHydrated] = useState<boolean>(false)
   const [contextRefreshing, setContextRefreshing] = useState<boolean>(false)
@@ -406,6 +407,18 @@ export default function AgentPage() {
   const selectedTeamKeys = useMemo(
     () => (selectedTeamId == null ? [] : teamBoard.filter((item: TeamBoardItem) => item.teamId === selectedTeamId)),
     [teamBoard, selectedTeamId],
+  )
+  const visiblePersonalKeys = useMemo(
+    () =>
+      hideDeletedKeys ? keys.filter((item: AvailableKeyContext) => !isCredentialDeletedStatus(item.status)) : keys,
+    [hideDeletedKeys, keys],
+  )
+  const visibleSelectedTeamKeys = useMemo(
+    () =>
+      hideDeletedKeys
+        ? selectedTeamKeys.filter((item: TeamBoardItem) => !isCredentialDeletedStatus(item.status))
+        : selectedTeamKeys,
+    [hideDeletedKeys, selectedTeamKeys],
   )
   const selectedTeamLabel = useMemo(
     () => teamGroups.find((group: TeamGroup) => group.teamId === selectedTeamId)?.teamName ?? "",
@@ -621,6 +634,16 @@ export default function AgentPage() {
           </select>
         </div>
 
+        <div className="flex items-center justify-end rounded-md border border-border/70 bg-muted/20 px-2 py-1.5">
+          <button
+            type="button"
+            className="rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium text-foreground hover:bg-muted/60"
+            onClick={() => setHideDeletedKeys((prev: boolean) => !prev)}
+          >
+            {hideDeletedKeys ? "삭제된 키 표시" : "삭제된 키 숨기기"}
+          </button>
+        </div>
+
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-sm font-semibold">개인 API 키</h3>
@@ -640,7 +663,7 @@ export default function AgentPage() {
             <div className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700">{bootstrapError}</div>
           ) : null}
           <ul className="space-y-1 text-sm text-muted-foreground">
-            {keys.map((item: AvailableKeyContext) => (
+            {visiblePersonalKeys.map((item: AvailableKeyContext) => (
               <li key={item.keyId} className="rounded-md border px-2 py-1">
                 <div className="flex flex-wrap items-baseline gap-1">
                   <span>
@@ -724,8 +747,12 @@ export default function AgentPage() {
                 </div>
               </li>
             ))}
-            {keys.length === 0 ? (
-              <li className="rounded-md border border-dashed px-2 py-1 text-xs">표시할 개인 API 키가 없습니다.</li>
+            {visiblePersonalKeys.length === 0 ? (
+              <li className="rounded-md border border-dashed px-2 py-1 text-xs">
+                {keys.length === 0
+                  ? "표시할 개인 API 키가 없습니다."
+                  : "삭제된 키만 있어 목록이 비었습니다. 위에서 「삭제된 키 표시」를 눌러 보세요."}
+              </li>
             ) : null}
           </ul>
         </div>
@@ -763,7 +790,7 @@ export default function AgentPage() {
           </select>
           {showTeamList ? (
             <ul className="space-y-1 text-sm text-muted-foreground">
-              {selectedTeamKeys.map((item: TeamBoardItem) => (
+              {visibleSelectedTeamKeys.map((item: TeamBoardItem) => (
                 <li key={`${item.teamId}-${item.teamApiKeyId}`} className="rounded-md border px-2 py-1">
                   <div className="flex flex-wrap items-baseline gap-1">
                     <span>{item.alias}</span>
@@ -854,8 +881,12 @@ export default function AgentPage() {
                   </div>
                 </li>
               ))}
-              {selectedTeamId != null && selectedTeamKeys.length === 0 ? (
-                <li className="rounded-md border border-dashed px-2 py-1 text-xs">선택된 팀의 키가 없습니다.</li>
+              {selectedTeamId != null && visibleSelectedTeamKeys.length === 0 ? (
+                <li className="rounded-md border border-dashed px-2 py-1 text-xs">
+                  {selectedTeamKeys.length === 0
+                    ? "선택된 팀의 키가 없습니다."
+                    : "삭제된 키만 있어 목록이 비었습니다. 위에서 「삭제된 키 표시」를 눌러 보세요."}
+                </li>
               ) : null}
               {selectedTeamId == null ? (
                 <li className="rounded-md border border-dashed px-2 py-1 text-xs">팀을 선택하면 팀 키를 보여줍니다.</li>
