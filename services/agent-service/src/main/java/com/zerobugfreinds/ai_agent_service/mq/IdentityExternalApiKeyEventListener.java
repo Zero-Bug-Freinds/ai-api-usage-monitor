@@ -2,6 +2,7 @@ package com.zerobugfreinds.ai_agent_service.mq;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.BooleanNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.zerobugfreinds.ai_agent_service.service.ApiKeyUsageDataCleanupService;
 import com.zerobugfreinds.ai_agent_service.service.EventDebugService;
@@ -63,10 +64,7 @@ public class IdentityExternalApiKeyEventListener {
 					&& IdentityExternalApiKeyEventTypes.EXTERNAL_API_KEY_DELETED.equals(root.get(EVENT_TYPE_FIELD).asText())) {
 				eventDebugService.record(IdentityExternalApiKeyEventTypes.EXTERNAL_API_KEY_DELETED, headers, json);
 				ExternalApiKeyDeletedEvent deleted = parseDeletedEvent(root);
-				snapshotService.delete(deleted);
-				if (!deleted.retainLogs() && deleted.apiKeyId() != null) {
-					apiKeyUsageDataCleanupService.purgeByApiKeyId(String.valueOf(deleted.apiKeyId()));
-				}
+				snapshotService.applyDeleted(deleted);
 				return;
 			}
 
@@ -115,6 +113,9 @@ public class IdentityExternalApiKeyEventListener {
 		if (payloadNode instanceof ObjectNode objectNode) {
 			if (!objectNode.has("apiKeyId") && objectNode.has("keyId")) {
 				objectNode.set("apiKeyId", objectNode.get("keyId"));
+			}
+			if (!objectNode.has("retainLogs") || objectNode.get("retainLogs").isNull()) {
+				objectNode.set("retainLogs", BooleanNode.TRUE);
 			}
 		}
 		return objectMapper.treeToValue(payloadNode, ExternalApiKeyDeletedEvent.class);

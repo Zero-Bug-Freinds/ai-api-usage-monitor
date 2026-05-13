@@ -87,6 +87,40 @@ public class IdentityApiKeySnapshotService {
 		snapshotRepository.deleteByUserIdAndKeyId(event.userId(), event.apiKeyId());
 	}
 
+	public void applyDeleted(ExternalApiKeyDeletedEvent event) {
+		if (event == null || event.userId() == null || event.apiKeyId() == null) {
+			return;
+		}
+
+		IdentityApiKeySnapshotEntity current = snapshotRepository
+				.findByUserIdAndKeyId(event.userId(), event.apiKeyId())
+				.orElse(null);
+		Instant updatedAt = event.occurredAt() != null ? event.occurredAt() : Instant.now();
+		String alias = textOrFallback(event.alias(), current != null ? current.getAlias() : null);
+		String provider = textOrFallback(event.provider(), current != null ? current.getProvider() : null);
+		String visibility = current != null ? current.getVisibility() : null;
+		BigDecimal budget = current != null ? current.getMonthlyBudgetUsd() : null;
+		String keyHash = current != null ? current.getKeyHash() : null;
+
+		snapshotRepository.save(
+				new IdentityApiKeySnapshotEntity(
+						event.userId(),
+						event.apiKeyId(),
+						alias,
+						provider,
+						visibility,
+						"DELETED",
+						budget,
+						keyHash,
+						updatedAt
+				)
+		);
+	}
+
+	private static String textOrFallback(String value, String fallback) {
+		return value != null && !value.isBlank() ? value : fallback;
+	}
+
 	public List<ApiKeySnapshot> findByUserId(String userId) {
 		return snapshotRepository.findByUserIdOrderByUpdatedAtDesc(userId).stream()
 				.map(this::toSnapshot)

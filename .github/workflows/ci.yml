@@ -208,8 +208,7 @@ jobs:
     needs:
       - changes
     # Temporarily disabled; restore path condition when re-enabling:
-    # if: needs.changes.outputs.ai_agent == 'true' || needs.changes.outputs.web_shared == 'true'
-    if: ${{ false }}
+    if: needs.changes.outputs.ai_agent == 'true' || needs.changes.outputs.web_shared == 'true'
     defaults:
       run:
         working-directory: services/agent-service

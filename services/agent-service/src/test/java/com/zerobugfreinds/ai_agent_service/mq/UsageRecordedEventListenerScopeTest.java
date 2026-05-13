@@ -125,7 +125,6 @@ class UsageRecordedEventListenerScopeTest {
 				BigDecimal.ZERO,
 				"/v1/chat/completions",
 				"api.openai.com",
-				120L,
 				Boolean.FALSE,
 				Boolean.TRUE,
 				200

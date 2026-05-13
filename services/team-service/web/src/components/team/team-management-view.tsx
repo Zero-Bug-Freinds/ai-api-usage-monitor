@@ -1435,13 +1435,19 @@ export function TeamManagementView() {
                                   </option>
                                 ))}
                               </select>
+                              <label className="block text-[11px] font-medium text-foreground" htmlFor={`team-api-key-alias-${team.id}`}>
+                                API Key 별칭 (필수)
+                              </label>
                               <input
+                                id={`team-api-key-alias-${team.id}`}
                                 className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground"
                                 value={apiKeyAliasByTeamId[team.id] ?? ""}
                                 onChange={(e) => setApiKeyAliasByTeamId((prev) => ({ ...prev, [team.id]: e.target.value }))}
-                                placeholder="API Key 별칭"
+                                placeholder="예: prod-openai"
                                 autoComplete="off"
                                 disabled={apiKeyLoadingTeamId === team.id}
+                                required
+                                aria-required="true"
                               />
                               <input
                                 type="password"
@@ -1522,12 +1528,18 @@ export function TeamManagementView() {
                                         </div>
                                       ) : (
                                         <div className="space-y-2">
+                                          <label className="block text-[11px] font-medium text-foreground" htmlFor={`edit-team-key-alias-${team.id}-${apiKey.id}`}>
+                                            별칭 (필수)
+                                          </label>
                                           <input
+                                            id={`edit-team-key-alias-${team.id}-${apiKey.id}`}
                                             className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground"
                                             value={editTeamApiKeyAlias}
                                             onChange={(e) => setEditTeamApiKeyAlias(e.target.value)}
                                             placeholder="별칭"
                                             disabled={teamApiKeyUpdateLoading === keyAction}
+                                            required
+                                            aria-required="true"
                                           />
                                           <input
                                             type="number"
