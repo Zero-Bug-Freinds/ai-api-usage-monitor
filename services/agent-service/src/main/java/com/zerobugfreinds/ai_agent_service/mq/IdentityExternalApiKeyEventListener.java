@@ -54,6 +54,7 @@ public class IdentityExternalApiKeyEventListener {
 			String json = new String(message.getBody(), StandardCharsets.UTF_8);
 			JsonNode root = objectMapper.readTree(json);
 			Map<String, String> headers = toStringHeaders(message);
+<<<<<<< Updated upstream
 			JsonNode payloadNode = extractPayloadNode(root);
 			// 리스너에서 한 줄 추가 예시: eventDebugService.record(eventType, headers, json);
 			if (root.has("eventType")) {
@@ -74,6 +75,17 @@ public class IdentityExternalApiKeyEventListener {
 					ExternalApiKeyBudgetChangedEvent budgetChanged = parseBudgetChangedEvent(payloadNode);
 					snapshotService.upsertBudget(budgetChanged);
 					return;
+=======
+
+			// 1) Physical delete — mirror usage-service ExternalApiKeyStatusChangedEventListener
+			if (root.has(EVENT_TYPE_FIELD)
+					&& IdentityExternalApiKeyEventTypes.EXTERNAL_API_KEY_DELETED.equals(root.get(EVENT_TYPE_FIELD).asText())) {
+				eventDebugService.record(IdentityExternalApiKeyEventTypes.EXTERNAL_API_KEY_DELETED, headers, json);
+				ExternalApiKeyDeletedEvent deleted = parseDeletedEvent(root);
+				snapshotService.handleExternalApiKeyDeleted(deleted);
+				if (!deleted.retainLogs() && deleted.apiKeyId() != null) {
+					apiKeyUsageDataCleanupService.purgeByApiKeyId(String.valueOf(deleted.apiKeyId()));
+>>>>>>> Stashed changes
 				}
 			}
 			if (payloadNode.has("monthlyBudgetUsd") && payloadNode.has("keyId")) {
