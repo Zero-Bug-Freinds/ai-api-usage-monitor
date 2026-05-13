@@ -1,6 +1,6 @@
 package com.eevee.usageservice.consumer;
 
-import com.eevee.usageservice.mq.IdentityExternalApiKeyEventTypes;
+import com.zerobugfreinds.identity.events.IdentityExternalApiKeyEventTypes;
 import com.eevee.usageservice.service.ApiKeyMetadataSyncService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;

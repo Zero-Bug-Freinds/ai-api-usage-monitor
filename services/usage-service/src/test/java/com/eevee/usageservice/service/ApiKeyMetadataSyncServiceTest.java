@@ -10,8 +10,8 @@ import com.eevee.usageservice.domain.ApiKeyStatus;
 import com.eevee.usageservice.mq.TeamApiKeyDeletedEvent;
 import com.eevee.usageservice.mq.TeamApiKeyDeletionCancelledEvent;
 import com.eevee.usageservice.mq.TeamApiKeyDeletionScheduledEvent;
-import com.eevee.usageservice.mq.ExternalApiKeyStatus;
-import com.eevee.usageservice.mq.ExternalApiKeyStatusChangedEvent;
+import com.zerobugfreinds.identity.events.ExternalApiKeyStatus;
+import com.zerobugfreinds.identity.events.ExternalApiKeyStatusChangedEvent;
 import com.eevee.usageservice.mq.TeamApiKeyRegisteredEvent;
 import com.eevee.usageservice.mq.TeamApiKeyStatus;
 import com.eevee.usageservice.mq.TeamApiKeyStatusChangedEvent;
@@ -404,16 +404,16 @@ class ApiKeyMetadataSyncServiceTest {
 
     @Test
     void upsertFromIdentity_setsTeamIdNullOnPersonalMetadata() {
-        ExternalApiKeyStatusChangedEvent event = new ExternalApiKeyStatusChangedEvent(
-                1,
-                Instant.parse("2026-05-01T00:00:00Z"),
+        ExternalApiKeyStatusChangedEvent event = ExternalApiKeyStatusChangedEvent.of(
                 42L,
                 "alias",
-                7L,
+                "user7@test.local",
                 "OPENAI",
-                ExternalApiKeyStatus.ACTIVE
+                ExternalApiKeyStatus.ACTIVE,
+                "key-hash"
         );
-        when(apiKeyMetadataRepository.findById(ApiKeyMetadataEntityId.personal("42", "7"))).thenReturn(Optional.empty());
+        when(apiKeyMetadataRepository.findById(ApiKeyMetadataEntityId.personal("42", "user7@test.local")))
+                .thenReturn(Optional.empty());
 
         service.upsertFromIdentity(event);
 
