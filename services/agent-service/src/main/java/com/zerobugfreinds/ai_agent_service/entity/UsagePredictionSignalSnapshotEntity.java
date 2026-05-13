@@ -25,7 +25,10 @@ public class UsagePredictionSignalSnapshotEntity {
 	@Column(nullable = false, length = 120)
 	private String userId;
 
+	@Column(precision = 19, scale = 4)
 	private BigDecimal averageDailySpendUsd7d;
+
+	@Column(precision = 19, scale = 4)
 	private BigDecimal averageDailyTokenUsage7d;
 
 	@Lob
