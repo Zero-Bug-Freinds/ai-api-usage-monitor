@@ -1,8 +1,10 @@
 # Load repo-root .env, apply local defaults, then run ./gradlew bootRun for a service.
+# notification-service is NestJS: runs `pnpm run start:dev` (no Gradle bootRun).
 # Usage (from repo root):
 #   .\scripts\bootrun.ps1 identity-service
 #   .\scripts\bootrun.ps1 usage-service -- --no-daemon
-# Arguments after the service name are passed to Gradle.
+#   .\scripts\bootrun.ps1 notification-service
+# Arguments after the service name are passed to Gradle (Java services) or after `--` to pnpm (notification-service).
 
 [CmdletBinding()]
 param(
@@ -14,7 +16,8 @@ param(
         'billing-service',
         'api-gateway-service',
         'proxy-service',
-        'agent-service'
+        'agent-service',
+        'notification-service'
     )]
     [string] $Service,
 
@@ -46,6 +49,13 @@ switch ($Service) {
     'team-service' { if (-not $env:TEAM_SERVICE_PORT) { $env:TEAM_SERVICE_PORT = '8094' } }
     'billing-service' { if (-not $env:BILLING_SERVICE_PORT) { $env:BILLING_SERVICE_PORT = '8095' } }
     'agent-service' { if (-not $env:AI_AGENT_SERVICE_PORT) { $env:AI_AGENT_SERVICE_PORT = '8096' } }
+    'notification-service' {
+        # Nest HTTP 포트(.env.example 과 compose NOTIFICATION_SERVICE_PORT 기본 8096 정합)
+        if (-not $env:PORT) {
+            if ($env:NOTIFICATION_SERVICE_PORT) { $env:PORT = $env:NOTIFICATION_SERVICE_PORT }
+            else { $env:PORT = '8096' }
+        }
+    }
     Default { }
 }
 
@@ -57,6 +67,16 @@ if (-not (Test-Path -LiteralPath $ServiceDir)) {
 
 Push-Location $ServiceDir
 try {
+    if ($Service -eq 'notification-service') {
+        $pnpmArgs = @('run', 'start:dev')
+        if ($GradleArgs -and $GradleArgs.Count -gt 0) {
+            $pnpmArgs += '--'
+            $pnpmArgs += $GradleArgs
+        }
+        & pnpm @pnpmArgs
+        exit $LASTEXITCODE
+    }
+
     $gradleArgsAll = @('bootRun')
     if ($GradleArgs -and $GradleArgs.Count -gt 0) {
         $gradleArgsAll += $GradleArgs
