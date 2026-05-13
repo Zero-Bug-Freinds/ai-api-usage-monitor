@@ -1,16 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import {
-  Label,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@ai-usage/ui"
 import { TeamMemberAvatar } from "@/components/common/team-member-avatar"
-import { formatKstIsoDate, addKstDays } from "@/lib/usage/kst-dates"
 import { EMPTY_MEMBER_MODEL_USAGE_MSG } from "@/lib/usage/team-dashboard-empty"
 import { teamUsageBffBase } from "@/lib/usage/team-usage-bff-base"
 import { DASHBOARD_API_KEY_ALL, DASHBOARD_API_KEY_NONE } from "@/lib/usage/dashboard-api-key-constants"
@@ -21,8 +12,9 @@ import {
   parseTeamBffApiKeysPayload,
   teamBffRowsToUsageMenuItems,
 } from "@/lib/usage/dashboard-provider-api-keys"
-import { DashboardApiKeySelectMenu } from "@/components/usage/dashboard-api-key-select-menu"
+import { UsageFilterBar } from "@/components/usage/usage-filter-bar"
 import { useDashboardAggregateApiKeySync } from "@/lib/usage/use-dashboard-aggregate-api-key"
+import { useFilterStorage } from "@/lib/usage/use-filter-storage"
 import { MemberAnalyticsCharts, type MemberRow } from "./member-analytics-charts"
 
 type TeamMemberDashboardProps = {
@@ -31,7 +23,6 @@ type TeamMemberDashboardProps = {
   isActive: boolean
 }
 
-type PeriodMode = "today" | "7d" | "30d"
 type TeamMemberProfile = { userId: string; displayName?: string; role?: string }
 type ModelAgg = {
   model: string
@@ -65,19 +56,6 @@ function memberUsageFetchError(status: number): string {
   return `멤버 상세 조회 실패 (HTTP ${status})`
 }
 
-function presetRange(mode: PeriodMode, todayKst: string): { from: string; to: string } {
-  switch (mode) {
-    case "today":
-      return { from: todayKst, to: todayKst }
-    case "7d":
-      return { from: addKstDays(todayKst, -6), to: todayKst }
-    case "30d":
-      return { from: addKstDays(todayKst, -29), to: todayKst }
-    default:
-      return { from: todayKst, to: todayKst }
-  }
-}
-
 function usageQuery(params: Record<string, string | undefined>): string {
   const sp = new URLSearchParams()
   sp.set("mode", "TEAM_MEMBER")
@@ -107,21 +85,27 @@ function rowFromBff(profile: TeamMemberProfile, body: BffResponse): MemberRow {
 }
 
 export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMemberDashboardProps) {
-  const todayKst = formatKstIsoDate()
-  const [periodMode, setPeriodMode] = useState<PeriodMode>("7d")
-  const [provider, setProvider] = useState<string>(DASHBOARD_PROVIDER_ALL)
+  const [clientReady, setClientReady] = useState(false)
+  useEffect(() => {
+    setClientReady(true)
+  }, [])
+  const { settings, patch } = useFilterStorage("team", "team-member", { clientReady })
+  const provider = settings.provider
+  const apiKeyId = settings.apiKeyId
+  const range = useMemo(
+    () => ({ from: settings.period.from, to: settings.period.to }),
+    [settings.period.from, settings.period.to],
+  )
   const [apiKeyRows, setApiKeyRows] = useState<TeamBffApiKeyRow[]>([])
-  const [apiKeyId, setApiKeyId] = useState<string>(DASHBOARD_API_KEY_ALL)
   const [keysLoading, setKeysLoading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [memberRows, setMemberRows] = useState<MemberRow[]>([])
-  const range = useMemo(() => presetRange(periodMode, todayKst), [periodMode, todayKst])
 
   useEffect(() => {
     if (!teamId || !isActive) {
       setApiKeyRows([])
-      setApiKeyId(DASHBOARD_API_KEY_ALL)
+      patch({ apiKeyId: DASHBOARD_API_KEY_ALL })
       return
     }
     let cancelled = false
@@ -129,7 +113,7 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
     const base = teamUsageBffBase()
     if (!base) {
       setApiKeyRows([])
-      setApiKeyId(DASHBOARD_API_KEY_ALL)
+      patch({ apiKeyId: DASHBOARD_API_KEY_ALL })
       setKeysLoading(false)
       return
     }
@@ -149,7 +133,7 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
       .catch(() => {
         if (!cancelled) {
           setApiKeyRows([])
-          setApiKeyId(DASHBOARD_API_KEY_ALL)
+          patch({ apiKeyId: DASHBOARD_API_KEY_ALL })
         }
       })
       .finally(() => {
@@ -158,7 +142,7 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
     return () => {
       cancelled = true
     }
-  }, [teamId, isActive])
+  }, [teamId, isActive, patch])
 
   const filteredApiKeyRows = useMemo(
     () => filterTeamBffRowsByProvider(apiKeyRows, provider),
@@ -169,7 +153,7 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
     [filteredApiKeyRows],
   )
 
-  useDashboardAggregateApiKeySync(apiKeyMenuItems, apiKeyId, setApiKeyId, true)
+  useDashboardAggregateApiKeySync(apiKeyMenuItems, apiKeyId, (id) => patch({ apiKeyId: id }), true)
 
   useEffect(() => {
     setMemberRows([])
@@ -281,48 +265,24 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
 
   return (
     <div className="w-full min-w-0 space-y-6">
-      <div className="flex flex-wrap items-end gap-4">
-        <div className="space-y-2 sm:w-52">
-          <Label>공급사</Label>
-          <Select value={provider} onValueChange={setProvider}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value={DASHBOARD_PROVIDER_ALL}>전체</SelectItem>
-              <SelectItem value="GOOGLE">Gemini (Google)</SelectItem>
-              <SelectItem value="OPENAI">OpenAI</SelectItem>
-              <SelectItem value="ANTHROPIC">Anthropic</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2 sm:w-52">
-          <Label>API Key</Label>
-          <Select value={apiKeyId} onValueChange={setApiKeyId} disabled={keysLoading}>
-            <SelectTrigger>
-              <SelectValue placeholder={keysLoading ? "불러오는 중…" : apiKeyMenuItems.length === 0 ? "없음" : "전체"} />
-            </SelectTrigger>
-            <SelectContent className="max-h-[min(70vh,26rem)]">
-              <DashboardApiKeySelectMenu
-                items={apiKeyMenuItems}
-                allValue={DASHBOARD_API_KEY_ALL}
-                showAllOption={apiKeyMenuItems.length > 0}
-                noneValue={DASHBOARD_API_KEY_NONE}
-                showNoneOption={apiKeyMenuItems.length === 0}
-              />
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2 sm:w-44">
-          <Label htmlFor="member-period">기간</Label>
-          <Select value={periodMode} onValueChange={(v) => setPeriodMode(v as PeriodMode)}>
-            <SelectTrigger id="member-period"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="today">오늘</SelectItem>
-              <SelectItem value="7d">최근 7일</SelectItem>
-              <SelectItem value="30d">최근 30일</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+      <UsageFilterBar
+        idPrefix="member-dash"
+        provider={provider}
+        onProviderChange={(v) => patch({ provider: v })}
+        period={settings.period}
+        onPeriodChange={(p) => patch({ period: p })}
+        apiKey={{
+          value: apiKeyId,
+          onValueChange: (id) => patch({ apiKeyId: id }),
+          menuItems: apiKeyMenuItems,
+          keysLoading,
+          allValue: DASHBOARD_API_KEY_ALL,
+          showAllOption: apiKeyMenuItems.length > 0,
+          noneValue: DASHBOARD_API_KEY_NONE,
+          showNoneOption: apiKeyMenuItems.length === 0,
+          selectId: "member-api-key",
+        }}
+      />
 
       {error ? <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p> : null}
       {loading ? (

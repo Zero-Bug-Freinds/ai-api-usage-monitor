@@ -4,9 +4,9 @@ import com.eevee.usage.events.UsageRecordedEvent;
 import com.eevee.usageservice.domain.ApiKeyMetadataEntity;
 import com.eevee.usageservice.domain.ApiKeyMetadataEntityId;
 import com.eevee.usageservice.domain.ApiKeyStatus;
-import com.eevee.usageservice.mq.ExternalApiKeyDeletedEvent;
-import com.eevee.usageservice.mq.ExternalApiKeyStatus;
-import com.eevee.usageservice.mq.ExternalApiKeyStatusChangedEvent;
+import com.zerobugfreinds.identity.events.ExternalApiKeyDeletedEvent;
+import com.zerobugfreinds.identity.events.ExternalApiKeyStatus;
+import com.zerobugfreinds.identity.events.ExternalApiKeyStatusChangedEvent;
 import com.eevee.usageservice.mq.TeamApiKeyDeletedEvent;
 import com.eevee.usageservice.mq.TeamApiKeyDeletionCancelledEvent;
 import com.eevee.usageservice.mq.TeamApiKeyDeletionScheduledEvent;
@@ -50,11 +50,11 @@ public class ApiKeyMetadataSyncService {
 
     @Transactional
     public void upsertFromIdentity(ExternalApiKeyStatusChangedEvent event) {
-        if (event.keyId() == null || event.userId() == null || event.status() == null) {
+        if (event.keyId() == null || !StringUtils.hasText(event.userId()) || event.status() == null) {
             throw new IllegalArgumentException("keyId, userId, status are required");
         }
         String keyId = String.valueOf(event.keyId());
-        String userId = String.valueOf(event.userId());
+        String userId = event.userId().trim();
         Instant updatedAt = event.occurredAt() != null ? event.occurredAt() : Instant.now();
 
         var id = ApiKeyMetadataEntityId.personal(keyId, userId);
@@ -240,12 +240,12 @@ public class ApiKeyMetadataSyncService {
 
     @Transactional
     public void handleExternalApiKeyDeleted(ExternalApiKeyDeletedEvent event) {
-        if (event.apiKeyId() == null || event.userId() == null) {
+        if (event.apiKeyId() == null || !StringUtils.hasText(event.userId())) {
             throw new IllegalArgumentException("apiKeyId, userId are required");
         }
         String keyId = String.valueOf(event.apiKeyId());
-        String userId = String.valueOf(event.userId());
-        boolean retainLogs = event.retainLogs() == null || event.retainLogs();
+        String userId = event.userId().trim();
+        boolean retainLogs = event.retainLogs();
 
         var id = ApiKeyMetadataEntityId.personal(keyId, userId);
 

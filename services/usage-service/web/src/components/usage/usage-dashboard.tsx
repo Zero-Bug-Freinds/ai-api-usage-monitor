@@ -22,16 +22,7 @@ import {
   YAxis,
 } from "recharts"
 
-import {
-  Button,
-  Input,
-  Label,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@ai-usage/ui"
+import { Button } from "@ai-usage/ui"
 import { buildUsageQuery, fetchUsageJson } from "@/lib/usage/fetch-usage"
 import { teamUsageBffBase } from "@/lib/usage/team-usage-bff-base"
 import {
@@ -56,7 +47,6 @@ import type {
 import { addKstDays, formatKstIsoDate } from "@/lib/usage/kst-dates"
 import { DASHBOARD_API_KEY_ALL, DASHBOARD_API_KEY_NONE } from "@/lib/usage/dashboard-api-key-constants"
 import {
-  DASHBOARD_PROVIDER_ALL,
   dashboardProviderQueryParam,
   filterTeamBffRowsByProvider,
   parseTeamBffApiKeysPayload,
@@ -64,7 +54,8 @@ import {
   type TeamBffApiKeyRow,
 } from "@/lib/usage/dashboard-provider-api-keys"
 import { useDashboardAggregateApiKeySync } from "@/lib/usage/use-dashboard-aggregate-api-key"
-import { DashboardApiKeySelectMenu } from "@/components/usage/dashboard-api-key-select-menu"
+import { UsageFilterBar } from "@/components/usage/usage-filter-bar"
+import { useFilterStorage } from "@/lib/usage/use-filter-storage"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const AnyLegend = Legend as any
@@ -86,13 +77,6 @@ const MONTHLY_LOOKBACK_DAYS = 365
 const MAX_RANGE_DAYS = 366
 const HISTORY_CACHE_TTL_MS = 60 * 60 * 1000
 
-const DASHBOARD_PROVIDER_STORAGE_KEY = "usage-dashboard:provider:v1"
-const DASHBOARD_PERIOD_STORAGE_KEY = "usage-dashboard:period:v1"
-/** 개인 대시보드 전용. 팀 대시보드·팀 멤버 뷰와 sessionStorage 충돌 없음. */
-const PERSONAL_DASHBOARD_SELECTED_API_KEY_ID = "PERSONAL_DASHBOARD_SELECTED_API_KEY_ID"
-const TEAM_MY_USAGE_PROVIDER_KEY = "TEAM_MY_USAGE_PROVIDER"
-const TEAM_MY_USAGE_PERIOD_KEY = "TEAM_MY_USAGE_PERIOD"
-const TEAM_MY_USAGE_SELECTED_API_KEY_ID_KEY = "TEAM_MY_USAGE_SELECTED_API_KEY_ID"
 const MODEL_REQUESTS_TOP_N = 10
 const OTHERS_LABEL = "기타 (Others)"
 const OTHERS_BAR_COLOR = "#94a3b8"
@@ -128,100 +112,6 @@ function isProviderUnknownPlaceholderModel(model: string, provider: string): boo
   return model.trim().toLowerCase() === expected
 }
 
-type PeriodMode = "today" | "7d" | "30d" | "custom"
-type StoredDashboardPeriod = {
-  mode: PeriodMode
-  from: string
-  to: string
-}
-
-function isPeriodMode(v: unknown): v is PeriodMode {
-  return v === "today" || v === "7d" || v === "30d" || v === "custom"
-}
-
-function readStoredDashboardPeriod(todayIso: string): StoredDashboardPeriod {
-  if (typeof sessionStorage === "undefined") {
-    return { mode: "today", from: todayIso, to: todayIso }
-  }
-  try {
-    const raw = sessionStorage.getItem(DASHBOARD_PERIOD_STORAGE_KEY)
-    if (!raw) return { mode: "today", from: todayIso, to: todayIso }
-    const parsed = JSON.parse(raw) as Partial<StoredDashboardPeriod>
-    const mode = isPeriodMode(parsed.mode) ? parsed.mode : "today"
-    const from = typeof parsed.from === "string" && parsed.from.length > 0 ? parsed.from : todayIso
-    const to = typeof parsed.to === "string" && parsed.to.length > 0 ? parsed.to : todayIso
-    return { mode, from, to }
-  } catch {
-    return { mode: "today", from: todayIso, to: todayIso }
-  }
-}
-
-function readStoredDashboardProvider(): string {
-  if (typeof sessionStorage === "undefined") return DASHBOARD_PROVIDER_ALL
-  try {
-    const raw = sessionStorage.getItem(DASHBOARD_PROVIDER_STORAGE_KEY)
-    if (!raw) return DASHBOARD_PROVIDER_ALL
-    return raw
-  } catch {
-    return DASHBOARD_PROVIDER_ALL
-  }
-}
-
-function readStoredPersonalDashboardApiKeyId(): string {
-  if (typeof sessionStorage === "undefined") return DASHBOARD_API_KEY_ALL
-  try {
-    const raw = sessionStorage.getItem(PERSONAL_DASHBOARD_SELECTED_API_KEY_ID)
-    if (raw == null) return DASHBOARD_API_KEY_ALL
-    const trimmed = raw.trim()
-    if (trimmed.length === 0 || trimmed === DASHBOARD_API_KEY_ALL) return DASHBOARD_API_KEY_ALL
-    if (trimmed === DASHBOARD_API_KEY_NONE) return DASHBOARD_API_KEY_NONE
-    return trimmed
-  } catch {
-    return DASHBOARD_API_KEY_ALL
-  }
-}
-
-function readStoredTeamMyUsagePeriod(todayIso: string): StoredDashboardPeriod {
-  if (typeof sessionStorage === "undefined") {
-    return { mode: "today", from: todayIso, to: todayIso }
-  }
-  try {
-    const raw = sessionStorage.getItem(TEAM_MY_USAGE_PERIOD_KEY)
-    if (!raw) return { mode: "today", from: todayIso, to: todayIso }
-    const parsed = JSON.parse(raw) as Partial<StoredDashboardPeriod>
-    const mode = isPeriodMode(parsed.mode) ? parsed.mode : "today"
-    const from = typeof parsed.from === "string" && parsed.from.length > 0 ? parsed.from : todayIso
-    const to = typeof parsed.to === "string" && parsed.to.length > 0 ? parsed.to : todayIso
-    return { mode, from, to }
-  } catch {
-    return { mode: "today", from: todayIso, to: todayIso }
-  }
-}
-
-function readStoredTeamMyUsageProvider(): string {
-  if (typeof sessionStorage === "undefined") return DASHBOARD_PROVIDER_ALL
-  try {
-    const raw = sessionStorage.getItem(TEAM_MY_USAGE_PROVIDER_KEY)
-    if (!raw) return DASHBOARD_PROVIDER_ALL
-    return raw
-  } catch {
-    return DASHBOARD_PROVIDER_ALL
-  }
-}
-
-function readStoredTeamMyUsageApiKeyId(): string {
-  if (typeof sessionStorage === "undefined") return DASHBOARD_API_KEY_ALL
-  try {
-    const raw = sessionStorage.getItem(TEAM_MY_USAGE_SELECTED_API_KEY_ID_KEY)
-    if (raw == null) return DASHBOARD_API_KEY_ALL
-    const trimmed = raw.trim()
-    if (trimmed.length === 0 || trimmed === DASHBOARD_API_KEY_ALL) return DASHBOARD_API_KEY_ALL
-    return trimmed
-  } catch {
-    return DASHBOARD_API_KEY_ALL
-  }
-}
-
 function tooltipNumericValue(value: unknown): number {
   if (typeof value === "number") return value
   if (typeof value === "string") return toNumber(value)
@@ -255,19 +145,6 @@ function scopeQueryParams(
     o.apiKeyId = apiKeyId
   }
   return o
-}
-
-function presetRangeForMode(mode: PeriodMode, todayKst: string) {
-  switch (mode) {
-    case "today":
-      return { from: todayKst, to: todayKst }
-    case "7d":
-      return { from: addKstDays(todayKst, -6), to: todayKst }
-    case "30d":
-      return { from: addKstDays(todayKst, -29), to: todayKst }
-    default:
-      return { from: todayKst, to: todayKst }
-  }
 }
 
 /** KST 날짜 문자열 구간의 포함 일수 (시작·종료 당일 포함). */
@@ -774,27 +651,20 @@ const TOKEN_CHART_MAX_H = 520
 
 export function UsageDashboard() {
   const searchParams = useSearchParams()
-  const dataContextParam = searchParams.get("dataContext") ?? ""
   const dataContext = parseDashboardDataContext(searchParams.get("dataContext"))
 
-  const [periodMode, setPeriodMode] = React.useState<PeriodMode>(() => {
-    const t = formatKstIsoDate()
-    return dataContext === "TEAM_MEMBER_ONLY" ? readStoredTeamMyUsagePeriod(t).mode : readStoredDashboardPeriod(t).mode
-  })
-  const [customFrom, setCustomFrom] = React.useState(() => {
-    const t = formatKstIsoDate()
-    return dataContext === "TEAM_MEMBER_ONLY" ? readStoredTeamMyUsagePeriod(t).from : readStoredDashboardPeriod(t).from
-  })
-  const [customTo, setCustomTo] = React.useState(() => {
-    const t = formatKstIsoDate()
-    return dataContext === "TEAM_MEMBER_ONLY" ? readStoredTeamMyUsagePeriod(t).to : readStoredDashboardPeriod(t).to
-  })
-  const [dashProvider, setDashProvider] = React.useState<string>(() =>
-    dataContext === "TEAM_MEMBER_ONLY" ? readStoredTeamMyUsageProvider() : readStoredDashboardProvider()
-  )
-  const [dashApiKeyId, setDashApiKeyId] = React.useState<string>(() =>
-    dataContext === "PERSONAL" ? readStoredPersonalDashboardApiKeyId() : readStoredTeamMyUsageApiKeyId()
-  )
+  const [clientReady, setClientReady] = React.useState(false)
+  React.useLayoutEffect(() => {
+    setClientReady(true)
+  }, [])
+
+  const filterStorageMode = dataContext === "TEAM_MEMBER_ONLY" ? "team-my-usage" : "personal-keys"
+  const { settings, patch } = useFilterStorage("dashboard", filterStorageMode, { clientReady })
+  const dashProvider = settings.provider
+  const dashApiKeyId = settings.apiKeyId
+  const periodMode = settings.period.mode
+  const customFrom = settings.period.from
+  const customTo = settings.period.to
   const [personalApiKeyOptions, setPersonalApiKeyOptions] = React.useState<UsageLogApiKeyItemResponse[]>([])
   const [teamMemberRawApiKeyRows, setTeamMemberRawApiKeyRows] = React.useState<TeamBffApiKeyRow[]>([])
   const [teamMemberKeysLoading, setTeamMemberKeysLoading] = React.useState(false)
@@ -813,7 +683,7 @@ export function UsageDashboard() {
   useDashboardAggregateApiKeySync(
     apiKeyOptions,
     dashApiKeyId,
-    setDashApiKeyId,
+    (id) => patch({ apiKeyId: id }),
     dataContext === "PERSONAL" || dataContext === "TEAM_MEMBER_ONLY",
   )
 
@@ -836,91 +706,6 @@ export function UsageDashboard() {
 
   /** API·KPI 라벨에 쓰는 구간(마지막으로 로드한 기준). effect 안에서만 갱신해 요청 간 날짜 불일치를 막는다. */
   const [loadedRange, setLoadedRange] = React.useState<{ from: string; to: string } | null>(null)
-
-  const [clientReady, setClientReady] = React.useState(false)
-  React.useLayoutEffect(() => {
-    setClientReady(true)
-  }, [])
-
-  React.useEffect(() => {
-    if (!clientReady || typeof sessionStorage === "undefined") return
-    const ctx = parseDashboardDataContext(dataContextParam || null)
-    const t = formatKstIsoDate()
-    if (ctx === "TEAM_MEMBER_ONLY") {
-      const p = readStoredTeamMyUsagePeriod(t)
-      setPeriodMode(p.mode)
-      setCustomFrom(p.from)
-      setCustomTo(p.to)
-      setDashProvider(readStoredTeamMyUsageProvider())
-      setDashApiKeyId(readStoredTeamMyUsageApiKeyId())
-    } else {
-      const p = readStoredDashboardPeriod(t)
-      setPeriodMode(p.mode)
-      setCustomFrom(p.from)
-      setCustomTo(p.to)
-      setDashProvider(readStoredDashboardProvider())
-      setDashApiKeyId(readStoredPersonalDashboardApiKeyId())
-    }
-  }, [clientReady, dataContextParam])
-
-  React.useEffect(() => {
-    if (!clientReady || typeof sessionStorage === "undefined") return
-    if (dataContext !== "PERSONAL") return
-    try {
-      sessionStorage.setItem(PERSONAL_DASHBOARD_SELECTED_API_KEY_ID, dashApiKeyId)
-    } catch {
-      /* ignore quota/private mode */
-    }
-  }, [clientReady, dataContext, dashApiKeyId])
-
-  React.useEffect(() => {
-    if (!clientReady || periodMode === "custom") return
-    const t = formatKstIsoDate()
-    const { from, to } = presetRangeForMode(periodMode, t)
-    setCustomFrom(from)
-    setCustomTo(to)
-  }, [clientReady, periodMode])
-
-  React.useEffect(() => {
-    if (!clientReady || typeof sessionStorage === "undefined") return
-    try {
-      if (dataContext === "PERSONAL") {
-        sessionStorage.setItem(DASHBOARD_PROVIDER_STORAGE_KEY, dashProvider)
-      } else if (dataContext === "TEAM_MEMBER_ONLY") {
-        sessionStorage.setItem(TEAM_MY_USAGE_PROVIDER_KEY, dashProvider)
-      }
-    } catch {
-      /* ignore quota/private mode */
-    }
-  }, [clientReady, dataContext, dashProvider])
-
-  React.useEffect(() => {
-    if (!clientReady || typeof sessionStorage === "undefined") return
-    try {
-      const payload: StoredDashboardPeriod = {
-        mode: periodMode,
-        from: customFrom,
-        to: customTo,
-      }
-      if (dataContext === "PERSONAL") {
-        sessionStorage.setItem(DASHBOARD_PERIOD_STORAGE_KEY, JSON.stringify(payload))
-      } else if (dataContext === "TEAM_MEMBER_ONLY") {
-        sessionStorage.setItem(TEAM_MY_USAGE_PERIOD_KEY, JSON.stringify(payload))
-      }
-    } catch {
-      /* ignore quota/private mode */
-    }
-  }, [clientReady, dataContext, periodMode, customFrom, customTo])
-
-  React.useEffect(() => {
-    if (!clientReady || typeof sessionStorage === "undefined") return
-    if (dataContext !== "TEAM_MEMBER_ONLY") return
-    try {
-      sessionStorage.setItem(TEAM_MY_USAGE_SELECTED_API_KEY_ID_KEY, dashApiKeyId)
-    } catch {
-      /* ignore quota/private mode */
-    }
-  }, [clientReady, dataContext, dashApiKeyId])
 
   React.useEffect(() => {
     if (dataContext !== "TEAM_MEMBER_ONLY") {
@@ -1625,146 +1410,45 @@ export function UsageDashboard() {
         </div>
       ) : null}
 
-      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-end">
-        <div className="space-y-2 sm:w-52">
-          <Label htmlFor="dash-provider">공급사</Label>
-          <Select value={dashProvider} onValueChange={setDashProvider} disabled={memberDashFiltersDisabled}>
-            <SelectTrigger id="dash-provider">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={DASHBOARD_PROVIDER_ALL}>전체</SelectItem>
-              <SelectItem value="GOOGLE">Gemini (Google)</SelectItem>
-              <SelectItem value="OPENAI">OpenAI</SelectItem>
-              <SelectItem value="ANTHROPIC">Anthropic</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        {dataContext === "TEAM_MEMBER_ONLY" ? (
-          <div className="space-y-2 sm:w-52">
-            <Label htmlFor="dash-team-member-team">팀</Label>
-            <Select
-              value={teamMemberTeamId}
-              onValueChange={(v) => {
-                setTeamMemberTeamId(v)
-                setDashApiKeyId(DASHBOARD_API_KEY_ALL)
-              }}
-              disabled={memberDashFiltersDisabled}
-            >
-              <SelectTrigger id="dash-team-member-team">
-                <SelectValue
-                  placeholder={
-                    memberTeamsLoading ? "팀 목록 불러오는 중…" : !memberHasTeams ? "소속 팀 없음" : "팀 선택"
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {memberTeams.map((tm) => (
-                  <SelectItem key={tm.id} value={tm.id}>
-                    {tm.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        ) : null}
-
-        <div className="space-y-2 sm:min-w-[12rem] sm:max-w-[20rem]">
-          <Label htmlFor="dash-api-key">API Key</Label>
-          <Select
-            value={dashApiKeyId}
-            onValueChange={setDashApiKeyId}
-            disabled={
-              memberDashFiltersDisabled ||
-              ((dataContext === "PERSONAL" || dataContext === "TEAM_MEMBER_ONLY") && apiKeyOptions.length === 0)
-            }
-          >
-            <SelectTrigger id="dash-api-key">
-              <SelectValue
-                placeholder={
-                  (dataContext === "PERSONAL" || dataContext === "TEAM_MEMBER_ONLY") &&
-                  apiKeyOptions.length === 0
-                    ? "없음"
-                    : "전체"
+      <div className="mb-6">
+        <UsageFilterBar
+          idPrefix="dash"
+          globalDisabled={memberDashFiltersDisabled}
+          provider={dashProvider}
+          onProviderChange={(v) => patch({ provider: v })}
+          period={settings.period}
+          onPeriodChange={(p) => patch({ period: p })}
+          periodCustomNote="기간 지정 조회는 최대 1년(366일)까지 가능합니다."
+          showTeam={dataContext === "TEAM_MEMBER_ONLY"}
+          team={
+            dataContext === "TEAM_MEMBER_ONLY"
+              ? {
+                  value: teamMemberTeamId,
+                  onValueChange: (v) => {
+                    setTeamMemberTeamId(v)
+                    patch({ apiKeyId: DASHBOARD_API_KEY_ALL })
+                  },
+                  teams: memberTeams,
+                  loading: memberTeamsLoading,
+                  selectId: "dash-team-member-team",
                 }
-              />
-            </SelectTrigger>
-            <SelectContent className="max-h-[min(70vh,26rem)]">
-              <DashboardApiKeySelectMenu
-                items={apiKeyOptions}
-                allValue={DASHBOARD_API_KEY_ALL}
-                showAllOption={
-                  !(
-                    (dataContext === "PERSONAL" || dataContext === "TEAM_MEMBER_ONLY") &&
-                    apiKeyOptions.length === 0
-                  )
-                }
-                noneValue={DASHBOARD_API_KEY_NONE}
-                showNoneOption={
-                  (dataContext === "PERSONAL" || dataContext === "TEAM_MEMBER_ONLY") &&
-                  apiKeyOptions.length === 0
-                }
-              />
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-2 sm:w-44">
-          <Label htmlFor="dash-period">기간</Label>
-          <Select
-            value={periodMode}
-            disabled={memberDashFiltersDisabled}
-            onValueChange={(v) => {
-              const nextMode = v as PeriodMode
-              setPeriodMode(nextMode)
-              if (nextMode !== "custom") {
-                const t = formatKstIsoDate()
-                const nextRange = presetRangeForMode(nextMode, t)
-                setCustomFrom(nextRange.from)
-                setCustomTo(nextRange.to)
-              }
-            }}
-          >
-            <SelectTrigger id="dash-period">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="today">오늘</SelectItem>
-              <SelectItem value="7d">최근 7일</SelectItem>
-              <SelectItem value="30d">최근 30일</SelectItem>
-              <SelectItem value="custom">기간 지정</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        {periodMode === "custom" ? (
-          <div className="flex min-w-[18rem] flex-col gap-2 lg:pb-0.5">
-            <p className="text-xs text-muted-foreground">기간 지정 조회는 최대 1년(366일)까지 가능합니다.</p>
-            <div className="flex flex-wrap gap-3">
-              <div className="space-y-2">
-                <Label htmlFor="custom-from">시작</Label>
-                <Input
-                  id="custom-from"
-                  type="date"
-                  value={customFrom}
-                  disabled={memberDashFiltersDisabled}
-                  onChange={(e) => setCustomFrom(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="custom-to">종료</Label>
-                <Input
-                  id="custom-to"
-                  type="date"
-                  value={customTo}
-                  disabled={memberDashFiltersDisabled}
-                  onChange={(e) => setCustomTo(e.target.value)}
-                />
-              </div>
-            </div>
-          </div>
-        ) : null}
+              : undefined
+          }
+          apiKey={{
+            value: dashApiKeyId,
+            onValueChange: (id) => patch({ apiKeyId: id }),
+            menuItems: apiKeyOptions,
+            keysLoading: dataContext === "TEAM_MEMBER_ONLY" ? teamMemberKeysLoading : false,
+            allValue: DASHBOARD_API_KEY_ALL,
+            showAllOption: !(
+              (dataContext === "PERSONAL" || dataContext === "TEAM_MEMBER_ONLY") && apiKeyOptions.length === 0
+            ),
+            noneValue: DASHBOARD_API_KEY_NONE,
+            showNoneOption:
+              (dataContext === "PERSONAL" || dataContext === "TEAM_MEMBER_ONLY") && apiKeyOptions.length === 0,
+            selectId: "dash-api-key",
+          }}
+        />
       </div>
 
       {mainError ? (

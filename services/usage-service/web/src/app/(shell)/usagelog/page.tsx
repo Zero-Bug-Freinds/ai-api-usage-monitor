@@ -1,4 +1,10 @@
+import type { Metadata } from "next"
+
 import { UsageLogPanel } from "@/components/usage/usage-log-panel"
+
+export const metadata: Metadata = {
+  title: "상세 로그",
+}
 
 export default function UsageLogPage() {
   return (

@@ -1,9 +1,9 @@
 package com.eevee.usageservice.consumer;
 
 import com.eevee.usageservice.service.ApiKeyMetadataSyncService;
-import com.eevee.usageservice.mq.ExternalApiKeyDeletedEvent;
-import com.eevee.usageservice.mq.ExternalApiKeyStatusChangedEvent;
-import com.eevee.usageservice.mq.IdentityExternalApiKeyEventTypes;
+import com.zerobugfreinds.identity.events.ExternalApiKeyDeletedEvent;
+import com.zerobugfreinds.identity.events.ExternalApiKeyStatusChangedEvent;
+import com.zerobugfreinds.identity.events.IdentityExternalApiKeyEventTypes;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
