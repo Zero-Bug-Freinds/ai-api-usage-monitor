@@ -590,7 +590,11 @@ jobs:
     if: needs.changes.outputs.notification == 'true' || needs.changes.outputs.web_shared == 'true'
     steps:
       - uses: actions/checkout@v4
+      # docker-container driver + load:true forces a full tarball export/import into the
+      # daemon and can stall 10–20m on runners; docker driver keeps the image in-daemon.
       - uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -611,14 +615,16 @@ jobs:
           tags: notification-service:ci
           load: true
           push: false
+          provenance: false
+          sbom: false
           cache-from: type=gha,scope=notification-service
           cache-to: type=gha,mode=max,scope=notification-service
-      # ESLint: omit --max-warnings so only errors fail the step; warnings do not stop CI
-      - name: Lint / test / build (notification-web)
+      # ESLint: omit --max-warnings so only errors fail the step; warnings do not stop CI.
+      # Next.js production build runs in the Docker step below (no duplicate host build).
+      - name: Lint / test (notification-web)
         run: |
           pnpm --filter notification-web run lint
           pnpm --filter notification-web test
-          pnpm --filter notification-web run build
       - name: Docker image (notification-web, standalone)
         id: docker_notification_web
         uses: docker/build-push-action@v6
@@ -628,6 +634,8 @@ jobs:
           tags: notification-web:ci
           load: true
           push: false
+          provenance: false
+          sbom: false
           cache-from: type=gha,scope=notification-web
           # NOTE: 무료 티어(10GB)에서 캐시가 커지면 mode=min으로 유지하는 편이 안정적이다.
           cache-to: type=gha,mode=min,scope=notification-web
