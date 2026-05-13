@@ -242,7 +242,7 @@ export function ConsoleSidebarInner({
   }
 
   return (
-    <aside className="flex h-full min-h-0 w-64 min-w-[240px] max-w-[280px] shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
+    <aside className="flex w-full min-h-0 shrink-0 flex-col border-b border-sidebar-border bg-sidebar text-sidebar-foreground md:h-full md:min-h-screen md:w-64 md:min-w-[240px] md:max-w-[280px] md:border-r md:border-b-0">
       <div className="border-b border-sidebar-border px-4 py-4">
         <p className="text-xs font-medium uppercase tracking-wide text-sidebar-foreground/60">콘솔</p>
         <p className="mt-1 text-sm font-semibold leading-tight tracking-tight text-sidebar-foreground">
@@ -354,7 +354,7 @@ function ConsoleSidebarPagesCore(
   if (!router.isReady) {
     return (
       <aside
-        className="flex h-full min-h-0 w-64 min-w-[240px] max-w-[280px] shrink-0 flex-col border-r border-sidebar-border bg-sidebar animate-pulse"
+        className="flex w-full min-h-0 shrink-0 flex-col border-b border-sidebar-border bg-sidebar animate-pulse md:h-full md:min-h-screen md:w-64 md:min-w-[240px] md:max-w-[280px] md:border-r md:border-b-0"
         aria-hidden
       />
     )

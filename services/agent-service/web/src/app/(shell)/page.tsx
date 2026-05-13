@@ -419,8 +419,8 @@ export default function AgentPage() {
   }
 
   return (
-    <div className="grid min-h-[70vh] gap-4 p-4 md:grid-cols-12">
-      <aside className="space-y-4 rounded-xl border bg-card p-4 md:col-span-3">
+    <div className="grid min-h-[70vh] w-full min-w-0 grid-cols-1 gap-4 p-4 lg:grid-cols-12">
+      <aside className="min-w-0 space-y-4 rounded-xl border bg-card p-4 lg:col-span-3">
         <div className="space-y-2">
           <h3 className="text-sm font-semibold">개인 API 키</h3>
           <p className="text-[11px] leading-snug text-muted-foreground">
@@ -590,7 +590,7 @@ export default function AgentPage() {
         </div>
       </aside>
 
-      <section className="space-y-4 md:col-span-9">
+      <section className="min-w-0 w-full space-y-4 lg:col-span-9">
         {loading ? (
           <div className="flex min-h-[260px] flex-col items-center justify-center gap-3 rounded-xl border bg-card p-6 text-center">
             <div className="h-10 w-10 animate-spin rounded-full border-4 border-muted border-t-primary" />
@@ -602,11 +602,15 @@ export default function AgentPage() {
 
         {!loading && results.length > 0
           ? results.map((result: AnalysisResult) => (
-              <article key={result.keyId} className="space-y-3 rounded-xl border bg-card p-4">
-                <div className="flex items-center justify-between gap-2">
-                  <h2 className="text-lg font-semibold">{result.keyLabel} ({result.provider})</h2>
+              <article key={result.keyId} className="min-w-0 space-y-3 break-words rounded-xl border bg-card p-4">
+                <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <h2 className="min-w-0 text-lg font-semibold break-words">
+                    {result.keyLabel} ({result.provider})
+                  </h2>
                   {result.data ? (
-                    <span className={`rounded-full px-2 py-1 text-xs font-semibold ${statusClassName(result.data.healthStatus)}`}>
+                    <span
+                      className={`shrink-0 self-start rounded-full px-2 py-1 text-xs font-semibold sm:self-auto ${statusClassName(result.data.healthStatus)}`}
+                    >
                       {localizedHealthStatus(result.data.healthStatus)}
                     </span>
                   ) : null}

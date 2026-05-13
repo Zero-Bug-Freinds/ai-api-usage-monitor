@@ -21,7 +21,7 @@ export function ConsoleLayoutOverride({
   children,
   rootClassName = "flex min-h-screen w-full min-w-0 bg-background",
   mainClassName = "flex min-h-screen min-w-0 flex-1 flex-col overflow-x-auto overflow-y-auto",
-  contentClassName = "mx-auto min-h-full w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 lg:px-8",
+  contentClassName = "mx-auto min-h-full w-full min-w-0 max-w-screen-2xl flex-1 px-4 py-6 sm:px-6 lg:px-8",
 }: ConsoleLayoutOverrideProps) {
   return (
     <div className={rootClassName}>
