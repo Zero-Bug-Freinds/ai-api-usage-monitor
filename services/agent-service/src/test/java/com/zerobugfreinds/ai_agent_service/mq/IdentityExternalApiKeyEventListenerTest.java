@@ -1,6 +1,7 @@
 package com.zerobugfreinds.ai_agent_service.mq;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.zerobugfreinds.ai_agent_service.service.ApiKeyUsageDataCleanupService;
 import com.zerobugfreinds.ai_agent_service.service.EventDebugService;
 import com.zerobugfreinds.ai_agent_service.service.IdentityApiKeySnapshotService;
@@ -37,7 +38,7 @@ class IdentityExternalApiKeyEventListenerTest {
 	@BeforeEach
 	void setUp() {
 		listener = new IdentityExternalApiKeyEventListener(
-				new ObjectMapper(),
+				new ObjectMapper().registerModule(new JavaTimeModule()),
 				snapshotService,
 				apiKeyUsageDataCleanupService,
 				eventDebugService

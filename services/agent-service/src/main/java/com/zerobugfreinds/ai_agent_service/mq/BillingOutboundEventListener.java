@@ -2,6 +2,7 @@ package com.zerobugfreinds.ai_agent_service.mq;
 
 import com.eevee.usage.events.UsageCostFinalizedEvent;
 import com.zerobugfreinds.ai_agent_service.dto.BillingCostCorrectedEvent;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zerobugfreinds.ai_agent_service.service.BillingSignalSnapshotService;
@@ -43,7 +44,9 @@ public class BillingOutboundEventListener {
 		try {
 			String body = new String(message.getBody(), StandardCharsets.UTF_8);
 			JsonNode root = objectMapper.readTree(body);
-			UsageCostFinalizedEvent event = objectMapper.treeToValue(root, UsageCostFinalizedEvent.class);
+			UsageCostFinalizedEvent event = objectMapper.readerFor(UsageCostFinalizedEvent.class)
+					.without(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+					.readValue(root);
 			Map<String, String> headers = toStringHeaders(message);
 			eventDebugService.record("UsageCostFinalizedEvent", headers, body);
 			String apiKeyId = resolveApiKeyId(message, root);
