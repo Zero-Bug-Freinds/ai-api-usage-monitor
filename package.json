@@ -26,6 +26,7 @@
     "build:notification-service": "pnpm --filter notification-service build",
     "build:web": "pnpm build:web-host && pnpm build:identity-web && pnpm build:usage-web && pnpm build:billing-web && pnpm build:team-web",
     "docker:compose:web:build": "powershell -ExecutionPolicy Bypass -NoProfile -File ./scripts/docker-web-profile-build.ps1",
-    "docker:compose:web:build:unix": "bash ./scripts/docker-web-profile-build.sh"
+    "docker:compose:web:build:unix": "bash ./scripts/docker-web-profile-build.sh",
+    "docker:web-node-deps:rebuild": "docker compose --profile web build --no-cache web-node-deps"
   }
 }

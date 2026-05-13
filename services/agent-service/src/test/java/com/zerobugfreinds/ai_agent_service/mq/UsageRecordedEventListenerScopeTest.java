@@ -115,8 +115,7 @@ class UsageRecordedEventListenerScopeTest {
 				"org-1",
 				teamId,
 				"key-1",
-				teamApiKeyId,
-				"fingerprint",
+				teamApiKeyId == null ? "" : teamApiKeyId,
 				apiKeySource,
 				AiProvider.OPENAI,
 				"gpt-4o",
@@ -124,7 +123,6 @@ class UsageRecordedEventListenerScopeTest {
 				BigDecimal.ZERO,
 				"/v1/chat/completions",
 				"api.openai.com",
-				120L,
 				Boolean.FALSE,
 				Boolean.TRUE,
 				200

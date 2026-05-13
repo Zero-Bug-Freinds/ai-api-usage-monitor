@@ -15,9 +15,11 @@
 #
 # [Next] 빌드: 저장소 루트에서 pnpm install 후 `pnpm build:web` 또는 각 web 에서 build.
 #   Docker 이미지: build context 는 루트(.), dockerfile 은 services/<svc>/web/Dockerfile (workspace `packages/ui`).
-#   공통 pnpm install 레이어를 재사용하려면 먼저
-#   `docker build -f docker/web-node-deps.Dockerfile -t ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local} .`
-#   후 `docker compose --profile web up -d --build` 를 실행한다.
+#   공통 pnpm install 레이어: 프로필 web 의 `web-node-deps` 서비스 이미지(`WEB_NODE_DEPS_IMAGE`, 기본 `web-node-deps:local`).
+#   `COPY --from=deps .../packages/team-workspace-cache/... not found` 는 대개 **오래된 deps 이미지**다.
+#   `docker compose --profile web build --no-cache web-node-deps` 후 웹 이미지를 다시 빌드한다.
+#   `web-edge` 는 기동 시 `web-node-deps` 컨테이너가 먼저 종료되기를 기다리지만, Compose 가 웹 이미지 빌드를
+#   병렬로 돌리므로 **deps 이미지를 먼저 빌드하는 보장은 없다** — 위 한 줄을 습관화할 것.
 # [Node backend] notification-service 공통 install 레이어를 재사용하려면 먼저
 #   `docker build -f docker/backend-node-deps.Dockerfile -t ${BACKEND_NODE_DEPS_IMAGE:-backend-node-deps:local} .`
 #   후 `docker compose --profile web up -d --build notification-service` 를 실행한다.
@@ -33,6 +35,18 @@
 # CI(GitHub Actions)에서는 .github/workflows/ci.yml 및 docs/CI.md 의 docker/build-push-action + type=gha 패턴을 사용한다.
 
 services:
+  # Next 웹·MFE 이미지가 COPY --from=deps 로 기대하는 pnpm 레이아웃을 만든다. 오래된 로컬 태그는
+  # `docker compose build --no-cache web-node-deps` 로 갱신할 것.
+  web-node-deps:
+    profiles:
+      - web
+    image: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
+    build:
+      context: .
+      dockerfile: docker/web-node-deps.Dockerfile
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c", "echo 'web-node-deps image OK' && exit 0"]
+
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -577,16 +591,28 @@ services:
     image: nginx:1.27-alpine
     restart: unless-stopped
     depends_on:
-      - identity-web
-      - usage-web
-      - billing-web
-      - team-web
-      - web-host
-      - team-web-mfe
-      - usage-web-mfe
-      - notification-web
-      - agent-web
-      - api-gateway-service
+      web-node-deps:
+        condition: service_completed_successfully
+      identity-web:
+        condition: service_started
+      usage-web:
+        condition: service_started
+      billing-web:
+        condition: service_started
+      team-web:
+        condition: service_started
+      web-host:
+        condition: service_started
+      team-web-mfe:
+        condition: service_started
+      usage-web-mfe:
+        condition: service_started
+      notification-web:
+        condition: service_started
+      agent-web:
+        condition: service_started
+      api-gateway-service:
+        condition: service_started
     environment:
       GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET:-}
     command: >
