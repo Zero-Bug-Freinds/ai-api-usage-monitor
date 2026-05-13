@@ -36,6 +36,18 @@ notification-service는 선택적으로 **팀 도메인 이벤트**(`TEAM_CREATE
 - **`TEAM_DELETED`:** `meta.teamId`가 삭제된 팀과 일치하는 `team:TEAM_INVITE_CREATED` 행을 void(`actions` 제거·`readAt`·`staleReason` 등) — 미가입 초대 수신자는 삭제 이벤트 멤버 스냅샷에 없을 수 있어, 인앱만으로 UX를 맞춘다.
 - **초대 액션 실패:** `POST …/team-invitations/…/accept|reject` 처리 중 team-service가 **400/404/409**를 반환하면, 해당 `invitationId`의 초대 인앱을 void(`staleReason` 예: `INVITE_ACTION_FAILED`)한 뒤 동일 HTTP 상태로 응답한다. 내부 HTTP **타임아웃**은 **504**에 가깝게 매핑된다(`TEAM_SERVICE_INTERNAL_TIMEOUT_MS`).
 
+## Identity 개인 외부 API 키 (RabbitMQ, 인앱)
+
+identity-service가 `identity.events` topic에 **`identity.external-api-key.status-changed`** 로 발행하는 JSON(상태 변경·예산·물리 삭제가 같은 스트림에 섞일 수 있음)을 선택적으로 소비한다. 분기 순서는 usage-service·agent-service와 동일하게 **삭제 → 예산(인앱 없음, ack만) → `schemaVersion` 상태**다.
+
+1. **활성화**: `IDENTITY_EXTERNAL_API_KEY_EVENTS_CONSUMER_ENABLED=true` (로컬 예시는 `services/notification-service/.env.example`에서 기본 `false`). `RABBITMQ_URL`이 비어 있으면 소비자는 기동하지 않는다.
+2. **토폴로지(기본)**: exchange `identity.events`, routing `identity.external-api-key.status-changed` — usage-service `usage.rabbit.identity-api-key` 기본값과 맞출 것.
+3. **전용 큐**: `IDENTITY_EXTERNAL_API_KEY_EVENTS_QUEUE_NAME` 기본 `notification.identity.external-api-key.queue` (usage/agent 큐와 분리).
+4. **assert**: `IDENTITY_EXTERNAL_API_KEY_EVENTS_ASSERT_TOPOLOGY`(기본 `true`), 운영에서 인프라가 바인딩을 소유하면 `false`.
+5. **멱등**: `NotificationDelivery.dedupeKey` 유니크. 인앱 `type` 예: `identity:external-api-key:deleted`, `identity:external-api-key:status-active` 등.
+
+루트 `docker compose --profile web` 의 `notification-service` 는 기본으로 이 소비자를 켜고 위 exchange/routing에 맞춘다.
+
 ## Billing 예산 임계 이벤트 (RabbitMQ, 인앱 알림)
 
 notification-service는 billing-service가 발행하는 예산 임계 이벤트를 **두 개의 라우팅 키**로 나누어 소비할 수 있다.

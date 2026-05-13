@@ -88,4 +88,46 @@ public class BillingRabbitConfiguration {
                 .to(billingTeamApiKeyIngressExchange)
                 .with(props.getTeamApiKeyIn().getRoutingKey());
     }
+
+    @Bean
+    public TopicExchange billingIdentityExternalApiKeyIngressExchange(BillingRabbitProperties props) {
+        return new TopicExchange(props.getIdentityExternalApiKeyIn().getExchange(), true, false);
+    }
+
+    @Bean
+    public Queue billingIdentityExternalApiKeyIngressQueue(BillingRabbitProperties props) {
+        return new Queue(props.getIdentityExternalApiKeyIn().getQueue(), true);
+    }
+
+    @Bean
+    public Binding billingIdentityExternalApiKeyIngressBinding(
+            Queue billingIdentityExternalApiKeyIngressQueue,
+            TopicExchange billingIdentityExternalApiKeyIngressExchange,
+            BillingRabbitProperties props
+    ) {
+        return BindingBuilder.bind(billingIdentityExternalApiKeyIngressQueue)
+                .to(billingIdentityExternalApiKeyIngressExchange)
+                .with(props.getIdentityExternalApiKeyIn().getRoutingKey());
+    }
+
+    @Bean
+    public TopicExchange billingTeamDomainIngressExchange(BillingRabbitProperties props) {
+        return new TopicExchange(props.getTeamDomainIn().getExchange(), true, false);
+    }
+
+    @Bean
+    public Queue billingTeamDomainIngressQueue(BillingRabbitProperties props) {
+        return new Queue(props.getTeamDomainIn().getQueue(), true);
+    }
+
+    @Bean
+    public Binding billingTeamDomainIngressBinding(
+            Queue billingTeamDomainIngressQueue,
+            TopicExchange billingTeamDomainIngressExchange,
+            BillingRabbitProperties props
+    ) {
+        return BindingBuilder.bind(billingTeamDomainIngressQueue)
+                .to(billingTeamDomainIngressExchange)
+                .with(props.getTeamDomainIn().getRoutingKey());
+    }
 }

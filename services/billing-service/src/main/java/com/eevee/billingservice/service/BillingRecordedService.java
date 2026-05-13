@@ -97,47 +97,52 @@ public class BillingRecordedService {
         BillableComputation bc = billable.get();
         boolean costOutEnabled = rabbitProperties.getCostOut().isEnabled();
         boolean applicable = costOutEnabled;
+        boolean teamSourced = "team".equalsIgnoreCase(event.apiKeySource());
 
-        var monthlyTotalBefore = aggregationJdbc.sumDailyCostUsdForKstCalendarMonthAndProvider(
-                bc.monthStart(), bc.userId(), bc.apiKeyId(), bc.provider());
-        aggregationJdbc.upsertDaily(
-                bc.aggDate(),
-                bc.userId(),
-                bc.apiKeyId(),
-                event.provider(),
-                bc.model(),
-                bc.cost(),
-                bc.promptTokens(),
-                bc.completionTokens());
-        aggregationJdbc.upsertMonthly(bc.monthStart(), bc.userId(), bc.apiKeyId(), bc.cost());
-        aggregationJdbc.upsertSeen(bc.userId(), bc.apiKeyId(), event.provider(), bc.occurredAt());
+        // Team-key spend is tracked only in team_* aggregate tables so personal dashboards and Identity
+        // per-key monthly budgets are not inflated by team usage.
+        if (!teamSourced) {
+            var monthlyTotalBefore = aggregationJdbc.sumDailyCostUsdForKstCalendarMonthAndProvider(
+                    bc.monthStart(), bc.userId(), bc.apiKeyId(), bc.provider());
+            aggregationJdbc.upsertDaily(
+                    bc.aggDate(),
+                    bc.userId(),
+                    bc.apiKeyId(),
+                    event.provider(),
+                    bc.model(),
+                    bc.cost(),
+                    bc.promptTokens(),
+                    bc.completionTokens());
+            aggregationJdbc.upsertMonthly(bc.monthStart(), bc.userId(), bc.apiKeyId(), bc.cost());
+            aggregationJdbc.upsertSeen(bc.userId(), bc.apiKeyId(), event.provider(), bc.occurredAt());
 
-        var monthlyTotalAfter = aggregationJdbc.sumDailyCostUsdForKstCalendarMonthAndProvider(
-                bc.monthStart(), bc.userId(), bc.apiKeyId(), bc.provider());
-        var keyBudget = identityBudgetClient
-                .fetchMonthlyBudgetKeyRow(bc.userId(), bc.provider(), bc.apiKeyId())
-                .orElse(null);
-        var monthlyBudgetUsd = keyBudget != null ? keyBudget.monthlyBudgetUsd() : null;
-        var apiKeyAlias = keyBudget != null ? keyBudget.alias() : null;
+            var monthlyTotalAfter = aggregationJdbc.sumDailyCostUsdForKstCalendarMonthAndProvider(
+                    bc.monthStart(), bc.userId(), bc.apiKeyId(), bc.provider());
+            var keyBudget = identityBudgetClient
+                    .fetchMonthlyBudgetKeyRow(bc.userId(), bc.provider(), bc.apiKeyId())
+                    .orElse(null);
+            var monthlyBudgetUsd = keyBudget != null ? keyBudget.monthlyBudgetUsd() : null;
+            var apiKeyAlias = keyBudget != null ? keyBudget.alias() : null;
+
+            boolean keyBudgetPositive = monthlyBudgetUsd != null && monthlyBudgetUsd.compareTo(BigDecimal.ZERO) > 0;
+            if (rabbitProperties.getBudgetOut().isEnabled() && keyBudgetPositive) {
+                scheduleAfterCommit(() -> budgetThresholdPublisher.publishIfCrossed(
+                        bc.userId(),
+                        bc.teamId(),
+                        bc.apiKeyId(),
+                        apiKeyAlias,
+                        bc.monthStart(),
+                        monthlyTotalBefore == null ? BigDecimal.ZERO : monthlyTotalBefore,
+                        monthlyTotalAfter == null ? BigDecimal.ZERO : monthlyTotalAfter,
+                        monthlyBudgetUsd
+                ));
+            }
+        }
 
         processedEventRepository.save(new BillingProcessedEventEntity(event.eventId(), processedAt, applicable));
 
         if (costOutEnabled) {
             scheduleAfterCommit(() -> publishCostAndMark(event, bc.model(), bc.cost()));
-        }
-
-        boolean keyBudgetPositive = monthlyBudgetUsd != null && monthlyBudgetUsd.compareTo(BigDecimal.ZERO) > 0;
-        if (rabbitProperties.getBudgetOut().isEnabled() && keyBudgetPositive) {
-            scheduleAfterCommit(() -> budgetThresholdPublisher.publishIfCrossed(
-                    bc.userId(),
-                    bc.teamId(),
-                    bc.apiKeyId(),
-                    apiKeyAlias,
-                    bc.monthStart(),
-                    monthlyTotalBefore == null ? BigDecimal.ZERO : monthlyTotalBefore,
-                    monthlyTotalAfter == null ? BigDecimal.ZERO : monthlyTotalAfter,
-                    monthlyBudgetUsd
-            ));
         }
 
         // Team API key spend aggregation + team budget threshold events ("registered team keys only").

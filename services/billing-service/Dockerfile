@@ -6,6 +6,7 @@ COPY services/billing-service/gradlew services/billing-service/settings.gradle s
 COPY services/billing-service/gradle ./gradle
 COPY services/billing-service/gradle.properties ./gradle.properties
 COPY libs/usage-events /workspace/libs/usage-events
+COPY libs/identity-events /workspace/libs/identity-events
 RUN --mount=type=cache,id=gradle-billing-service,target=/root/.gradle \
     chmod +x gradlew && sed -i 's/\r$//' gradlew && ./gradlew dependencies --no-daemon
 

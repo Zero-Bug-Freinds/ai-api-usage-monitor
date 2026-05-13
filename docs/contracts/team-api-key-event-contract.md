@@ -1,6 +1,6 @@
 # Team API Key Status Changed Event Contract
 
-버전: 1.2  
+버전: 1.3  
 대상: Usage Service, Billing Service, Agent Service
 
 ---
@@ -91,3 +91,10 @@
 - `DELETED`: 물리 삭제 완료
   - `retainLogs=false`면 소비자(usage/agent)는 키 기준 지출·사용 로그 프로젝션 삭제를 수행한다.
   - `retainLogs=true`(또는 null)면 소비자는 키 상태만 `DELETED`로 반영하고 기존 기록은 보존한다.
+
+---
+
+## 8. Billing 집계 정리(팀 키 물리 삭제) — `team.events`
+
+- **본 계약(§2)과 구분**: `TEAM_API_KEY_STATUS_CHANGED`는 **`team.api-key.exchange` / `team.api-key.status.changed`** 로 발행되어 상태·read model 동기화에 쓰인다.
+- **집계 purge**: **billing-service**는 팀 도메인 Topic **`team.events`** 를 **`team.api.key.#`** 로 바인딩한 전용 큐에서, 본문 `eventType`이 **`TEAM_API_KEY_DELETED`** 이고 `apiKeyId`(팀 API Key PK)가 있을 때만 팀 키 전용 일·월 집계와 billing 쪽 read model을 삭제한다. 상세는 [`docs/contracts/web-team-bff.md`](web-team-bff.md) §6.2, [`docs/billing-service-overview-20260412.md`](../billing-service-overview-20260412.md) §6.2.

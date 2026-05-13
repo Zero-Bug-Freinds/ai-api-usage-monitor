@@ -137,5 +137,28 @@ public class TeamApiKeyAggregationJdbc {
         );
         return v != null ? v : BigDecimal.ZERO;
     }
+
+    /**
+     * Removes all aggregate rows for a team API key after physical delete.
+     *
+     * @return deleted row counts {@code [team_api_key_daily_expenditure_agg, team_api_key_monthly_expenditure_agg]}
+     */
+    public int[] deleteAggregatesForTeamApiKey(long teamApiKeyId) {
+        int daily = jdbcTemplate.update(
+                """
+                        DELETE FROM team_api_key_daily_expenditure_agg
+                        WHERE team_api_key_id = ?
+                        """,
+                teamApiKeyId
+        );
+        int monthly = jdbcTemplate.update(
+                """
+                        DELETE FROM team_api_key_monthly_expenditure_agg
+                        WHERE team_api_key_id = ?
+                        """,
+                teamApiKeyId
+        );
+        return new int[] {daily, monthly};
+    }
 }
 
