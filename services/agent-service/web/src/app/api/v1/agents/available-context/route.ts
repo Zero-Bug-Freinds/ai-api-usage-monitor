@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 
 type IdentitySnapshot = {
   keyId: number
-  userId: number
+  userId: number | string
   alias: string
   provider: string
   visibility?: string
@@ -360,9 +360,11 @@ function resolveCurrentUserId(
     return fromHeader
   }
 
-  const fromKeys = keys.find((item) => Number.isFinite(item.userId) && item.userId > 0)?.userId ?? null
-  if (fromKeys != null) {
-    return fromKeys
+  const fromKeysRaw = keys
+    .map((item) => Number(String(item.userId).trim()))
+    .find((value) => Number.isFinite(value) && value > 0)
+  if (fromKeysRaw != null) {
+    return fromKeysRaw
   }
   const fallbackUserId = (process.env.AI_AGENT_FALLBACK_USER_ID ?? "1").trim()
   const parsedFallback = Number(fallbackUserId)
@@ -370,6 +372,34 @@ function resolveCurrentUserId(
     return parsedFallback
   }
   return 1
+}
+
+function identityUserIdCandidates(
+  request: Request,
+  currentUserId: number | null,
+  resolvedEmail: string | null,
+): string[] {
+  const rawHeaderUserId = userIdFromHeadersStrict(request)?.trim() ?? ""
+  const normalizedHeaderUserId =
+    rawHeaderUserId.length > 0
+      ? Number.isFinite(Number(rawHeaderUserId))
+        ? String(Number(rawHeaderUserId))
+        : rawHeaderUserId
+      : ""
+  const numericCurrent = currentUserId != null ? String(currentUserId) : ""
+  const email = (resolvedEmail ?? "").trim()
+  return Array.from(new Set([numericCurrent, normalizedHeaderUserId, rawHeaderUserId, email].filter((v) => v.length > 0)))
+}
+
+function matchesIdentityUserId(snapshotUserId: number | string, candidates: string[]): boolean {
+  const raw = String(snapshotUserId ?? "").trim()
+  if (!raw) return false
+  if (candidates.includes(raw)) return true
+  const numeric = Number(raw)
+  if (Number.isFinite(numeric)) {
+    return candidates.includes(String(numeric))
+  }
+  return false
 }
 
 async function fetchIdentityBudgetKeys(
@@ -835,6 +865,26 @@ function credentialStatusRank(status: string): number {
   return 3
 }
 
+/**
+ * 동일 자격증명 병합 시 최신 keyId를 대표 상태로 본다.
+ * 재등록/재삭제 반복에서 ACTIVE가 과거 이력인데도 대표로 남는 현상을 방지한다.
+ */
+function pickLatestPersonalRow(group: PersonalContextRow[]): PersonalContextRow {
+  return [...group].sort((a, b) => {
+    const byKeyId = b.keyId - a.keyId
+    if (byKeyId !== 0) return byKeyId
+    return credentialStatusRank(b.status) - credentialStatusRank(a.status)
+  })[0]
+}
+
+function pickLatestTeamRow(group: TeamContextRow[]): TeamContextRow {
+  return [...group].sort((a, b) => {
+    const byKeyId = b.teamApiKeyId - a.teamApiKeyId
+    if (byKeyId !== 0) return byKeyId
+    return credentialStatusRank(b.status) - credentialStatusRank(a.status)
+  })[0]
+}
+
 function mergeProviderStatsBundle(
   stats: PersonalContextRow["providerStats"][],
 ): PersonalContextRow["providerStats"] {
@@ -856,25 +906,50 @@ function mergeProviderStatsBundle(
 
 function dedupePersonalKeysByCredential(rows: PersonalContextRow[]): PersonalContextRow[] {
   const byFp = new Map<string, PersonalContextRow[]>()
+  const hashGroupByLegacy = new Map<string, string[]>()
   for (const row of rows) {
+    const legacyFp = `legacy:${personalCredentialFingerprint(row.provider, row.alias)}`
     const fp = personalKeyMergeFingerprint(row.provider, row.alias, row.keyHash)
     const list = byFp.get(fp) ?? []
     list.push(row)
     byFp.set(fp, list)
+    if (fp.startsWith("hash:")) {
+      const hashGroups = hashGroupByLegacy.get(legacyFp) ?? []
+      if (!hashGroups.includes(fp)) {
+        hashGroups.push(fp)
+        hashGroupByLegacy.set(legacyFp, hashGroups)
+      }
+    }
   }
+
+  // keyHash가 없는 legacy 행은, 동일 alias/provider의 hash 그룹이 정확히 1개면 그쪽으로 흡수한다.
+  for (const row of rows) {
+    const hasHash = (row.keyHash ?? "").trim().length > 0
+    if (hasHash) continue
+    const legacyFp = `legacy:${personalCredentialFingerprint(row.provider, row.alias)}`
+    const hashTargets = hashGroupByLegacy.get(legacyFp) ?? []
+    if (hashTargets.length !== 1) continue
+    const legacyGroup = byFp.get(legacyFp) ?? []
+    if (!legacyGroup.some((item) => item.keyId === row.keyId)) continue
+    byFp.set(
+      legacyFp,
+      legacyGroup.filter((item) => item.keyId !== row.keyId),
+    )
+    const hashGroupKey = hashTargets[0]
+    const hashGroup = byFp.get(hashGroupKey) ?? []
+    hashGroup.push(row)
+    byFp.set(hashGroupKey, hashGroup)
+  }
+
   const out: PersonalContextRow[] = []
   for (const [fp, group] of byFp) {
+    if (group.length === 0) continue
     if (group.length === 1) {
       const single = group[0]
       out.push({ ...single, mergedKeyIds: [single.keyId] })
       continue
     }
-    const sorted = [...group].sort((a, b) => {
-      const r = credentialStatusRank(a.status) - credentialStatusRank(b.status)
-      if (r !== 0) return r
-      return b.keyId - a.keyId
-    })
-    const primary = sorted[0]
+    const primary = pickLatestPersonalRow(group)
     const mergedKeyIds = [...new Set(group.map((g) => g.keyId))].sort((a, b) => a - b)
     let monthlyBudgetUsd = 0
     let totalCurrent = 0
@@ -919,12 +994,7 @@ function dedupeTeamBoardByCredential(rows: TeamContextRow[]): TeamContextRow[] {
       out.push({ ...single, mergedTeamApiKeyIds: [single.teamApiKeyId] })
       continue
     }
-    const sorted = [...group].sort((a, b) => {
-      const r = credentialStatusRank(a.status) - credentialStatusRank(b.status)
-      if (r !== 0) return r
-      return b.teamApiKeyId - a.teamApiKeyId
-    })
-    const primary = sorted[0]
+    const primary = pickLatestTeamRow(group)
     const mergedTeamApiKeyIds = [...new Set(group.map((g) => g.teamApiKeyId))].sort((a, b) => a - b)
     let monthlyBudgetUsd = 0
     let totalCurrent = 0
@@ -1011,7 +1081,8 @@ export async function GET(request: Request) {
       fallbackUserId,
     ]
     const teamCatalog = await fetchTeamCatalogFromTeamService(request, teamCatalogUserIds)
-    const keysForCurrentUser = currentUserId == null ? [] : keys.filter((key) => key.userId === currentUserId)
+    const currentUserCandidates = identityUserIdCandidates(request, currentUserId, resolvedIdentifier.email)
+    const keysForCurrentUser = keys.filter((key) => matchesIdentityUserId(key.userId, currentUserCandidates))
 
     const teamApiKeyByCompositeKey = new Map<string, TeamApiKeySnapshot>()
     for (const item of snapshotTeamApiKeys) {

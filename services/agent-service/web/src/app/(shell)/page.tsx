@@ -881,8 +881,11 @@ export default function AgentPage() {
         </div>
         {modelCatalog ? (
           <div className="rounded-md border border-dashed bg-muted/30 p-2 text-xs text-muted-foreground">
-            <p>
-              모델 카탈로그: <span className="font-medium">{modelCatalog.source || "unknown"}</span>
+            <p className="leading-snug">
+              모델 카탈로그:{" "}
+              <span className="block break-all font-medium sm:inline">
+                {modelCatalog.source || "unknown"}
+              </span>
             </p>
             <p>모델 수: {modelCatalog.models?.length ?? 0}개</p>
             <p>ACTIVE 모델 수: {modelCatalogStats?.activeCount ?? 0}개</p>
