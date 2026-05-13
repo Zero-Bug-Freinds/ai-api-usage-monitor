@@ -13,6 +13,8 @@ type AnalysisResultArticlesProps = {
   loadingTarget: AnalysisResultLoadingTarget | null
   loadingMessage: string
   emptyLabel?: string | null
+  /** 지정 시 해당 섹션만 렌더(과거 기록 등). 생략 시 예산·추천 모두 */
+  sections?: Array<"budget" | "recommendation">
 }
 
 function parseInputOutputRatio(value: string | null | undefined): { input: number; output: number } | null {
@@ -122,6 +124,7 @@ export function AnalysisResultArticles({
   loadingTarget,
   loadingMessage,
   emptyLabel,
+  sections,
 }: AnalysisResultArticlesProps) {
   if (results.length === 0) {
     if (emptyLabel == null || emptyLabel === "") {
@@ -136,24 +139,28 @@ export function AnalysisResultArticles({
 
   return (
     <>
-      {results.map((result: AnalysisResult) => (
+      {results.map((result: AnalysisResult) => {
+        const showBudget = sections == null || sections.length === 0 || sections.includes("budget")
+        const showRec = sections == null || sections.length === 0 || sections.includes("recommendation")
+
+        return (
         <article key={result.keyId} className="space-y-3 rounded-xl border bg-card p-4">
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-lg font-semibold">
               {result.keyLabel} ({result.provider})
             </h2>
-            {result.data ? (
+            {showBudget && result.data ? (
               <span className={`rounded-full px-2 py-1 text-xs font-semibold ${statusClassName(result.data.healthStatus)}`}>
                 {result.data.healthStatusLabel || localizedHealthStatus(result.data.healthStatus)}
               </span>
             ) : null}
           </div>
 
-          {result.error ? (
+          {showBudget && result.error ? (
             <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{result.error}</div>
           ) : null}
 
-          {result.forecastGaps != null && result.forecastGaps.length > 0 ? (
+          {showBudget && result.forecastGaps != null && result.forecastGaps.length > 0 ? (
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
               <p className="font-medium">일부는 이벤트가 없어 표시·추정이 제한됩니다.</p>
               <ul className="mt-2 list-disc space-y-1 pl-5">
@@ -165,6 +172,7 @@ export function AnalysisResultArticles({
           ) : null}
 
           <div className="grid gap-3">
+            {showRec ? (
             <div className="order-2 space-y-2 rounded-md border border-dashed bg-muted/20 p-3">
               <p className="text-xs font-medium text-muted-foreground">모델 추천</p>
               {loadingTarget?.keyId === result.keyId && loadingTarget.action === "RECOMMENDATION" ? (
@@ -288,7 +296,9 @@ export function AnalysisResultArticles({
                 <p className="text-xs text-muted-foreground">추천 결과가 없습니다. 해당 키 옆의 추천을 눌러 주세요.</p>
               )}
             </div>
+            ) : null}
 
+            {showBudget ? (
             <div className="order-1 space-y-2 rounded-md border border-dashed bg-muted/20 p-3">
               <p className="text-xs font-medium text-muted-foreground">예산 분석</p>
               {loadingTarget?.keyId === result.keyId && loadingTarget.action === "ANALYSIS" ? (
@@ -356,9 +366,11 @@ export function AnalysisResultArticles({
                 <p className="text-xs text-muted-foreground">분석 결과가 없습니다. 해당 키 옆의 분석을 눌러 주세요.</p>
               )}
             </div>
+            ) : null}
           </div>
         </article>
-      ))}
+        )
+      })}
     </>
   )
 }

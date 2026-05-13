@@ -9,6 +9,7 @@ import {
   teamBoardItemToAvailableKeyContext,
 } from "./agent-key-shared"
 import type { AnalysisHistorySnapshot, AnalysisResult } from "./agent-result-shared"
+import { AnalysisHistoryDayPanel } from "./analysis-history-day-panel"
 import { AnalysisResultArticles } from "./analysis-result-articles"
 import { runBudgetAnalysisFlow } from "./analysis-flow"
 import { runRecommendationFlow } from "./recommendation-flow"
@@ -252,13 +253,38 @@ function writeAnalysisHistoryToStorage(rows: AnalysisHistorySnapshot[]): void {
   }
 }
 
-function createAnalysisHistorySnapshot(results: AnalysisResult[]): AnalysisHistorySnapshot {
+function createAnalysisHistorySnapshot(
+  results: AnalysisResult[],
+  mutation: { keyId: number; action: AnalysisAction } | null,
+): AnalysisHistorySnapshot {
   const savedAt = new Date().toISOString()
+  let rows = JSON.parse(JSON.stringify(results)) as AnalysisResult[]
+  if (mutation != null) {
+    rows = rows.map((row: AnalysisResult) => {
+      if (row.keyId !== mutation.keyId) {
+        return row
+      }
+      if (mutation.action === "RECOMMENDATION") {
+        const next: AnalysisResult = { ...row }
+        delete next.data
+        delete next.error
+        delete next.forecastGaps
+        return next
+      }
+      if (mutation.action === "ANALYSIS") {
+        const next: AnalysisResult = { ...row }
+        delete next.recommendation
+        delete next.recommendationError
+        return next
+      }
+      return row
+    })
+  }
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
     savedAt,
     dateKey: toLocalDateKey(savedAt),
-    results: JSON.parse(JSON.stringify(results)) as AnalysisResult[],
+    results: rows,
   }
 }
 
@@ -368,9 +394,9 @@ export default function AgentPage() {
   const [analysisHistory, setAnalysisHistory] = useState<AnalysisHistorySnapshot[]>([])
   const [mainResultsTab, setMainResultsTab] = useState<"current" | "history">("current")
   const [historySelectedDateKey, setHistorySelectedDateKey] = useState<string | null>(null)
-  const [historySelectedSnapshotId, setHistorySelectedSnapshotId] = useState<string | null>(null)
   const resultsHistoryBaselineCapturedRef = useRef(false)
   const resultsHistorySigRef = useRef<string>("")
+  const lastHistoryMutationRef = useRef<{ keyId: number; action: AnalysisAction } | null>(null)
   const modelCatalogStats = useMemo(() => {
     if (!modelCatalog) return null
     const activeModels = modelCatalog.models.filter((model: ModelCatalogSnapshot["models"][number]) => {
@@ -429,15 +455,14 @@ export default function AgentPage() {
     [historyByDate],
   )
 
+  /** 선택한 날짜의 스냅샷 전체(같은 날 여러 번 저장 시 모두). 화면에는 시간 오름차순으로 나열 */
   const snapshotsForSelectedDate = useMemo(() => {
     if (!historySelectedDateKey) return []
-    return historyByDate.get(historySelectedDateKey) ?? []
+    const list = historyByDate.get(historySelectedDateKey) ?? []
+    return [...list].sort((a: AnalysisHistorySnapshot, b: AnalysisHistorySnapshot) =>
+      a.savedAt.localeCompare(b.savedAt),
+    )
   }, [historyByDate, historySelectedDateKey])
-
-  const selectedHistorySnapshot = useMemo(() => {
-    if (!historySelectedSnapshotId) return null
-    return analysisHistory.find((s: AnalysisHistorySnapshot) => s.id === historySelectedSnapshotId) ?? null
-  }, [analysisHistory, historySelectedSnapshotId])
 
   useEffect(() => {
     setResults(readAnalysisResultsFromStorage())
@@ -464,9 +489,14 @@ export default function AgentPage() {
     }
     if (resultsHistorySigRef.current === sig) return
     resultsHistorySigRef.current = sig
-    if (results.length === 0) return
+    if (results.length === 0) {
+      lastHistoryMutationRef.current = null
+      return
+    }
+    const mutation = lastHistoryMutationRef.current
+    lastHistoryMutationRef.current = null
     setAnalysisHistory((prev: AnalysisHistorySnapshot[]) => {
-      const snap = createAnalysisHistorySnapshot(results)
+      const snap = createAnalysisHistorySnapshot(results, mutation)
       const next = [...prev, snap].slice(-MAX_ANALYSIS_HISTORY_SNAPSHOTS)
       writeAnalysisHistoryToStorage(next)
       return next
@@ -478,14 +508,6 @@ export default function AgentPage() {
     if (historyDateKeys.length === 0) return
     setHistorySelectedDateKey((d: string | null) => (d && historyByDate.has(d) ? d : historyDateKeys[0]))
   }, [mainResultsTab, historyDateKeys, historyByDate])
-
-  useEffect(() => {
-    if (!historySelectedDateKey) return
-    const snaps = historyByDate.get(historySelectedDateKey) ?? []
-    setHistorySelectedSnapshotId((id: string | null) =>
-      id && snaps.some((s: AnalysisHistorySnapshot) => s.id === id) ? id : snaps[0]?.id ?? null,
-    )
-  }, [historySelectedDateKey, historyByDate])
 
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -617,7 +639,10 @@ export default function AgentPage() {
 
       const nextResult = nextResults[0]
       if (nextResult) {
+        lastHistoryMutationRef.current = { keyId: targetKey.keyId, action }
         setResults((prev: AnalysisResult[]) => mergeAnalysisResults(prev, nextResult))
+      } else {
+        lastHistoryMutationRef.current = null
       }
     } finally {
       setLoadingTarget(null)
@@ -667,32 +692,29 @@ export default function AgentPage() {
           </select>
         </div>
 
-        <div className="flex items-center justify-end py-1.5">
-          <button
-            type="button"
-            className="rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium text-foreground disabled:opacity-60"
-            disabled={isAnyLoading}
-            onClick={() => setHideDeletedKeys((prev: boolean) => !prev)}
-          >
-            {hideDeletedKeys ? "삭제된 키 표시" : "삭제된 키 숨기기"}
-          </button>
-        </div>
-
-        <div className="space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold">개인 API 키</h3>
+        <div className="-mt-1.5 space-y-2">
+          <h3 className="text-sm font-semibold leading-tight">개인 API 키</h3>
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            키마다 콘솔의 다음 결제·청구일을 넣으면 해당 키 예측에만 반영됩니다. 이 브라우저에만 저장됩니다.
+          </p>
+          <div className="flex flex-wrap justify-end gap-1">
             <button
               type="button"
-              className="shrink-0 rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium text-foreground hover:bg-muted/60 disabled:opacity-60"
+              className="rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium text-foreground hover:bg-muted/60 disabled:opacity-60"
+              disabled={isAnyLoading}
+              onClick={() => setHideDeletedKeys((prev: boolean) => !prev)}
+            >
+              {hideDeletedKeys ? "삭제된 키 표시" : "삭제된 키 숨기기"}
+            </button>
+            <button
+              type="button"
+              className="rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium text-foreground hover:bg-muted/60 disabled:opacity-60"
               disabled={contextActionsDisabled}
               onClick={() => void refreshAvailableContext()}
             >
               {contextRefreshing ? "불러오는 중…" : "목록 새로고침"}
             </button>
           </div>
-          <p className="text-[11px] leading-snug text-muted-foreground">
-            키마다 콘솔의 다음 결제·청구일을 넣으면 해당 키 예측에만 반영됩니다. 이 브라우저에만 저장됩니다.
-          </p>
           {bootstrapError ? (
             <div className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700">{bootstrapError}</div>
           ) : null}
@@ -1017,11 +1039,7 @@ export default function AgentPage() {
                             ? "border-primary bg-primary/10 font-medium"
                             : "border-border bg-background hover:bg-muted/50"
                         }`}
-                        onClick={() => {
-                          setHistorySelectedDateKey(dk)
-                          const first = historyByDate.get(dk)?.[0]
-                          setHistorySelectedSnapshotId(first?.id ?? null)
-                        }}
+                        onClick={() => setHistorySelectedDateKey(dk)}
                       >
                         {formatDateKeyForDisplay(dk)}
                         <span className="ml-1 text-[10px] text-muted-foreground">
@@ -1033,39 +1051,11 @@ export default function AgentPage() {
                 </ul>
               )}
             </div>
-            <div className="min-w-0 space-y-3 md:col-span-9">
-              {historyDateKeys.length === 0 ? null : (
-                <>
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium text-muted-foreground">저장 시각</p>
-                    <div className="flex flex-wrap gap-1">
-                      {snapshotsForSelectedDate.map((snap: AnalysisHistorySnapshot) => (
-                        <button
-                          key={snap.id}
-                          type="button"
-                          className={`rounded-full border px-2 py-1 text-[11px] ${
-                            historySelectedSnapshotId === snap.id
-                              ? "border-primary bg-primary/10 font-medium"
-                              : "border-border bg-muted/30 hover:bg-muted/50"
-                          }`}
-                          onClick={() => setHistorySelectedSnapshotId(snap.id)}
-                        >
-                          {new Date(snap.savedAt).toLocaleString("ko-KR")} · 키 {snap.results.length}개
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  {selectedHistorySnapshot ? (
-                    <AnalysisResultArticles
-                      results={selectedHistorySnapshot.results}
-                      loadingTarget={null}
-                      loadingMessage=""
-                      emptyLabel={null}
-                    />
-                  ) : (
-                    <p className="text-xs text-muted-foreground">기록을 선택해 주세요.</p>
-                  )}
-                </>
+            <div className="min-w-0 md:col-span-9">
+              {historyDateKeys.length === 0 ? null : historySelectedDateKey ? (
+                <AnalysisHistoryDayPanel snapshots={snapshotsForSelectedDate} />
+              ) : (
+                <p className="text-xs text-muted-foreground">날짜를 선택해 주세요.</p>
               )}
             </div>
           </div>
