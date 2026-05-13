@@ -3,9 +3,11 @@
 # `packages/ui` workspace 포함. 빌드(저장소 루트에서):
 #   docker build -f services/usage-service/web/Dockerfile -t usage-web:local .
 
+# Compose 에서 `WEB_NODE_DEPS_IMAGE=web-node-deps:local` 을 쓰면, 해당 이미지도 Node 20 기준으로 빌드해야 함(docker/web-node-deps.Dockerfile 과 버전 맞출 것).
 ARG WEB_NODE_DEPS_IMAGE=deps-local
 
-FROM node:22-alpine AS deps-local
+# 의존성 전용 레이어 — package 매니페스트만 변경될 때까지 캐시 유지
+FROM node:20-alpine AS deps-local
 WORKDIR /repo
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
@@ -18,7 +20,7 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
 
 FROM ${WEB_NODE_DEPS_IMAGE} AS deps
 
-FROM node:22-alpine AS builder
+FROM node:20-alpine AS builder
 WORKDIR /repo
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 
@@ -49,7 +51,8 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm config set store-dir /pnpm/store && \
     pnpm run build
 
-FROM node:22-alpine AS runner
+# standalone 산출물만 런타임에 포함 (next.config.ts 의 output: "standalone")
+FROM node:20-alpine AS runner
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs

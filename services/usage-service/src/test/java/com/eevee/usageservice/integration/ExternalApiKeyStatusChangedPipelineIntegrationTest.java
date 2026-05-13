@@ -3,13 +3,12 @@ package com.eevee.usageservice.integration;
 import com.eevee.usage.events.AiProvider;
 import com.eevee.usageservice.domain.ApiKeyMetadataEntityId;
 import com.eevee.usageservice.domain.UsageRecordedLogEntity;
-import com.eevee.usageservice.mq.ExternalApiKeyDeletedEvent;
-import com.eevee.usageservice.mq.ExternalApiKeyStatus;
-import com.eevee.usageservice.mq.ExternalApiKeyStatusChangedEvent;
-import com.eevee.usageservice.mq.IdentityExternalApiKeyEventTypes;
 import com.eevee.usageservice.repository.ApiKeyMetadataRepository;
 import com.eevee.usageservice.repository.UsageRecordedLogRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.zerobugfreinds.identity.events.ExternalApiKeyDeletedEvent;
+import com.zerobugfreinds.identity.events.ExternalApiKeyStatus;
+import com.zerobugfreinds.identity.events.ExternalApiKeyStatusChangedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.core.AmqpAdmin;
@@ -37,6 +36,12 @@ import static org.awaitility.Awaitility.await;
 @Testcontainers
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class ExternalApiKeyStatusChangedPipelineIntegrationTest {
+
+    private static final String USER_101 = "user101@integration.test";
+
+    private static final String USER_303 = "user303@integration.test";
+
+    private static final String USER_778 = "user778@integration.test";
 
     @Container
     static RabbitMQContainer rabbit = UsageIntegrationContainers.rabbitMq();
@@ -84,14 +89,13 @@ class ExternalApiKeyStatusChangedPipelineIntegrationTest {
 
     @Test
     void registerUpdateDeleteEvents_areConsumedAndUpsertedWithoutPhysicalDelete() throws Exception {
-        ExternalApiKeyStatusChangedEvent registered = new ExternalApiKeyStatusChangedEvent(
-                1,
-                Instant.parse("2026-04-15T10:00:00Z"),
+        ExternalApiKeyStatusChangedEvent registered = ExternalApiKeyStatusChangedEvent.of(
                 101L,
                 "GoogleTestKey1",
-                7L,
+                USER_101,
                 "GOOGLE",
-                ExternalApiKeyStatus.ACTIVE
+                ExternalApiKeyStatus.ACTIVE,
+                "kh"
         );
         rabbitTemplate.convertAndSend(
                 "identity.events",
@@ -99,7 +103,7 @@ class ExternalApiKeyStatusChangedPipelineIntegrationTest {
                 objectMapper.writeValueAsString(registered)
         );
 
-        var id101 = ApiKeyMetadataEntityId.personal("101", "7");
+        var id101 = ApiKeyMetadataEntityId.personal("101", USER_101);
         await().atMost(30, SECONDS).pollInterval(100, java.util.concurrent.TimeUnit.MILLISECONDS)
                 .until(() -> repository.findById(id101).isPresent());
 
@@ -107,14 +111,13 @@ class ExternalApiKeyStatusChangedPipelineIntegrationTest {
         assertThat(active.getAlias()).isEqualTo("GoogleTestKey1");
         assertThat(active.getStatus().name()).isEqualTo("ACTIVE");
 
-        ExternalApiKeyStatusChangedEvent aliasUpdated = new ExternalApiKeyStatusChangedEvent(
-                1,
-                Instant.parse("2026-04-15T10:01:00Z"),
+        ExternalApiKeyStatusChangedEvent aliasUpdated = ExternalApiKeyStatusChangedEvent.of(
                 101L,
                 "GoogleTestKey1-Renamed",
-                7L,
+                USER_101,
                 "GOOGLE",
-                ExternalApiKeyStatus.ACTIVE
+                ExternalApiKeyStatus.ACTIVE,
+                "kh"
         );
         rabbitTemplate.convertAndSend(
                 "identity.events",
@@ -129,9 +132,8 @@ class ExternalApiKeyStatusChangedPipelineIntegrationTest {
                     assertThat(updated.getStatus().name()).isEqualTo("ACTIVE");
                 });
 
-        ExternalApiKeyDeletedEvent deleted = new ExternalApiKeyDeletedEvent(
-                IdentityExternalApiKeyEventTypes.EXTERNAL_API_KEY_DELETED,
-                7L,
+        ExternalApiKeyDeletedEvent deleted = ExternalApiKeyDeletedEvent.of(
+                USER_101,
                 101L,
                 Instant.parse("2026-04-15T10:02:00Z"),
                 true,
@@ -154,21 +156,20 @@ class ExternalApiKeyStatusChangedPipelineIntegrationTest {
 
     @Test
     void deletedEvent_retainLogsFalse_removesUsageLogsAndMetadata() throws Exception {
-        ExternalApiKeyStatusChangedEvent registered = new ExternalApiKeyStatusChangedEvent(
-                1,
-                Instant.parse("2026-04-16T10:00:00Z"),
+        ExternalApiKeyStatusChangedEvent registered = ExternalApiKeyStatusChangedEvent.of(
                 303L,
                 "KeyToPurge",
-                9L,
+                USER_303,
                 "GOOGLE",
-                ExternalApiKeyStatus.ACTIVE
+                ExternalApiKeyStatus.ACTIVE,
+                "kh"
         );
         rabbitTemplate.convertAndSend(
                 "identity.events",
                 "identity.external-api-key.status-changed",
                 objectMapper.writeValueAsString(registered)
         );
-        var id303 = ApiKeyMetadataEntityId.personal("303", "9");
+        var id303 = ApiKeyMetadataEntityId.personal("303", USER_303);
         await().atMost(30, SECONDS).pollInterval(100, java.util.concurrent.TimeUnit.MILLISECONDS)
                 .until(() -> repository.findById(id303).isPresent());
 
@@ -176,7 +177,7 @@ class ExternalApiKeyStatusChangedPipelineIntegrationTest {
                 UUID.randomUUID(),
                 Instant.parse("2026-04-16T09:00:00Z"),
                 null,
-                "9",
+                USER_303,
                 null,
                 null,
                 "303",
@@ -201,9 +202,8 @@ class ExternalApiKeyStatusChangedPipelineIntegrationTest {
         usageRecordedLogRepository.save(log);
         assertThat(usageRecordedLogRepository.countByApiKeyId("303")).isEqualTo(1L);
 
-        ExternalApiKeyDeletedEvent purge = new ExternalApiKeyDeletedEvent(
-                IdentityExternalApiKeyEventTypes.EXTERNAL_API_KEY_DELETED,
-                9L,
+        ExternalApiKeyDeletedEvent purge = ExternalApiKeyDeletedEvent.of(
+                USER_303,
                 303L,
                 Instant.parse("2026-04-16T12:00:00Z"),
                 false,
@@ -228,11 +228,11 @@ class ExternalApiKeyStatusChangedPipelineIntegrationTest {
         String budgetJson = """
                 {
                   "eventType": "EXTERNAL_API_KEY_BUDGET_CHANGED",
-                  "schemaVersion": 1,
+                  "schemaVersion": 2,
                   "occurredAt": "2026-05-11T10:00:00Z",
                   "keyId": 777,
                   "alias": "BudgetPayloadAlias",
-                  "userId": 42,
+                  "userId": "user-42@integration.test",
                   "visibility": "PRIVATE",
                   "provider": "GOOGLE",
                   "status": "ACTIVE",
@@ -246,14 +246,13 @@ class ExternalApiKeyStatusChangedPipelineIntegrationTest {
                 budgetJson
         );
 
-        ExternalApiKeyStatusChangedEvent registered = new ExternalApiKeyStatusChangedEvent(
-                1,
-                Instant.parse("2026-05-11T11:00:00Z"),
+        ExternalApiKeyStatusChangedEvent registered = ExternalApiKeyStatusChangedEvent.of(
                 778L,
                 "AfterBudgetControl",
-                5L,
+                USER_778,
                 "OPENAI",
-                ExternalApiKeyStatus.ACTIVE
+                ExternalApiKeyStatus.ACTIVE,
+                "kh"
         );
         rabbitTemplate.convertAndSend(
                 "identity.events",
@@ -261,10 +260,10 @@ class ExternalApiKeyStatusChangedPipelineIntegrationTest {
                 objectMapper.writeValueAsString(registered)
         );
 
-        var id778 = ApiKeyMetadataEntityId.personal("778", "5");
+        var id778 = ApiKeyMetadataEntityId.personal("778", USER_778);
         await().atMost(30, SECONDS).pollInterval(200, java.util.concurrent.TimeUnit.MILLISECONDS)
                 .until(() -> repository.findById(id778).isPresent());
 
-        assertThat(repository.findById(ApiKeyMetadataEntityId.personal("777", "42"))).isEmpty();
+        assertThat(repository.findById(ApiKeyMetadataEntityId.personal("777", "user-42@integration.test"))).isEmpty();
     }
 }

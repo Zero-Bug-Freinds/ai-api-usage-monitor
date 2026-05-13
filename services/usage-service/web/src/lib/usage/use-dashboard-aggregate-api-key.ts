@@ -11,7 +11,7 @@ import { resolveDashboardAggregateApiKeyId } from "@/lib/usage/dashboard-provide
 export function useDashboardAggregateApiKeySync(
   filteredMenuKeys: UsageLogApiKeyItemResponse[],
   apiKeyId: string,
-  setApiKeyId: React.Dispatch<React.SetStateAction<string>>,
+  setApiKeyId: (next: string) => void,
   enabled: boolean,
 ): void {
   React.useEffect(() => {
