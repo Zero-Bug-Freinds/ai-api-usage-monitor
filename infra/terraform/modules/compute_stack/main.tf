@@ -182,6 +182,9 @@ locals {
     #!/bin/bash
     set -euo pipefail
     dnf update -y
+    # Required for SSM Run Command (GitHub Actions rolling deploy). AL2023 may omit or disable the agent on some images.
+    dnf install -y amazon-ssm-agent
+    systemctl enable --now amazon-ssm-agent
     dnf install -y docker
     systemctl enable --now docker
     usermod -aG docker ec2-user || true

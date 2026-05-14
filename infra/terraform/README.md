@@ -91,7 +91,7 @@ The GitHub OIDC provider includes **two thumbprints** for `token.actions.githubu
 
 ## Optional compute stack
 
-Module [`modules/compute_stack`](modules/compute_stack): simplified **public subnet** layout (ALB + ASG), **HTTP :80** listener → target group using `alb_target_port` (default **80**) so defaults match `gha-roll-instance.sh`. User data installs Docker and Compose plugin on Amazon Linux 2023 and creates `/opt/<project_name>/` as a plausible clone/deploy parent (align `SSM_DEPLOY_ROOT` with your layout).
+Module [`modules/compute_stack`](modules/compute_stack): simplified **public subnet** layout (ALB + ASG), **HTTP :80** listener → target group using `alb_target_port` (default **80**) so defaults match `gha-roll-instance.sh`. User data installs **amazon-ssm-agent** (enables SSM Run Command), Docker and Compose plugin on Amazon Linux 2023, and creates `/opt/<project_name>/` as a plausible clone/deploy parent (align `SSM_DEPLOY_ROOT` with your layout). **Existing** EC2 do not re-run user data: after changing bootstrap, start an ASG **instance refresh** (or replace instances) so new nodes pick up the agent.
 
 For production hardening, replace public subnets with private app subnets + NAT (not included here).
 
