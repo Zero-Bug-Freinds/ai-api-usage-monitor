@@ -114,9 +114,9 @@ WebFlux 프록시에서 블로킹 AMQP 호출은 §6.2 주의사항과 동일하
 
 | 브랜치 | 워크플로 | GitHub Environment | 동작 |
 |--------|----------|---------------------|------|
-| `develop` | [`.github/workflows/release.yml`](../.github/workflows/release.yml) (push, 경로 필터) | **`staging`** | ECR push 자동(환경 보호 규칙은 팀 선택) |
-| `main` | 동일 `release.yml` | **`production`** | ECR push 시 **필수 리뷰어·wait timer** 등 Environment 보호 규칙으로 승인 게이트 권장 |
-| 수동 | `release.yml` `workflow_dispatch` | 호출 시 선택한 브랜치의 Environment | `force_rebuild_all`(기본 `true`)로 paths-filter 없이 전 이미지 push 가능 |
+| `develop` | [`.github/workflows/release.yml`](../.github/workflows/release.yml) (push, 경로 필터) | **`staging`** | ECR push 후 조건 충족 시 **`roll-after-ecr`** 로 SSM 롤( `ALB_TARGET_GROUP_ARN` 설정 시) |
+| `main` | 동일 `release.yml` | **`production`** | 동일; **필수 리뷰어·wait timer** 등 Environment 보호 규칙 권장 |
+| 수동 | `release.yml` `workflow_dispatch` | 호출 시 선택한 브랜치의 Environment | `force_rebuild_all`(기본 `true`)로 paths-filter 없이 전 이미지 push 가능; 조건 충족 시 동일하게 `roll-after-ecr` 실행 |
 
 ECR 푸시가 성공하고(경로 필터 또는 `force_rebuild_all`로 실제 이미지가 빌드·푸시된 경우에 한함) 해당 GitHub Environment에 `ALB_TARGET_GROUP_ARN`이 설정되어 있으면, [`.github/workflows/release.yml`](../.github/workflows/release.yml)의 **`roll-after-ecr`** 잡이 이어서 타깃 그룹에 등록된 EC2를 조회해 ALB+SSM 롤링 배포를 수행한다. `ALB_TARGET_GROUP_ARN`이 비어 있으면 ECR만 반영하고 롤은 건너뛴다.
 

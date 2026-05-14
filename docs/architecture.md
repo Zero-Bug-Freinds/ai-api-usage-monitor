@@ -422,7 +422,7 @@
   - Next.js: **도메인별 `services/<svc>/web`** — `docker compose --profile web up` 시 **`identity-web`**, **`usage-web`**, **`web-edge`**(루트 `docker-compose.yml`). 구 통합 앱 경로 `apps/web`에는 안내용 `README.md`만 둔다(`docs/repository-structure.md` §6.2).
   - 동일 프로필에서 **`team-web`**(및 필요 시 **`team-service`**)이 함께 포함될 수 있다.
   - GitHub Actions(CI): 저장소 정책에 따라 도입(`docs/CI.md`)
-  - **AWS CD(선택)**: ECR 이미지 push(`release.yml`)·EC2에서 `docker-compose.prod.yml` 기동·ALB+SSM 롤링 배포(`deploy.yml`)는 `docs/aws-github-oidc-ecr-ssm.md`, `docs/cd-aws-ec2-compose-alb-ssm-plan.md` 참고. Kubernetes는 범위 밖이다.
+  - **AWS CD(선택)**: ECR 이미지 push 및 조건 충족 시 **`release.yml`의 `roll-after-ecr`** 로 ALB+SSM 롤, 필요 시 **`deploy.yml`** 수동 배포. EC2에서 `docker-compose.prod.yml` 기동·세부 절차는 `docs/aws-github-oidc-ecr-ssm.md`, `docs/cd-aws-ec2-compose-alb-ssm-plan.md` 참고. Kubernetes는 범위 밖이다.
   - Prometheus + Grafana, Loki, Jaeger: 시간 여유 시(관측 강화)
 - **Kubernetes / Ingress / ConfigMap·Secret(K8s)**
   - 현재 범위에서는 **사용하지 않음**. 설정·비밀값은 **환경변수·`.env`(비커밋)·GitHub Secrets** 등으로 관리한다.

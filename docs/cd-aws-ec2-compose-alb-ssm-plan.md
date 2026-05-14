@@ -75,18 +75,14 @@ flowchart LR
 ```mermaid
 flowchart TD
   Commit[Push_or_Merge] --> CI[CI_ci.yml]
-  CI -->|success| Release[Release_Build_and_Push_to_ECR]
-  Release --> DeployStg[Deploy_Staging_via_SSM]
-  DeployStg -->|optional_manual_gate| DeployProd[Deploy_Prod_via_SSM]
-
-  DeployStg --> HealthStg[Healthcheck]
-  HealthStg -->|fail| RollbackStg[Rollback_previous_sha]
-  HealthStg -->|ok| DoneStg[Staging_Ready]
-
-  DeployProd --> HealthProd[Healthcheck]
-  HealthProd -->|fail| RollbackProd[Rollback_previous_sha]
-  HealthProd -->|ok| DoneProd[Prod_Ready]
+  CI -->|success| Release[Release_ECR_then_roll_after_ecr]
+  Release --> Health[Healthcheck_ALB_or_instance]
+  Health -->|fail| Rollback[Rollback_previous_sha]
+  Health -->|ok| Done[Ready]
+  Release -. optional_ad_hoc .-> DeployManual[deploy.yml_workflow_dispatch]
 ```
+
+`release.yml` maps **`develop` → Environment `staging`**, **`main` → `production`**. Job **`roll-after-ecr`** runs in that same Environment after ECR when `ALB_TARGET_GROUP_ARN` is set and at least one image was eligible to push ([`CI.md`](CI.md)). **`deploy.yml`** is optional for extra rolls (empty instance list = target group discovery). Details: [`aws-github-oidc-ecr-ssm.md`](aws-github-oidc-ecr-ssm.md).
 
 ## 이미지·태그 전략
 
@@ -104,12 +100,17 @@ flowchart TD
 
 - **트리거**: `develop` → 스테이징 자동; `main` → 프로덕션(또는 `workflow_dispatch` + GitHub Environment 승인)
 - **빌드·푸시**: `ci.yml`의 `changes`(paths-filter)를 재사용해 **변경된 서비스만** ECR에 push
+- **배포(자동)**: ECR 푸시가 성공하고 경로 필터(또는 `force_rebuild_all`)로 이미지 빌드가 한 건이라도 해당되면, 같은 Environment에 `ALB_TARGET_GROUP_ARN`이 있을 때 **`release.yml`의 `roll-after-ecr`** 잡이 타깃 그룹의 EC2를 조회해 SSM 롤링 수행(자세한 조건은 [`CI.md`](CI.md))
 - **도구**: `docker/build-push-action` + `push: true`
 - **AWS 인증**: GitHub **OIDC AssumeRole** (Access Key 지양)
 
 ## Deploy 워크플로 — SSM 롤링 (설계)
 
 대상: ALB Target Group에 등록된 EC2(ASG 권장).
+
+**자동**: `release.yml`의 `roll-after-ecr`가 타깃 그룹에서 인스턴스 ID를 조회해 순차 롤한다([`list-tg-instance-ids.sh`](../scripts/deploy/list-tg-instance-ids.sh)).
+
+**수동**: [`deploy.yml`](../.github/workflows/deploy.yml) `workflow_dispatch` — 인스턴스 ID를 비우면 동일하게 타깃 그룹에서 조회한다.
 
 인스턴스별 순서:
 
@@ -137,8 +138,8 @@ flowchart TD
 
 ## Terraform 적용 순서 (IaC)
 
-1. **[`infra/terraform/bootstrap/README.md`](../infra/terraform/bootstrap/README.md)** 로 S3 상태 버킷·DynamoDB 락 테이블 생성 (로컬 state).
-2. **[`infra/terraform/README.md`](../infra/terraform/README.md)** 에서 backend 설정 후 `terraform init` / `apply` 로 OIDC 프로바이더, 환경별 Release·Deploy 역할, ECR 리포지토리 생성.
+1. **(선택)** [`infra/terraform/bootstrap/README.md`](../infra/terraform/bootstrap/README.md)로 S3 상태 버킷·DynamoDB 락 테이블 생성 — 팀이 **로컬 `terraform.tfstate`** 만 쓰면 생략 가능.
+2. **[`infra/terraform/README.md`](../infra/terraform/README.md)** 에서 `terraform init` / `apply` 로 OIDC 프로바이더, 환경별 Release·Deploy 역할, ECR 리포지토리 생성(S3 백엔드는 선택).
 3. 선택: 동일 루트에서 `enable_compute_stack = true` 로 VPC·ALB·Target Group·ASG·인스턴스 프로파일 추가 (단순 퍼블릭 레이아웃).
 4. Terraform 출력값을 GitHub Environment 변수에 반영 (표는 Terraform README).
 
@@ -164,8 +165,8 @@ flowchart TD
 - [ ] 운영에 포함할 이미지 목록·ECR 리포지토리 네이밍 확정
 - [ ] GitHub OIDC IAM Role 및 최소 권한 정책 — Terraform [`infra/terraform`](../infra/terraform/README.md) 또는 수동 JSON
 - [ ] `docker-compose.prod.yml`(또는 동등) 초안 및 env/secret 주입 방식 확정
-- [ ] Release 워크플로 추가(변경 감지, ECR push, sha 태그)
-- [ ] Deploy 워크플로 추가(SSM, drain/roll, 헬스체크, 롤백)
+- [x] Release 워크플로(변경 감지, ECR push, sha 태그) 및 **성공 시 `roll-after-ecr` 자동 롤**(환경 변수 `ALB_TARGET_GROUP_ARN` 등)
+- [x] Deploy 워크플로(`workflow_dispatch`, SSM drain/roll, 선택 시 타깃 그룹에서 인스턴스 ID 자동 조회)
 - [ ] ALB Target Group 헬스 경로·타임아웃·재시도 정책 확정
 - [ ] (선택) Terraform 원격 상태 부트스트랩 및 `enable_compute_stack` 로 ALB/ASG 프로비저닝
 

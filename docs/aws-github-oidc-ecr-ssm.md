@@ -6,10 +6,16 @@ This document is the operational companion to [`docker-compose.prod.yml`](../../
 
 AWS resources described here can be created as code under **[`infra/terraform/README.md`](../infra/terraform/README.md)** instead of pasting JSON policies manually.
 
-- **Bootstrap** remote state (S3 + DynamoDB lock): **[`infra/terraform/bootstrap/README.md`](../infra/terraform/bootstrap/README.md)** (local state for the bucket/table only).
-- **Apply order**: bootstrap backend → root `infra/terraform` (`terraform init` with backend config → `terraform apply`) → copy outputs into GitHub Environment variables (mapping table in the Terraform README).
+- **Optional — remote state bootstrap** (S3 + DynamoDB lock): **[`infra/terraform/bootstrap/README.md`](../infra/terraform/bootstrap/README.md)**. Many teams run the root module with **local `terraform.tfstate`** only; bootstrap is not mandatory.
+- **Apply order**: `cd infra/terraform` → `terraform init` (add backend config only if you adopt S3 remote state) → `terraform apply` → copy outputs into GitHub Environment variables (mapping table in the Terraform README).
 - **Trust policy**: Terraform roles use GitHub’s environment subject `repo:<org>/<repo>:environment:staging` or `:environment:production`, matching the `staging` / `production` GitHub Environments used by Release and Deploy workflows.
 - **Optional stack**: set `enable_compute_stack` for VPC + ALB + target group + ASG + EC2 instance profile; align `TARGET_PORT` with [`scripts/deploy/gha-roll-instance.sh`](../scripts/deploy/gha-roll-instance.sh) (default **80**).
+
+## CD automation (Release + Deploy)
+
+- **[`release.yml`](../.github/workflows/release.yml)** — after a successful **ECR build/push** when path filters (or `force_rebuild_all` on `workflow_dispatch`) imply at least one image was eligible to push, job **`roll-after-ecr`** runs in the same Environment. If **`ALB_TARGET_GROUP_ARN`** is set, it assumes **`AWS_DEPLOY_ROLE_ARN`**, lists EC2 instance targets with [`scripts/deploy/list-tg-instance-ids.sh`](../scripts/deploy/list-tg-instance-ids.sh), then runs [`scripts/deploy/gha-roll-instance.sh`](../scripts/deploy/gha-roll-instance.sh) per instance with **`IMAGE_TAG` = commit SHA**. If `ALB_TARGET_GROUP_ARN` is unset or the target group has no `i-*` targets, the roll step is skipped (ECR-only is still success).
+- **[`deploy.yml`](../.github/workflows/deploy.yml)** — **`workflow_dispatch`** for on-demand rolls: **`image_tag`** is required; **instance IDs** may be left empty to use the same target-group discovery. Set optional Environment variable **`TARGET_PORT`** so the workflow exports it (default **80** in the shell script).
+- **Concurrency**: `release.yml` and `deploy.yml` use the same **`alb-ssm-roll-<staging|production>`** concurrency group so automatic and manual rolls for an environment do not overlap.
 
 If the GitHub OIDC provider already exists in the account, import it before the first apply (command in the Terraform README).
 
@@ -93,7 +99,7 @@ Replace `ACCOUNT_ID` and `REGION`. Scope `Resource` to your ECR repositories if 
 
 ## 3. Deploy role — SSM + ELB + read-only ECR (`AWS_DEPLOY_ROLE_ARN`)
 
-Used by [`deploy.yml`](../../.github/workflows/deploy.yml) and [`scripts/deploy/gha-roll-instance.sh`](../../scripts/deploy/gha-roll-instance.sh). EC2 instances use a **separate** instance profile to **pull** images (not this OIDC role).
+Used by [`deploy.yml`](../../.github/workflows/deploy.yml), [`release.yml`](../../.github/workflows/release.yml) job **`roll-after-ecr`**, and [`scripts/deploy/gha-roll-instance.sh`](../../scripts/deploy/gha-roll-instance.sh). EC2 instances use a **separate** instance profile to **pull** images (not this OIDC role).
 
 ### 3.1 Permission policy (minimal shape)
 
@@ -163,7 +169,7 @@ One repository per image component (flat under prefix `ai-api-usage-monitor/`):
 | `ai-api-usage-monitor/agent-web` | Agent Next standalone |
 | `ai-api-usage-monitor/web-edge` | Nginx edge (`docker/web-edge/Dockerfile`) |
 
-Tags: immutable `${{ github.sha }}` plus moving `:staging` / `:prod` (see `release.yml`).
+Tags: immutable `${{ github.sha }}` plus moving `:staging` / `:prod` (see `release.yml`). When using **[`infra/terraform`](../infra/terraform/README.md)**, ECR repositories get an **untagged image lifecycle** (default expire after 14 days; see variable `ecr_untagged_image_expire_days`).
 
 ---
 
@@ -201,5 +207,5 @@ Traffic listener remains **80** → `web-edge:80` (path routing + Host allowlist
 ## 9. GitHub configuration checklist
 
 1. Environments **`staging`** and **`production`** (add required reviewers on `production`).
-2. Environment variables: `AWS_REGION`, `AWS_RELEASE_ROLE_ARN`, `ECR_REPOSITORY_PREFIX` (optional), `AWS_DEPLOY_ROLE_ARN`, `ALB_TARGET_GROUP_ARN`, `SSM_DEPLOY_ROOT`, optional `TARGET_PORT`, Next public origins for `release` (`NEXT_PUBLIC_*` as needed). Use **[`infra/terraform/README.md`](../infra/terraform/README.md)** output names when applying IaC (see “Terraform outputs → GitHub Environment variables”).
+2. Environment variables: `AWS_REGION`, `AWS_RELEASE_ROLE_ARN`, `ECR_REPOSITORY_PREFIX` (optional), `AWS_DEPLOY_ROLE_ARN`, `ALB_TARGET_GROUP_ARN` (set for post-Release auto roll), `SSM_DEPLOY_ROOT`, optional `TARGET_PORT`, Next public origins for `release` (`NEXT_PUBLIC_*` as needed). Use **[`infra/terraform/README.md`](../infra/terraform/README.md)** output names when applying IaC (see “Terraform outputs → GitHub Environment variables”).
 3. Branch rules: require CI green before merge to `develop` / `main`; optional rule to require `Release` success after merge.
