@@ -9,28 +9,18 @@ output "github_oidc_provider_arn" {
 }
 
 output "ecr_repository_names" {
-  description = "Map of image suffix to full ECR repository name (matches release.yml paths)."
+  description = "Map of image suffix to full ECR repository name (matches release.yml paths when suffixes align)."
   value       = module.ecr.repository_names
 }
 
-output "aws_release_role_arn_staging" {
-  description = "GitHub Environment staging variable AWS_RELEASE_ROLE_ARN."
-  value       = module.github_env_roles["staging"].release_role_arn
+output "aws_release_role_arn" {
+  description = "ARN of the IAM role used by release.yml for ECR (OIDC); keep in sync with workflow env AWS_RELEASE_ROLE_ARN."
+  value       = aws_iam_role.release.arn
 }
 
-output "aws_release_role_arn_production" {
-  description = "GitHub Environment production variable AWS_RELEASE_ROLE_ARN."
-  value       = module.github_env_roles["production"].release_role_arn
-}
-
-output "aws_deploy_role_arn_staging" {
-  description = "GitHub Environment staging variable AWS_DEPLOY_ROLE_ARN."
-  value       = module.github_env_roles["staging"].deploy_role_arn
-}
-
-output "aws_deploy_role_arn_production" {
-  description = "GitHub Environment production variable AWS_DEPLOY_ROLE_ARN."
-  value       = module.github_env_roles["production"].deploy_role_arn
+output "aws_deploy_role_arn" {
+  description = "ARN of the IAM role used by release.yml / deploy.yml for ALB+SSM (OIDC); keep in sync with workflow env AWS_DEPLOY_ROLE_ARN."
+  value       = aws_iam_role.deploy.arn
 }
 
 output "alb_target_group_arn" {

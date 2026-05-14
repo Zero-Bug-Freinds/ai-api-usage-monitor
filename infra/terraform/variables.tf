@@ -1,6 +1,7 @@
 variable "aws_region" {
   type        = string
   description = "Primary AWS region (ECR, IAM, and optional compute)."
+  default     = "ap-northeast-2"
 }
 
 variable "project_name" {
@@ -17,18 +18,26 @@ variable "default_tags" {
 
 variable "github_org" {
   type        = string
-  description = "GitHub organization or user name (OIDC trust repo:ORG/REPO:environment:...)."
+  description = "GitHub organization or user (OIDC trust StringLike repo:ORG/REPO:*)."
+  default     = "Zero-Bug-Freinds"
 }
 
 variable "github_repo" {
   type        = string
   description = "Repository name without org (OIDC trust)."
+  default     = "ai-api-usage-monitor"
 }
 
 variable "ecr_repository_prefix" {
   type        = string
   description = "ECR repository prefix; must match GitHub Environment variable ECR_REPOSITORY_PREFIX / release.yml default."
   default     = "ai-api-usage-monitor"
+}
+
+variable "ecr_repository_suffixes" {
+  type        = list(string)
+  description = "ECR repository suffixes; each repository name is \"<ecr_repository_prefix>/<suffix>\"."
+  default     = ["service-a", "service-b", "service-c"]
 }
 
 variable "ecr_untagged_image_expire_days" {
@@ -42,16 +51,16 @@ variable "ecr_untagged_image_expire_days" {
   }
 }
 
-variable "extra_deploy_elb_target_group_arns" {
-  type        = list(string)
-  description = "Optional ALB target group ARNs for deploy roles (RegisterTargets/DeregisterTargets). Merged with the TG from enable_compute_stack. When empty and compute is off, ELB actions stay on Resource \"*\"."
-  default     = []
+variable "release_iam_role_name" {
+  type        = string
+  description = "IAM role name for GitHub Actions ECR push (OIDC)."
+  default     = "ReleaseRole"
 }
 
-variable "iam_role_name_prefix" {
+variable "deploy_iam_role_name" {
   type        = string
-  description = "Prefix for GitHub OIDC IAM role names (suffix adds release/deploy and environment)."
-  default     = "github-oidc"
+  description = "IAM role name for GitHub Actions deploy (SSM + ELB via OIDC)."
+  default     = "DeployRole"
 }
 
 variable "enable_compute_stack" {

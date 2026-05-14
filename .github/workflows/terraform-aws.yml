@@ -1,0 +1,72 @@
+# Runs Terraform against AWS using IAM user keys from repository secrets.
+# Repository secrets (Settings → Secrets and variables → Actions):
+#   - AWS_SECRET_ACCESS_KEY (required)
+#   - AWS_ACCESS_KEY_ID (recommended) **or** AWS_ACCESS_KEY (alias for the access key id)
+# Optional repository variable: AWS_REGION (default ap-northeast-2).
+
+name: Terraform AWS
+
+on:
+  workflow_dispatch:
+    inputs:
+      terraform_action:
+        description: "plan (read-only) or apply (modifies AWS)"
+        type: choice
+        required: true
+        default: plan
+        options:
+          - plan
+          - apply
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-aws-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  terraform:
+    name: Terraform ${{ inputs.terraform_action }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Export AWS credentials for Terraform
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_REGION || 'ap-northeast-2' }}
+        run: |
+          set -euo pipefail
+          key_id="${AWS_ACCESS_KEY_ID:-}"
+          if [ -z "${key_id}" ]; then key_id="${AWS_ACCESS_KEY:-}"; fi
+          if [ -z "${key_id}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+            echo "::error title=Missing AWS secrets::Add AWS_SECRET_ACCESS_KEY and either AWS_ACCESS_KEY_ID or AWS_ACCESS_KEY (access key id)."
+            exit 1
+          fi
+          {
+            echo "AWS_ACCESS_KEY_ID=${key_id}"
+            echo "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}"
+            echo "AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}"
+          } >> "$GITHUB_ENV"
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+
+      - name: Terraform init
+        run: terraform init -backend=false -input=false
+
+      - name: Terraform plan
+        if: inputs.terraform_action == 'plan'
+        run: terraform plan -input=false -no-color
+
+      - name: Terraform apply
+        if: inputs.terraform_action == 'apply'
+        run: terraform apply -auto-approve -input=false -no-color
