@@ -170,7 +170,7 @@ One repository per image component (flat under prefix `ai-api-usage-monitor/`):
 | `ai-api-usage-monitor/agent-web` | Agent Next standalone |
 | `ai-api-usage-monitor/web-edge` | Nginx edge (`docker/web-edge/Dockerfile`) |
 
-Tags: immutable `${{ github.sha }}` plus moving `:staging` / `:prod` (see `release.yml`). When using **[`infra/terraform`](../infra/terraform/README.md)**, ECR repositories get an **untagged image lifecycle** (default expire after 14 days; see variable `ecr_untagged_image_expire_days`). The Terraform variable **`ecr_repository_suffixes`** controls which rows exist in AWS (defaults are placeholders such as `service-a` / `service-b` / `service-c` until you align the list with this table and `release.yml` image names).
+Tags: immutable `${{ github.sha }}` plus moving `:staging` / `:prod` (see `release.yml`). When using **[`infra/terraform`](../infra/terraform/README.md)**, ECR repositories get an **untagged image lifecycle** (default expire after 14 days; see variable `ecr_untagged_image_expire_days`). The Terraform variable **`ecr_repository_suffixes`** controls which repositories exist in AWS (defaults in **`infra/terraform/variables.tf`** match **`release.yml`** image suffixes; override in `terraform.tfvars` if needed).
 
 ---
 
