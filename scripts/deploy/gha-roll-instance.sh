@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# GitHub Actions helper: drain one EC2 from an ALB Target Group, SSM deploy, re-register.
+# See `docs/aws-github-oidc-ecr-ssm.md` and `.github/workflows/deploy.yml`.
+#
+# Required env:
+#   AWS_REGION
+#   TARGET_GROUP_ARN
+#   INSTANCE_ID
+#   DEPLOY_SHA       — value for IMAGE_TAG on the instance
+#   SSM_DEPLOY_ROOT  — directory on the instance containing the repo and scripts/deploy/
+
+set -euo pipefail
+
+TARGET_PORT="${TARGET_PORT:-80}"
+DRAIN_WAIT_SEC="${DRAIN_WAIT_SEC:-300}"
+
+INSTANCE_ID="${INSTANCE_ID:?}"
+TARGET_GROUP_ARN="${TARGET_GROUP_ARN:?}"
+DEPLOY_SHA="${DEPLOY_SHA:?}"
+SSM_DEPLOY_ROOT="${SSM_DEPLOY_ROOT:?}"
+
+echo "Deregister $INSTANCE_ID:$TARGET_PORT from $TARGET_GROUP_ARN"
+aws elbv2 deregister-targets \
+  --target-group-arn "$TARGET_GROUP_ARN" \
+  --targets "Id=$INSTANCE_ID,Port=$TARGET_PORT"
+
+echo "Wait for draining (up to ${DRAIN_WAIT_SEC}s)"
+deadline=$((SECONDS + DRAIN_WAIT_SEC))
+while (( SECONDS < deadline )); do
+  state="$(aws elbv2 describe-target-health \
+    --target-group-arn "$TARGET_GROUP_ARN" \
+    --targets "Id=$INSTANCE_ID,Port=$TARGET_PORT" \
+    --query 'TargetHealthDescriptions[0].TargetHealth.State' --output text 2>/dev/null || true)"
+  if [[ "$state" == "unused" ]] || [[ "$state" == "None" ]] || [[ "$state" == "null" ]] || [[ "$state" == "" ]]; then
+    break
+  fi
+  sleep 5
+done
+
+PARAMS_FILE="$(mktemp)"
+# JSON for AWS-RunShellScript — keep commands as a single logical deploy (SSM prints each line).
+jq -n \
+  --arg sha "$DEPLOY_SHA" \
+  --arg region "$AWS_REGION" \
+  --arg root "$SSM_DEPLOY_ROOT" \
+  '{commands:[
+      "set -euo pipefail",
+      ("export IMAGE_TAG=" + $sha),
+      ("export AWS_REGION=" + $region),
+      ("cd " + $root),
+      "chmod +x scripts/deploy/on-instance-compose-roll.sh",
+      "./scripts/deploy/on-instance-compose-roll.sh"
+    ]}' >"$PARAMS_FILE"
+
+echo "SSM SendCommand to $INSTANCE_ID"
+CMD_ID="$(aws ssm send-command \
+  --instance-ids "$INSTANCE_ID" \
+  --document-name "AWS-RunShellScript" \
+  --comment "compose deploy ${DEPLOY_SHA}" \
+  --parameters "file://${PARAMS_FILE}" \
+  --query Command.CommandId --output text)"
+rm -f "$PARAMS_FILE"
+
+deadline=$((SECONDS + 900))
+while (( SECONDS < deadline )); do
+  STATUS="$(aws ssm get-command-invocation \
+    --command-id "$CMD_ID" \
+    --instance-id "$INSTANCE_ID" \
+    --query Status --output text 2>/dev/null || true)"
+  if [[ "$STATUS" == "Success" ]]; then
+    break
+  fi
+  if [[ "$STATUS" == "Failed" ]] || [[ "$STATUS" == "Cancelled" ]] || [[ "$STATUS" == "TimedOut" ]]; then
+    echo "SSM command failed: $STATUS" >&2
+    aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" >&2 || true
+    exit 1
+  fi
+  sleep 5
+done
+
+STATUS="$(aws ssm get-command-invocation \
+  --command-id "$CMD_ID" \
+  --instance-id "$INSTANCE_ID" \
+  --query Status --output text)"
+if [[ "$STATUS" != "Success" ]]; then
+  echo "SSM command did not succeed (last status=$STATUS)" >&2
+  exit 1
+fi
+
+echo "Register $INSTANCE_ID:$TARGET_PORT back to $TARGET_GROUP_ARN"
+aws elbv2 register-targets \
+  --target-group-arn "$TARGET_GROUP_ARN" \
+  --targets "Id=$INSTANCE_ID,Port=$TARGET_PORT"
+
+echo "Done $INSTANCE_ID"

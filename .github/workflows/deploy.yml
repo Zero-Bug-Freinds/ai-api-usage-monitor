@@ -1,0 +1,84 @@
+# Deploy: ALB drain → SSM (compose pull/up + local health) → re-register (per instance).
+# Pair with `.github/workflows/release.yml` and `scripts/deploy/*.sh`.
+#
+# Configure GitHub Environments `staging` / `production` with variables:
+#   AWS_REGION, AWS_DEPLOY_ROLE_ARN, ALB_TARGET_GROUP_ARN, SSM_DEPLOY_ROOT (e.g. /opt/ai-api-usage-monitor)
+# Optional: TARGET_PORT (default 80)
+#
+# Instance IDs: leave empty to discover EC2 targets from ALB_TARGET_GROUP_ARN (same as post-Release roll).
+
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub Environment name (must match configured env)
+        type: choice
+        required: true
+        options:
+          - staging
+          - production
+      image_tag:
+        description: Immutable ECR tag (40-char git sha recommended)
+        type: string
+        required: true
+      comma_separated_instance_ids:
+        description: EC2 instance ids (comma-separated); leave empty to discover from ALB_TARGET_GROUP_ARN
+        type: string
+        required: false
+        default: ""
+
+concurrency:
+  group: alb-ssm-roll-${{ inputs.environment }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  roll-instances:
+    name: Rolling deploy (ALB + SSM)
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      TARGET_GROUP_ARN: ${{ vars.ALB_TARGET_GROUP_ARN }}
+      SSM_DEPLOY_ROOT: ${{ vars.SSM_DEPLOY_ROOT }}
+      TARGET_PORT: ${{ vars.TARGET_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Roll each instance
+        env:
+          DEPLOY_SHA: ${{ inputs.image_tag }}
+          MANUAL_INSTANCE_CSV: ${{ inputs.comma_separated_instance_ids }}
+        run: |
+          set -euo pipefail
+          chmod +x scripts/deploy/gha-roll-instance.sh scripts/deploy/list-tg-instance-ids.sh
+          if [[ -n "${MANUAL_INSTANCE_CSV// }" ]]; then
+            INSTANCE_CSV="$MANUAL_INSTANCE_CSV"
+          else
+            INSTANCE_CSV="$(./scripts/deploy/list-tg-instance-ids.sh)"
+          fi
+          if [[ -z "${INSTANCE_CSV// }" ]]; then
+            echo "No EC2 instance IDs (empty input and no instance targets in target group)." >&2
+            exit 1
+          fi
+          IFS=',' read -r -a ids <<< "${INSTANCE_CSV// /}"
+          for raw in "${ids[@]}"; do
+            id="$(echo "$raw" | xargs)"
+            if [[ -z "$id" ]]; then
+              continue
+            fi
+            echo "=== Rolling instance $id ==="
+            export INSTANCE_ID="$id"
+            scripts/deploy/gha-roll-instance.sh
+          done

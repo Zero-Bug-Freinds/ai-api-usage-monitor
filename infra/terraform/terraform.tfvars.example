@@ -1,0 +1,17 @@
+aws_region             = "ap-northeast-2"
+project_name           = "ai-api-usage-monitor"
+github_org             = "YOUR_ORG_OR_USER"
+github_repo            = "ai-api-usage-monitor"
+ecr_repository_prefix  = "ai-api-usage-monitor"
+iam_role_name_prefix   = "github-oidc"
+
+# ECR: untagged image retention (days); see aws_ecr_lifecycle_policy in modules/ecr.
+# ecr_untagged_image_expire_days = 14
+
+# When enable_compute_stack is false, add TG ARNs here to narrow deploy role ELB register/deregister (else Resource "*").
+# extra_deploy_elb_target_group_arns = ["arn:aws:elasticloadbalancing:REGION:ACCOUNT:targetgroup/NAME/ID"]
+
+# Optional compute (VPC + ALB + ASG). When true, deploy IAM policies scope ELB register/deregister to this TG.
+enable_compute_stack       = false
+compute_environment_label  = "staging"
+# alb_target_port          = 80

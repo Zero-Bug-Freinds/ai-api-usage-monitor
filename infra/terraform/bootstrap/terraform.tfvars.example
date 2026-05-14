@@ -1,0 +1,4 @@
+aws_region            = "ap-northeast-2"
+bucket_name           = "YOUR_ACCOUNT_UNIQUE_TFSTATE_BUCKET"
+dynamodb_table_name   = "ai-api-usage-monitor-tf-locks"
+# kms_key_arn         = "arn:aws:kms:REGION:ACCOUNT:key/KEY_ID"

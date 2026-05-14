@@ -1,6 +1,6 @@
 # GitHub Actions CI (팀 정본)
 
-`docs/architecture.md` §8.2(비밀 스캔 권장), §10(GitHub Actions 도입) 및 모노레포 구조에 맞춘 CI 요약이다. 워크플로 정의는 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)이 정본이다.
+`docs/architecture.md` §8.2(비밀 스캔 권장), §10(GitHub Actions 도입) 및 모노레포 구조에 맞춘 CI 요약이다. CI 워크플로 정본은 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml), 경로 필터 재사용은 [`.github/workflows/path-changes.yml`](../.github/workflows/path-changes.yml)이다.
 
 ## 트리거·브랜치
 
@@ -13,18 +13,19 @@
 
 | 잡 | 설명 |
 |----|------|
-| **Detect changed paths** | `dorny/paths-filter`로 `web_edge`, `api_gateway`, `identity`, `proxy`, `usage`, `billing`, `team`, `notification`, `web_host`, `web_mfe`, `web_shared`, `workflows` 변경 감지 |
+| **Detect changed paths** | 재사용 워크플로 [`.github/workflows/path-changes.yml`](../.github/workflows/path-changes.yml)에서 `dorny/paths-filter`로 `web_edge`, `api_gateway`, `identity`, `ai_agent`, `proxy`, `usage`, `billing`, `team`, `notification`, `web_shared`, `workflows` 변경 감지 |
+| **Terraform fmt / validate** | `infra/terraform/**` 변경 시 `terraform fmt -check`, `terraform init -backend=false`, `terraform validate`(placeholder `-var` 사용). IaC 정본은 [`infra/terraform/README.md`](../infra/terraform/README.md) |
 | **Secret scan (gitleaks)** | 매 실행마다 저장소 스캔(§8.2). 루트 **`.env.example`** 에는 팀 합의 **로컬 전용 플레이스홀더**(`GATEWAY_SHARED_SECRET` 등)가 문서화되어 있으며, 오탐 방지를 위해 [`.gitleaks.toml`](../.gitleaks.toml) allowlist에 포함한다. |
-| **Validate docker-compose.yml** | `docker compose config`로 문법 검증(§10) |
-| **Validate web-edge** | `web_edge` 변경 시 `docker compose config` + `nginx -t`(template envsubst 포함) 검증 |
+| **Validate docker-compose** | `docker compose -f docker-compose.yml config` 및 `docker compose -f docker-compose.prod.yml --env-file .env.deploy.example config` |
+| **Validate web-edge** | `web_edge` 변경 시 루트 Compose `config` + `docker/web-edge/Dockerfile` 빌드 후 컨테이너에서 `nginx -t` |
 | **Build api-gateway-service** | Java 21 + Gradle build/test + `docker/build-push-action@v6` (`type=gha`, scope `api-gateway-service`) |
 | **Build proxy-service** | Java 21 + Gradle build/test + `docker/build-push-action@v6` (`type=gha`, scope `proxy-service`) |
 | **Build usage-service** | Java 21 + usage-web lint/test/build + usage-service/usage-web 이미지 빌드(`type=gha`) |
 | **Build billing-service** | Java 21 + billing-web lint/test/build + billing-service/billing-web 이미지 빌드(`type=gha`) |
-| **Build team-service** | Java 21 + team-service backend build (web-mfe는 별도 web-mfe job에서 검증) |
+| **Build team-service** | Java 21 + team-service Gradle build (`team-web` 이미지 빌드는 향후 CI 확장 시 `team`·`web_shared` 필터와 함께 추가 가능) |
 | **Build notification-service** | Nest build + notification-web lint/test/build + notification-service/notification-web 이미지 빌드(`type=gha`) |
 | **Build identity-service** | Java 21 + identity-web lint/test/build + identity-web 이미지 빌드(`type=gha`) |
-| **Build web-mfe remotes** | usage/team `web-mfe` lint/typecheck/build + 각 이미지 빌드(`type=gha`) |
+| **Build web-mfe remotes** | 현재 `ci.yml`에 별도 job 없음(필요 시 paths-filter·job 추가) |
 | **Build web-host** | 현재 `if: false`로 비활성(긴급 우회) |
 | **CI observability metrics** | Actions API로 job duration/결과를 수집해 요약 |
 | **CI summary** | gitleaks 성공 필수, 실행된 빌드·Compose 잡이 `failure`/`cancelled`이면 실패. 스킵된 잡은 허용 (`web` 포함) |
@@ -105,9 +106,39 @@ pnpm run build:web
 
 WebFlux 프록시에서 블로킹 AMQP 호출은 §6.2 주의사항과 동일하게 테스트 설계에 반영한다.
 
-## CD(배포) — 비목표 전제
+## CD (AWS ECR + Compose + SSM)
 
-`docs/architecture.md` §3.3·§10: **Kubernetes 클러스터 배포는 범위 밖**이다. CD를 도입할 때는 **`docs/architecture.md` §10.1 패턴 B**에 맞춰 **백엔드·프론트(각 `services/*/web`) 이미지를 각각 빌드**·레지스트리 push하고, 대상 환경에서 **Docker Compose**로 스택 기동, 비밀값은 **GitHub Secrets·환경변수** 등으로 관리하는 방향을 따른다.
+상세 IAM·ECR 리포지토리 이름·ALB 헬스·롤백 파일은 [`docs/aws-github-oidc-ecr-ssm.md`](aws-github-oidc-ecr-ssm.md)와 [`docs/cd-aws-ec2-compose-alb-ssm-plan.md`](cd-aws-ec2-compose-alb-ssm-plan.md)를 본다. AWS 정적 리소스(OIDC·IAM·ECR·선택 VPC/ALB/ASG)는 [`infra/terraform/README.md`](../infra/terraform/README.md) 에서 프로비저닝하고, 출력값을 GitHub Environment 변수와 맞춘다.
+
+### 브랜치·GitHub Environment (트리거·승인 게이트)
+
+| 브랜치 | 워크플로 | GitHub Environment | 동작 |
+|--------|----------|---------------------|------|
+| `develop` | [`.github/workflows/release.yml`](../.github/workflows/release.yml) (push, 경로 필터) | **`staging`** | ECR push 후 조건 충족 시 **`roll-after-ecr`** 로 SSM 롤( `ALB_TARGET_GROUP_ARN` 설정 시) |
+| `main` | 동일 `release.yml` | **`production`** | 동일; **필수 리뷰어·wait timer** 등 Environment 보호 규칙 권장 |
+| 수동 | `release.yml` `workflow_dispatch` | 호출 시 선택한 브랜치의 Environment | `force_rebuild_all`(기본 `true`)로 paths-filter 없이 전 이미지 push 가능; 조건 충족 시 동일하게 `roll-after-ecr` 실행 |
+
+ECR 푸시가 성공하고(경로 필터 또는 `force_rebuild_all`로 실제 이미지가 빌드·푸시된 경우에 한함) 해당 GitHub Environment에 `ALB_TARGET_GROUP_ARN`이 설정되어 있으면, [`.github/workflows/release.yml`](../.github/workflows/release.yml)의 **`roll-after-ecr`** 잡이 이어서 타깃 그룹에 등록된 EC2를 조회해 ALB+SSM 롤링 배포를 수행한다. `ALB_TARGET_GROUP_ARN`이 비어 있으면 ECR만 반영하고 롤은 건너뛴다.
+
+수동 배포는 [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) `workflow_dispatch`로 실행한다(`image_tag` 필수). 인스턴스 ID는 비워 두면 타깃 그룹에서 자동 조회한다. `production` Environment에 보호 규칙을 걸면 릴리스·배포 모두 승인 게이트에 걸린다.
+
+### 경로 필터 재사용
+
+`ci.yml`의 **Detect changed paths** 잡은 [`.github/workflows/path-changes.yml`](../.github/workflows/path-changes.yml)을 `workflow_call`로 호출한다. `release.yml`도 동일 재사용으로 **변경된 서비스만** ECR에 push한다(`workflow_dispatch` + `force_rebuild_all` 예외).
+
+### 이미지·태그
+
+- 불변: `:${{ github.sha }}`
+- 포인터: `:staging` / `:prod` (브랜치별로 동일 digest에 추가 태그)
+
+### 운영 Compose·비밀
+
+- [`docker-compose.prod.yml`](../docker-compose.prod.yml): RDS·Amazon MQ·ElastiCache는 외부 엔드포인트(`.env.deploy`·SSM·Secrets Manager).
+- [`scripts/deploy/on-instance-compose-roll.sh`](../scripts/deploy/on-instance-compose-roll.sh): `compose pull` / `up -d`, 로컬 **`http://127.0.0.1:8080/healthz`** 재시도 후 성공 시 `/var/lib/ai-api-usage-monitor-deploy/last-success-sha`에 **직전 성공 sha** 보관·실패 시 롤백.
+
+### 아키텍처 정합
+
+`docs/architecture.md` §10.1 패턴 B 및 §10.2 단일 도메인과 모순 없게 유지한다. **Kubernetes는 범위 밖**이다.
 
 ## PR에서 Actions 확인
 
