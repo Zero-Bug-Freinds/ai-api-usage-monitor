@@ -113,6 +113,18 @@ resource "aws_security_group" "instance" {
   }
 }
 
+resource "aws_security_group_rule" "instance_from_alb_8080" {
+  count = var.target_port == 8080 ? 0 : 1
+
+  type                     = "ingress"
+  description              = "ALB health check and app traffic on 8080"
+  from_port                = 8080
+  to_port                  = 8080
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.alb.id
+  security_group_id        = aws_security_group.instance.id
+}
+
 data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
 
@@ -215,7 +227,7 @@ resource "aws_lb_target_group" "app" {
     interval            = 15
     timeout             = 5
     protocol            = "HTTP"
-    port                = "traffic-port"
+    port                = "8080"
   }
 
   tags = {
@@ -286,7 +298,6 @@ resource "aws_launch_template" "app" {
 resource "aws_autoscaling_group" "app" {
   name                      = "${var.project_name}-asg-${var.environment_label}"
   vpc_zone_identifier       = aws_subnet.public[*].id
-  target_group_arns         = [aws_lb_target_group.app.arn]
   health_check_type         = "ELB"
   health_check_grace_period = 300
   min_size                  = var.asg_min_size
@@ -313,4 +324,9 @@ resource "aws_autoscaling_group" "app" {
   lifecycle {
     create_before_destroy = true
   }
+}
+
+resource "aws_autoscaling_attachment" "app_to_target_group" {
+  autoscaling_group_name = aws_autoscaling_group.app.name
+  lb_target_group_arn    = aws_lb_target_group.app.arn
 }
