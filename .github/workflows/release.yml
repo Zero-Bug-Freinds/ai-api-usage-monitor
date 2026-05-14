@@ -391,7 +391,6 @@ jobs:
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
       TARGET_GROUP_ARN: ${{ vars.ALB_TARGET_GROUP_ARN }}
-      SSM_DEPLOY_ROOT: ${{ vars.SSM_DEPLOY_ROOT || '/opt/ai-api-usage-monitor' }}
       TARGET_PORT: ${{ vars.TARGET_PORT }}
     steps:
       - uses: actions/checkout@v4
@@ -427,10 +426,11 @@ jobs:
         if: steps.skip.outputs.skip == 'false'
         env:
           DEPLOY_SHA: ${{ github.sha }}
-          SSM_DEPLOY_ROOT: ${{ vars.SSM_DEPLOY_ROOT || '/opt/ai-api-usage-monitor' }}
+          # Environment `SSM_DEPLOY_ROOT` can be set to empty and overrides workflow `env`; use a distinct key.
+          ROLL_SSM_DEPLOY_ROOT: ${{ vars.SSM_DEPLOY_ROOT || '/opt/ai-api-usage-monitor' }}
         run: |
+          export SSM_DEPLOY_ROOT="${ROLL_SSM_DEPLOY_ROOT:-/opt/ai-api-usage-monitor}"
           set -euo pipefail
-          export SSM_DEPLOY_ROOT="${SSM_DEPLOY_ROOT:-/opt/ai-api-usage-monitor}"
           chmod +x scripts/deploy/gha-roll-instance.sh scripts/deploy/list-tg-instance-ids.sh
           INSTANCE_CSV="$(./scripts/deploy/list-tg-instance-ids.sh)"
           if [[ -z "${INSTANCE_CSV}" ]]; then
