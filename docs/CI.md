@@ -108,7 +108,7 @@ WebFlux 프록시에서 블로킹 AMQP 호출은 §6.2 주의사항과 동일하
 
 ## CD (AWS ECR + Compose + SSM)
 
-상세 IAM·ECR 리포지토리 이름·ALB 헬스·롤백 파일은 [`docs/aws-github-oidc-ecr-ssm.md`](aws-github-oidc-ecr-ssm.md)와 [`docs/cd-aws-ec2-compose-alb-ssm-plan.md`](cd-aws-ec2-compose-alb-ssm-plan.md)를 본다. AWS 정적 리소스(OIDC·IAM·ECR·선택 VPC/ALB/ASG)는 [`infra/terraform/README.md`](../infra/terraform/README.md) 에서 프로비저닝하고, 출력값을 GitHub Environment 변수와 맞춘다.
+상세 IAM·ECR 리포지토리 이름·ALB 헬스·롤백 파일은 [`docs/aws-github-oidc-ecr-ssm.md`](aws-github-oidc-ecr-ssm.md)와 [`docs/cd-aws-ec2-compose-alb-ssm-plan.md`](cd-aws-ec2-compose-alb-ssm-plan.md)를 본다. AWS 정적 리소스(OIDC·IAM·ECR·선택 VPC/ALB/ASG)는 [`infra/terraform/README.md`](../infra/terraform/README.md)에서 프로비저닝한다. **Release/Deploy** 워크플로는 OIDC 역할 ARN을 YAML `env`에 두고, GitHub Environment에는 `AWS_REGION`·`ALB_TARGET_GROUP_ARN` 등 나머지 변수를 둔다. **Terraform plan/apply**를 Actions에서 돌리려면 [`.github/workflows/terraform-aws.yml`](../.github/workflows/terraform-aws.yml)와 저장소 Secrets를 사용한다.
 
 ### 브랜치·GitHub Environment (트리거·승인 게이트)
 
@@ -120,7 +120,7 @@ WebFlux 프록시에서 블로킹 AMQP 호출은 §6.2 주의사항과 동일하
 
 ECR 푸시가 성공하고(경로 필터 또는 `force_rebuild_all`로 실제 이미지가 빌드·푸시된 경우에 한함) 해당 GitHub Environment에 `ALB_TARGET_GROUP_ARN`이 설정되어 있으면, [`.github/workflows/release.yml`](../.github/workflows/release.yml)의 **`roll-after-ecr`** 잡이 이어서 타깃 그룹에 등록된 EC2를 조회해 ALB+SSM 롤링 배포를 수행한다. `ALB_TARGET_GROUP_ARN`이 비어 있으면 ECR만 반영하고 롤은 건너뛴다.
 
-수동 배포는 [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) `workflow_dispatch`로 실행한다(`image_tag` 필수). 인스턴스 ID는 비워 두면 타깃 그룹에서 자동 조회한다. `production` Environment에 보호 규칙을 걸면 릴리스·배포 모두 승인 게이트에 걸린다.
+수동 배포는 [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) `workflow_dispatch`로 실행한다(`image_tag` 필수). 인스턴스 ID는 비워 두면 타깃 그룹에서 자동 조회한다. `production` Environment에 보호 규칙을 걸면 릴리스·배포 모두 승인 게이트에 걸린다. **Terraform plan/apply**를 Actions에서 실행하려면 CI와 별도인 [`.github/workflows/terraform-aws.yml`](../.github/workflows/terraform-aws.yml)(저장소 Secrets)를 사용한다.
 
 ### 경로 필터 재사용
 

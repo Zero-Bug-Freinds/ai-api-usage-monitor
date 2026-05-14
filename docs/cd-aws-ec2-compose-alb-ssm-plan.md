@@ -139,16 +139,16 @@ flowchart TD
 ## Terraform 적용 순서 (IaC)
 
 1. **(선택)** [`infra/terraform/bootstrap/README.md`](../infra/terraform/bootstrap/README.md)로 S3 상태 버킷·DynamoDB 락 테이블 생성 — 팀이 **로컬 `terraform.tfstate`** 만 쓰면 생략 가능.
-2. **[`infra/terraform/README.md`](../infra/terraform/README.md)** 에서 `terraform init` / `apply` 로 OIDC 프로바이더, 환경별 Release·Deploy 역할, ECR 리포지토리 생성(S3 백엔드는 선택).
+2. **[`infra/terraform/README.md`](../infra/terraform/README.md)** 에서 `terraform init` / `apply` 로 OIDC 프로바이더, **단일** Release·Deploy IAM 역할(`ReleaseRole` / `DeployRole` 기본 이름), ECR 리포지토리(`ecr_repository_suffixes`) 생성(S3 백엔드는 선택). (레거시 패턴은 [`modules/github_env_roles`](../infra/terraform/modules/github_env_roles) 참고.)
 3. 선택: 동일 루트에서 `enable_compute_stack = true` 로 VPC·ALB·Target Group·ASG·인스턴스 프로파일 추가 (단순 퍼블릭 레이아웃).
-4. Terraform 출력값을 GitHub Environment 변수에 반영 (표는 Terraform README).
+4. [`.github/workflows/release.yml`](../.github/workflows/release.yml) / [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) 의 **`env`에 있는 OIDC 역할 ARN**이 `terraform output`과 일치하는지 확인하고, GitHub Environment에는 `AWS_REGION`, `ALB_TARGET_GROUP_ARN`, `SSM_DEPLOY_ROOT` 등 나머지 변수를 맞춘다 (표는 Terraform README).
 
-워크플로([`release.yml`](../.github/workflows/release.yml), [`deploy.yml`](../.github/workflows/deploy.yml))와 Compose·SSM 스크립트는 그대로 두고, ARN·리포 이름만 출력과 맞춘다.
+워크플로와 Compose·SSM 스크립트는 그대로 두고, ARN·리포 이름만 Terraform·YAML과 맞춘다.
 
 ## AWS 리소스 체크리스트
 
 - ECR 리포지토리(이미지별 또는 통합 네이밍) — Terraform [`modules/ecr`](../infra/terraform/modules/ecr) 또는 기존 리소스
-- IAM: GitHub OIDC Role(ECR push + SSM `SendCommand` 등) — Terraform [`modules/github_env_roles`](../infra/terraform/modules/github_env_roles) 또는 수동 JSON([`aws-github-oidc-ecr-ssm.md`](aws-github-oidc-ecr-ssm.md))
+- IAM: GitHub OIDC Role(ECR push + SSM `SendCommand` 등) — Terraform 루트 [`infra/terraform`](../infra/terraform) 또는 수동 JSON([`aws-github-oidc-ecr-ssm.md`](aws-github-oidc-ecr-ssm.md)); 선택 레퍼런스 모듈 [`modules/github_env_roles`](../infra/terraform/modules/github_env_roles)
 - EC2: Instance Profile(ECR pull + SSM Agent), ASG 최소 2대, Launch Template에 Docker/Compose — Terraform [`modules/compute_stack`](../infra/terraform/modules/compute_stack) 선택 또는 수동
 - ALB + Target Group + 보안 그룹 — 선택 모듈 또는 수동; 배포 스크립트 [`gha-roll-instance.sh`](../scripts/deploy/gha-roll-instance.sh) 의 `TARGET_PORT`(기본 80)와 TG 포트 일치
 - EC2 → RDS / MQ / Redis 네트워크 허용
@@ -163,7 +163,7 @@ flowchart TD
 
 - [ ] 스테이징/프로덕션 환경 수와 브랜치 트리거 확정 (`develop` / `main`)
 - [ ] 운영에 포함할 이미지 목록·ECR 리포지토리 네이밍 확정
-- [ ] GitHub OIDC IAM Role 및 최소 권한 정책 — Terraform [`infra/terraform`](../infra/terraform/README.md) 또는 수동 JSON
+- [ ] GitHub OIDC IAM Role 및 최소 권한 정책 — Terraform [`infra/terraform`](../infra/terraform/README.md) 루트 또는 수동 JSON
 - [ ] `docker-compose.prod.yml`(또는 동등) 초안 및 env/secret 주입 방식 확정
 - [x] Release 워크플로(변경 감지, ECR push, sha 태그) 및 **성공 시 `roll-after-ecr` 자동 롤**(환경 변수 `ALB_TARGET_GROUP_ARN` 등)
 - [x] Deploy 워크플로(`workflow_dispatch`, SSM drain/roll, 선택 시 타깃 그룹에서 인스턴스 ID 자동 조회)

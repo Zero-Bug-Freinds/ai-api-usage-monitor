@@ -1,8 +1,10 @@
 # Terraform (AWS IaC for CD prerequisites)
 
-This root manages **GitHub OIDC**, **per-environment IAM roles** for Release/Deploy workflows, **ECR repositories** aligned with [`.github/workflows/release.yml`](../../.github/workflows/release.yml), and an **optional** VPC + ALB + ASG stack with an EC2 instance profile (ECR pull + SSM).
+This root manages **GitHub OIDC** (`token.actions.githubusercontent.com`), **two IAM roles** used by GitHub Actions (**`ReleaseRole`** — ECR push, **`DeployRole`** — ELB + SSM), **ECR repositories** (suffix list from `ecr_repository_suffixes`), and an **optional** VPC + ALB + ASG stack with an EC2 instance profile (ECR pull + SSM).
 
 Application CD remains **GitHub Actions + SSM + Compose**; Terraform replaces **manual IAM/ECR JSON** from [`docs/aws-github-oidc-ecr-ssm.md`](../../docs/aws-github-oidc-ecr-ssm.md).
+
+The reusable module [`modules/github_env_roles`](modules/github_env_roles) (per–GitHub-Environment roles) is **not** wired from the root `main.tf`; the root module defines the single release/deploy role pair above. Teams may fork that pattern if they need separate roles per environment.
 
 ## Versions
 
@@ -14,11 +16,13 @@ Application CD remains **GitHub Actions + SSM + Compose**; Terraform replaces **
 1. **Optional — remote state bootstrap** (teams that want S3 + DynamoDB locking): [`bootstrap/`](bootstrap/README.md). Skip if you use **local Terraform state** only.
 2. **Root module** (`infra/terraform/`): `cd infra/terraform` → `terraform init` (add `-backend-config=backend.hcl` only when using the S3 backend) → `terraform apply`.
 3. **Optional compute**: set `enable_compute_stack = true` when you want Terraform-managed VPC/ALB/TG/ASG (see variables). You can start with `false`, apply IAM+ECR, then enable compute in a follow-up apply.
-4. **GitHub**: copy Terraform outputs into **GitHub Environment variables** for `staging` and `production` (table below).
+4. **GitHub**: configure **Environment variables** on `staging` and `production` (see table below). **[`.github/workflows/release.yml`](../../.github/workflows/release.yml)** and **[`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml)** pin **OIDC role ARNs** in workflow `env`; change those YAML blocks if role names or account IDs change. For **Terraform CLI from Actions**, use **[`.github/workflows/terraform-aws.yml`](../../.github/workflows/terraform-aws.yml)** (repository secrets: `AWS_SECRET_ACCESS_KEY` and `AWS_ACCESS_KEY_ID` or `AWS_ACCESS_KEY`; optional repo variable `AWS_REGION`).
 
 ### Workspaces vs single state
 
-This repository uses **one state file** and creates **both** `staging` and `production` IAM roles in the same apply (distinct GitHub Environment OIDC subjects). If you prefer isolated states (e.g. separate AWS accounts), use a second root or change `key` in the S3 backend per stack (when using remote state).
+This repository uses **one state file** per root apply. The root creates **one** `ReleaseRole` and **one** `DeployRole` (same pair for both GitHub Environments). OIDC trust uses `StringLike` on `repo:<github_org>/<github_repo>:*`, which still allows jobs that use `environment: staging` / `production` (their `sub` claim matches the pattern).
+
+If you prefer isolated states (e.g. separate AWS accounts), use a second root or change `key` in the S3 backend per stack (when using remote state).
 
 ## Backend configuration
 
@@ -35,25 +39,22 @@ Use distinct `key` values if you split environments into separate state files.
 
 ## Variables
 
-Copy [`terraform.tfvars.example`](terraform.tfvars.example) and set at least:
+Copy [`terraform.tfvars.example`](terraform.tfvars.example) and adjust as needed.
 
-- `aws_region`
-- `github_org`, `github_repo`
-
-Optional:
-
-- `ecr_repository_prefix` (defaults to `ai-api-usage-monitor`, matching `release.yml`)
-- `ecr_untagged_image_expire_days` (default **14**) — ECR lifecycle policy for untagged images
-- `extra_deploy_elb_target_group_arns` — when `enable_compute_stack` is false, merge these TG ARNs into deploy-role ELB register/deregister scoping (otherwise `Resource "*"`)
-- `enable_compute_stack`, `compute_environment_label`, sizing variables
+- **`github_org`**, **`github_repo`** — must match the GitHub repo for OIDC `sub` (defaults in `variables.tf` are placeholders for CI; set real values for your org).
+- **`ecr_repository_prefix`** — defaults to `ai-api-usage-monitor` (matches `release.yml`).
+- **`ecr_repository_suffixes`** — list of repository path segments after the prefix (default `service-a`, `service-b`, `service-c`). Align with images you build in `release.yml` (see [`docs/aws-github-oidc-ecr-ssm.md`](../../docs/aws-github-oidc-ecr-ssm.md) §5 for the full naming table).
+- **`release_iam_role_name`**, **`deploy_iam_role_name`** — IAM role names (defaults `ReleaseRole`, `DeployRole`).
+- **`ecr_untagged_image_expire_days`** — ECR lifecycle for untagged images (default **14**).
+- **`enable_compute_stack`**, **`compute_environment_label`**, sizing, **`alb_target_port`**, **`alb_health_check_path`**, **`vpc_cidr`**, **`public_subnet_cidrs`** — optional compute stack.
 
 ## OIDC trust shape
 
-IAM roles trust GitHub tokens whose subject is:
+IAM roles use **AssumeRoleWithWebIdentity** from the GitHub OIDC provider, audience `sts.amazonaws.com`, and **`StringLike`** on:
 
-`repo:<github_org>/<github_repo>:environment:<staging|production>`
+`repo:<github_org>/<github_repo>:*`
 
-This matches [`release.yml`](../../.github/workflows/release.yml) and [`deploy.yml`](../../.github/workflows/deploy.yml), which select the GitHub Environment `staging` or `production`.
+This matches the manual JSON in [`docs/aws-github-oidc-ecr-ssm.md`](../../docs/aws-github-oidc-ecr-ssm.md) §1.2. It is broader than `repo:…:environment:staging` alone but includes those subjects.
 
 If an OIDC provider for `token.actions.githubusercontent.com` already exists in the account, import it before first apply:
 
@@ -61,25 +62,25 @@ If an OIDC provider for `token.actions.githubusercontent.com` already exists in 
 terraform import aws_iam_openid_connect_provider.github arn:aws:iam::<ACCOUNT_ID>:oidc-provider/token.actions.githubusercontent.com
 ```
 
-## Terraform outputs → GitHub Environment variables
+## Terraform outputs → GitHub (and workflows)
 
-Map outputs into **each** GitHub Environment (`staging`, `production`) as **Variables** (not secrets unless your policy requires):
+**Role ARNs:** [`.github/workflows/release.yml`](../../.github/workflows/release.yml) and [`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml) currently set `AWS_RELEASE_ROLE_ARN` / `AWS_DEPLOY_ROLE_ARN` in workflow **`env`**. After `terraform apply`, confirm those ARNs match **`terraform output aws_release_role_arn`** and **`terraform output aws_deploy_role_arn`**, or update the YAML to the output values.
 
-| GitHub Environment variable | Terraform output / source |
-|------------------------------|---------------------------|
-| `AWS_REGION` | Same as `var.aws_region` (no output; set manually). |
+Map the rest into **each** GitHub Environment (`staging`, `production`) as **Variables** (not secrets unless your policy requires):
+
+| GitHub Environment variable | Source |
+|------------------------------|--------|
+| `AWS_REGION` | Same as `var.aws_region` (or set manually; optional repo **Variable** `AWS_REGION` is used by `terraform-aws.yml`). |
 | _(account ID for imports)_ | Output `aws_account_id` (OIDC provider import path). |
 | `ECR_REPOSITORY_PREFIX` | Same as `var.ecr_repository_prefix` (default `ai-api-usage-monitor`). |
-| `AWS_RELEASE_ROLE_ARN` | `aws_release_role_arn_staging` or `aws_release_role_arn_production`. |
-| `AWS_DEPLOY_ROLE_ARN` | `aws_deploy_role_arn_staging` or `aws_deploy_role_arn_production`. |
-| `ALB_TARGET_GROUP_ARN` | `alb_target_group_arn` when `enable_compute_stack = true`; otherwise set manually from your ALB stack (needed for **post-Release auto roll** and optional TG discovery in [`deploy.yml`](../../.github/workflows/deploy.yml)). |
-| `TARGET_PORT` | `alb_target_port` — must match [`scripts/deploy/gha-roll-instance.sh`](../../scripts/deploy/gha-roll-instance.sh) (`TARGET_PORT`, default **80**). Set as an Environment variable so [`deploy.yml`](../../.github/workflows/deploy.yml) and [`release.yml`](../../.github/workflows/release.yml) `roll-after-ecr` pass it through. |
+| `ALB_TARGET_GROUP_ARN` | Output `alb_target_group_arn` when `enable_compute_stack = true`; otherwise set manually from your ALB stack (needed for **post-Release auto roll** and optional TG discovery in [`deploy.yml`](../../.github/workflows/deploy.yml)). |
+| `TARGET_PORT` | Output `alb_target_port` when compute is on, else `var.alb_target_port` — must match [`scripts/deploy/gha-roll-instance.sh`](../../scripts/deploy/gha-roll-instance.sh) (default **80**). Set on the Environment so [`deploy.yml`](../../.github/workflows/deploy.yml) and [`release.yml`](../../.github/workflows/release.yml) `roll-after-ecr` pass it through. |
 
-Also configure workflow-specific vars documented in [`docs/aws-github-oidc-ecr-ssm.md`](../../docs/aws-github-oidc-ecr-ssm.md) (`SSM_DEPLOY_ROOT`, Next public origins, etc.).
+Also configure workflow-specific vars documented in [`docs/aws-github-oidc-ecr-ssm.md`](../../docs/aws-github-oidc-ecr-ssm.md) (`SSM_DEPLOY_ROOT`, Next public origins for `release`, etc.).
 
-### Deploy IAM tightening
+### Deploy IAM policy shape
 
-When `enable_compute_stack` is true, both deploy roles scope `elasticloadbalancing:RegisterTargets` / `DeregisterTargets` to the created target group ARN (plus any `extra_deploy_elb_target_group_arns`). With compute disabled and no extra ARNs, those actions stay on `Resource "*"` (same permissive shape as the manual JSON in the doc).
+The root module’s **DeployRole** inline policy follows [`docs/aws-github-oidc-ecr-ssm.md`](../../docs/aws-github-oidc-ecr-ssm.md) §3.1 (`Resource: "*"` for ELB register/deregister/describe health and SSM command APIs). Tighten in Terraform when target group and SSM document ARNs are stable.
 
 The GitHub OIDC provider includes **two thumbprints** for `token.actions.githubusercontent.com` (rotation-friendly); see `main.tf`.
 

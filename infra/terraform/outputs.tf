@@ -14,12 +14,12 @@ output "ecr_repository_names" {
 }
 
 output "aws_release_role_arn" {
-  description = "GitHub Environment variable AWS_RELEASE_ROLE_ARN (same role for staging and production if you use one ECR role)."
+  description = "ARN of the IAM role used by release.yml for ECR (OIDC); keep in sync with workflow env AWS_RELEASE_ROLE_ARN."
   value       = aws_iam_role.release.arn
 }
 
 output "aws_deploy_role_arn" {
-  description = "GitHub Environment variable AWS_DEPLOY_ROLE_ARN."
+  description = "ARN of the IAM role used by release.yml / deploy.yml for ALB+SSM (OIDC); keep in sync with workflow env AWS_DEPLOY_ROLE_ARN."
   value       = aws_iam_role.deploy.arn
 }
 
