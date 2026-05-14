@@ -391,7 +391,7 @@ jobs:
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
       TARGET_GROUP_ARN: ${{ vars.ALB_TARGET_GROUP_ARN }}
-      SSM_DEPLOY_ROOT: ${{ vars.SSM_DEPLOY_ROOT != '' && vars.SSM_DEPLOY_ROOT || '/opt/ai-api-usage-monitor' }}
+      SSM_DEPLOY_ROOT: ${{ vars.SSM_DEPLOY_ROOT }}
       TARGET_PORT: ${{ vars.TARGET_PORT }}
     steps:
       - uses: actions/checkout@v4
@@ -427,8 +427,10 @@ jobs:
         if: steps.skip.outputs.skip == 'false'
         env:
           DEPLOY_SHA: ${{ github.sha }}
+          SSM_DEPLOY_ROOT: ${{ vars.SSM_DEPLOY_ROOT }}
         run: |
           set -euo pipefail
+          export SSM_DEPLOY_ROOT="${SSM_DEPLOY_ROOT:-/opt/ai-api-usage-monitor}"
           chmod +x scripts/deploy/gha-roll-instance.sh scripts/deploy/list-tg-instance-ids.sh
           INSTANCE_CSV="$(./scripts/deploy/list-tg-instance-ids.sh)"
           if [[ -z "${INSTANCE_CSV}" ]]; then
