@@ -34,7 +34,25 @@ variable "target_port" {
 }
 
 variable "health_check_path" {
-  type = string
+  type        = string
+  description = "HTTP path for the target group health check (e.g. web-edge /healthz)."
+}
+
+variable "health_check_port" {
+  type        = string
+  description = "Health check port: \"traffic-port\" (same as target_port) or a numeric port string. web-edge exposes /healthz on 8080 without Host filtering; traffic often stays on 80."
+  default     = "8080"
+
+  validation {
+    condition = (
+      var.health_check_port == "traffic-port"
+      || (
+        try(tonumber(var.health_check_port), 0) >= 1
+        && try(tonumber(var.health_check_port), 0) <= 65535
+      )
+    )
+    error_message = "health_check_port must be \"traffic-port\" or a decimal TCP port (1-65535) as a string."
+  }
 }
 
 variable "vpc_cidr" {

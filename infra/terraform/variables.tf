@@ -127,6 +127,23 @@ variable "alb_health_check_path" {
   default     = "/healthz"
 }
 
+variable "alb_health_check_port" {
+  type        = string
+  description = "Target group health check port: \"traffic-port\" (same as alb_target_port) or e.g. \"8080\" for web-edge /healthz without Host allowlist. When not traffic-port, a matching instance SG rule from the ALB SG is created automatically."
+  default     = "8080"
+
+  validation {
+    condition = (
+      var.alb_health_check_port == "traffic-port"
+      || (
+        try(tonumber(var.alb_health_check_port), 0) >= 1
+        && try(tonumber(var.alb_health_check_port), 0) <= 65535
+      )
+    )
+    error_message = "alb_health_check_port must be \"traffic-port\" or a TCP port number as a string (1-65535)."
+  }
+}
+
 variable "vpc_cidr" {
   type        = string
   description = "CIDR for optional VPC."

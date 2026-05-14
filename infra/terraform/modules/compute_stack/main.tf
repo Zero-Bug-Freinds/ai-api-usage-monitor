@@ -8,6 +8,10 @@ data "aws_ssm_parameter" "al2023_ami" {
 
 locals {
   azs = slice(sort(data.aws_availability_zones.available.names), 0, min(2, length(data.aws_availability_zones.available.names)))
+
+  # When the TG probes a port other than target_port (e.g. 8080 for /healthz while traffic is 80), allow ALB SG → that port on instances.
+  health_check_port_num         = try(tonumber(var.health_check_port), null)
+  health_uses_separate_tcp_port = var.health_check_port != "traffic-port" && local.health_check_port_num != null && local.health_check_port_num != var.target_port
 }
 
 resource "aws_vpc" "this" {
@@ -113,13 +117,13 @@ resource "aws_security_group" "instance" {
   }
 }
 
-resource "aws_security_group_rule" "instance_from_alb_8080" {
-  count = var.target_port == 8080 ? 0 : 1
+resource "aws_security_group_rule" "instance_from_alb_health_check_port" {
+  count = local.health_uses_separate_tcp_port ? 1 : 0
 
   type                     = "ingress"
-  description              = "ALB health check and app traffic on 8080"
-  from_port                = 8080
-  to_port                  = 8080
+  description              = "ALB target group health check (port ${var.health_check_port}, path ${var.health_check_path})"
+  from_port                = local.health_check_port_num
+  to_port                  = local.health_check_port_num
   protocol                 = "tcp"
   source_security_group_id = aws_security_group.alb.id
   security_group_id        = aws_security_group.instance.id
@@ -227,7 +231,7 @@ resource "aws_lb_target_group" "app" {
     interval            = 15
     timeout             = 5
     protocol            = "HTTP"
-    port                = "8080"
+    port                = var.health_check_port
   }
 
   tags = {

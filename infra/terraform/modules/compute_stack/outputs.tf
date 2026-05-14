@@ -18,6 +18,11 @@ output "alb_target_port" {
   description = "Target port registered with the ALB; set GitHub TARGET_PORT to this value for gha-roll-instance.sh."
 }
 
+output "alb_health_check_port" {
+  value       = var.health_check_port
+  description = "Health check port configured on the target group (see alb_health_check_port root variable)."
+}
+
 output "ec2_instance_profile_name" {
   value       = aws_iam_instance_profile.ec2_instance.name
   description = "Attach to the launch template / instances (ECR pull + SSM)."
