@@ -151,8 +151,28 @@ jobs:
           sha="${{ github.sha }}"
           ptr="${{ needs.release-target.outputs.pointer_tag }}"
           echo "image_prefix=${reg}/${prefix}" >> "$GITHUB_OUTPUT"
+          echo "repo_prefix=$prefix" >> "$GITHUB_OUTPUT"
           echo "tag_sha=$sha" >> "$GITHUB_OUTPUT"
           echo "tag_pointer=$ptr" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure ECR repositories exist
+        env:
+          ECR_REPOSITORY_PREFIX: ${{ steps.meta.outputs.repo_prefix }}
+          FORCE_ALL: ${{ steps.flags.outputs.force_all }}
+          API_GATEWAY: ${{ needs.changes.outputs.api_gateway }}
+          IDENTITY: ${{ needs.changes.outputs.identity }}
+          AI_AGENT: ${{ needs.changes.outputs.ai_agent }}
+          PROXY: ${{ needs.changes.outputs.proxy }}
+          USAGE: ${{ needs.changes.outputs.usage }}
+          BILLING: ${{ needs.changes.outputs.billing }}
+          TEAM: ${{ needs.changes.outputs.team }}
+          NOTIFICATION: ${{ needs.changes.outputs.notification }}
+          WEB_SHARED: ${{ needs.changes.outputs.web_shared }}
+          WEB_EDGE: ${{ needs.changes.outputs.web_edge }}
+        run: |
+          set -euo pipefail
+          chmod +x scripts/ci/ensure-ecr-repository.sh scripts/ci/ensure-ecr-repos-release.sh
+          scripts/ci/ensure-ecr-repos-release.sh
 
       - uses: docker/setup-buildx-action@v3
 

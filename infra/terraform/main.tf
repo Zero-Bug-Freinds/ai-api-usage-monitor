@@ -96,6 +96,15 @@ resource "aws_iam_role_policy" "release_ecr_push" {
         ]
         Resource = "arn:aws:ecr:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:repository/${var.ecr_repository_prefix}/*"
       },
+      {
+        Sid    = "EcrEnsureRepository"
+        Effect = "Allow"
+        Action = [
+          "ecr:CreateRepository",
+          "ecr:DescribeRepositories",
+        ]
+        Resource = "*"
+      },
     ]
   })
 }
