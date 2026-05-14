@@ -38,6 +38,19 @@ public class EncryptionUtil {
         }
     }
 
+    /**
+     * 내부 역조회용: 평문 API 키(UTF-8)만 SHA-256 한 값(64자 소문자 hex). provider 접두사 없음.
+     */
+    public String sha256HexRawApiKeyUtf8(String normalizedPlainKey) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(normalizedPlainKey.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
+        }
+    }
+
     public String encryptAes256Gcm(String plainText) {
         byte[] iv = new byte[GCM_IV_LENGTH];
         secureRandom.nextBytes(iv);

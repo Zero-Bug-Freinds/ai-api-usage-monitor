@@ -80,6 +80,7 @@ class TeamInternalApiKeyResolveServiceTest {
                 TeamApiKeyProvider.GOOGLE,
                 "google-key",
                 "hash",
+                "fp",
                 "encrypted-value",
                 BigDecimal.ONE
         );
@@ -141,6 +142,7 @@ class TeamInternalApiKeyResolveServiceTest {
                 TeamApiKeyProvider.OPENAI,
                 "sk-test",
                 "hash",
+                "fp",
                 "enc",
                 BigDecimal.ONE
         );
@@ -189,6 +191,7 @@ class TeamInternalApiKeyResolveServiceTest {
                 TeamApiKeyProvider.GOOGLE,
                 "google-key",
                 "hash",
+                "fp",
                 "encrypted-value",
                 BigDecimal.ONE
         );
@@ -225,6 +228,7 @@ class TeamInternalApiKeyResolveServiceTest {
                 TeamApiKeyProvider.GOOGLE,
                 "my-alias",
                 "hash",
+                "fp",
                 "encrypted-value",
                 BigDecimal.ONE
         );
@@ -276,6 +280,7 @@ class TeamInternalApiKeyResolveServiceTest {
                 TeamApiKeyProvider.GOOGLE,
                 "google-key",
                 "hash",
+                "fp",
                 "enc",
                 BigDecimal.ONE
         );

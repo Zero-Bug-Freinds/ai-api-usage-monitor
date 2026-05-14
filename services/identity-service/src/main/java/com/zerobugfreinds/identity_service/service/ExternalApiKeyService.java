@@ -5,9 +5,10 @@ import com.zerobugfreinds.identity.events.ExternalApiKeyDeletedEvent;
 import com.zerobugfreinds.identity.events.ExternalApiKeyBudgetChangedEvent;
 import com.zerobugfreinds.identity.events.ExternalApiKeyStatus;
 import com.zerobugfreinds.identity.events.ExternalApiKeyStatusChangedEvent;
+import com.zerobugfreinds.identity_service.dto.InternalApiKeyHashEntry;
 import com.zerobugfreinds.identity_service.dto.InternalApiKeyLookupResponse;
 import com.zerobugfreinds.identity_service.dto.InternalApiKeyResponse;
-import com.zerobugfreinds.identity_service.dto.InternalApiKeyHashEntry;
+import com.zerobugfreinds.identity_service.dto.InternalFingerprintLookupResponse;
 import com.zerobugfreinds.identity_service.entity.ExternalApiKeyEntity;
 import com.zerobugfreinds.identity_service.entity.User;
 import com.zerobugfreinds.identity_service.exception.AmbiguousExternalApiKeyHashException;
@@ -52,19 +53,22 @@ public class ExternalApiKeyService {
 	private final EncryptionUtil encryptionUtil;
 	private final ApplicationEventPublisher applicationEventPublisher;
 	private final TeamApiKeyLookupClient teamApiKeyLookupClient;
+	private final ApiKeyFingerprintRegistrationLock apiKeyFingerprintRegistrationLock;
 
 	public ExternalApiKeyService(
 			ExternalApiKeyRepository externalApiKeyRepository,
 			UserRepository userRepository,
 			EncryptionUtil encryptionUtil,
 			ApplicationEventPublisher applicationEventPublisher,
-			TeamApiKeyLookupClient teamApiKeyLookupClient
+			TeamApiKeyLookupClient teamApiKeyLookupClient,
+			ApiKeyFingerprintRegistrationLock apiKeyFingerprintRegistrationLock
 	) {
 		this.externalApiKeyRepository = externalApiKeyRepository;
 		this.userRepository = userRepository;
 		this.encryptionUtil = encryptionUtil;
 		this.applicationEventPublisher = applicationEventPublisher;
 		this.teamApiKeyLookupClient = teamApiKeyLookupClient;
+		this.apiKeyFingerprintRegistrationLock = apiKeyFingerprintRegistrationLock;
 	}
 
 	@Transactional
@@ -95,7 +99,30 @@ public class ExternalApiKeyService {
 		}
 
 		String keyHash = encryptionUtil.sha256HexForUniqueness(normalizedProvider.name(), normalizedKey);
-		verifyNoTeamScopeDuplicate(normalizedProvider, normalizedKey, keyHash);
+		String apiKeyFingerprint = encryptionUtil.sha256HexUtf8(normalizedKey);
+		return apiKeyFingerprintRegistrationLock.runWithLock(apiKeyFingerprint, () ->
+				registerWithPlainTextCredential(
+						userId,
+						normalizedProvider,
+						trimmedAlias,
+						normalizedKey,
+						keyHash,
+						apiKeyFingerprint,
+						monthlyBudgetUsd
+				)
+		);
+	}
+
+	private ExternalApiKeyEntity registerWithPlainTextCredential(
+			Long userId,
+			ExternalApiKeyProvider normalizedProvider,
+			String trimmedAlias,
+			String normalizedKey,
+			String keyHash,
+			String apiKeyFingerprint,
+			BigDecimal monthlyBudgetUsd
+	) {
+		verifyNoTeamScopeDuplicate(normalizedProvider, apiKeyFingerprint);
 		Optional<ExternalApiKeyEntity> existingSameHash =
 				externalApiKeyRepository.findByUserIdAndProviderAndKeyHash(userId, normalizedProvider, keyHash);
 		if (existingSameHash.isPresent()) {
@@ -106,7 +133,7 @@ public class ExternalApiKeyService {
 				}
 				String encrypted = encryptionUtil.encryptAes256Gcm(normalizedKey);
 				existing.clearPendingDeletion();
-				existing.updateCredential(normalizedProvider, trimmedAlias, keyHash, encrypted, monthlyBudgetUsd);
+				existing.updateCredential(normalizedProvider, trimmedAlias, keyHash, apiKeyFingerprint, encrypted, monthlyBudgetUsd);
 				ExternalApiKeyEntity reactivated;
 				try {
 					reactivated = externalApiKeyRepository.saveAndFlush(existing);
@@ -143,6 +170,7 @@ public class ExternalApiKeyService {
 				normalizedProvider,
 				trimmedAlias,
 				keyHash,
+				apiKeyFingerprint,
 				encrypted,
 				monthlyBudgetUsd
 		);
@@ -223,18 +251,20 @@ public class ExternalApiKeyService {
 			}
 			ExternalApiKeyProvider normalizedProvider = normalizeProvider(provider);
 			String keyHash = encryptionUtil.sha256HexForUniqueness(normalizedProvider.name(), normalizedKey);
-			verifyNoTeamScopeDuplicate(normalizedProvider, normalizedKey, keyHash);
-			Optional<ExternalApiKeyEntity> otherSameHash =
-					externalApiKeyRepository.findByUserIdAndProviderAndKeyHash(userId, normalizedProvider, keyHash);
-			if (otherSameHash.isPresent() && !otherSameHash.get().getId().equals(externalKeyId)) {
-				if (otherSameHash.get().isPendingDeletion()) {
-					throw new DuplicateExternalApiKeyException("삭제예정키와 중복된 키");
+			String apiKeyFingerprint = encryptionUtil.sha256HexUtf8(normalizedKey);
+			apiKeyFingerprintRegistrationLock.runWithLock(apiKeyFingerprint, () -> {
+				verifyNoTeamScopeDuplicate(normalizedProvider, apiKeyFingerprint);
+				Optional<ExternalApiKeyEntity> otherSameHash =
+						externalApiKeyRepository.findByUserIdAndProviderAndKeyHash(userId, normalizedProvider, keyHash);
+				if (otherSameHash.isPresent() && !otherSameHash.get().getId().equals(externalKeyId)) {
+					if (otherSameHash.get().isPendingDeletion()) {
+						throw new DuplicateExternalApiKeyException("삭제예정키와 중복된 키");
+					}
+					throw new DuplicateExternalApiKeyException("이미 등록된 API 키입니다");
 				}
-				throw new DuplicateExternalApiKeyException("이미 등록된 API 키입니다");
-			}
-
-			String encrypted = encryptionUtil.encryptAes256Gcm(normalizedKey);
-			entity.updateCredential(normalizedProvider, trimmedAlias, keyHash, encrypted, monthlyBudgetUsd);
+				String encrypted = encryptionUtil.encryptAes256Gcm(normalizedKey);
+				entity.updateCredential(normalizedProvider, trimmedAlias, keyHash, apiKeyFingerprint, encrypted, monthlyBudgetUsd);
+			});
 		} else {
 			entity.updateAliasAndBudget(trimmedAlias, monthlyBudgetUsd);
 		}
@@ -307,6 +337,58 @@ public class ExternalApiKeyService {
 				entity.getKeyAlias(),
 				InternalApiKeyLookupResponse.SCOPE_USER
 		);
+	}
+
+	@Transactional(readOnly = true)
+	public InternalFingerprintLookupResponse lookupByApiKeyFingerprint(
+			ExternalApiKeyProvider provider,
+			String fingerprint
+	) {
+		if (provider == null) {
+			throw new IllegalArgumentException("provider는 필수입니다");
+		}
+		if (!StringUtils.hasText(fingerprint)) {
+			throw new IllegalArgumentException("fingerprint는 필수입니다");
+		}
+		ExternalApiKeyProvider normalizedProvider = normalizeProvider(provider);
+		String normalizedFingerprint = normalizeFingerprintHex(fingerprint);
+		List<ExternalApiKeyEntity> matches = externalApiKeyRepository.findAllByProviderAndApiKeyFingerprint(
+				normalizedProvider,
+				normalizedFingerprint
+		);
+		if (matches.isEmpty()) {
+			throw new ExternalApiKeyNotFoundException(
+					"해당 fingerprint 에 매칭되는 외부 API 키를 찾을 수 없습니다");
+		}
+		if (matches.size() > 1) {
+			log.warn(
+					"[AUDIT] external_api_key_fingerprint_lookup_ambiguous provider={} matchCount={} fingerprintPrefix={}",
+					normalizedProvider.name(),
+					matches.size(),
+					normalizedFingerprint.length() >= 8 ? normalizedFingerprint.substring(0, 8) : normalizedFingerprint
+			);
+			throw new AmbiguousExternalApiKeyHashException(
+					"동일한 fingerprint 에 매칭되는 외부 API 키가 2건 이상입니다");
+		}
+		ExternalApiKeyEntity entity = matches.get(0);
+		ExternalApiKeyStatus status = entity.isPendingDeletion()
+				? ExternalApiKeyStatus.DELETION_REQUESTED
+				: ExternalApiKeyStatus.ACTIVE;
+		return InternalFingerprintLookupResponse.personal(
+				"u_" + entity.getUserId(),
+				String.valueOf(entity.getId()),
+				entity.getKeyAlias(),
+				status.name(),
+				"managed"
+		);
+	}
+
+	private static String normalizeFingerprintHex(String fingerprint) {
+		String trimmed = fingerprint.trim().toLowerCase(Locale.ROOT);
+		if (!trimmed.matches("[0-9a-f]{64}")) {
+			throw new IllegalArgumentException("fingerprint 는 64자리 소문자 hex 여야 합니다");
+		}
+		return trimmed;
 	}
 
 	@Transactional(readOnly = true)
@@ -610,17 +692,12 @@ public class ExternalApiKeyService {
 		return ex;
 	}
 
-	private void verifyNoTeamScopeDuplicate(
-			ExternalApiKeyProvider provider,
-			String normalizedKey,
-			String keyHash
-	) {
-		if (teamApiKeyLookupClient.existsByHashedKey(provider.name(), keyHash)) {
+	private void verifyNoTeamScopeDuplicate(ExternalApiKeyProvider provider, String apiKeyFingerprint) {
+		if (teamApiKeyLookupClient.existsByRawKeyFingerprint(provider.name(), apiKeyFingerprint)) {
 			throw new DuplicateExternalApiKeyException("팀에 이미 등록된 API 키입니다");
 		}
 		if (provider == ExternalApiKeyProvider.ANTHROPIC) {
-			String claudeHash = encryptionUtil.sha256HexForUniqueness("CLAUDE", normalizedKey);
-			if (teamApiKeyLookupClient.existsByHashedKey("CLAUDE", claudeHash)) {
+			if (teamApiKeyLookupClient.existsByRawKeyFingerprint("CLAUDE", apiKeyFingerprint)) {
 				throw new DuplicateExternalApiKeyException("팀에 이미 등록된 API 키입니다");
 			}
 		}

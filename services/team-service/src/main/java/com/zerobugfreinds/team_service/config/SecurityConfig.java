@@ -33,6 +33,7 @@ public class SecurityConfig {
 				.authorizeHttpRequests(auth -> auth
 						.requestMatchers("/internal/api-keys/**").permitAll()
 						.requestMatchers("/internal/v1/team-api-keys/**").permitAll()
+						.requestMatchers("/internal/v1/api-keys/**").permitAll()
 						.requestMatchers("/internal/teams/**").permitAll()
 						.requestMatchers("/internal/v1/teams/**").permitAll()
 						.requestMatchers("/internal/v1/users/**").permitAll()

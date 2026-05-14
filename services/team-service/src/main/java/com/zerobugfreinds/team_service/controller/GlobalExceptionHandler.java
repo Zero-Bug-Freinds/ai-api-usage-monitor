@@ -1,6 +1,7 @@
 package com.zerobugfreinds.team_service.controller;
 
 import com.zerobugfreinds.team_service.common.ApiResponse;
+import com.zerobugfreinds.team_service.exception.ApiKeyRegistrationLockBusyException;
 import com.zerobugfreinds.team_service.exception.AmbiguousTeamApiKeyHashException;
 import com.zerobugfreinds.team_service.exception.DuplicateTeamMemberException;
 import com.zerobugfreinds.team_service.exception.DuplicateTeamInvitationException;
@@ -35,6 +36,12 @@ public class GlobalExceptionHandler {
 	@ResponseStatus(HttpStatus.BAD_REQUEST)
 	public ApiResponse<Void> handleHttpMessageNotReadable() {
 		return ApiResponse.fail("요청 본문 형식이 올바르지 않습니다");
+	}
+
+	@ExceptionHandler(ApiKeyRegistrationLockBusyException.class)
+	@ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+	public ApiResponse<Void> handleApiKeyRegistrationLockBusy(ApiKeyRegistrationLockBusyException ex) {
+		return ApiResponse.fail(ex.getMessage());
 	}
 
 	@ExceptionHandler(TeamNotFoundException.class)

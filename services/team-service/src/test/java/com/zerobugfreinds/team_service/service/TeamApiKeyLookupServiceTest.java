@@ -182,6 +182,7 @@ class TeamApiKeyLookupServiceTest {
                 TeamApiKeyProvider.OPENAI,
                 alias,
                 SAMPLE_HASH,
+                SAMPLE_HASH,
                 "encrypted",
                 BigDecimal.ONE
         );
