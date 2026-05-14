@@ -235,6 +235,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      redis:
+        condition: service_started
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
@@ -249,6 +251,8 @@ services:
       SPRING_RABBITMQ_PORT: 5672
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      SPRING_DATA_REDIS_HOST: redis
+      API_INTERNAL_REGISTRATION_LOCK_ENABLED: ${API_INTERNAL_REGISTRATION_LOCK_ENABLED:-true}
     ports:
       - "${IDENTITY_SERVICE_PORT:-8090}:8080"
 
@@ -548,6 +552,8 @@ services:
       TEAM_API_KEY_ENCRYPTION_SECRET: ${TEAM_API_KEY_ENCRYPTION_SECRET:-change-this-team-api-key-encryption-secret-min-32-chars}
       PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN: ${PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN:-change-this-team-internal-api-token}
       TEAM_SERVICE_PORT: 8093
+      SPRING_DATA_REDIS_HOST: redis
+      API_INTERNAL_REGISTRATION_LOCK_ENABLED: ${API_INTERNAL_REGISTRATION_LOCK_ENABLED:-true}
       # team-service → billing (month-rollup BFF). Override on host if billing is not on this URL.
       TEAM_BILLING_SERVICE_BASE_URL: ${TEAM_BILLING_SERVICE_BASE_URL:-http://billing-service:8095}
     depends_on:
@@ -555,6 +561,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      redis:
+        condition: service_started
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # Published host port: TEAM_SERVICE_HOST_PORT (not TEAM_SERVICE_PORT — see .env.example).

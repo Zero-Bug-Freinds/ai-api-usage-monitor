@@ -7,7 +7,6 @@ import com.zerobugfreinds.identity_service.exception.AmbiguousExternalApiKeyHash
 import com.zerobugfreinds.identity_service.exception.ExternalApiKeyNotFoundException;
 import com.zerobugfreinds.identity_service.repository.ExternalApiKeyRepository;
 import com.zerobugfreinds.identity_service.repository.UserRepository;
-import com.zerobugfreinds.identity_service.service.TeamApiKeyLookupClient;
 import com.zerobugfreinds.identity_service.util.EncryptionUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,10 +20,15 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -43,19 +47,24 @@ class ExternalApiKeyLookupServiceTest {
 	private ApplicationEventPublisher applicationEventPublisher;
 	@Mock
 	private TeamApiKeyLookupClient teamApiKeyLookupClient;
+	@Mock
+	private ApiKeyFingerprintRegistrationLock apiKeyFingerprintRegistrationLock;
 
 	@InjectMocks
 	private ExternalApiKeyService externalApiKeyService;
 
 	@BeforeEach
 	void setUp() {
-		externalApiKeyService = new ExternalApiKeyService(
-				externalApiKeyRepository,
-				userRepository,
-				encryptionUtil,
-				applicationEventPublisher,
-				teamApiKeyLookupClient
-		);
+		lenient()
+				.when(apiKeyFingerprintRegistrationLock.runWithLock(anyString(), any(Supplier.class)))
+				.thenAnswer(invocation -> ((Supplier<?>) invocation.getArgument(1)).get());
+		lenient()
+				.doAnswer(invocation -> {
+					invocation.getArgument(1, Runnable.class).run();
+					return null;
+				})
+				.when(apiKeyFingerprintRegistrationLock)
+				.runWithLock(anyString(), any(Runnable.class));
 	}
 
 	@Test
@@ -147,6 +156,7 @@ class ExternalApiKeyLookupServiceTest {
 				userId,
 				ExternalApiKeyProvider.OPENAI,
 				alias,
+				SAMPLE_HASH,
 				SAMPLE_HASH,
 				"encrypted",
 				BigDecimal.ONE

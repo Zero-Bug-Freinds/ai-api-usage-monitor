@@ -47,16 +47,18 @@ public class TeamApiKeyService {
     private final EncryptionUtil encryptionUtil;
     private final TeamDomainEventPublisher teamDomainEventPublisher;
     private final ApplicationEventPublisher applicationEventPublisher;
-    private final IdentityApiKeyLookupClient identityApiKeyLookupClient;
+	private final IdentityApiKeyLookupClient identityApiKeyLookupClient;
+	private final ApiKeyFingerprintRegistrationLock apiKeyFingerprintRegistrationLock;
 
-    public TeamApiKeyService(
+	public TeamApiKeyService(
             TeamRepository teamRepository,
             TeamMemberRepository teamMemberRepository,
             TeamApiKeyRepository teamApiKeyRepository,
             EncryptionUtil encryptionUtil,
             TeamDomainEventPublisher teamDomainEventPublisher,
             ApplicationEventPublisher applicationEventPublisher,
-            IdentityApiKeyLookupClient identityApiKeyLookupClient
+            IdentityApiKeyLookupClient identityApiKeyLookupClient,
+            ApiKeyFingerprintRegistrationLock apiKeyFingerprintRegistrationLock
     ) {
         this.teamRepository = teamRepository;
         this.teamMemberRepository = teamMemberRepository;
@@ -65,6 +67,7 @@ public class TeamApiKeyService {
         this.teamDomainEventPublisher = teamDomainEventPublisher;
         this.applicationEventPublisher = applicationEventPublisher;
         this.identityApiKeyLookupClient = identityApiKeyLookupClient;
+        this.apiKeyFingerprintRegistrationLock = apiKeyFingerprintRegistrationLock;
     }
 
     @Transactional
@@ -76,8 +79,8 @@ public class TeamApiKeyService {
             String externalKey,
             BigDecimal monthlyBudgetUsd
     ) {
-        teamId = resolveTeamId(teamId);
-        validateOwnerAccess(actorUserId, teamId);
+        Long effectiveTeamId = resolveTeamId(teamId);
+        validateOwnerAccess(actorUserId, effectiveTeamId);
         if (provider == null) {
             throw new IllegalArgumentException("provider는 필수입니다");
         }
@@ -88,7 +91,32 @@ public class TeamApiKeyService {
         String normalizedAlias = normalizeAlias(alias);
         String normalizedExternalKey = normalizeExternalKey(externalKey);
         String keyHash = encryptionUtil.sha256HexForUniqueness(provider.name(), normalizedExternalKey);
-        verifyNoIdentityScopeDuplicate(provider, normalizedExternalKey, keyHash);
+        String apiKeyFingerprint = encryptionUtil.sha256HexRawApiKeyUtf8(normalizedExternalKey);
+        return apiKeyFingerprintRegistrationLock.runWithLock(apiKeyFingerprint, () ->
+                registerWithPlainCredential(
+                        actorUserId,
+                        effectiveTeamId,
+                        provider,
+                        normalizedAlias,
+                        normalizedExternalKey,
+                        keyHash,
+                        apiKeyFingerprint,
+                        monthlyBudgetUsd
+                )
+        );
+    }
+
+    private TeamApiKeySummaryResponse registerWithPlainCredential(
+            String actorUserId,
+            Long teamId,
+            TeamApiKeyProvider provider,
+            String normalizedAlias,
+            String normalizedExternalKey,
+            String keyHash,
+            String apiKeyFingerprint,
+            BigDecimal monthlyBudgetUsd
+    ) {
+        verifyNoIdentityScopeDuplicate(provider, normalizedExternalKey);
 
         Optional<TeamApiKeyEntity> sameKeyHash =
                 teamApiKeyRepository.findByTeamIdAndProviderAndKeyHash(teamId, provider, keyHash);
@@ -100,7 +128,7 @@ public class TeamApiKeyService {
                 }
                 String encrypted = encryptionUtil.encryptAes256Gcm(normalizedExternalKey);
                 existing.clearDeletionRequest();
-                existing.updateCredential(provider, normalizedAlias, keyHash, encrypted, monthlyBudgetUsd);
+                existing.updateCredential(provider, normalizedAlias, keyHash, apiKeyFingerprint, encrypted, monthlyBudgetUsd);
                 TeamApiKeyEntity reactivated;
                 try {
                     reactivated = teamApiKeyRepository.saveAndFlush(existing);
@@ -147,6 +175,7 @@ public class TeamApiKeyService {
                             provider,
                             normalizedAlias,
                             keyHash,
+                            apiKeyFingerprint,
                             encrypted,
                             monthlyBudgetUsd
                     )
@@ -189,8 +218,8 @@ public class TeamApiKeyService {
             String externalKey,
             BigDecimal monthlyBudgetUsd
     ) {
-        teamId = resolveTeamId(teamId);
-        validateTeamAccess(actorUserId, teamId);
+        Long effectiveTeamId = resolveTeamId(teamId);
+        validateTeamAccess(actorUserId, effectiveTeamId);
         if (apiKeyId == null) {
             throw new IllegalArgumentException("apiKeyId는 필수입니다");
         }
@@ -201,13 +230,13 @@ public class TeamApiKeyService {
         String normalizedAlias = normalizeAlias(alias);
         String normalizedExternalKey = StringUtils.hasText(externalKey) ? externalKey.trim() : "";
 
-        TeamApiKeyEntity entity = teamApiKeyRepository.findByIdAndTeamId(apiKeyId, teamId)
+        TeamApiKeyEntity entity = teamApiKeyRepository.findByIdAndTeamId(apiKeyId, effectiveTeamId)
                 .orElseThrow(() -> new IllegalArgumentException("팀 API 키를 찾을 수 없습니다"));
         if (entity.isDeletionPending()) {
             throw new IllegalArgumentException("삭제 예정인 키는 수정할 수 없습니다");
         }
 
-        if (teamApiKeyRepository.existsByTeamIdAndKeyAliasAndIdNot(teamId, normalizedAlias, apiKeyId)) {
+        if (teamApiKeyRepository.existsByTeamIdAndKeyAliasAndIdNot(effectiveTeamId, normalizedAlias, apiKeyId)) {
             throw new IllegalArgumentException("이미 사용 중인 API Key 별칭입니다");
         }
 
@@ -219,17 +248,20 @@ public class TeamApiKeyService {
                 throw new IllegalArgumentException("externalKey 길이가 너무 깁니다");
             }
             String keyHash = encryptionUtil.sha256HexForUniqueness(provider.name(), normalizedExternalKey);
-            verifyNoIdentityScopeDuplicate(provider, normalizedExternalKey, keyHash);
-            Optional<TeamApiKeyEntity> sameKeyHashElsewhere = teamApiKeyRepository
-                    .findByTeamIdAndProviderAndKeyHashAndIdNot(teamId, provider, keyHash, apiKeyId);
-            if (sameKeyHashElsewhere.isPresent()) {
-                if (sameKeyHashElsewhere.get().isDeletionPending()) {
-                    throw new IllegalArgumentException("삭제 예정키와 중복입니다");
+            String apiKeyFingerprint = encryptionUtil.sha256HexRawApiKeyUtf8(normalizedExternalKey);
+            apiKeyFingerprintRegistrationLock.runWithLock(apiKeyFingerprint, () -> {
+                verifyNoIdentityScopeDuplicate(provider, normalizedExternalKey);
+                Optional<TeamApiKeyEntity> sameKeyHashElsewhere = teamApiKeyRepository
+                        .findByTeamIdAndProviderAndKeyHashAndIdNot(effectiveTeamId, provider, keyHash, apiKeyId);
+                if (sameKeyHashElsewhere.isPresent()) {
+                    if (sameKeyHashElsewhere.get().isDeletionPending()) {
+                        throw new IllegalArgumentException("삭제 예정키와 중복입니다");
+                    }
+                    throw new IllegalArgumentException("이미 등록된 API Key입니다");
                 }
-                throw new IllegalArgumentException("이미 등록된 API Key입니다");
-            }
-            String encrypted = encryptionUtil.encryptAes256Gcm(normalizedExternalKey);
-            entity.updateCredential(provider, normalizedAlias, keyHash, encrypted, monthlyBudgetUsd);
+                String encrypted = encryptionUtil.encryptAes256Gcm(normalizedExternalKey);
+                entity.updateCredential(provider, normalizedAlias, keyHash, apiKeyFingerprint, encrypted, monthlyBudgetUsd);
+            });
         } else {
             entity.updateAliasAndBudget(normalizedAlias, monthlyBudgetUsd);
         }
@@ -237,7 +269,7 @@ public class TeamApiKeyService {
             teamApiKeyRepository.saveAndFlush(entity);
         } catch (DataIntegrityViolationException ex) {
             throw toDuplicateRegisterException(
-                    teamId,
+                    effectiveTeamId,
                     entity.getProvider(),
                     normalizedAlias,
                     entity.getKeyHash(),
@@ -245,10 +277,10 @@ public class TeamApiKeyService {
             );
         }
 
-        TeamApiKeyNotifyContext ctx = teamApiKeyNotifyContext(teamId);
+        TeamApiKeyNotifyContext ctx = teamApiKeyNotifyContext(effectiveTeamId);
         publish(TeamApiKeyUpdatedEvent.of(
                 actorUserId,
-                teamId,
+                effectiveTeamId,
                 ctx.teamName(),
                 ctx.recipientUserIds(),
                 entity.getId(),
@@ -257,7 +289,7 @@ public class TeamApiKeyService {
                 Instant.now()
         ));
         publishTeamApiKeyStatusChanged(
-                teamId,
+                effectiveTeamId,
                 entity.getId(),
                 entity.getKeyAlias(),
                 entity.getProvider().name(),
@@ -580,16 +612,10 @@ public class TeamApiKeyService {
         return ex;
     }
 
-    private void verifyNoIdentityScopeDuplicate(
-            TeamApiKeyProvider provider,
-            String normalizedExternalKey,
-            String keyHash
-    ) {
+    private void verifyNoIdentityScopeDuplicate(TeamApiKeyProvider provider, String normalizedExternalKey) {
+        String fingerprint = encryptionUtil.sha256HexRawApiKeyUtf8(normalizedExternalKey);
         String identityProvider = provider == TeamApiKeyProvider.CLAUDE ? "ANTHROPIC" : provider.name();
-        String identityHash = provider == TeamApiKeyProvider.CLAUDE
-                ? encryptionUtil.sha256HexForUniqueness(identityProvider, normalizedExternalKey)
-                : keyHash;
-        if (identityApiKeyLookupClient.existsByHashedKey(identityProvider, identityHash)) {
+        if (identityApiKeyLookupClient.existsByRawKeyFingerprint(identityProvider, fingerprint)) {
             throw new IllegalArgumentException("Identity에 이미 등록된 API Key입니다");
         }
     }

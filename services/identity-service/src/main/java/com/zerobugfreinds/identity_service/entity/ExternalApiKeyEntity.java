@@ -54,6 +54,12 @@ public class ExternalApiKeyEntity {
 	@Column(name = "key_hash", nullable = false, length = 64)
 	private String keyHash;
 
+	/**
+	 * 평문 API 키 UTF-8 바이트열에 대한 SHA-256 전체 hex(64자). 내부 POST 역조회·게이트웨이 fingerprint와 동일 규격.
+	 */
+	@Column(name = "api_key_fingerprint", length = 64)
+	private String apiKeyFingerprint;
+
 	@Lob
 	@Column(name = "encrypted_key", nullable = false)
 	private String encryptedKey;
@@ -88,6 +94,7 @@ public class ExternalApiKeyEntity {
 			ExternalApiKeyProvider provider,
 			String keyAlias,
 			String keyHash,
+			String apiKeyFingerprint,
 			String encryptedKey,
 			BigDecimal monthlyBudgetUsd
 	) {
@@ -96,6 +103,7 @@ public class ExternalApiKeyEntity {
 		entity.provider = provider;
 		entity.keyAlias = keyAlias;
 		entity.keyHash = keyHash;
+		entity.apiKeyFingerprint = apiKeyFingerprint;
 		entity.encryptedKey = encryptedKey;
 		entity.monthlyBudgetUsd = monthlyBudgetUsd;
 		entity.createdAt = Instant.now();
@@ -106,12 +114,14 @@ public class ExternalApiKeyEntity {
 			ExternalApiKeyProvider provider,
 			String keyAlias,
 			String keyHash,
+			String apiKeyFingerprint,
 			String encryptedKey,
 			BigDecimal monthlyBudgetUsd
 	) {
 		this.provider = provider;
 		this.keyAlias = keyAlias;
 		this.keyHash = keyHash;
+		this.apiKeyFingerprint = apiKeyFingerprint;
 		this.encryptedKey = encryptedKey;
 		this.monthlyBudgetUsd = monthlyBudgetUsd;
 	}
@@ -159,6 +169,14 @@ public class ExternalApiKeyEntity {
 
 	public String getKeyHash() {
 		return keyHash;
+	}
+
+	public String getApiKeyFingerprint() {
+		return apiKeyFingerprint;
+	}
+
+	public void assignApiKeyFingerprintForBackfill(String apiKeyFingerprint) {
+		this.apiKeyFingerprint = apiKeyFingerprint;
 	}
 
 	public String getEncryptedKey() {

@@ -56,6 +56,10 @@ public class TeamApiKeyEntity {
     @Column(name = "key_hash", nullable = false, length = 64)
     private String keyHash;
 
+    /** 평문 API 키 UTF-8 SHA-256 전체 hex(64자). POST /internal/v1/api-keys/lookup 역조회에 사용. */
+    @Column(name = "api_key_fingerprint", length = 64)
+    private String apiKeyFingerprint;
+
     @Lob
     @Column(name = "encrypted_key", nullable = false)
     private String encryptedKey;
@@ -90,10 +94,11 @@ public class TeamApiKeyEntity {
             TeamApiKeyProvider provider,
             String keyAlias,
             String keyHash,
+            String apiKeyFingerprint,
             String encryptedKey,
             BigDecimal monthlyBudgetUsd
     ) {
-        return register(teamId, null, provider, keyAlias, keyHash, encryptedKey, monthlyBudgetUsd);
+        return register(teamId, null, provider, keyAlias, keyHash, apiKeyFingerprint, encryptedKey, monthlyBudgetUsd);
     }
 
     public static TeamApiKeyEntity register(
@@ -102,6 +107,7 @@ public class TeamApiKeyEntity {
             TeamApiKeyProvider provider,
             String keyAlias,
             String keyHash,
+            String apiKeyFingerprint,
             String encryptedKey,
             BigDecimal monthlyBudgetUsd
     ) {
@@ -111,6 +117,7 @@ public class TeamApiKeyEntity {
         entity.provider = provider;
         entity.keyAlias = keyAlias;
         entity.keyHash = keyHash;
+        entity.apiKeyFingerprint = apiKeyFingerprint;
         entity.encryptedKey = encryptedKey;
         entity.monthlyBudgetUsd = monthlyBudgetUsd;
         entity.createdAt = Instant.now();
@@ -121,12 +128,14 @@ public class TeamApiKeyEntity {
             TeamApiKeyProvider provider,
             String keyAlias,
             String keyHash,
+            String apiKeyFingerprint,
             String encryptedKey,
             BigDecimal monthlyBudgetUsd
     ) {
         this.provider = provider;
         this.keyAlias = keyAlias;
         this.keyHash = keyHash;
+        this.apiKeyFingerprint = apiKeyFingerprint;
         this.encryptedKey = encryptedKey;
         this.monthlyBudgetUsd = monthlyBudgetUsd;
     }
@@ -176,6 +185,14 @@ public class TeamApiKeyEntity {
 
     public String getKeyHash() {
         return keyHash;
+    }
+
+    public String getApiKeyFingerprint() {
+        return apiKeyFingerprint;
+    }
+
+    public void assignApiKeyFingerprintForBackfill(String apiKeyFingerprint) {
+        this.apiKeyFingerprint = apiKeyFingerprint;
     }
 
     public String getEncryptedKey() {
