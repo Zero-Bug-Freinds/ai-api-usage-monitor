@@ -81,8 +81,13 @@ jobs:
         run: terraform fmt -check -recursive
       - name: terraform init (no backend)
         run: terraform init -backend=false -input=false
+      # validate does not always accept -var through the Actions Terraform wrapper; TF_VAR_* is portable.
       - name: terraform validate
-        run: terraform validate -var="aws_region=us-east-1" -var="github_org=ci-placeholder" -var="github_repo=ci-placeholder"
+        env:
+          TF_VAR_aws_region: us-east-1
+          TF_VAR_github_org: ci-placeholder
+          TF_VAR_github_repo: ci-placeholder
+        run: terraform validate
 
   compose-validate:
     name: Validate docker-compose.yml
@@ -242,6 +247,13 @@ jobs:
           set -euo pipefail
           docker build -f docker/web-edge/Dockerfile -t web-edge:ci "${{ github.workspace }}"
           docker run --rm \
+            --add-host=identity-web:127.0.0.1 \
+            --add-host=usage-web:127.0.0.1 \
+            --add-host=team-web:127.0.0.1 \
+            --add-host=billing-web:127.0.0.1 \
+            --add-host=notification-web:127.0.0.1 \
+            --add-host=agent-web:127.0.0.1 \
+            --add-host=api-gateway-service:127.0.0.1 \
             -e GATEWAY_SHARED_SECRET=ci-web-edge-shared-secret \
             web-edge:ci nginx -t
 
@@ -674,6 +686,10 @@ jobs:
           fi
           if [[ "${{ needs.gitleaks.result }}" != "success" ]]; then
             echo "gitleaks did not succeed: ${{ needs.gitleaks.result }}"
+            exit 1
+          fi
+          if [[ "${{ needs.terraform.result }}" != "success" ]]; then
+            echo "terraform did not succeed: ${{ needs.terraform.result }}"
             exit 1
           fi
           if [[ "${{ needs.compose-validate.result }}" != "success" ]]; then
