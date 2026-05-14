@@ -41,6 +41,25 @@ module "compute" {
   public_subnet_cidrs   = var.public_subnet_cidrs
 }
 
+check "staging_rds_needs_compute_vpc" {
+  assert {
+    condition     = !var.enable_staging_rds || var.enable_compute_stack
+    error_message = "enable_staging_rds requires enable_compute_stack = true (RDS is created in the compute VPC)."
+  }
+}
+
+module "staging_rds" {
+  count  = var.enable_compute_stack && var.enable_staging_rds ? 1 : 0
+  source = "./modules/staging_rds"
+
+  project_name            = var.project_name
+  vpc_id                  = module.compute[0].vpc_id
+  subnet_ids              = module.compute[0].public_subnet_ids
+  ec2_security_group_id   = module.compute[0].instance_security_group_id
+  instance_class          = var.staging_rds_instance_class
+  allocated_storage       = var.staging_rds_allocated_storage
+}
+
 check "compute_asg_capacity_ordering" {
   assert {
     condition = (

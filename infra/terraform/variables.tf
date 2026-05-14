@@ -148,3 +148,21 @@ variable "public_subnet_cidrs" {
     error_message = "Each public_subnet_cidrs entry must be a valid IPv4 CIDR block."
   }
 }
+
+variable "enable_staging_rds" {
+  type        = bool
+  description = "When true (and enable_compute_stack), creates one small PostgreSQL RDS in the compute VPC for staging-style logical DBs. Not production MSA physical separation; see docs/msa-database-and-service-integration.md."
+  default     = false
+}
+
+variable "staging_rds_instance_class" {
+  type        = string
+  description = "RDS instance class for staging_rds module."
+  default     = "db.t4g.micro"
+}
+
+variable "staging_rds_allocated_storage" {
+  type        = number
+  description = "Initial allocated storage (GB) for staging RDS."
+  default     = 20
+}

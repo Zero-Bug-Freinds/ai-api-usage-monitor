@@ -25,3 +25,6 @@ compute_environment_label  = "staging"
 # compute_asg_min_size         = 1
 # compute_asg_max_size         = 1
 # compute_asg_desired_capacity = 1
+
+# Optional: one staging PostgreSQL RDS in the compute VPC (requires enable_compute_stack = true).
+# enable_staging_rds = true
