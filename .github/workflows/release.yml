@@ -1,7 +1,8 @@
 # Release: build changed images (paths-filter reuse) and push to Amazon ECR with immutable git sha + env pointer tag.
 # After a successful push, optionally rolls EC2 targets (ALB + SSM) when ALB_TARGET_GROUP_ARN is set on the Environment.
 # Triggers: `develop` → GitHub Environment `staging`; `main` → `production` (configure required reviewers on `production`).
-# Required on each used Environment (or repo Variables): AWS_REGION, AWS_RELEASE_ROLE_ARN (ECR OIDC). Deploy roll also needs AWS_DEPLOY_ROLE_ARN when ALB_TARGET_GROUP_ARN is set.
+# OIDC role ARNs are set in this workflow (env). Each used Environment still needs AWS_REGION (and ECR/ALB vars as before).
+# Post-ECR rolling deploy uses workflow env AWS_DEPLOY_ROLE_ARN when ALB_TARGET_GROUP_ARN is set.
 # See `docs/CI.md` (CD) and `docs/aws-github-oidc-ecr-ssm.md`.
 
 name: Release
@@ -37,6 +38,10 @@ concurrency:
 permissions:
   contents: read
   id-token: write
+
+env:
+  AWS_RELEASE_ROLE_ARN: arn:aws:iam::010545334370:role/ReleaseRole
+  AWS_DEPLOY_ROLE_ARN: arn:aws:iam::010545334370:role/DeployRole
 
 jobs:
   changes:
@@ -78,19 +83,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Require AWS_REGION and AWS_RELEASE_ROLE_ARN (Environment variables)
+      - name: Require AWS_REGION (Environment or repository variable)
         run: |
           set -euo pipefail
-          missing=0
           if [ -z "${{ vars.AWS_REGION }}" ]; then
             echo "::error title=Missing AWS_REGION::Set variable AWS_REGION on GitHub Environment \"${{ needs.release-target.outputs.github_environment }}\" (or repository Variables). Example: ap-northeast-2. See docs/aws-github-oidc-ecr-ssm.md."
-            missing=1
+            exit 1
           fi
-          if [ -z "${{ vars.AWS_RELEASE_ROLE_ARN }}" ]; then
-            echo "::error title=Missing AWS_RELEASE_ROLE_ARN::Set AWS_RELEASE_ROLE_ARN on the same Environment. See docs/aws-github-oidc-ecr-ssm.md."
-            missing=1
-          fi
-          exit "$missing"
 
       - id: flags
         name: Force-rebuild flag
@@ -133,7 +132,7 @@ jobs:
       - name: Configure AWS (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_RELEASE_ROLE_ARN }}
+          role-to-assume: ${{ env.AWS_RELEASE_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
       - name: Login to Amazon ECR
@@ -366,26 +365,20 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Require AWS_REGION and AWS_DEPLOY_ROLE_ARN (rolling deploy)
+      - name: Require AWS_REGION (rolling deploy)
         if: steps.skip.outputs.skip == 'false'
         run: |
           set -euo pipefail
-          missing=0
           if [ -z "${{ vars.AWS_REGION }}" ]; then
             echo "::error title=Missing AWS_REGION::Set AWS_REGION on Environment \"${{ needs.release-target.outputs.github_environment }}\". See docs/aws-github-oidc-ecr-ssm.md."
-            missing=1
+            exit 1
           fi
-          if [ -z "${{ vars.AWS_DEPLOY_ROLE_ARN }}" ]; then
-            echo "::error title=Missing AWS_DEPLOY_ROLE_ARN::Set AWS_DEPLOY_ROLE_ARN for post-ECR rolling deploy. See docs/aws-github-oidc-ecr-ssm.md."
-            missing=1
-          fi
-          exit "$missing"
 
       - name: Configure AWS (OIDC, deploy role)
         if: steps.skip.outputs.skip == 'false'
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
       - name: Discover targets and roll instances

@@ -2,7 +2,8 @@
 # Pair with `.github/workflows/release.yml` and `scripts/deploy/*.sh`.
 #
 # Configure GitHub Environments `staging` / `production` with variables:
-#   AWS_REGION, AWS_DEPLOY_ROLE_ARN, ALB_TARGET_GROUP_ARN, SSM_DEPLOY_ROOT (e.g. /opt/ai-api-usage-monitor)
+#   AWS_REGION, ALB_TARGET_GROUP_ARN, SSM_DEPLOY_ROOT (e.g. /opt/ai-api-usage-monitor)
+# Deploy OIDC role ARN is set in this workflow (env).
 # Optional: TARGET_PORT (default 80)
 #
 # Instance IDs: leave empty to discover EC2 targets from ALB_TARGET_GROUP_ARN (same as post-Release roll).
@@ -37,6 +38,9 @@ permissions:
   contents: read
   id-token: write
 
+env:
+  AWS_DEPLOY_ROLE_ARN: arn:aws:iam::010545334370:role/DeployRole
+
 jobs:
   roll-instances:
     name: Rolling deploy (ALB + SSM)
@@ -53,7 +57,7 @@ jobs:
       - name: Configure AWS (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
       - name: Roll each instance
