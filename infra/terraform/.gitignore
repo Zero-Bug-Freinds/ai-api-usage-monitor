@@ -3,7 +3,11 @@ crash.log
 crash.*.log
 *.tfstate
 *.tfstate.*
+.terraform.tfstate.lock.info
 *.tfvars
+*.tfvars.json
+*.auto.tfvars
+*.auto.tfvars.json
 !terraform.tfvars.example
 backend.hcl
 override.tf

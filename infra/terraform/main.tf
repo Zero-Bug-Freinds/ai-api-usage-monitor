@@ -41,6 +41,16 @@ module "compute" {
   public_subnet_cidrs   = var.public_subnet_cidrs
 }
 
+check "compute_asg_capacity_ordering" {
+  assert {
+    condition = (
+      var.compute_asg_min_size <= var.compute_asg_desired_capacity
+      && var.compute_asg_desired_capacity <= var.compute_asg_max_size
+    )
+    error_message = "compute_asg_min_size, compute_asg_desired_capacity, and compute_asg_max_size must satisfy min <= desired <= max."
+  }
+}
+
 # Doc §1.2 — trust GitHub OIDC for this repository only (sub matches environment jobs too).
 resource "aws_iam_role" "release" {
   name = var.release_iam_role_name

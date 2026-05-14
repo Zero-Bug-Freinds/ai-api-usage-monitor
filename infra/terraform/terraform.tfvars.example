@@ -19,3 +19,9 @@ ecr_repository_prefix  = "ai-api-usage-monitor"
 enable_compute_stack       = false
 compute_environment_label  = "staging"
 # alb_target_port          = 80
+
+# ASG sizing: keep all three at 1 for a single EC2 (see compute_stack ASG availability_zone_distribution).
+# Raise max/desired for HA only if you accept multiple instances behind the ALB.
+# compute_asg_min_size         = 1
+# compute_asg_max_size         = 1
+# compute_asg_desired_capacity = 1

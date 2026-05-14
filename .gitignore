@@ -4,6 +4,27 @@
 .env.*
 !.env.example
 !.env.deploy.example
+# 로컬 전용 env (문서상 hybrid / deploy 실값)
+hybrid.env
+
+# --- Terraform (state·로컬 변수; 예시 파일만 추적) ---
+**/terraform.tfstate
+**/terraform.tfstate.*
+**/.terraform/
+*.tfvars
+*.tfvars.json
+!**/*.tfvars.example
+*.auto.tfvars
+*.auto.tfvars.json
+
+# --- Keys & credential files (never commit) ---
+*.pem
+*.p12
+*.pfx
+id_rsa
+id_rsa.*
+*.key
+.aws/credentials
 
 # --- Build outputs ---
 target/
