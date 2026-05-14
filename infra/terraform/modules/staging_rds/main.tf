@@ -59,11 +59,11 @@ resource "aws_db_instance" "this" {
   username = "appadmin"
   password = random_password.master.result
 
-  skip_final_snapshot          = true
-  publicly_accessible          = false
-  backup_retention_period      = 1
-  deletion_protection          = false
-  auto_minor_version_upgrade   = true
+  skip_final_snapshot        = true
+  publicly_accessible        = false
+  backup_retention_period    = 1
+  deletion_protection        = false
+  auto_minor_version_upgrade = true
 
   tags = {
     Name = "${var.project_name}-staging-postgres"
