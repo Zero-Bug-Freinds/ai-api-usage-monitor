@@ -65,8 +65,26 @@ public class ExternalApiKeySchemaInitializer {
 		);
 		if (isPostgres()) {
 			ensureUserAliasUniqueConstraint();
+			ensureApiKeyFingerprintColumnAndIndex();
 		}
 		log.info("external_api_keys.retain_usage_logs column ensured");
+	}
+
+	private void ensureApiKeyFingerprintColumnAndIndex() {
+		jdbcTemplate.execute(
+				"""
+				alter table if exists external_api_keys
+				add column if not exists api_key_fingerprint varchar(64)
+				"""
+		);
+		jdbcTemplate.execute(
+				"""
+				create unique index if not exists uk_external_api_keys_provider_fingerprint
+				on external_api_keys (provider, api_key_fingerprint)
+				where api_key_fingerprint is not null
+				"""
+		);
+		log.info("external_api_keys.api_key_fingerprint column and partial unique index ensured");
 	}
 
 	private boolean isPostgres() {

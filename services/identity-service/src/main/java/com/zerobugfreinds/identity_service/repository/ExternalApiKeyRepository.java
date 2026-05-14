@@ -101,5 +101,12 @@ public interface ExternalApiKeyRepository extends JpaRepository<ExternalApiKeyEn
 	 */
 	List<ExternalApiKeyEntity> findAllByProviderAndKeyHash(ExternalApiKeyProvider provider, String keyHash);
 
+	List<ExternalApiKeyEntity> findAllByProviderAndApiKeyFingerprint(
+			ExternalApiKeyProvider provider,
+			String apiKeyFingerprint
+	);
+
+	List<ExternalApiKeyEntity> findTop100ByApiKeyFingerprintIsNullOrderByIdAsc();
+
 	void deleteAllByUserId(Long userId);
 }

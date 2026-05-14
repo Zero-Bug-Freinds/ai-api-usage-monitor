@@ -1,6 +1,7 @@
 package com.zerobugfreinds.identity_service.controller;
 
 import com.zerobugfreinds.identity_service.common.ApiResponse;
+import com.zerobugfreinds.identity_service.exception.ApiKeyRegistrationLockBusyException;
 import com.zerobugfreinds.identity_service.exception.AmbiguousExternalApiKeyHashException;
 import com.zerobugfreinds.identity_service.exception.ApiKeyLimitExceededException;
 import com.zerobugfreinds.identity_service.exception.AuthContractViolationException;
@@ -11,6 +12,7 @@ import com.zerobugfreinds.identity_service.exception.ExternalApiKeyAlreadyPendin
 import com.zerobugfreinds.identity_service.exception.ExternalApiKeyNotFoundException;
 import com.zerobugfreinds.identity_service.exception.ExternalApiKeyNotPendingDeletionException;
 import com.zerobugfreinds.identity_service.exception.ExternalApiKeyPendingDeletionException;
+import com.zerobugfreinds.identity_service.exception.InternalLookupUnauthorizedException;
 import com.zerobugfreinds.identity_service.exception.InvalidCredentialsException;
 import com.zerobugfreinds.identity_service.exception.InvalidPasswordResetTokenException;
 import com.zerobugfreinds.identity_service.exception.InvalidSignupRequestException;
@@ -42,6 +44,20 @@ public class GlobalExceptionHandler {
 	@ResponseStatus(HttpStatus.CONFLICT)
 	public ApiResponse<Void> handleDuplicateEmail(DuplicateEmailException ex) {
 		return failWithFallback(ex.getMessage(), "이메일이 이미 존재합니다");
+	}
+
+	@ExceptionHandler(ApiKeyRegistrationLockBusyException.class)
+	@ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+	public ApiResponse<Void> handleApiKeyRegistrationLockBusy(ApiKeyRegistrationLockBusyException ex) {
+		log.warn("api key registration lock busy message={}", ex.getMessage());
+		return failWithFallback(ex.getMessage(), "동시에 동일 API 키가 등록되고 있습니다. 잠시 후 다시 시도해 주세요");
+	}
+
+	@ExceptionHandler(InternalLookupUnauthorizedException.class)
+	@ResponseStatus(HttpStatus.FORBIDDEN)
+	public ApiResponse<Void> handleInternalLookupUnauthorized(InternalLookupUnauthorizedException ex) {
+		log.warn("internal lookup unauthorized message={}", ex.getMessage());
+		return failWithFallback(ex.getMessage(), "내부 인증이 필요합니다");
 	}
 
 	@ExceptionHandler(InvalidCredentialsException.class)

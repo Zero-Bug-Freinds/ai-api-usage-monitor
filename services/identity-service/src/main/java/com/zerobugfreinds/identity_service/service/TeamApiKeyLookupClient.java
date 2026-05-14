@@ -1,13 +1,13 @@
 package com.zerobugfreinds.identity_service.service;
 
+import com.zerobugfreinds.identity_service.dto.InternalFingerprintLookupRequest;
+import com.zerobugfreinds.identity_service.exception.TeamApiKeyLookupUnavailableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
-
-import com.zerobugfreinds.identity_service.exception.TeamApiKeyLookupUnavailableException;
 
 import java.net.ConnectException;
 import java.nio.channels.UnresolvedAddressException;
@@ -26,46 +26,48 @@ public class TeamApiKeyLookupClient {
 
     private final List<RestClient> restClients;
     private final List<String> baseUrls;
-    private final String internalToken;
+    private final String fingerprintLookupToken;
 
     public TeamApiKeyLookupClient(
             RestClient.Builder restClientBuilder,
             @Value("${identity.team-service.internal-base-url:${TEAM_SERVICE_INTERNAL_URL:http://team-service:8093}}")
             String teamServiceBaseUrl,
-            @Value("${identity.team-service.internal-api-token:${PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN:}}")
-            String internalToken
+            @Value("${api.internal.key-lookup-token:}") String fingerprintLookupToken
     ) {
         this.baseUrls = resolveCandidateBaseUrls(teamServiceBaseUrl);
         this.restClients = this.baseUrls.stream()
                 .map(baseUrl -> restClientBuilder.baseUrl(baseUrl).build())
                 .toList();
-        this.internalToken = internalToken != null ? internalToken.trim() : "";
+        this.fingerprintLookupToken = fingerprintLookupToken != null ? fingerprintLookupToken.trim() : "";
         log.info("team api key lookup baseUrls={}", this.baseUrls);
     }
 
-    public boolean existsByHashedKey(String provider, String hashedKey) {
-        if (provider == null || provider.isBlank() || hashedKey == null || hashedKey.isBlank()) {
-            throw new IllegalArgumentException("provider와 hashedKey는 필수입니다");
+    /**
+     * 팀 쪽에 동일 (provider, raw-key SHA-256 fingerprint) 등록이 있는지 POST 역조회로 확인한다.
+     */
+    public boolean existsByRawKeyFingerprint(String provider, String fingerprint) {
+        if (provider == null || provider.isBlank() || fingerprint == null || fingerprint.isBlank()) {
+            throw new IllegalArgumentException("provider와 fingerprint는 필수입니다");
         }
-        if (internalToken.isBlank()) {
+        if (fingerprintLookupToken.isBlank()) {
             throw new TeamApiKeyLookupUnavailableException(
-                    "팀 API 키 내부 조회 토큰이 설정되지 않았습니다 (PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN 등)");
+                    "내부 API 키 조회 토큰이 설정되지 않았습니다 (api.internal.key-lookup-token / INTERNAL_API_KEY_LOOKUP_TOKEN)");
         }
 
         String normalizedProvider = provider.trim();
-        String normalizedHash = hashedKey.trim();
+        String normalizedFingerprint = fingerprint.trim();
+        InternalFingerprintLookupRequest body = new InternalFingerprintLookupRequest(
+                normalizedFingerprint,
+                normalizedProvider
+        );
         for (int idx = 0; idx < restClients.size(); idx++) {
             RestClient client = restClients.get(idx);
             String baseUrl = baseUrls.get(idx);
             try {
-                client.get()
-                        .uri(
-                                uriBuilder -> uriBuilder.path("/internal/v1/team-api-keys/lookup")
-                                        .queryParam("provider", normalizedProvider)
-                                        .queryParam("hashedKey", normalizedHash)
-                                        .build()
-                        )
-                        .header("Authorization", "Bearer " + internalToken)
+                client.post()
+                        .uri("/internal/v1/api-keys/lookup")
+                        .header("Authorization", "Bearer " + fingerprintLookupToken)
+                        .body(body)
                         .retrieve()
                         .toBodilessEntity();
                 return true;

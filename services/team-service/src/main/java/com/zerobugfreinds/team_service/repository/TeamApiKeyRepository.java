@@ -66,5 +66,12 @@ public interface TeamApiKeyRepository extends JpaRepository<TeamApiKeyEntity, Lo
      */
     List<TeamApiKeyEntity> findAllByProviderAndKeyHash(TeamApiKeyProvider provider, String keyHash);
 
+    List<TeamApiKeyEntity> findAllByProviderAndApiKeyFingerprint(
+            TeamApiKeyProvider provider,
+            String apiKeyFingerprint
+    );
+
+    List<TeamApiKeyEntity> findTop100ByApiKeyFingerprintIsNullOrderByIdAsc();
+
     List<TeamApiKeyEntity> findAllByPermanentDeletionAtIsNotNullAndPermanentDeletionAtBefore(Instant now);
 }
