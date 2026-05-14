@@ -42,3 +42,22 @@ output "ec2_instance_profile_name" {
   description = "Optional compute stack instance profile (ECR pull + SSM)."
   value       = var.enable_compute_stack ? module.compute[0].ec2_instance_profile_name : null
 }
+
+output "staging_rds_address" {
+  description = "Postgres host when staging RDS is enabled; use in .env.deploy *_POSTGRES_HOST."
+  value       = length(module.staging_rds) > 0 ? module.staging_rds[0].address : null
+}
+
+output "staging_rds_port" {
+  value = length(module.staging_rds) > 0 ? module.staging_rds[0].port : null
+}
+
+output "staging_rds_master_username" {
+  value = length(module.staging_rds) > 0 ? module.staging_rds[0].master_username : null
+}
+
+output "staging_rds_master_password" {
+  description = "Sensitive. Staging only — copy to SSM or .env.deploy; create logical DBs from EC2 (scripts/deploy/rds-staging-create-logical-dbs.sh)."
+  value       = length(module.staging_rds) > 0 ? module.staging_rds[0].master_password : null
+  sensitive   = true
+}

@@ -27,3 +27,8 @@ output "public_subnet_ids" {
   value       = aws_subnet.public[*].id
   description = "Public subnets used by ALB and ASG."
 }
+
+output "instance_security_group_id" {
+  value       = aws_security_group.instance.id
+  description = "ASG instance security group (allow RDS ingress from this SG)."
+}

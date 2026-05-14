@@ -105,14 +105,14 @@ variable "compute_asg_min_size" {
 
 variable "compute_asg_max_size" {
   type        = number
-  description = "ASG maximum size for optional compute stack."
-  default     = 3
+  description = "ASG maximum size. Use 1 to allow at most one EC2 (no scale-out above desired)."
+  default     = 1
 }
 
 variable "compute_asg_desired_capacity" {
   type        = number
   description = "ASG desired capacity for optional compute stack."
-  default     = 2
+  default     = 1
 }
 
 variable "alb_target_port" {
@@ -147,4 +147,22 @@ variable "public_subnet_cidrs" {
     condition     = alltrue([for c in var.public_subnet_cidrs : can(cidrhost(c, 0))])
     error_message = "Each public_subnet_cidrs entry must be a valid IPv4 CIDR block."
   }
+}
+
+variable "enable_staging_rds" {
+  type        = bool
+  description = "When true (and enable_compute_stack), creates one small PostgreSQL RDS in the compute VPC for staging-style logical DBs. Not production MSA physical separation; see docs/msa-database-and-service-integration.md."
+  default     = false
+}
+
+variable "staging_rds_instance_class" {
+  type        = string
+  description = "RDS instance class for staging_rds module."
+  default     = "db.t4g.micro"
+}
+
+variable "staging_rds_allocated_storage" {
+  type        = number
+  description = "Initial allocated storage (GB) for staging RDS."
+  default     = 20
 }

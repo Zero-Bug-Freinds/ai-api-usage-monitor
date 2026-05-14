@@ -7,7 +7,10 @@
 #   TARGET_GROUP_ARN
 #   INSTANCE_ID
 #   DEPLOY_SHA       — value for IMAGE_TAG on the instance
-#   SSM_DEPLOY_ROOT  — directory on the instance containing the repo and scripts/deploy/
+#   SSM_DEPLOY_ROOT  — optional; default /opt/ai-api-usage-monitor (repo root with scripts/deploy/ on the instance)
+
+# Default before nounset so empty/unset never trips strict mode (matches deploy docs / Terraform user-data).
+export SSM_DEPLOY_ROOT="${SSM_DEPLOY_ROOT:-/opt/ai-api-usage-monitor}"
 
 set -euo pipefail
 
@@ -17,7 +20,6 @@ DRAIN_WAIT_SEC="${DRAIN_WAIT_SEC:-300}"
 INSTANCE_ID="${INSTANCE_ID:?}"
 TARGET_GROUP_ARN="${TARGET_GROUP_ARN:?}"
 DEPLOY_SHA="${DEPLOY_SHA:?}"
-SSM_DEPLOY_ROOT="${SSM_DEPLOY_ROOT:?}"
 
 echo "Deregister $INSTANCE_ID:$TARGET_PORT from $TARGET_GROUP_ARN"
 aws elbv2 deregister-targets \
