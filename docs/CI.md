@@ -118,7 +118,9 @@ WebFlux 프록시에서 블로킹 AMQP 호출은 §6.2 주의사항과 동일하
 | `main` | 동일 `release.yml` | **`production`** | ECR push 시 **필수 리뷰어·wait timer** 등 Environment 보호 규칙으로 승인 게이트 권장 |
 | 수동 | `release.yml` `workflow_dispatch` | 호출 시 선택한 브랜치의 Environment | `force_rebuild_all`(기본 `true`)로 paths-filter 없이 전 이미지 push 가능 |
 
-배포(SSM·ALB)는 [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) `workflow_dispatch`만 제공한다(인스턴스 ID·`image_tag` 입력). `production` Environment에 동일하게 보호 규칙을 걸어 운영 반영을 게이트할 수 있다.
+ECR 푸시가 성공하고(경로 필터 또는 `force_rebuild_all`로 실제 이미지가 빌드·푸시된 경우에 한함) 해당 GitHub Environment에 `ALB_TARGET_GROUP_ARN`이 설정되어 있으면, [`.github/workflows/release.yml`](../.github/workflows/release.yml)의 **`roll-after-ecr`** 잡이 이어서 타깃 그룹에 등록된 EC2를 조회해 ALB+SSM 롤링 배포를 수행한다. `ALB_TARGET_GROUP_ARN`이 비어 있으면 ECR만 반영하고 롤은 건너뛴다.
+
+수동 배포는 [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) `workflow_dispatch`로 실행한다(`image_tag` 필수). 인스턴스 ID는 비워 두면 타깃 그룹에서 자동 조회한다. `production` Environment에 보호 규칙을 걸면 릴리스·배포 모두 승인 게이트에 걸린다.
 
 ### 경로 필터 재사용
 

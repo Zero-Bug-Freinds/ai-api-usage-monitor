@@ -31,6 +31,23 @@ variable "ecr_repository_prefix" {
   default     = "ai-api-usage-monitor"
 }
 
+variable "ecr_untagged_image_expire_days" {
+  type        = number
+  description = "ECR lifecycle: expire untagged images after this many days (each repository)."
+  default     = 14
+
+  validation {
+    condition     = var.ecr_untagged_image_expire_days >= 1 && var.ecr_untagged_image_expire_days <= 365
+    error_message = "ecr_untagged_image_expire_days must be between 1 and 365."
+  }
+}
+
+variable "extra_deploy_elb_target_group_arns" {
+  type        = list(string)
+  description = "Optional ALB target group ARNs for deploy roles (RegisterTargets/DeregisterTargets). Merged with the TG from enable_compute_stack. When empty and compute is off, ELB actions stay on Resource \"*\"."
+  default     = []
+}
+
 variable "iam_role_name_prefix" {
   type        = string
   description = "Prefix for GitHub OIDC IAM role names (suffix adds release/deploy and environment)."
@@ -93,6 +110,16 @@ variable "vpc_cidr" {
 
 variable "public_subnet_cidrs" {
   type        = list(string)
-  description = "Two public subnet CIDRs for optional VPC (ALB + instances)."
+  description = "Public subnet CIDRs for optional VPC (one or two blocks; module uses at most two AZs)."
   default     = ["10.0.1.0/24", "10.0.2.0/24"]
+
+  validation {
+    condition     = length(var.public_subnet_cidrs) >= 1 && length(var.public_subnet_cidrs) <= 2
+    error_message = "public_subnet_cidrs must have 1 or 2 entries (compute_stack uses at most two AZs)."
+  }
+
+  validation {
+    condition     = alltrue([for c in var.public_subnet_cidrs : can(cidrhost(c, 0))])
+    error_message = "Each public_subnet_cidrs entry must be a valid IPv4 CIDR block."
+  }
 }

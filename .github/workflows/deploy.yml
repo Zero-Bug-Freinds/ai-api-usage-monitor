@@ -4,6 +4,8 @@
 # Configure GitHub Environments `staging` / `production` with variables:
 #   AWS_REGION, AWS_DEPLOY_ROLE_ARN, ALB_TARGET_GROUP_ARN, SSM_DEPLOY_ROOT (e.g. /opt/ai-api-usage-monitor)
 # Optional: TARGET_PORT (default 80)
+#
+# Instance IDs: leave empty to discover EC2 targets from ALB_TARGET_GROUP_ARN (same as post-Release roll).
 
 name: Deploy
 
@@ -22,12 +24,13 @@ on:
         type: string
         required: true
       comma_separated_instance_ids:
-        description: EC2 instance ids (comma-separated, rolled in list order)
+        description: EC2 instance ids (comma-separated); leave empty to discover from ALB_TARGET_GROUP_ARN
         type: string
-        required: true
+        required: false
+        default: ""
 
 concurrency:
-  group: deploy-${{ inputs.environment }}
+  group: alb-ssm-roll-${{ inputs.environment }}
   cancel-in-progress: false
 
 permissions:
@@ -43,6 +46,7 @@ jobs:
       AWS_REGION: ${{ vars.AWS_REGION }}
       TARGET_GROUP_ARN: ${{ vars.ALB_TARGET_GROUP_ARN }}
       SSM_DEPLOY_ROOT: ${{ vars.SSM_DEPLOY_ROOT }}
+      TARGET_PORT: ${{ vars.TARGET_PORT }}
     steps:
       - uses: actions/checkout@v4
 
@@ -55,10 +59,19 @@ jobs:
       - name: Roll each instance
         env:
           DEPLOY_SHA: ${{ inputs.image_tag }}
-          INSTANCE_CSV: ${{ inputs.comma_separated_instance_ids }}
+          MANUAL_INSTANCE_CSV: ${{ inputs.comma_separated_instance_ids }}
         run: |
           set -euo pipefail
-          chmod +x scripts/deploy/gha-roll-instance.sh
+          chmod +x scripts/deploy/gha-roll-instance.sh scripts/deploy/list-tg-instance-ids.sh
+          if [[ -n "${MANUAL_INSTANCE_CSV// }" ]]; then
+            INSTANCE_CSV="$MANUAL_INSTANCE_CSV"
+          else
+            INSTANCE_CSV="$(./scripts/deploy/list-tg-instance-ids.sh)"
+          fi
+          if [[ -z "${INSTANCE_CSV// }" ]]; then
+            echo "No EC2 instance IDs (empty input and no instance targets in target group)." >&2
+            exit 1
+          fi
           IFS=',' read -r -a ids <<< "${INSTANCE_CSV// /}"
           for raw in "${ids[@]}"; do
             id="$(echo "$raw" | xargs)"

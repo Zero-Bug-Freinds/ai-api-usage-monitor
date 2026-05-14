@@ -1,3 +1,8 @@
+output "aws_account_id" {
+  description = "AWS account ID for this configuration (e.g. terraform import OIDC ARN path)."
+  value       = data.aws_caller_identity.current.account_id
+}
+
 output "github_oidc_provider_arn" {
   description = "IAM OIDC provider ARN for GitHub Actions (token.actions.githubusercontent.com)."
   value       = aws_iam_openid_connect_provider.github.arn

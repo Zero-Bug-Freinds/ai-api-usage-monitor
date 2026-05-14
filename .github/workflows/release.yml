@@ -1,4 +1,5 @@
 # Release: build changed images (paths-filter reuse) and push to Amazon ECR with immutable git sha + env pointer tag.
+# After a successful push, optionally rolls EC2 targets (ALB + SSM) when ALB_TARGET_GROUP_ARN is set on the Environment.
 # Triggers: `develop` → GitHub Environment `staging`; `main` → `production` (configure required reviewers on `production`).
 # See `docs/CI.md` (CD) and `docs/aws-github-oidc-ecr-ssm.md`.
 
@@ -69,6 +70,8 @@ jobs:
       - changes
       - release-target
     environment: ${{ needs.release-target.outputs.github_environment }}
+    outputs:
+      should_roll: ${{ steps.roll_gate.outputs.should_roll }}
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
     steps:
@@ -83,6 +86,34 @@ jobs:
             force=true
           fi
           echo "force_all=$force" >> "$GITHUB_OUTPUT"
+
+      - id: roll_gate
+        name: Decide post-ECR rolling deploy
+        env:
+          FORCE_ALL: ${{ steps.flags.outputs.force_all }}
+          API_GATEWAY: ${{ needs.changes.outputs.api_gateway }}
+          IDENTITY: ${{ needs.changes.outputs.identity }}
+          AI_AGENT: ${{ needs.changes.outputs.ai_agent }}
+          PROXY: ${{ needs.changes.outputs.proxy }}
+          USAGE: ${{ needs.changes.outputs.usage }}
+          BILLING: ${{ needs.changes.outputs.billing }}
+          TEAM: ${{ needs.changes.outputs.team }}
+          NOTIFICATION: ${{ needs.changes.outputs.notification }}
+          WEB_SHARED: ${{ needs.changes.outputs.web_shared }}
+          WEB_EDGE: ${{ needs.changes.outputs.web_edge }}
+        run: |
+          set -euo pipefail
+          if [[ "$FORCE_ALL" == "true" ]]; then
+            echo "should_roll=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          for v in "$API_GATEWAY" "$IDENTITY" "$AI_AGENT" "$PROXY" "$USAGE" "$BILLING" "$TEAM" "$NOTIFICATION" "$WEB_SHARED" "$WEB_EDGE"; do
+            if [[ "$v" == "true" ]]; then
+              echo "should_roll=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          echo "should_roll=false" >> "$GITHUB_OUTPUT"
 
       - name: Configure AWS (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -289,3 +320,63 @@ jobs:
           tags: |
             ${{ steps.meta.outputs.image_prefix }}/web-edge:${{ steps.meta.outputs.tag_sha }}
             ${{ steps.meta.outputs.image_prefix }}/web-edge:${{ steps.meta.outputs.tag_pointer }}
+
+  roll-after-ecr:
+    name: Rolling deploy (ALB + SSM, post-ECR)
+    runs-on: ubuntu-latest
+    needs:
+      - ecr-build-push
+      - release-target
+    if: success() && needs.ecr-build-push.outputs.should_roll == 'true'
+    environment: ${{ needs.release-target.outputs.github_environment }}
+    concurrency:
+      group: alb-ssm-roll-${{ needs.release-target.outputs.github_environment }}
+      cancel-in-progress: false
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      TARGET_GROUP_ARN: ${{ vars.ALB_TARGET_GROUP_ARN }}
+      SSM_DEPLOY_ROOT: ${{ vars.SSM_DEPLOY_ROOT }}
+      TARGET_PORT: ${{ vars.TARGET_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Skip when no ALB target group
+        id: skip
+        run: |
+          set -euo pipefail
+          if [[ -z "${{ vars.ALB_TARGET_GROUP_ARN }}" ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "ALB_TARGET_GROUP_ARN is unset — skipping rolling deploy (ECR-only)."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure AWS (OIDC, deploy role)
+        if: steps.skip.outputs.skip == 'false'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Discover targets and roll instances
+        if: steps.skip.outputs.skip == 'false'
+        env:
+          DEPLOY_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          chmod +x scripts/deploy/gha-roll-instance.sh scripts/deploy/list-tg-instance-ids.sh
+          INSTANCE_CSV="$(./scripts/deploy/list-tg-instance-ids.sh)"
+          if [[ -z "${INSTANCE_CSV}" ]]; then
+            echo "No EC2 instance targets in target group; nothing to roll."
+            exit 0
+          fi
+          IFS=',' read -r -a ids <<< "${INSTANCE_CSV// /}"
+          for raw in "${ids[@]}"; do
+            id="$(echo "$raw" | xargs)"
+            if [[ -z "$id" ]]; then
+              continue
+            fi
+            echo "=== Rolling instance $id ==="
+            export INSTANCE_ID="$id"
+            scripts/deploy/gha-roll-instance.sh
+          done

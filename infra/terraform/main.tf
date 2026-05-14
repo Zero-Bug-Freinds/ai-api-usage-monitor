@@ -1,3 +1,5 @@
+data "aws_caller_identity" "current" {}
+
 locals {
   ecr_repository_suffixes = [
     "api-gateway-service",
@@ -17,7 +19,10 @@ locals {
     "web-edge",
   ]
 
-  deploy_elb_target_group_arns = var.enable_compute_stack ? [module.compute[0].alb_target_group_arn] : []
+  deploy_elb_target_group_arns = distinct(concat(
+    var.enable_compute_stack ? [module.compute[0].alb_target_group_arn] : [],
+    var.extra_deploy_elb_target_group_arns,
+  ))
 }
 
 resource "aws_iam_openid_connect_provider" "github" {
@@ -27,14 +32,16 @@ resource "aws_iam_openid_connect_provider" "github" {
 
   thumbprint_list = [
     "6938fd4d98bab03faadb97b34396831e3780aea1",
+    "1c58a3a8518e8759bf075b76b750d4f2df264fcd",
   ]
 }
 
 module "ecr" {
   source = "./modules/ecr"
 
-  repository_prefix   = var.ecr_repository_prefix
-  repository_suffixes = local.ecr_repository_suffixes
+  repository_prefix                 = var.ecr_repository_prefix
+  repository_suffixes               = local.ecr_repository_suffixes
+  expire_untagged_images_after_days = var.ecr_untagged_image_expire_days
 }
 
 module "compute" {
