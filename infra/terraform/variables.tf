@@ -36,8 +36,24 @@ variable "ecr_repository_prefix" {
 
 variable "ecr_repository_suffixes" {
   type        = list(string)
-  description = "ECR repository suffixes; each repository name is \"<ecr_repository_prefix>/<suffix>\"."
-  default     = ["service-a", "service-b", "service-c"]
+  description = "ECR repository suffixes; each repository name is \"<ecr_repository_prefix>/<suffix>\". Must align with .github/workflows/release.yml image names."
+  default = [
+    "agent-service",
+    "agent-web",
+    "api-gateway-service",
+    "billing-service",
+    "billing-web",
+    "identity-service",
+    "identity-web",
+    "notification-service",
+    "notification-web",
+    "proxy-service",
+    "team-service",
+    "team-web",
+    "usage-service",
+    "usage-web",
+    "web-edge",
+  ]
 }
 
 variable "ecr_untagged_image_expire_days" {

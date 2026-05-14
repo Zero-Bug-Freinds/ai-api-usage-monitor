@@ -43,7 +43,7 @@ Copy [`terraform.tfvars.example`](terraform.tfvars.example) and adjust as needed
 
 - **`github_org`**, **`github_repo`** — must match the GitHub repo for OIDC `sub` (defaults in `variables.tf` are placeholders for CI; set real values for your org).
 - **`ecr_repository_prefix`** — defaults to `ai-api-usage-monitor` (matches `release.yml`).
-- **`ecr_repository_suffixes`** — list of repository path segments after the prefix (default `service-a`, `service-b`, `service-c`). Align with images you build in `release.yml` (see [`docs/aws-github-oidc-ecr-ssm.md`](../../docs/aws-github-oidc-ecr-ssm.md) §5 for the full naming table).
+- **`ecr_repository_suffixes`** — list of repository path segments after the prefix (defaults match **[`.github/workflows/release.yml`](../../.github/workflows/release.yml)** image names). Align `terraform.tfvars` if you override.
 - **`release_iam_role_name`**, **`deploy_iam_role_name`** — IAM role names (defaults `ReleaseRole`, `DeployRole`).
 - **`ecr_untagged_image_expire_days`** — ECR lifecycle for untagged images (default **14**).
 - **`enable_compute_stack`**, **`compute_environment_label`**, sizing, **`alb_target_port`**, **`alb_health_check_path`**, **`vpc_cidr`**, **`public_subnet_cidrs`** — optional compute stack.

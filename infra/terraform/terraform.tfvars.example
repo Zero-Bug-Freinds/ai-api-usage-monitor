@@ -4,7 +4,8 @@ github_org             = "Zero-Bug-Freinds"
 github_repo            = "ai-api-usage-monitor"
 ecr_repository_prefix  = "ai-api-usage-monitor"
 
-# Optional: override default ECR repos (default service-a, service-b, service-c).
+# Default suffixes match .github/workflows/release.yml (see variable ecr_repository_suffixes in variables.tf).
+# Override only if you use fewer images or different names:
 # ecr_repository_suffixes = ["api-gateway-service", "proxy-service"]
 
 # Optional IAM role names (defaults ReleaseRole, DeployRole).
