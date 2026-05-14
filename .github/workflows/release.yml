@@ -1,6 +1,7 @@
 # Release: build changed images (paths-filter reuse) and push to Amazon ECR with immutable git sha + env pointer tag.
 # After a successful push, optionally rolls EC2 targets (ALB + SSM) when ALB_TARGET_GROUP_ARN is set on the Environment.
 # Triggers: `develop` → GitHub Environment `staging`; `main` → `production` (configure required reviewers on `production`).
+# Required on each used Environment (or repo Variables): AWS_REGION, AWS_RELEASE_ROLE_ARN (ECR OIDC). Deploy roll also needs AWS_DEPLOY_ROLE_ARN when ALB_TARGET_GROUP_ARN is set.
 # See `docs/CI.md` (CD) and `docs/aws-github-oidc-ecr-ssm.md`.
 
 name: Release
@@ -76,6 +77,20 @@ jobs:
       AWS_REGION: ${{ vars.AWS_REGION }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Require AWS_REGION and AWS_RELEASE_ROLE_ARN (Environment variables)
+        run: |
+          set -euo pipefail
+          missing=0
+          if [ -z "${{ vars.AWS_REGION }}" ]; then
+            echo "::error title=Missing AWS_REGION::Set variable AWS_REGION on GitHub Environment \"${{ needs.release-target.outputs.github_environment }}\" (or repository Variables). Example: ap-northeast-2. See docs/aws-github-oidc-ecr-ssm.md."
+            missing=1
+          fi
+          if [ -z "${{ vars.AWS_RELEASE_ROLE_ARN }}" ]; then
+            echo "::error title=Missing AWS_RELEASE_ROLE_ARN::Set AWS_RELEASE_ROLE_ARN on the same Environment. See docs/aws-github-oidc-ecr-ssm.md."
+            missing=1
+          fi
+          exit "$missing"
 
       - id: flags
         name: Force-rebuild flag
@@ -350,6 +365,21 @@ jobs:
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Require AWS_REGION and AWS_DEPLOY_ROLE_ARN (rolling deploy)
+        if: steps.skip.outputs.skip == 'false'
+        run: |
+          set -euo pipefail
+          missing=0
+          if [ -z "${{ vars.AWS_REGION }}" ]; then
+            echo "::error title=Missing AWS_REGION::Set AWS_REGION on Environment \"${{ needs.release-target.outputs.github_environment }}\". See docs/aws-github-oidc-ecr-ssm.md."
+            missing=1
+          fi
+          if [ -z "${{ vars.AWS_DEPLOY_ROLE_ARN }}" ]; then
+            echo "::error title=Missing AWS_DEPLOY_ROLE_ARN::Set AWS_DEPLOY_ROLE_ARN for post-ECR rolling deploy. See docs/aws-github-oidc-ecr-ssm.md."
+            missing=1
+          fi
+          exit "$missing"
 
       - name: Configure AWS (OIDC, deploy role)
         if: steps.skip.outputs.skip == 'false'

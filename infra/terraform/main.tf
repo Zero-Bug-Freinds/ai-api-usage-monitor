@@ -1,28 +1,8 @@
 data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
 
 locals {
-  ecr_repository_suffixes = [
-    "api-gateway-service",
-    "proxy-service",
-    "identity-service",
-    "usage-service",
-    "billing-service",
-    "team-service",
-    "notification-service",
-    "agent-service",
-    "identity-web",
-    "usage-web",
-    "billing-web",
-    "team-web",
-    "notification-web",
-    "agent-web",
-    "web-edge",
-  ]
-
-  deploy_elb_target_group_arns = distinct(concat(
-    var.enable_compute_stack ? [module.compute[0].alb_target_group_arn] : [],
-    var.extra_deploy_elb_target_group_arns,
-  ))
+  github_oidc_sub_pattern = "repo:${var.github_org}/${var.github_repo}:*"
 }
 
 resource "aws_iam_openid_connect_provider" "github" {
@@ -40,7 +20,7 @@ module "ecr" {
   source = "./modules/ecr"
 
   repository_prefix                 = var.ecr_repository_prefix
-  repository_suffixes               = local.ecr_repository_suffixes
+  repository_suffixes               = var.ecr_repository_suffixes
   expire_untagged_images_after_days = var.ecr_untagged_image_expire_days
 }
 
@@ -61,16 +41,119 @@ module "compute" {
   public_subnet_cidrs   = var.public_subnet_cidrs
 }
 
-module "github_env_roles" {
-  for_each = toset(["staging", "production"])
+# Doc §1.2 — trust GitHub OIDC for this repository only (sub matches environment jobs too).
+resource "aws_iam_role" "release" {
+  name = var.release_iam_role_name
 
-  source = "./modules/github_env_roles"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "GitHubActionsOidc"
+        Effect = "Allow"
+        Principal = {
+          Federated = aws_iam_openid_connect_provider.github.arn
+        }
+        Action = "sts:AssumeRoleWithWebIdentity"
+        Condition = {
+          StringEquals = {
+            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+          }
+          StringLike = {
+            "token.actions.githubusercontent.com:sub" = local.github_oidc_sub_pattern
+          }
+        }
+      },
+    ]
+  })
+}
 
-  environment_name             = each.key
-  github_org                   = var.github_org
-  github_repo                  = var.github_repo
-  oidc_provider_arn            = aws_iam_openid_connect_provider.github.arn
-  iam_role_name_prefix         = var.iam_role_name_prefix
-  ecr_repository_prefix        = var.ecr_repository_prefix
-  deploy_elb_target_group_arns = local.deploy_elb_target_group_arns
+# Doc §2.1 — ECR push (scoped to prefix/*).
+resource "aws_iam_role_policy" "release_ecr_push" {
+  name = "ecr-push-release"
+  role = aws_iam_role.release.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "EcrAuthToken"
+        Effect   = "Allow"
+        Action   = ["ecr:GetAuthorizationToken"]
+        Resource = "*"
+      },
+      {
+        Sid    = "EcrPushScoped"
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:CompleteLayerUpload",
+          "ecr:InitiateLayerUpload",
+          "ecr:PutImage",
+          "ecr:UploadLayerPart",
+          "ecr:BatchGetImage",
+          "ecr:GetDownloadUrlForLayer",
+        ]
+        Resource = "arn:aws:ecr:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:repository/${var.ecr_repository_prefix}/*"
+      },
+    ]
+  })
+}
+
+resource "aws_iam_role" "deploy" {
+  name = var.deploy_iam_role_name
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "GitHubActionsOidc"
+        Effect = "Allow"
+        Principal = {
+          Federated = aws_iam_openid_connect_provider.github.arn
+        }
+        Action = "sts:AssumeRoleWithWebIdentity"
+        Condition = {
+          StringEquals = {
+            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+          }
+          StringLike = {
+            "token.actions.githubusercontent.com:sub" = local.github_oidc_sub_pattern
+          }
+        }
+      },
+    ]
+  })
+}
+
+# Doc §3.1 — ELB target registration + SSM command (minimal shape).
+resource "aws_iam_role_policy" "deploy_elb_ssm" {
+  name = "elb-ssm-deploy"
+  role = aws_iam_role.deploy.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "ElbRegisterDeregister"
+        Effect = "Allow"
+        Action = [
+          "elasticloadbalancing:RegisterTargets",
+          "elasticloadbalancing:DeregisterTargets",
+          "elasticloadbalancing:DescribeTargetHealth",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "SsmSendCommand"
+        Effect = "Allow"
+        Action = [
+          "ssm:SendCommand",
+          "ssm:GetCommandInvocation",
+          "ssm:ListCommandInvocations",
+        ]
+        Resource = "*"
+      },
+    ]
+  })
 }
