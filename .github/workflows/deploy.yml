@@ -49,7 +49,7 @@ jobs:
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
       TARGET_GROUP_ARN: ${{ vars.ALB_TARGET_GROUP_ARN }}
-      SSM_DEPLOY_ROOT: ${{ vars.SSM_DEPLOY_ROOT }}
+      SSM_DEPLOY_ROOT: ${{ vars.SSM_DEPLOY_ROOT || '/opt/ai-api-usage-monitor' }}
       TARGET_PORT: ${{ vars.TARGET_PORT }}
     steps:
       - uses: actions/checkout@v4
@@ -64,7 +64,7 @@ jobs:
         env:
           DEPLOY_SHA: ${{ inputs.image_tag }}
           MANUAL_INSTANCE_CSV: ${{ inputs.comma_separated_instance_ids }}
-          SSM_DEPLOY_ROOT: ${{ vars.SSM_DEPLOY_ROOT }}
+          SSM_DEPLOY_ROOT: ${{ vars.SSM_DEPLOY_ROOT || '/opt/ai-api-usage-monitor' }}
         run: |
           set -euo pipefail
           export SSM_DEPLOY_ROOT="${SSM_DEPLOY_ROOT:-/opt/ai-api-usage-monitor}"
