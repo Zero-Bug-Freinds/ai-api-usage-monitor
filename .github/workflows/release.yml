@@ -156,6 +156,28 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
+      # api-gateway / proxy Dockerfiles expect COPY build/libs/app.jar (context = service dir).
+      # Without a prior bootJar, buildx context has no JAR and COPY fails (see CI job that runs gradle first).
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Build api-gateway-service JAR (for Docker COPY)
+        if: needs.changes.outputs.api_gateway == 'true' || steps.flags.outputs.force_all == 'true'
+        working-directory: services/api-gateway-service
+        run: |
+          chmod +x ./gradlew
+          ./gradlew bootJar --no-daemon
+
+      - name: Build proxy-service JAR (for Docker COPY)
+        if: needs.changes.outputs.proxy == 'true' || steps.flags.outputs.force_all == 'true'
+        working-directory: services/proxy-service
+        run: |
+          chmod +x ./gradlew
+          ./gradlew bootJar --no-daemon
+
       - name: Push api-gateway-service
         if: needs.changes.outputs.api_gateway == 'true' || steps.flags.outputs.force_all == 'true'
         uses: docker/build-push-action@v6
