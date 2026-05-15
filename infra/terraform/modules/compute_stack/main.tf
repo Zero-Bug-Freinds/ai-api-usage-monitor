@@ -158,6 +158,13 @@ resource "aws_iam_role_policy_attachment" "ssm_core" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
+# Pull images from any ECR repository in this account/region (includes ecr:BatchGetImage, etc.).
+# Complements the scoped inline policy below; use when Docker/ECR API needs full read-only surface.
+resource "aws_iam_role_policy_attachment" "ec2_ecr_readonly" {
+  role       = aws_iam_role.ec2_instance.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+}
+
 resource "aws_iam_role_policy" "ecr_pull" {
   name = "${var.project_name}-ecr-pull-${var.environment_label}"
   role = aws_iam_role.ec2_instance.id
