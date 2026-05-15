@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Run on the EC2 host (via SSM). Pulls ECR images and restarts `docker-compose.prod.yml`.
+# Run on the EC2 host (via SSM). Pulls ECR images and restarts the stack using `docker compose` (Compose v2 plugin).
+# Compose file defaults to `docker-compose.prod.yml` (filename in repo root; not the legacy `docker-compose` CLI).
 # Prerequisites: Docker, compose plugin, AWS CLI; repo at DEPLOY_ROOT; `.env.deploy` with secrets (not in git).
 #
 # Env (required unless noted):
@@ -7,7 +8,7 @@
 # Optional:
 #   DEPLOY_ROOT            — default /opt/ai-api-usage-monitor
 #   DEPLOY_STATE_DIR       — unset: root → /var/lib/...; non-root → ~/.local/state/... (override anytime)
-#   COMPOSE_FILE           — default docker-compose.prod.yml
+#   COMPOSE_FILE           — default compose file name docker-compose.prod.yml (passed to `docker compose -f`)
 #   HEALTH_URL             — default http://127.0.0.1:8080/healthz (web-edge :8080 listener)
 #   HEALTH_RETRIES         — default 30
 #   HEALTH_INTERVAL_SEC    — default 2
