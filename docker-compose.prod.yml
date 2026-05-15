@@ -227,7 +227,7 @@ services:
     environment:
       GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET}
     ports:
-      - "${WEB_EDGE_HOST_PORT:-80}:80"
+      - "${WEB_EDGE_HOST_PORT:-8888}:80"
       - "${WEB_EDGE_HEALTH_HOST_PORT:-8080}:8080"
     depends_on:
       - identity-web

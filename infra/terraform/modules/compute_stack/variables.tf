@@ -30,7 +30,7 @@ variable "asg_desired_capacity" {
 
 variable "target_port" {
   type        = number
-  description = "Instance target port; align with gha-roll-instance.sh TARGET_PORT (default 80)."
+  description = "Instance target port (web-edge host bind, e.g. 8888); align with gha-roll-instance.sh TARGET_PORT."
 }
 
 variable "health_check_path" {
@@ -40,8 +40,8 @@ variable "health_check_path" {
 
 variable "health_check_port" {
   type        = string
-  description = "Health check port: \"traffic-port\" (same as target_port) or a numeric port string. web-edge exposes /healthz on 8080 without Host filtering; traffic often stays on 80."
-  default     = "8080"
+  description = "Health check port: \"traffic-port\" (same as target_port; use with /healthz on web-edge :80) or e.g. \"8080\" for the dedicated web-edge health listener only."
+  default     = "traffic-port"
 
   validation {
     condition = (
@@ -61,4 +61,16 @@ variable "vpc_cidr" {
 
 variable "public_subnet_cidrs" {
   type = list(string)
+}
+
+variable "bootstrap_git_clone_enabled" {
+  type        = bool
+  description = "When true, user-data clones bootstrap_git_clone_url into /opt/<project_name> if deploy scripts are missing."
+  default     = true
+}
+
+variable "bootstrap_git_clone_url" {
+  type        = string
+  description = "HTTPS git URL for optional bootstrap clone (ignored when bootstrap_git_clone_enabled is false)."
+  default     = ""
 }

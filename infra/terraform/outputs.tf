@@ -34,8 +34,13 @@ output "alb_dns_name" {
 }
 
 output "alb_target_port" {
-  description = "Target group / registration port; set GitHub TARGET_PORT to match scripts/deploy/gha-roll-instance.sh."
+  description = "Target group / registration port; set GitHub Environment TARGET_PORT to this value (or leave unset — workflows default to 8888 when var is empty)."
   value       = var.enable_compute_stack ? module.compute[0].alb_target_port : var.alb_target_port
+}
+
+output "ssm_deploy_root_default" {
+  description = "Recommended GitHub Environment SSM_DEPLOY_ROOT; matches compute EC2 clone path /opt/<project_name>."
+  value       = "/opt/${var.project_name}"
 }
 
 output "alb_health_check_port" {

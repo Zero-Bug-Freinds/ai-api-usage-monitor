@@ -150,7 +150,7 @@ flowchart TD
 - ECR 리포지토리(이미지별 또는 통합 네이밍) — Terraform [`modules/ecr`](../infra/terraform/modules/ecr) 또는 기존 리소스
 - IAM: GitHub OIDC Role(ECR push + SSM `SendCommand` 등) — Terraform 루트 [`infra/terraform`](../infra/terraform) 또는 수동 JSON([`aws-github-oidc-ecr-ssm.md`](aws-github-oidc-ecr-ssm.md)); 선택 레퍼런스 모듈 [`modules/github_env_roles`](../infra/terraform/modules/github_env_roles)
 - EC2: Instance Profile(ECR pull + SSM Agent), ASG 최소 2대, Launch Template에 Docker/Compose — Terraform [`modules/compute_stack`](../infra/terraform/modules/compute_stack) 선택 또는 수동
-- ALB + Target Group + 보안 그룹 — 선택 모듈 또는 수동; 배포 스크립트 [`gha-roll-instance.sh`](../scripts/deploy/gha-roll-instance.sh) 의 `TARGET_PORT`(기본 80)와 TG 포트 일치
+- ALB + Target Group + 보안 그룹 — 선택 모듈 또는 수동; 배포 스크립트 [`gha-roll-instance.sh`](../scripts/deploy/gha-roll-instance.sh) 의 `TARGET_PORT`(기본 8888, `terraform output alb_target_port`와 일치)와 TG 포트 일치
 - EC2 → RDS / MQ / Redis 네트워크 허용
 
 ## 주의사항 (이 프로젝트 특성)

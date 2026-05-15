@@ -117,8 +117,8 @@ variable "compute_asg_desired_capacity" {
 
 variable "alb_target_port" {
   type        = number
-  description = "Target group port for instance registration; must match scripts/deploy/gha-roll-instance.sh TARGET_PORT (default 80) and deploy.yml."
-  default     = 80
+  description = "Target group port for instance registration (web-edge host bind); must match scripts/deploy/gha-roll-instance.sh TARGET_PORT and GitHub Environment TARGET_PORT (terraform output alb_target_port)."
+  default     = 8888
 }
 
 variable "alb_health_check_path" {
@@ -129,8 +129,8 @@ variable "alb_health_check_path" {
 
 variable "alb_health_check_port" {
   type        = string
-  description = "Target group health check port: \"traffic-port\" (same as alb_target_port) or e.g. \"8080\" for web-edge /healthz without Host allowlist. When not traffic-port, a matching instance SG rule from the ALB SG is created automatically."
-  default     = "8080"
+  description = "Target group health check port: \"traffic-port\" (same as alb_target_port; use with web-edge /healthz on the main listener) or \"8080\" for web-edge dedicated health listener. When not traffic-port, a matching instance SG rule from the ALB SG is created automatically."
+  default     = "traffic-port"
 
   validation {
     condition = (
@@ -142,6 +142,18 @@ variable "alb_health_check_port" {
     )
     error_message = "alb_health_check_port must be \"traffic-port\" or a TCP port number as a string (1-65535)."
   }
+}
+
+variable "ec2_bootstrap_git_clone_enabled" {
+  type        = bool
+  description = "When true, EC2 user-data clones the GitHub repo (HTTPS) into /opt/<project_name> if deploy scripts are missing. Set false for air-gapped hosts or private repos without an anonymous clone URL; clone manually or use another sync path."
+  default     = true
+}
+
+variable "ec2_bootstrap_git_clone_url" {
+  type        = string
+  description = "Git clone URL for EC2 bootstrap (HTTPS). Leave empty to use https://github.com/<github_org>/<github_repo>.git from root variables."
+  default     = ""
 }
 
 variable "vpc_cidr" {
