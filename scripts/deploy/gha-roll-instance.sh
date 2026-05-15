@@ -51,6 +51,7 @@ jq -n \
       "set -euo pipefail",
       ("export IMAGE_TAG=" + $sha),
       ("export AWS_REGION=" + $region),
+      ("export DEPLOY_ROOT=\"" + $root + "\""),
       ("cd \"" + $root + "\""),
       "if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then git fetch origin \"" + $sha + "\" 2>/dev/null || git fetch --depth 300 origin || true; git checkout -f \"" + $sha + "\" 2>/dev/null || true; fi",
       "test -f scripts/deploy/on-instance-compose-roll.sh || { echo \"Missing scripts/deploy/on-instance-compose-roll.sh under deploy root; bootstrap the host (Terraform user-data git clone) or clone the repo to SSM_DEPLOY_ROOT.\"; exit 1; }",
