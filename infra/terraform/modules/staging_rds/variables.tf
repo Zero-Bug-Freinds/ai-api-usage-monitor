@@ -11,6 +11,11 @@ variable "vpc_id" {
 variable "subnet_ids" {
   type        = list(string)
   description = "At least two subnet IDs (different AZs) for the RDS subnet group."
+
+  validation {
+    condition     = length(var.subnet_ids) >= 2
+    error_message = "subnet_ids must include at least two subnets in different AZs for RDS."
+  }
 }
 
 variable "ec2_security_group_id" {

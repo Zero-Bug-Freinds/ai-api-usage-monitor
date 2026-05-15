@@ -32,5 +32,7 @@ compute_environment_label  = "staging"
 # compute_asg_max_size         = 1
 # compute_asg_desired_capacity = 1
 
-# Optional: one staging PostgreSQL RDS in the compute VPC (requires enable_compute_stack = true).
-# enable_staging_rds = true
+# Staging PostgreSQL RDS in the compute VPC (EC2 instance SG → RDS SG on 5432).
+enable_staging_rds = true
+# staging_rds_instance_class     = "db.t4g.micro"
+# staging_rds_allocated_storage  = 20
