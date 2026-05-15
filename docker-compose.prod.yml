@@ -1,7 +1,8 @@
 # Production-oriented Compose: app containers only (pattern B).
 # RDS, Amazon MQ, ElastiCache are external — see `.env.deploy.example` and `docs/aws-github-oidc-ecr-ssm.md`.
 # Build images in CI (`release.yml`); hosts set `ECR_IMAGE_PREFIX` + immutable `IMAGE_TAG` (git sha).
-# On EC2, `scripts/deploy/on-instance-compose-roll.sh` writes a merged env file with IMAGE_TAG + ECR_IMAGE_PREFIX before pull/up.
+# On EC2, `scripts/deploy/on-instance-compose-roll.sh` writes compose.env + `.env` and passes `--env-file`.
+# Manual ops: `scripts/deploy/docker-compose-prod.sh` (not bare `docker compose` without env).
 
 services:
   identity-service:

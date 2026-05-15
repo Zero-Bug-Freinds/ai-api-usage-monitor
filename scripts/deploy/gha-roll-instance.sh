@@ -55,8 +55,8 @@ jq -n \
       ("cd \"" + $root + "\""),
       "if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then git fetch origin \"" + $sha + "\" 2>/dev/null || git fetch --depth 300 origin || true; git checkout -f \"" + $sha + "\" 2>/dev/null || true; fi",
       "test -f scripts/deploy/on-instance-compose-roll.sh || { echo \"Missing scripts/deploy/on-instance-compose-roll.sh under deploy root; bootstrap the host (Terraform user-data git clone) or clone the repo to SSM_DEPLOY_ROOT.\"; exit 1; }",
-      "chmod +x scripts/deploy/on-instance-compose-roll.sh",
-      "./scripts/deploy/on-instance-compose-roll.sh"
+      "chmod +x scripts/deploy/on-instance-compose-roll.sh scripts/deploy/docker-compose-prod.sh 2>/dev/null || true",
+      "bash scripts/deploy/on-instance-compose-roll.sh"
     ]}' >"$PARAMS_FILE"
 
 echo "SSM SendCommand to $INSTANCE_ID"
