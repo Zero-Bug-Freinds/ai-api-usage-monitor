@@ -28,13 +28,13 @@ module "compute" {
   count  = var.enable_compute_stack ? 1 : 0
   source = "./modules/compute_stack"
 
-  project_name          = var.project_name
-  environment_label     = var.compute_environment_label
-  ecr_repository_prefix = var.ecr_repository_prefix
-  instance_type         = var.compute_instance_type
-  asg_min_size          = var.compute_asg_min_size
-  asg_max_size          = var.compute_asg_max_size
-  asg_desired_capacity  = var.compute_asg_desired_capacity
+  project_name                = var.project_name
+  environment_label           = var.compute_environment_label
+  ecr_repository_prefix       = var.ecr_repository_prefix
+  instance_type               = var.compute_instance_type
+  asg_min_size                = var.compute_asg_min_size
+  asg_max_size                = var.compute_asg_max_size
+  asg_desired_capacity        = var.compute_asg_desired_capacity
   target_port                 = var.alb_target_port
   health_check_path           = var.alb_health_check_path
   health_check_port           = var.alb_health_check_port
