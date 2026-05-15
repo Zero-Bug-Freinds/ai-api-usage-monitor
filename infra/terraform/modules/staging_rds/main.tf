@@ -45,8 +45,9 @@ resource "aws_db_subnet_group" "this" {
 }
 
 resource "aws_db_instance" "this" {
-  identifier = "${substr(replace(var.project_name, "_", "-"), 0, 40)}-stg-pg"
-  engine     = "postgres"
+  identifier     = "${substr(replace(var.project_name, "_", "-"), 0, 40)}-stg-pg"
+  engine         = "postgres"
+  engine_version = "16"
 
   instance_class        = var.instance_class
   allocated_storage     = var.allocated_storage

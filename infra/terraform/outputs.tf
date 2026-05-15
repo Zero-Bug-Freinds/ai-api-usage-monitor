@@ -53,21 +53,56 @@ output "ec2_instance_profile_name" {
   value       = var.enable_compute_stack ? module.compute[0].ec2_instance_profile_name : null
 }
 
+output "staging_rds_enabled" {
+  description = "True when enable_compute_stack and enable_staging_rds created the staging RDS module."
+  value       = length(module.staging_rds) > 0
+}
+
 output "staging_rds_address" {
-  description = "Postgres host when staging RDS is enabled; use in .env.deploy *_POSTGRES_HOST."
+  description = "Postgres host when staging RDS is enabled; set every *_POSTGRES_HOST in .env.deploy to this value."
   value       = length(module.staging_rds) > 0 ? module.staging_rds[0].address : null
 }
 
 output "staging_rds_port" {
-  value = length(module.staging_rds) > 0 ? module.staging_rds[0].port : null
+  description = "Postgres port (default 5432)."
+  value       = length(module.staging_rds) > 0 ? module.staging_rds[0].port : null
+}
+
+output "staging_rds_endpoint" {
+  description = "hostname:port for psql -h/-p and connectivity checks from EC2."
+  value       = length(module.staging_rds) > 0 ? module.staging_rds[0].endpoint : null
+}
+
+output "staging_rds_identifier" {
+  description = "RDS instance identifier in AWS."
+  value       = length(module.staging_rds) > 0 ? module.staging_rds[0].identifier : null
+}
+
+output "staging_rds_security_group_id" {
+  description = "RDS SG; ingress allows TCP 5432 from compute instance_security_group_id only."
+  value       = length(module.staging_rds) > 0 ? module.staging_rds[0].security_group_id : null
 }
 
 output "staging_rds_master_username" {
-  value = length(module.staging_rds) > 0 ? module.staging_rds[0].master_username : null
+  description = "Master user (staging shortcut: use for all *_POSTGRES_USER after logical DB script)."
+  value       = length(module.staging_rds) > 0 ? module.staging_rds[0].master_username : null
 }
 
 output "staging_rds_master_password" {
   description = "Sensitive. Staging only — copy to SSM or .env.deploy; create logical DBs from EC2 (scripts/deploy/rds-staging-create-logical-dbs.sh)."
   value       = length(module.staging_rds) > 0 ? module.staging_rds[0].master_password : null
   sensitive   = true
+}
+
+output "staging_rds" {
+  description = "Staging RDS connection summary (null when enable_staging_rds is false or compute stack is off)."
+  value = length(module.staging_rds) > 0 ? {
+    address               = module.staging_rds[0].address
+    port                  = module.staging_rds[0].port
+    endpoint              = module.staging_rds[0].endpoint
+    identifier            = module.staging_rds[0].identifier
+    master_username       = module.staging_rds[0].master_username
+    security_group_id     = module.staging_rds[0].security_group_id
+    ec2_security_group_id = module.compute[0].instance_security_group_id
+  } : null
 }
