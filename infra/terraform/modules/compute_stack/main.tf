@@ -211,8 +211,20 @@ locals {
       chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
     fi
     mkdir -p /opt/${var.project_name}
-    chown root:root /opt/${var.project_name}
     chmod 755 /opt/${var.project_name}
+%{if var.bootstrap_git_clone_enabled && var.bootstrap_git_clone_url != ""}
+    dnf install -y git
+    BOOT_ROOT="/opt/${var.project_name}"
+    if [ ! -f "$BOOT_ROOT/scripts/deploy/on-instance-compose-roll.sh" ]; then
+      CLONE_TMP="$(mktemp -d /tmp/${var.project_name}-bootstrap.XXXXXX)"
+      git clone --depth 80 '${replace(var.bootstrap_git_clone_url, "'", "'\\''")}' "$CLONE_TMP"
+      find "$BOOT_ROOT" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+      cp -a "$CLONE_TMP"/. "$BOOT_ROOT"/
+      rm -rf "$CLONE_TMP"
+    fi
+%{endif}
+    chown -R ec2-user:ec2-user /opt/${var.project_name}
+    chmod -R u+rwX /opt/${var.project_name}
   EOT
 }
 

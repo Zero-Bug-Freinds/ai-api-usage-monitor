@@ -35,11 +35,13 @@ module "compute" {
   asg_min_size          = var.compute_asg_min_size
   asg_max_size          = var.compute_asg_max_size
   asg_desired_capacity  = var.compute_asg_desired_capacity
-  target_port           = var.alb_target_port
-  health_check_path     = var.alb_health_check_path
-  health_check_port     = var.alb_health_check_port
-  vpc_cidr              = var.vpc_cidr
-  public_subnet_cidrs   = var.public_subnet_cidrs
+  target_port                 = var.alb_target_port
+  health_check_path           = var.alb_health_check_path
+  health_check_port           = var.alb_health_check_port
+  vpc_cidr                    = var.vpc_cidr
+  public_subnet_cidrs         = var.public_subnet_cidrs
+  bootstrap_git_clone_enabled = var.ec2_bootstrap_git_clone_enabled
+  bootstrap_git_clone_url     = var.ec2_bootstrap_git_clone_url != "" ? var.ec2_bootstrap_git_clone_url : "https://github.com/${var.github_org}/${var.github_repo}.git"
 }
 
 check "staging_rds_needs_compute_vpc" {
