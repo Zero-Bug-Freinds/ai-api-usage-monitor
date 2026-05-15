@@ -39,6 +39,9 @@ on:
       workflows:
         description: workflow definitions
         value: ${{ jobs.detect.outputs.workflows }}
+      deploy_scripts:
+        description: EC2 deploy scripts (ALB + SSM roll)
+        value: ${{ jobs.detect.outputs.deploy_scripts }}
 
 jobs:
   detect:
@@ -56,6 +59,7 @@ jobs:
       notification: ${{ steps.filter.outputs.notification }}
       web_shared: ${{ steps.filter.outputs.web_shared }}
       workflows: ${{ steps.filter.outputs.workflows }}
+      deploy_scripts: ${{ steps.filter.outputs.deploy_scripts }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v2
@@ -111,3 +115,5 @@ jobs:
               - 'docker/web-node-deps.Dockerfile'
             workflows:
               - '.github/workflows/**'
+            deploy_scripts:
+              - 'scripts/deploy/**'
