@@ -2,7 +2,7 @@
 # Pair with `.github/workflows/release.yml` and `scripts/deploy/*.sh`.
 #
 # Configure GitHub Environments `staging` / `production` with variables:
-#   AWS_REGION, ALB_TARGET_GROUP_ARN, SSM_DEPLOY_ROOT (e.g. /opt/ai-api-usage-monitor)
+#   AWS_REGION, ALB_TARGET_GROUP_ARN; SSM_DEPLOY_ROOT optional (defaults to /opt/ai-api-usage-monitor if unset)
 # Optional: TARGET_PORT (default 80)
 # Deploy OIDC role ARN is set in this workflow `env` (same account as `release.yml`).
 #
@@ -49,7 +49,6 @@ jobs:
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
       TARGET_GROUP_ARN: ${{ vars.ALB_TARGET_GROUP_ARN }}
-      SSM_DEPLOY_ROOT: ${{ vars.SSM_DEPLOY_ROOT }}
       TARGET_PORT: ${{ vars.TARGET_PORT }}
     steps:
       - uses: actions/checkout@v4
@@ -64,7 +63,10 @@ jobs:
         env:
           DEPLOY_SHA: ${{ inputs.image_tag }}
           MANUAL_INSTANCE_CSV: ${{ inputs.comma_separated_instance_ids }}
+          # Environment `SSM_DEPLOY_ROOT` can be set to empty and overrides workflow `env`; use a distinct key.
+          ROLL_SSM_DEPLOY_ROOT: ${{ vars.SSM_DEPLOY_ROOT || '/opt/ai-api-usage-monitor' }}
         run: |
+          export SSM_DEPLOY_ROOT="${ROLL_SSM_DEPLOY_ROOT:-/opt/ai-api-usage-monitor}"
           set -euo pipefail
           chmod +x scripts/deploy/gha-roll-instance.sh scripts/deploy/list-tg-instance-ids.sh
           if [[ -n "${MANUAL_INSTANCE_CSV// }" ]]; then

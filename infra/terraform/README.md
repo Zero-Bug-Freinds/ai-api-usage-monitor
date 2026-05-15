@@ -10,13 +10,15 @@ The reusable module [`modules/github_env_roles`](modules/github_env_roles) (per�
 
 - Terraform `>= 1.9`
 - AWS provider `~> 5.100` (see [`versions.tf`](versions.tf))
+- Random provider `~> 3.6` (RDS master password)
 
 ## Apply order
 
 1. **Optional — remote state bootstrap** (teams that want S3 + DynamoDB locking): [`bootstrap/`](bootstrap/README.md). Skip if you use **local Terraform state** only.
 2. **Root module** (`infra/terraform/`): `cd infra/terraform` → `terraform init` (add `-backend-config=backend.hcl` only when using the S3 backend) → `terraform apply`.
 3. **Optional compute**: set `enable_compute_stack = true` when you want Terraform-managed VPC/ALB/TG/ASG (see variables). You can start with `false`, apply IAM+ECR, then enable compute in a follow-up apply.
-4. **GitHub**: configure **Environment variables** on `staging` and `production` (see table below). **[`.github/workflows/release.yml`](../../.github/workflows/release.yml)** and **[`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml)** pin **OIDC role ARNs** in workflow `env`; change those YAML blocks if role names or account IDs change. For **Terraform CLI from Actions**, use **[`.github/workflows/terraform-aws.yml`](../../.github/workflows/terraform-aws.yml)** (repository secrets: `AWS_SECRET_ACCESS_KEY` and `AWS_ACCESS_KEY_ID` or `AWS_ACCESS_KEY`; optional repo variable `AWS_REGION`).
+4. **Optional staging RDS**: set `enable_staging_rds = true` (requires compute) to provision one small PostgreSQL instance in the compute VPC for staging logical DBs — **not** production per-service physical isolation; see [`docs/msa-database-and-service-integration.md`](../../docs/msa-database-and-service-integration.md). After apply, use outputs `staging_rds_*` and [`scripts/deploy/rds-staging-create-logical-dbs.sh`](../../scripts/deploy/rds-staging-create-logical-dbs.sh) from EC2.
+5. **GitHub**: configure **Environment variables** on `staging` and `production` (see table below). **[`.github/workflows/release.yml`](../../.github/workflows/release.yml)** and **[`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml)** pin **OIDC role ARNs** in workflow `env`; change those YAML blocks if role names or account IDs change. For **Terraform CLI from Actions**, use **[`.github/workflows/terraform-aws.yml`](../../.github/workflows/terraform-aws.yml)** (repository secrets: `AWS_SECRET_ACCESS_KEY` and `AWS_ACCESS_KEY_ID` or `AWS_ACCESS_KEY`; optional repo variable `AWS_REGION`).
 
 ### Workspaces vs single state
 
@@ -46,7 +48,8 @@ Copy [`terraform.tfvars.example`](terraform.tfvars.example) and adjust as needed
 - **`ecr_repository_suffixes`** — list of repository path segments after the prefix (defaults match **[`.github/workflows/release.yml`](../../.github/workflows/release.yml)** image names). Align `terraform.tfvars` if you override.
 - **`release_iam_role_name`**, **`deploy_iam_role_name`** — IAM role names (defaults `ReleaseRole`, `DeployRole`).
 - **`ecr_untagged_image_expire_days`** — ECR lifecycle for untagged images (default **14**).
-- **`enable_compute_stack`**, **`compute_environment_label`**, sizing, **`alb_target_port`**, **`alb_health_check_path`**, **`vpc_cidr`**, **`public_subnet_cidrs`** — optional compute stack.
+- **`enable_compute_stack`**, **`compute_environment_label`**, sizing, **`alb_target_port`**, **`alb_health_check_path`**, **`alb_health_check_port`** (default **`8080`** for `web-edge` `/healthz`; or **`traffic-port`** to probe `alb_target_port`), **`vpc_cidr`**, **`public_subnet_cidrs`** — optional compute stack.
+- **`enable_staging_rds`**, **`staging_rds_instance_class`**, **`staging_rds_allocated_storage`** — optional single Postgres RDS in the compute VPC (staging only).
 
 ## OIDC trust shape
 
@@ -78,6 +81,8 @@ Map the rest into **each** GitHub Environment (`staging`, `production`) as **Var
 
 Also configure workflow-specific vars documented in [`docs/aws-github-oidc-ecr-ssm.md`](../../docs/aws-github-oidc-ecr-ssm.md) (`SSM_DEPLOY_ROOT`, Next public origins for `release`, etc.).
 
+When **`enable_staging_rds`** is on, copy **`terraform output staging_rds_address`** (and the sensitive master password) into the deploy host `.env.deploy` for Postgres hosts/passwords (staging shortcut: use user **`appadmin`** for every `*_POSTGRES_USER` after running [`scripts/deploy/rds-staging-create-logical-dbs.sh`](../../scripts/deploy/rds-staging-create-logical-dbs.sh) on EC2). **RabbitMQ is not created by this module** — still use Amazon MQ or your broker and set `RABBITMQ_*` / `NOTIFICATION_RABBITMQ_URL` manually.
+
 ### Deploy IAM policy shape
 
 The root module’s **DeployRole** inline policy follows [`docs/aws-github-oidc-ecr-ssm.md`](../../docs/aws-github-oidc-ecr-ssm.md) §3.1 (`Resource: "*"` for ELB register/deregister/describe health and SSM command APIs). Tighten in Terraform when target group and SSM document ARNs are stable.
@@ -86,7 +91,7 @@ The GitHub OIDC provider includes **two thumbprints** for `token.actions.githubu
 
 ## Optional compute stack
 
-Module [`modules/compute_stack`](modules/compute_stack): simplified **public subnet** layout (ALB + ASG), **HTTP :80** listener → target group using `alb_target_port` (default **80**) so defaults match `gha-roll-instance.sh`. User data installs Docker and Compose plugin on Amazon Linux 2023 and creates `/opt/<project_name>/` as a plausible clone/deploy parent (align `SSM_DEPLOY_ROOT` with your layout).
+Module [`modules/compute_stack`](modules/compute_stack): simplified **public subnet** layout (ALB + ASG), **HTTP :80** listener → target group using `alb_target_port` (default **80**) so defaults match `gha-roll-instance.sh`. By default the target group health check uses **`alb_health_check_port` = `8080`** and **`alb_health_check_path` = `/healthz`**, matching `web-edge`’s dedicated listener; the instance security group allows the ALB security group to that port automatically when it differs from `alb_target_port`. User data installs **amazon-ssm-agent** (enables SSM Run Command), Docker and Compose plugin on Amazon Linux 2023, and creates `/opt/<project_name>/` as a plausible clone/deploy parent (align `SSM_DEPLOY_ROOT` with your layout). **Existing** EC2 do not re-run user data: after changing bootstrap, start an ASG **instance refresh** (or replace instances) so new nodes pick up the agent.
 
 For production hardening, replace public subnets with private app subnets + NAT (not included here).
 

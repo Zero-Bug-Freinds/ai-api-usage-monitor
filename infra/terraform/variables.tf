@@ -82,7 +82,7 @@ variable "deploy_iam_role_name" {
 variable "enable_compute_stack" {
   type        = bool
   description = "When true, creates VPC (simple public layout), ALB, target group, ASG, launch template, and EC2 instance profile for ECR pull + SSM."
-  default     = false
+  default     = true
 }
 
 variable "compute_environment_label" {
@@ -105,14 +105,14 @@ variable "compute_asg_min_size" {
 
 variable "compute_asg_max_size" {
   type        = number
-  description = "ASG maximum size for optional compute stack."
-  default     = 3
+  description = "ASG maximum size. Use 1 to allow at most one EC2 (no scale-out above desired)."
+  default     = 1
 }
 
 variable "compute_asg_desired_capacity" {
   type        = number
   description = "ASG desired capacity for optional compute stack."
-  default     = 2
+  default     = 1
 }
 
 variable "alb_target_port" {
@@ -125,6 +125,23 @@ variable "alb_health_check_path" {
   type        = string
   description = "ALB target group health check path (see docs/aws-github-oidc-ecr-ssm.md)."
   default     = "/healthz"
+}
+
+variable "alb_health_check_port" {
+  type        = string
+  description = "Target group health check port: \"traffic-port\" (same as alb_target_port) or e.g. \"8080\" for web-edge /healthz without Host allowlist. When not traffic-port, a matching instance SG rule from the ALB SG is created automatically."
+  default     = "8080"
+
+  validation {
+    condition = (
+      var.alb_health_check_port == "traffic-port"
+      || (
+        try(tonumber(var.alb_health_check_port), 0) >= 1
+        && try(tonumber(var.alb_health_check_port), 0) <= 65535
+      )
+    )
+    error_message = "alb_health_check_port must be \"traffic-port\" or a TCP port number as a string (1-65535)."
+  }
 }
 
 variable "vpc_cidr" {
@@ -147,4 +164,22 @@ variable "public_subnet_cidrs" {
     condition     = alltrue([for c in var.public_subnet_cidrs : can(cidrhost(c, 0))])
     error_message = "Each public_subnet_cidrs entry must be a valid IPv4 CIDR block."
   }
+}
+
+variable "enable_staging_rds" {
+  type        = bool
+  description = "When true (and enable_compute_stack), creates one small PostgreSQL RDS in the compute VPC for staging-style logical DBs. Not production MSA physical separation; see docs/msa-database-and-service-integration.md."
+  default     = false
+}
+
+variable "staging_rds_instance_class" {
+  type        = string
+  description = "RDS instance class for staging_rds module."
+  default     = "db.t4g.micro"
+}
+
+variable "staging_rds_allocated_storage" {
+  type        = number
+  description = "Initial allocated storage (GB) for staging RDS."
+  default     = 20
 }

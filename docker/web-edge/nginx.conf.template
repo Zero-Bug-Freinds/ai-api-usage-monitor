@@ -65,9 +65,11 @@ http {
     "" "";
   }
 
-  # Allow only known local entry hosts to mitigate Host header injection.
+  # Allow only known entry hosts to mitigate Host header injection.
+  # Browsers use the ALB DNS name; do not allow arbitrary public IPs here.
   map $http_host $is_allowed_host {
     default 0;
+    ~*\.elb\.amazonaws\.com$ 1;
     "localhost:8888" 1;
     "127.0.0.1:8888" 1;
     "localhost" 1;
@@ -76,8 +78,26 @@ http {
     "web-edge:80" 1;
   }
 
+  # ALB HTTP health checks often send Host = the target's private IP (RFC1918).
+  # A dedicated server matches those names only; other paths are closed (444).
   server {
     listen 80;
+    # Quoted: nginx treats `{` in unquoted server_name specially; breaks parsing before `;`.
+    server_name "~^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)([0-9]{1,3}\.){2}[0-9]{1,3}$";
+
+    location = /healthz {
+      access_log off;
+      default_type text/plain;
+      return 200 'ok\n';
+    }
+
+    location / {
+      return 444;
+    }
+  }
+
+  server {
+    listen 80 default_server;
     server_name _;
 
     if ($is_allowed_host = 0) {
@@ -91,6 +111,13 @@ http {
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header X-Forwarded-Host $http_host;
     proxy_set_header X-Forwarded-Port $server_port;
+
+    # Same response as :8080 so ALB TG can use traffic-port 80 + path /healthz.
+    location = /healthz {
+      access_log off;
+      default_type text/plain;
+      return 200 'ok\n';
+    }
 
     location = / {
       proxy_pass http://identity_web;
