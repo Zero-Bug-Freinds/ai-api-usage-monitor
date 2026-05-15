@@ -194,21 +194,6 @@ resource "aws_iam_instance_profile" "ec2_instance" {
 }
 
 locals {
-  deploy_path = "/opt/${var.project_name}"
-  # Rolling deploy (gha-roll-instance.sh) expects repo root at SSM_DEPLOY_ROOT with scripts/deploy/on-instance-compose-roll.sh.
-  user_data_setup_commands = var.git_clone_at_boot ? [
-    "dnf install -y git",
-    "rm -rf \"${local.deploy_path}\"",
-    "git clone --depth 1 \"https://github.com/${var.github_org}/${var.github_repo}.git\" \"${local.deploy_path}\"",
-    "chown root:root \"${local.deploy_path}\"",
-    "chmod 755 \"${local.deploy_path}\"",
-    ] : [
-    "mkdir -p \"${local.deploy_path}\"",
-    "chown root:root \"${local.deploy_path}\"",
-    "chmod 755 \"${local.deploy_path}\"",
-  ]
-  user_data_setup = join("\n", [for c in local.user_data_setup_commands : "    ${c}"])
-
   user_data = <<-EOT
     #!/bin/bash
     set -euo pipefail
@@ -225,7 +210,9 @@ locals {
         -o /usr/local/lib/docker/cli-plugins/docker-compose
       chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
     fi
-    ${local.user_data_setup}
+    mkdir -p /opt/${var.project_name}
+    chown root:root /opt/${var.project_name}
+    chmod 755 /opt/${var.project_name}
   EOT
 }
 
