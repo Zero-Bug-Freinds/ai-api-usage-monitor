@@ -97,13 +97,9 @@ resource "aws_security_group" "instance" {
   description = "App instances"
   vpc_id      = aws_vpc.this.id
 
-  ingress {
-    description     = "App from ALB"
-    from_port       = var.target_port
-    to_port         = var.target_port
-    protocol        = "tcp"
-    security_groups = [aws_security_group.alb.id]
-  }
+  # Ingress: use aws_vpc_security_group_ingress_rule below only. Inline ingress on this
+  # resource causes RevokeSecurityGroupIngress / InvalidPermission.NotFound when combined
+  # with standalone rules or after partial applies.
 
   egress {
     from_port   = 0
@@ -117,16 +113,24 @@ resource "aws_security_group" "instance" {
   }
 }
 
-resource "aws_security_group_rule" "instance_from_alb_health_check_port" {
+resource "aws_vpc_security_group_ingress_rule" "instance_from_alb_target" {
+  security_group_id            = aws_security_group.instance.id
+  referenced_security_group_id = aws_security_group.alb.id
+  description                  = "App traffic from ALB (target group port)"
+  ip_protocol                  = "tcp"
+  from_port                    = var.target_port
+  to_port                      = var.target_port
+}
+
+resource "aws_vpc_security_group_ingress_rule" "instance_from_alb_health" {
   count = local.health_uses_separate_tcp_port ? 1 : 0
 
-  type                     = "ingress"
-  description              = "ALB target group health check (port ${var.health_check_port}, path ${var.health_check_path})"
-  from_port                = local.health_check_port_num
-  to_port                  = local.health_check_port_num
-  protocol                 = "tcp"
-  source_security_group_id = aws_security_group.alb.id
-  security_group_id        = aws_security_group.instance.id
+  security_group_id            = aws_security_group.instance.id
+  referenced_security_group_id = aws_security_group.alb.id
+  description                  = "ALB target group health check (${var.health_check_path} on ${var.health_check_port})"
+  ip_protocol                  = "tcp"
+  from_port                    = local.health_check_port_num
+  to_port                      = local.health_check_port_num
 }
 
 data "aws_caller_identity" "current" {}

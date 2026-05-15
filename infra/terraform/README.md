@@ -48,7 +48,7 @@ Copy [`terraform.tfvars.example`](terraform.tfvars.example) and adjust as needed
 - **`ecr_repository_suffixes`** — list of repository path segments after the prefix (defaults match **[`.github/workflows/release.yml`](../../.github/workflows/release.yml)** image names). Align `terraform.tfvars` if you override.
 - **`release_iam_role_name`**, **`deploy_iam_role_name`** — IAM role names (defaults `ReleaseRole`, `DeployRole`).
 - **`ecr_untagged_image_expire_days`** — ECR lifecycle for untagged images (default **14**).
-- **`enable_compute_stack`**, **`compute_environment_label`**, sizing, **`alb_target_port`**, **`alb_health_check_path`**, **`alb_health_check_port`** (default **`8080`** for `web-edge` `/healthz`; or **`traffic-port`** to probe `alb_target_port`), **`vpc_cidr`**, **`public_subnet_cidrs`** — optional compute stack.
+- **`enable_compute_stack`**, **`compute_environment_label`**, sizing (**`compute_asg_*` must all be `1`** when compute is on — single EC2), **`alb_target_port`**, **`alb_health_check_path`**, **`alb_health_check_port`** (default **`8080`** for `web-edge` `/healthz`; or **`traffic-port`** to probe `alb_target_port`), **`vpc_cidr`**, **`public_subnet_cidrs`** — optional compute stack.
 - **`enable_staging_rds`**, **`staging_rds_instance_class`**, **`staging_rds_allocated_storage`** — optional single Postgres RDS in the compute VPC (staging only).
 
 ## OIDC trust shape
@@ -91,7 +91,7 @@ The GitHub OIDC provider includes **two thumbprints** for `token.actions.githubu
 
 ## Optional compute stack
 
-Module [`modules/compute_stack`](modules/compute_stack): simplified **public subnet** layout (ALB + ASG), **HTTP :80** listener → target group using `alb_target_port` (default **80**) so defaults match `gha-roll-instance.sh`. By default the target group health check uses **`alb_health_check_port` = `8080`** and **`alb_health_check_path` = `/healthz`**, matching `web-edge`’s dedicated listener; the instance security group allows the ALB security group to that port automatically when it differs from `alb_target_port`. User data installs **amazon-ssm-agent** (enables SSM Run Command), Docker and Compose plugin on Amazon Linux 2023, and creates `/opt/<project_name>/` as a plausible clone/deploy parent (align `SSM_DEPLOY_ROOT` with your layout). **Existing** EC2 do not re-run user data: after changing bootstrap, start an ASG **instance refresh** (or replace instances) so new nodes pick up the agent.
+Module [`modules/compute_stack`](modules/compute_stack): simplified **public subnet** layout (ALB + ASG), **HTTP :80** listener → target group using `alb_target_port` (default **80**) so defaults match `gha-roll-instance.sh`. By default the target group health check uses **`alb_health_check_port` = `8080`** and **`alb_health_check_path` = `/healthz`**, matching `web-edge`’s dedicated listener; instance ingress from the ALB uses **`aws_vpc_security_group_ingress_rule`** (not inline `ingress` on `aws_security_group`) so EC2 does not hit `RevokeSecurityGroupIngress` / `InvalidPermission.NotFound` during updates. User data installs **amazon-ssm-agent** (enables SSM Run Command), Docker and Compose plugin on Amazon Linux 2023, and creates `/opt/<project_name>/` as a plausible clone/deploy parent (align `SSM_DEPLOY_ROOT` with your layout). **Existing** EC2 do not re-run user data: after changing bootstrap, start an ASG **instance refresh** (or replace instances) so new nodes pick up the agent.
 
 For production hardening, replace public subnets with private app subnets + NAT (not included here).
 

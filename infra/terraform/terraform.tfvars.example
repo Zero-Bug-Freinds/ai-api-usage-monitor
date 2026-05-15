@@ -22,11 +22,10 @@ compute_environment_label  = "staging"
 # ALB health: default probes web-edge :8080 /healthz (no Host allowlist). Use "traffic-port" to probe alb_target_port instead.
 # alb_health_check_port    = "8080"
 
-# ASG sizing: keep all three at 1 for a single EC2 (see compute_stack ASG availability_zone_distribution).
-# Raise max/desired for HA only if you accept multiple instances behind the ALB.
-# compute_asg_min_size         = 1
-# compute_asg_max_size         = 1
-# compute_asg_desired_capacity = 1
+# ASG: exactly one EC2 when compute is on (enforced by check compute_asg_single_ec2 in main.tf).
+compute_asg_min_size         = 1
+compute_asg_max_size         = 1
+compute_asg_desired_capacity = 1
 
 # Optional: one staging PostgreSQL RDS in the compute VPC (requires enable_compute_stack = true).
 # enable_staging_rds = true

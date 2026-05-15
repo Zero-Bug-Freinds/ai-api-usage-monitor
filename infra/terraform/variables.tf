@@ -99,19 +99,19 @@ variable "compute_instance_type" {
 
 variable "compute_asg_min_size" {
   type        = number
-  description = "ASG minimum size for optional compute stack."
+  description = "ASG minimum size. With enable_compute_stack, root check compute_asg_single_ec2 requires 1."
   default     = 1
 }
 
 variable "compute_asg_max_size" {
   type        = number
-  description = "ASG maximum size. Use 1 to allow at most one EC2 (no scale-out above desired)."
+  description = "ASG maximum size. With enable_compute_stack, root check compute_asg_single_ec2 requires 1 (single EC2 behind the ALB)."
   default     = 1
 }
 
 variable "compute_asg_desired_capacity" {
   type        = number
-  description = "ASG desired capacity for optional compute stack."
+  description = "ASG desired capacity. With enable_compute_stack, root check compute_asg_single_ec2 requires 1."
   default     = 1
 }
 
