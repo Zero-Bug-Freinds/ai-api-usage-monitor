@@ -116,13 +116,14 @@ jobs:
           NOTIFICATION: ${{ needs.changes.outputs.notification }}
           WEB_SHARED: ${{ needs.changes.outputs.web_shared }}
           WEB_EDGE: ${{ needs.changes.outputs.web_edge }}
+          DEPLOY_SCRIPTS: ${{ needs.changes.outputs.deploy_scripts }}
         run: |
           set -euo pipefail
           if [[ "$FORCE_ALL" == "true" ]]; then
             echo "should_roll=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          for v in "$API_GATEWAY" "$IDENTITY" "$AI_AGENT" "$PROXY" "$USAGE" "$BILLING" "$TEAM" "$NOTIFICATION" "$WEB_SHARED" "$WEB_EDGE"; do
+          for v in "$API_GATEWAY" "$IDENTITY" "$AI_AGENT" "$PROXY" "$USAGE" "$BILLING" "$TEAM" "$NOTIFICATION" "$WEB_SHARED" "$WEB_EDGE" "$DEPLOY_SCRIPTS"; do
             if [[ "$v" == "true" ]]; then
               echo "should_roll=true" >> "$GITHUB_OUTPUT"
               exit 0
