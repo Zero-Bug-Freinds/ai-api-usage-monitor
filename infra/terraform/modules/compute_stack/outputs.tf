@@ -15,7 +15,7 @@ output "alb_target_group_arn" {
 
 output "alb_target_port" {
   value       = var.target_port
-  description = "Target port registered with the ALB; set GitHub TARGET_PORT to this value for gha-roll-instance.sh."
+  description = "Target port registered with the ALB; set GitHub Environment TARGET_PORT (or rely on workflow default 8888 when unset)."
 }
 
 output "alb_health_check_port" {

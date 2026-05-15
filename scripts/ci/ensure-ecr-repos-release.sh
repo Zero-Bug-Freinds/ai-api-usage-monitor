@@ -13,6 +13,25 @@ ensure_one() {
   "$ROOT/scripts/ci/ensure-ecr-repository.sh" "${prefix}/$1"
 }
 
+# Always return 0 so skipped ensures do not fail the script under set -e (last-command exit status).
+ensure_if() {
+  local flag="$1"
+  local suffix="$2"
+  if is_true "$flag"; then
+    ensure_one "$suffix"
+  fi
+  return 0
+}
+
+ensure_web_if() {
+  local service_flag="$1"
+  local web_suffix="$2"
+  if is_true "$service_flag" || is_true "${WEB_SHARED:-}"; then
+    ensure_one "$web_suffix"
+  fi
+  return 0
+}
+
 if is_true "${FORCE_ALL:-false}"; then
   for s in \
     api-gateway-service \
@@ -35,36 +54,27 @@ if is_true "${FORCE_ALL:-false}"; then
   exit 0
 fi
 
-is_true "${API_GATEWAY:-}" && ensure_one api-gateway-service
-is_true "${PROXY:-}" && ensure_one proxy-service
-is_true "${IDENTITY:-}" && ensure_one identity-service
-if is_true "${IDENTITY:-}" || is_true "${WEB_SHARED:-}"; then
-  ensure_one identity-web
-fi
+ensure_if "${API_GATEWAY:-}" api-gateway-service
+ensure_if "${PROXY:-}" proxy-service
+ensure_if "${IDENTITY:-}" identity-service
+ensure_web_if "${IDENTITY:-}" identity-web
 
-is_true "${USAGE:-}" && ensure_one usage-service
-if is_true "${USAGE:-}" || is_true "${WEB_SHARED:-}"; then
-  ensure_one usage-web
-fi
+ensure_if "${USAGE:-}" usage-service
+ensure_web_if "${USAGE:-}" usage-web
 
-is_true "${BILLING:-}" && ensure_one billing-service
-if is_true "${BILLING:-}" || is_true "${WEB_SHARED:-}"; then
-  ensure_one billing-web
-fi
+ensure_if "${BILLING:-}" billing-service
+ensure_web_if "${BILLING:-}" billing-web
 
-is_true "${TEAM:-}" && ensure_one team-service
-if is_true "${TEAM:-}" || is_true "${WEB_SHARED:-}"; then
-  ensure_one team-web
-fi
+ensure_if "${TEAM:-}" team-service
+ensure_web_if "${TEAM:-}" team-web
 
-is_true "${NOTIFICATION:-}" && ensure_one notification-service
-if is_true "${NOTIFICATION:-}" || is_true "${WEB_SHARED:-}"; then
-  ensure_one notification-web
-fi
+ensure_if "${NOTIFICATION:-}" notification-service
+ensure_web_if "${NOTIFICATION:-}" notification-web
 
-is_true "${AI_AGENT:-}" && ensure_one agent-service
-if is_true "${AI_AGENT:-}" || is_true "${WEB_SHARED:-}"; then
-  ensure_one agent-web
-fi
+ensure_if "${AI_AGENT:-}" agent-service
+ensure_web_if "${AI_AGENT:-}" agent-web
 
-is_true "${WEB_EDGE:-}" && ensure_one web-edge
+ensure_if "${WEB_EDGE:-}" web-edge
+
+echo "ECR ensure step finished (no matching path filters is OK when this release pushes no images)."
+exit 0

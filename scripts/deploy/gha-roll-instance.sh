@@ -7,14 +7,16 @@
 #   TARGET_GROUP_ARN
 #   INSTANCE_ID
 #   DEPLOY_SHA       — value for IMAGE_TAG on the instance
-#   SSM_DEPLOY_ROOT  — optional; default /opt/ai-api-usage-monitor (repo root with scripts/deploy/ on the instance)
+# Optional env:
+#   SSM_DEPLOY_ROOT — default /opt/ai-api-usage-monitor (repo root; align with `terraform output ssm_deploy_root_default`)
+#   TARGET_PORT     — default 8888 (ALB register/deregister port; match `terraform output alb_target_port`)
 
 # Default before nounset so empty/unset never trips strict mode (matches deploy docs / Terraform user-data).
 export SSM_DEPLOY_ROOT="${SSM_DEPLOY_ROOT:-/opt/ai-api-usage-monitor}"
 
 set -euo pipefail
 
-TARGET_PORT="${TARGET_PORT:-80}"
+TARGET_PORT="${TARGET_PORT:-8888}"
 DRAIN_WAIT_SEC="${DRAIN_WAIT_SEC:-300}"
 
 INSTANCE_ID="${INSTANCE_ID:?}"
@@ -49,9 +51,12 @@ jq -n \
       "set -euo pipefail",
       ("export IMAGE_TAG=" + $sha),
       ("export AWS_REGION=" + $region),
-      ("cd " + $root),
-      "chmod +x scripts/deploy/on-instance-compose-roll.sh",
-      "./scripts/deploy/on-instance-compose-roll.sh"
+      ("export DEPLOY_ROOT=\"" + $root + "\""),
+      ("cd \"" + $root + "\""),
+      "if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then git fetch origin \"" + $sha + "\" 2>/dev/null || git fetch --depth 300 origin || true; git checkout -f \"" + $sha + "\" 2>/dev/null || true; fi",
+      "test -f scripts/deploy/on-instance-compose-roll.sh || { echo \"Missing scripts/deploy/on-instance-compose-roll.sh under deploy root; bootstrap the host (Terraform user-data git clone) or clone the repo to SSM_DEPLOY_ROOT.\"; exit 1; }",
+      "chmod +x scripts/deploy/on-instance-compose-roll.sh scripts/deploy/docker-compose-prod.sh scripts/deploy/validate-env-deploy.sh 2>/dev/null || true",
+      "bash scripts/deploy/on-instance-compose-roll.sh"
     ]}' >"$PARAMS_FILE"
 
 echo "SSM SendCommand to $INSTANCE_ID"

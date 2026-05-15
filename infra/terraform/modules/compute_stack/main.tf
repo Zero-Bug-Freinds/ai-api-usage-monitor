@@ -162,6 +162,13 @@ resource "aws_iam_role_policy_attachment" "ssm_core" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
+# Pull images from any ECR repository in this account/region (includes ecr:BatchGetImage, etc.).
+# Complements the scoped inline policy below; use when Docker/ECR API needs full read-only surface.
+resource "aws_iam_role_policy_attachment" "ec2_ecr_readonly" {
+  role       = aws_iam_role.ec2_instance.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+}
+
 resource "aws_iam_role_policy" "ecr_pull" {
   name = "${var.project_name}-ecr-pull-${var.environment_label}"
   role = aws_iam_role.ec2_instance.id
@@ -198,21 +205,6 @@ resource "aws_iam_instance_profile" "ec2_instance" {
 }
 
 locals {
-  deploy_path = "/opt/${var.project_name}"
-  # Rolling deploy (gha-roll-instance.sh) expects repo root at SSM_DEPLOY_ROOT with scripts/deploy/on-instance-compose-roll.sh.
-  user_data_setup_commands = var.git_clone_at_boot ? [
-    "dnf install -y git",
-    "rm -rf \"${local.deploy_path}\"",
-    "git clone --depth 1 \"https://github.com/${var.github_org}/${var.github_repo}.git\" \"${local.deploy_path}\"",
-    "chown root:root \"${local.deploy_path}\"",
-    "chmod 755 \"${local.deploy_path}\"",
-    ] : [
-    "mkdir -p \"${local.deploy_path}\"",
-    "chown root:root \"${local.deploy_path}\"",
-    "chmod 755 \"${local.deploy_path}\"",
-  ]
-  user_data_setup = join("\n", [for c in local.user_data_setup_commands : "    ${c}"])
-
   user_data = <<-EOT
     #!/bin/bash
     set -euo pipefail
@@ -229,7 +221,21 @@ locals {
         -o /usr/local/lib/docker/cli-plugins/docker-compose
       chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
     fi
-    ${local.user_data_setup}
+    mkdir -p /opt/${var.project_name}
+    chmod 755 /opt/${var.project_name}
+%{if var.bootstrap_git_clone_enabled && var.bootstrap_git_clone_url != ""}
+    dnf install -y git
+    BOOT_ROOT="/opt/${var.project_name}"
+    if [ ! -f "$BOOT_ROOT/scripts/deploy/on-instance-compose-roll.sh" ]; then
+      CLONE_TMP="$(mktemp -d /tmp/${var.project_name}-bootstrap.XXXXXX)"
+      git clone --depth 80 '${replace(var.bootstrap_git_clone_url, "'", "'\\''")}' "$CLONE_TMP"
+      find "$BOOT_ROOT" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+      cp -a "$CLONE_TMP"/. "$BOOT_ROOT"/
+      rm -rf "$CLONE_TMP"
+    fi
+%{endif}
+    chown -R ec2-user:ec2-user /opt/${var.project_name}
+    chmod -R u+rwX /opt/${var.project_name}
   EOT
 }
 

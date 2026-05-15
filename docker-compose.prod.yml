@@ -1,8 +1,28 @@
-# Production-oriented Compose: app containers only (pattern B).
-# RDS, Amazon MQ, ElastiCache are external — see `.env.deploy.example` and `docs/aws-github-oidc-ecr-ssm.md`.
+# Production-oriented Compose: app containers (pattern B).
+# RDS is external (Terraform). RabbitMQ: in-compose `rabbitmq` service or set `RABBITMQ_HOST` to Amazon MQ.
+# See `.env.deploy.example` and `docs/aws-github-oidc-ecr-ssm.md`.
 # Build images in CI (`release.yml`); hosts set `ECR_IMAGE_PREFIX` + immutable `IMAGE_TAG` (git sha).
+# On EC2, `scripts/deploy/on-instance-compose-roll.sh` writes compose.env + `.env` and passes `--env-file`.
+# Manual ops: `scripts/deploy/docker-compose-prod.sh` (not bare `docker compose` without env).
 
 services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    ports:
+      - "${RABBITMQ_HOST_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_HOST_PORT:-15672}:15672"
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   identity-service:
     restart: unless-stopped
     image: ${ECR_IMAGE_PREFIX}/identity-service:${IMAGE_TAG}
@@ -13,11 +33,16 @@ services:
       POSTGRES_USER: ${IDENTITY_POSTGRES_USER}
       POSTGRES_PASSWORD: ${IDENTITY_POSTGRES_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
-      SPRING_RABBITMQ_HOST: ${RABBITMQ_HOST}
+      SPRING_RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
       SPRING_RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       SPRING_RABBITMQ_SSL_ENABLED: ${RABBITMQ_SSL_ENABLED:-false}
+    networks:
+      - app-network
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
 
   agent-service:
     restart: unless-stopped
@@ -29,7 +54,7 @@ services:
       AGENT_POSTGRES_DB: ${AGENT_POSTGRES_DB}
       AGENT_POSTGRES_USER: ${AGENT_POSTGRES_USER}
       AGENT_POSTGRES_PASSWORD: ${AGENT_POSTGRES_PASSWORD}
-      SPRING_RABBITMQ_HOST: ${RABBITMQ_HOST}
+      SPRING_RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
       SPRING_RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
@@ -41,6 +66,11 @@ services:
       AI_AGENT_RECOMMENDATION_CATALOG_API_KEY: ${AI_AGENT_RECOMMENDATION_CATALOG_API_KEY:-}
       AI_AGENT_RECOMMENDATION_CATALOG_OPENROUTER_REFERER: ${AI_AGENT_RECOMMENDATION_CATALOG_OPENROUTER_REFERER:-}
       AI_AGENT_RECOMMENDATION_CATALOG_OPENROUTER_TITLE: ${AI_AGENT_RECOMMENDATION_CATALOG_OPENROUTER_TITLE:-}
+    networks:
+      - app-network
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
 
   usage-service:
     restart: unless-stopped
@@ -51,13 +81,18 @@ services:
       USAGE_POSTGRES_DB: ${USAGE_POSTGRES_DB}
       USAGE_POSTGRES_USER: ${USAGE_POSTGRES_USER}
       USAGE_POSTGRES_PASSWORD: ${USAGE_POSTGRES_PASSWORD}
-      SPRING_RABBITMQ_HOST: ${RABBITMQ_HOST}
+      SPRING_RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
       SPRING_RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       SPRING_RABBITMQ_SSL_ENABLED: ${RABBITMQ_SSL_ENABLED:-false}
       GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET}
       USAGE_SERVICE_PORT: 8092
+    networks:
+      - app-network
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
 
   billing-service:
     restart: unless-stopped
@@ -68,7 +103,7 @@ services:
       BILLING_POSTGRES_DB: ${BILLING_POSTGRES_DB}
       BILLING_POSTGRES_USER: ${BILLING_POSTGRES_USER}
       BILLING_POSTGRES_PASSWORD: ${BILLING_POSTGRES_PASSWORD}
-      SPRING_RABBITMQ_HOST: ${RABBITMQ_HOST}
+      SPRING_RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
       SPRING_RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
@@ -78,6 +113,11 @@ services:
       BILLING_IDENTITY_ENABLED: ${BILLING_IDENTITY_ENABLED:-true}
       BILLING_IDENTITY_BASE_URL: ${BILLING_IDENTITY_BASE_URL:-http://identity-service:8080}
       BILLING_IDENTITY_BUDGET_PATH: "${BILLING_IDENTITY_BUDGET_PATH:-/api/identity/v1/users/budget?email={userId}}"
+    networks:
+      - app-network
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
 
   proxy-service:
     restart: unless-stopped
@@ -90,6 +130,8 @@ services:
       PROXY_GOOGLE_TEST_API_KEY: ${PROXY_GOOGLE_TEST_API_KEY:-}
       PROXY_MOCK_KEY_FALLBACK: ${PROXY_MOCK_KEY_FALLBACK:-}
       GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET}
+    networks:
+      - app-network
     depends_on:
       - identity-service
 
@@ -102,7 +144,7 @@ services:
       TEAM_POSTGRES_DB: ${TEAM_POSTGRES_DB}
       TEAM_POSTGRES_USER: ${TEAM_POSTGRES_USER}
       TEAM_POSTGRES_PASSWORD: ${TEAM_POSTGRES_PASSWORD}
-      SPRING_RABBITMQ_HOST: ${RABBITMQ_HOST}
+      SPRING_RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
       SPRING_RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
@@ -111,8 +153,13 @@ services:
       SECURITY_JWT_SECRET: ${JWT_SECRET}
       TEAM_API_KEY_ENCRYPTION_SECRET: ${TEAM_API_KEY_ENCRYPTION_SECRET}
       TEAM_SERVICE_PORT: 8093
+    networks:
+      - app-network
     depends_on:
-      - identity-service
+      rabbitmq:
+        condition: service_healthy
+      identity-service:
+        condition: service_started
 
   notification-service:
     restart: unless-stopped
@@ -122,14 +169,19 @@ services:
       PORT: 8096
       NOTIFICATION_INTERNAL_SECRET: ${NOTIFICATION_INTERNAL_SECRET}
       TEAM_SERVICE_INTERNAL_BASE_URL: ${TEAM_SERVICE_INTERNAL_BASE_URL:-http://team-service:8093}
-      RABBITMQ_URL: ${NOTIFICATION_RABBITMQ_URL}
+      RABBITMQ_URL: ${NOTIFICATION_RABBITMQ_URL:-amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/%2f}
       TEAM_EVENTS_CONSUMER_ENABLED: ${TEAM_EVENTS_CONSUMER_ENABLED:-true}
       TEAM_EVENTS_QUEUE_NAME: ${TEAM_EVENTS_QUEUE_NAME:-notification.team.events}
       TEAM_EVENTS_ASSERT_TOPOLOGY: ${TEAM_EVENTS_ASSERT_TOPOLOGY:-true}
       TEAM_EVENTS_EXCHANGE_NAME: ${TEAM_EVENTS_EXCHANGE_NAME:-team.events}
       TEAM_EVENTS_BINDING_KEYS: ${TEAM_EVENTS_BINDING_KEYS:-team-member-added}
+    networks:
+      - app-network
     depends_on:
-      - team-service
+      rabbitmq:
+        condition: service_healthy
+      team-service:
+        condition: service_started
 
   api-gateway-service:
     restart: unless-stopped
@@ -144,6 +196,8 @@ services:
       GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET}
       GATEWAY_JWT_SECRET: ${GATEWAY_JWT_SECRET}
       GATEWAY_DEV_MODE: ${GATEWAY_DEV_MODE:-false}
+    networks:
+      - app-network
     depends_on:
       - proxy-service
       - identity-service
@@ -159,6 +213,8 @@ services:
       GATEWAY_URL: ${WEB_GATEWAY_URL:-http://api-gateway-service:8080}
       WEB_GATEWAY_URL: ${WEB_GATEWAY_URL:-http://api-gateway-service:8080}
       IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
+    networks:
+      - app-network
     depends_on:
       - api-gateway-service
 
@@ -171,6 +227,8 @@ services:
       AI_AGENT_SERVICE_INTERNAL_ORIGIN: ${AI_AGENT_SERVICE_INTERNAL_ORIGIN:-http://agent-service:8096}
       AI_AGENT_FALLBACK_USER_ID: ${AI_AGENT_FALLBACK_USER_ID:-}
       AI_AGENT_TEAM_CATALOG_USER_ID: ${AI_AGENT_TEAM_CATALOG_USER_ID:-}
+    networks:
+      - app-network
     depends_on:
       - identity-web
       - agent-service
@@ -183,6 +241,8 @@ services:
       API_GATEWAY_URL: http://api-gateway-service:8080
       IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
       GATEWAY_DEV_MODE: ${GATEWAY_DEV_MODE:-false}
+    networks:
+      - app-network
     depends_on:
       - api-gateway-service
 
@@ -194,6 +254,8 @@ services:
       IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
       GATEWAY_DEV_MODE: ${GATEWAY_DEV_MODE:-false}
       BILLING_TEAM_BFF_BASE_URL: ${BILLING_TEAM_BFF_BASE_URL:-http://web-edge}
+    networks:
+      - app-network
     depends_on:
       - api-gateway-service
       - identity-web
@@ -207,6 +269,8 @@ services:
       NOTIFICATION_SERVICE_URL: ${WEB_NOTIFICATION_SERVICE_URL:-http://notification-service:8096/api}
       NOTIFICATION_INTERNAL_SECRET: ${NOTIFICATION_INTERNAL_SECRET}
       NEXT_PUBLIC_NOTIFICATION_POLL_MS: ${NEXT_PUBLIC_NOTIFICATION_POLL_MS:-10000}
+    networks:
+      - app-network
     depends_on:
       - api-gateway-service
       - notification-service
@@ -221,6 +285,8 @@ services:
       IDENTITY_SERVICE_URL: ${WEB_IDENTITY_SERVICE_URL:-http://identity-service:8080}
     expose:
       - "3000"
+    networks:
+      - app-network
     depends_on:
       - team-service
       - api-gateway-service
@@ -232,8 +298,10 @@ services:
     environment:
       GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET}
     ports:
-      - "${WEB_EDGE_HOST_PORT:-80}:80"
+      - "${WEB_EDGE_HOST_PORT:-8888}:80"
       - "${WEB_EDGE_HEALTH_HOST_PORT:-8080}:8080"
+    networks:
+      - app-network
     depends_on:
       - identity-web
       - usage-web
@@ -242,3 +310,7 @@ services:
       - notification-web
       - agent-web
       - api-gateway-service
+
+networks:
+  app-network:
+    driver: bridge

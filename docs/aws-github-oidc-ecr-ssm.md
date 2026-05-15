@@ -184,16 +184,21 @@ Tags: immutable `${{ github.sha }}` plus moving `:staging` / `:prod` (see `relea
 
 ## 7. ALB Target Group health (canonical)
 
-| Setting | Value |
-|---------|--------|
-| Protocol / port | HTTP **8080** (dedicated `web-edge` listener; no Host allowlist) |
+Defaults in [`infra/terraform`](../infra/terraform) align **traffic** and **registration** with **web-edge** on the host:
+
+| Setting | Default value |
+|---------|----------------|
+| Target group **port** (instance registration) | **8888** (`alb_target_port`) — maps to `WEB_EDGE_HOST_PORT` / `docker-compose.prod.yml` |
+| Health check **port** | **`traffic-port`** — same as target port |
 | Path | `/healthz` |
 | Matcher | `200` |
 | Healthy threshold | 2 (tune per AZ) |
 | Unhealthy threshold | 2 |
 | Interval | 15s (tune with deploy duration) |
 
-Traffic listener remains **80** → `web-edge:80` (path routing + Host allowlist for browser traffic).
+`web-edge` serves `/healthz` on the main **in-container :80** listener (including a `server_name` regex for RFC1918 hosts so ALB IP-style health checks succeed). Alternatively set **`alb_health_check_port` = `"8080"`** in Terraform to use the dedicated in-container health listener only; the compute module then opens the instance security group from the ALB to **8080** automatically when it differs from `alb_target_port`.
+
+The ALB listener stays **HTTP :80** on the load balancer; targets are **instance:8888** (path routing + Host allowlist for browser traffic on `web-edge`).
 
 ---
 
@@ -208,7 +213,7 @@ Traffic listener remains **80** → `web-edge:80` (path routing + Host allowlist
 ## 9. GitHub configuration checklist
 
 1. Environments **`staging`** and **`production`** (add required reviewers on `production`).
-2. **Per Environment variables:** `AWS_REGION`, optional `ECR_REPOSITORY_PREFIX`, `ALB_TARGET_GROUP_ARN` (set for post-Release auto roll), `SSM_DEPLOY_ROOT`, optional `TARGET_PORT`, Next public origins for `release` (`NEXT_PUBLIC_*` as needed). **Release / Deploy OIDC role ARNs** are pinned in [`.github/workflows/release.yml`](../.github/workflows/release.yml) and [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) `env`; after `terraform apply`, ensure those ARNs match **`terraform output aws_release_role_arn`** / **`aws_deploy_role_arn`**, or switch the workflows back to `vars.AWS_*_ROLE_ARN` if you prefer Environment-stored ARNs.
+2. **Per Environment variables:** `AWS_REGION`, optional `ECR_REPOSITORY_PREFIX`, `ALB_TARGET_GROUP_ARN` (set for post-Release auto roll), `SSM_DEPLOY_ROOT` (use `terraform output ssm_deploy_root_default`), optional `TARGET_PORT` (use `terraform output alb_target_port`, or leave unset — workflows default to **8888**), Next public origins for `release` (`NEXT_PUBLIC_*` as needed). **Release / Deploy OIDC role ARNs** are pinned in [`.github/workflows/release.yml`](../.github/workflows/release.yml) and [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) `env`; after `terraform apply`, ensure those ARNs match **`terraform output aws_release_role_arn`** / **`aws_deploy_role_arn`**, or switch the workflows back to `vars.AWS_*_ROLE_ARN` if you prefer Environment-stored ARNs.
 3. **Terraform from GitHub Actions (optional):** repository secrets `AWS_SECRET_ACCESS_KEY` and `AWS_ACCESS_KEY_ID` (or `AWS_ACCESS_KEY`) for [`.github/workflows/terraform-aws.yml`](../.github/workflows/terraform-aws.yml); optional repo variable `AWS_REGION`.
 4. Branch rules: require CI green before merge to `develop` / `main`; optional rule to require `Release` success after merge.
 

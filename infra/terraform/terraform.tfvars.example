@@ -18,17 +18,20 @@ ecr_repository_prefix  = "ai-api-usage-monitor"
 # Optional compute (VPC + ALB + ASG).
 enable_compute_stack       = true
 compute_environment_label  = "staging"
-# Public GitHub repo only. For private repos: compute_git_clone_at_boot = false and clone /opt/<project_name> yourself (e.g. deploy key).
-# compute_git_clone_at_boot  = false
+# alb_target_port          = 8888
+# ALB health: default "traffic-port" probes the same port as alb_target_port (/healthz on web-edge :80 in-container). Use "8080" for the dedicated web-edge health listener only.
+# alb_health_check_port    = "traffic-port"
 
-# alb_target_port          = 80
-# ALB health: default probes web-edge :8080 /healthz (no Host allowlist). Use "traffic-port" to probe alb_target_port instead.
-# alb_health_check_port    = "8080"
+# EC2 first boot: shallow clone repo into /opt/<project_name> when deploy scripts are missing (HTTPS; disable for private repos without token).
+# ec2_bootstrap_git_clone_enabled = true
+# ec2_bootstrap_git_clone_url     = "" # non-empty overrides https://github.com/<github_org>/<github_repo>.git
 
 # ASG: exactly one EC2 when compute is on (enforced by check compute_asg_single_ec2 in main.tf).
 compute_asg_min_size         = 1
 compute_asg_max_size         = 1
 compute_asg_desired_capacity = 1
 
-# Optional: one staging PostgreSQL RDS in the compute VPC (requires enable_compute_stack = true).
-# enable_staging_rds = true
+# Staging PostgreSQL RDS in the compute VPC (EC2 instance SG → RDS SG on 5432).
+enable_staging_rds = true
+# staging_rds_instance_class     = "db.t4g.micro"
+# staging_rds_allocated_storage  = 20
