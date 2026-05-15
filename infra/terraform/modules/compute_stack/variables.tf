@@ -35,7 +35,8 @@ variable "target_port" {
 
 variable "health_check_path" {
   type        = string
-  description = "HTTP path for the target group health check (e.g. web-edge /healthz)."
+  description = "HTTP path for the target group health check (web-edge nginx: /healthz on :80 and :8080)."
+  default     = "/healthz"
 }
 
 variable "health_check_port" {
