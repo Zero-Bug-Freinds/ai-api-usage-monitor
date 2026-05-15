@@ -37,6 +37,7 @@ module "compute" {
   asg_desired_capacity  = var.compute_asg_desired_capacity
   target_port           = var.alb_target_port
   health_check_path     = var.alb_health_check_path
+  health_check_port     = var.alb_health_check_port
   vpc_cidr              = var.vpc_cidr
   public_subnet_cidrs   = var.public_subnet_cidrs
 }

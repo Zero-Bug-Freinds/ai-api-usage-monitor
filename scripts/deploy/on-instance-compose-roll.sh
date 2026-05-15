@@ -6,7 +6,7 @@
 #   IMAGE_TAG              — immutable tag (git sha) to deploy
 # Optional:
 #   DEPLOY_ROOT            — default /opt/ai-api-usage-monitor
-#   DEPLOY_STATE_DIR       — default /var/lib/ai-api-usage-monitor-deploy
+#   DEPLOY_STATE_DIR       — unset: root → /var/lib/...; non-root → ~/.local/state/... (override anytime)
 #   COMPOSE_FILE           — default docker-compose.prod.yml
 #   HEALTH_URL             — default http://127.0.0.1:8080/healthz (web-edge :8080 listener)
 #   HEALTH_RETRIES         — default 30
@@ -16,7 +16,13 @@
 set -euo pipefail
 
 DEPLOY_ROOT="${DEPLOY_ROOT:-/opt/ai-api-usage-monitor}"
-DEPLOY_STATE_DIR="${DEPLOY_STATE_DIR:-/var/lib/ai-api-usage-monitor-deploy}"
+if [[ -z "${DEPLOY_STATE_DIR:-}" ]]; then
+  if [[ "$(id -u)" -eq 0 ]]; then
+    DEPLOY_STATE_DIR="/var/lib/ai-api-usage-monitor-deploy"
+  else
+    DEPLOY_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/ai-api-usage-monitor-deploy"
+  fi
+fi
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8080/healthz}"
 HEALTH_RETRIES="${HEALTH_RETRIES:-30}"

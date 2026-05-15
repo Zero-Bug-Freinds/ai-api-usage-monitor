@@ -38,6 +38,11 @@ output "alb_target_port" {
   value       = var.enable_compute_stack ? module.compute[0].alb_target_port : var.alb_target_port
 }
 
+output "alb_health_check_port" {
+  description = "ALB target group health check port (traffic-port or fixed port); must match web-edge and instance SG."
+  value       = var.enable_compute_stack ? module.compute[0].alb_health_check_port : var.alb_health_check_port
+}
+
 output "ec2_instance_profile_name" {
   description = "Optional compute stack instance profile (ECR pull + SSM)."
   value       = var.enable_compute_stack ? module.compute[0].ec2_instance_profile_name : null
