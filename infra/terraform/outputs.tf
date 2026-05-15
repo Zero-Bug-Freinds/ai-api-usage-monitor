@@ -96,13 +96,13 @@ output "staging_rds_master_password" {
 
 output "staging_rds" {
   description = "Staging RDS connection summary (null when enable_staging_rds is false or compute stack is off)."
-  value       = length(module.staging_rds) > 0 ? {
-    address                 = module.staging_rds[0].address
-    port                    = module.staging_rds[0].port
-    endpoint                = module.staging_rds[0].endpoint
-    identifier              = module.staging_rds[0].identifier
-    master_username         = module.staging_rds[0].master_username
-    security_group_id       = module.staging_rds[0].security_group_id
-    ec2_security_group_id   = module.compute[0].instance_security_group_id
+  value = length(module.staging_rds) > 0 ? {
+    address               = module.staging_rds[0].address
+    port                  = module.staging_rds[0].port
+    endpoint              = module.staging_rds[0].endpoint
+    identifier            = module.staging_rds[0].identifier
+    master_username       = module.staging_rds[0].master_username
+    security_group_id     = module.staging_rds[0].security_group_id
+    ec2_security_group_id = module.compute[0].instance_security_group_id
   } : null
 }
