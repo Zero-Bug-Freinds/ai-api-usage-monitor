@@ -77,12 +77,62 @@ normalize_env_source_copy() {
   chmod 600 "$dest_copy"
 }
 
+# Trim whitespace and optional surrounding quotes (compose .env must be unquoted KEY=value).
+sanitize_env_value() {
+  local v="$1"
+  v="$(printf '%s' "$v" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+  if [[ "$v" =~ ^\"(.*)\"$ ]]; then
+    v="${BASH_REMATCH[1]}"
+  elif [[ "$v" =~ ^\'(.*)\'$ ]]; then
+    v="${BASH_REMATCH[1]}"
+  fi
+  printf '%s' "$v"
+}
+
+# Rewrite .env.deploy → sanitized copy: no quotes, no :5432 on *_POSTGRES_HOST (port is *_POSTGRES_PORT).
+sanitize_env_deploy_file() {
+  local src="$1"
+  local dst="$2"
+  local line key val host port_hint port_var
+  : >"$dst"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" =~ ^[[:space:]]*# ]]; then
+      printf '%s\n' "$line" >>"$dst"
+      continue
+    fi
+    line="$(printf '%s' "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    [[ -z "$line" ]] && continue
+    [[ "$line" != *=* ]] && continue
+    key="${line%%=*}"
+    val="${line#*=}"
+    key="$(sanitize_env_value "$key")"
+    val="$(sanitize_env_value "$val")"
+    if [[ "$key" =~ _POSTGRES_HOST$ ]] && [[ "$val" == *:* ]]; then
+      host="${val%%:*}"
+      port_hint="${val##*:}"
+      port_var="${key%_HOST}_PORT"
+      if [[ -n "$port_hint" && "$port_hint" =~ ^[0-9]+$ ]]; then
+        if ! grep -q "^${port_var}=" "$dst" 2>/dev/null; then
+          printf '%s=%s\n' "$port_var" "$port_hint" >>"$dst"
+        fi
+        echo "Normalized ${key}: hostname only (${host}); port belongs in ${port_var}=${port_hint}" >&2
+      else
+        echo "WARN: ${key} contained ':' but port suffix '${port_hint}' is not numeric — using host '${host}'" >&2
+      fi
+      val="$host"
+    fi
+    printf '%s=%s\n' "$key" "$val" >>"$dst"
+  done <"$src"
+  chmod 600 "$dst"
+}
+
 load_deploy_variables() {
   local normalized="$1"
   set -a
   # shellcheck source=/dev/null
   source "$normalized"
   set +a
+  sanitize_loaded_postgres_hosts
   export IMAGE_TAG
   if [[ -z "${ECR_IMAGE_PREFIX:-}" ]]; then
     if [[ -z "${AWS_REGION:-}" ]]; then
@@ -98,6 +148,29 @@ load_deploy_variables() {
     echo "ECR_IMAGE_PREFIX and IMAGE_TAG must be non-empty (got ECR_IMAGE_PREFIX='${ECR_IMAGE_PREFIX}' IMAGE_TAG='${IMAGE_TAG}')" >&2
     exit 1
   fi
+}
+
+sanitize_loaded_postgres_hosts() {
+  local name val port_var port_val
+  for name in IDENTITY_POSTGRES_HOST USAGE_POSTGRES_HOST BILLING_POSTGRES_HOST TEAM_POSTGRES_HOST; do
+    val="${!name:-}"
+    [[ -z "$val" ]] && continue
+    val="$(sanitize_env_value "$val")"
+    export "$name=$val"
+  done
+  for name in IDENTITY_POSTGRES_PORT USAGE_POSTGRES_PORT BILLING_POSTGRES_PORT TEAM_POSTGRES_PORT; do
+    val="${!name:-}"
+    [[ -z "$val" ]] && continue
+    export "$name=$(sanitize_env_value "$val")"
+  done
+}
+
+log_postgres_host_summary() {
+  echo "Postgres hosts for compose (hostname only, port 5432 via *_POSTGRES_PORT):"
+  echo "  IDENTITY_POSTGRES_HOST=${IDENTITY_POSTGRES_HOST:-<unset>}"
+  echo "  USAGE_POSTGRES_HOST=${USAGE_POSTGRES_HOST:-<unset>}"
+  echo "  BILLING_POSTGRES_HOST=${BILLING_POSTGRES_HOST:-<unset>}"
+  echo "  TEAM_POSTGRES_HOST=${TEAM_POSTGRES_HOST:-<unset>}"
 }
 
 write_compose_env_file() {
@@ -175,10 +248,14 @@ compose_cmd() {
 }
 
 prepare_compose_environment() {
-  local normalized
+  local raw normalized
+  raw="$(mktemp "${DEPLOY_STATE_DIR}/env-raw.XXXXXX")"
   normalized="$(mktemp "${DEPLOY_STATE_DIR}/env-src.XXXXXX")"
-  normalize_env_source_copy "$ENV_DEPLOY_SOURCE" "$normalized"
+  normalize_env_source_copy "$ENV_DEPLOY_SOURCE" "$raw"
+  sanitize_env_deploy_file "$raw" "$normalized"
+  rm -f "$raw"
   load_deploy_variables "$normalized"
+  log_postgres_host_summary
   write_compose_env_file "$normalized" "$COMPOSE_ENV_FILE"
   publish_compose_env_files "$COMPOSE_ENV_FILE"
   rm -f "$normalized"
@@ -208,6 +285,9 @@ cd "$DEPLOY_ROOT"
 
 ENV_DEPLOY_SOURCE="$(resolve_env_deploy_path)"
 ensure_env_deploy_readable "$ENV_DEPLOY_SOURCE"
+if [[ -x "${DEPLOY_ROOT}/scripts/deploy/validate-env-deploy.sh" ]]; then
+  bash "${DEPLOY_ROOT}/scripts/deploy/validate-env-deploy.sh" "$ENV_DEPLOY_SOURCE"
+fi
 COMPOSE_ENV_FILE="${DEPLOY_STATE_DIR}/compose.env"
 prepare_compose_environment
 
