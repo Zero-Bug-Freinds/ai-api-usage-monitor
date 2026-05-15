@@ -50,6 +50,7 @@ Copy [`terraform.tfvars.example`](terraform.tfvars.example) and adjust as needed
 - **`ecr_untagged_image_expire_days`** — ECR lifecycle for untagged images (default **14**).
 - **`enable_compute_stack`**, **`compute_environment_label`**, sizing (**`compute_asg_*` must all be `1`** when compute is on — single EC2), **`alb_target_port`** (default **8888** for web-edge host bind), **`alb_health_check_path`**, **`alb_health_check_port`** (default **`traffic-port`** — same port as the target for `/healthz`; use **`8080`** only if you probe web-edge’s dedicated health listener), **`ec2_bootstrap_git_clone_enabled`**, **`ec2_bootstrap_git_clone_url`** (optional HTTPS override for the EC2 bootstrap clone), **`vpc_cidr`**, **`public_subnet_cidrs`** — optional compute stack.
 - **`enable_staging_rds`**, **`staging_rds_instance_class`**, **`staging_rds_allocated_storage`** — optional single Postgres RDS in the compute VPC (staging only).
+- **`is_alpha_test`**, **`staging_mq_host_instance_type`** (default **`mq.t3.micro`**), **`staging_mq_engine_version`**, **`staging_mq_username`** — optional Amazon MQ RabbitMQ in the compute VPC when `is_alpha_test` is true.
 
 ## OIDC trust shape
 
@@ -82,7 +83,7 @@ Map the rest into **each** GitHub Environment (`staging`, `production`) as **Var
 
 Also configure workflow-specific vars documented in [`docs/aws-github-oidc-ecr-ssm.md`](../../docs/aws-github-oidc-ecr-ssm.md) (`SSM_DEPLOY_ROOT`, Next public origins for `release`, etc.).
 
-When **`enable_staging_rds`** is on, copy **`terraform output staging_rds_address`** (and the sensitive master password) into the deploy host `.env.deploy` for Postgres hosts/passwords (staging shortcut: use user **`appadmin`** for every `*_POSTGRES_USER` after running [`scripts/deploy/rds-staging-create-logical-dbs.sh`](../../scripts/deploy/rds-staging-create-logical-dbs.sh) on EC2). **RabbitMQ is not created by this module** — still use Amazon MQ or your broker and set `RABBITMQ_*` / `NOTIFICATION_RABBITMQ_URL` manually.
+When **`enable_staging_rds`** is on, copy **`terraform output staging_rds_address`** (and the sensitive master password) into the deploy host `.env.deploy` for Postgres hosts/passwords (staging shortcut: use user **`appadmin`** for every `*_POSTGRES_USER` after running [`scripts/deploy/rds-staging-create-logical-dbs.sh`](../../scripts/deploy/rds-staging-create-logical-dbs.sh) on EC2). When **`is_alpha_test`** is on (requires compute), Amazon MQ RabbitMQ is provisioned via [`modules/staging_mq`](modules/staging_mq); merge **`terraform output -json staging_mq_deploy_env`** into `.env.deploy` (`RABBITMQ_*`, `NOTIFICATION_RABBITMQ_URL`). Set **`is_alpha_test = false`** and `apply` to destroy the broker.
 
 ### Deploy IAM policy shape
 

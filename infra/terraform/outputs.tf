@@ -106,3 +106,60 @@ output "staging_rds" {
     ec2_security_group_id = module.compute[0].instance_security_group_id
   } : null
 }
+
+output "staging_mq_enabled" {
+  description = "True when enable_compute_stack and is_alpha_test created the Amazon MQ broker."
+  value       = length(module.staging_mq) > 0
+}
+
+output "staging_mq_amqp_hostname" {
+  description = "Amazon MQ hostname for .env.deploy RABBITMQ_HOST."
+  value       = length(module.staging_mq) > 0 ? module.staging_mq[0].amqp_hostname : null
+}
+
+output "staging_mq_amqp_port" {
+  description = "AMQPS port (5671) for .env.deploy RABBITMQ_PORT."
+  value       = length(module.staging_mq) > 0 ? module.staging_mq[0].amqp_port : null
+}
+
+output "staging_mq_username" {
+  value = length(module.staging_mq) > 0 ? module.staging_mq[0].username : null
+}
+
+output "staging_mq_password" {
+  description = "Sensitive. Copy to .env.deploy RABBITMQ_PASSWORD."
+  value       = length(module.staging_mq) > 0 ? module.staging_mq[0].password : null
+  sensitive   = true
+}
+
+output "staging_mq_console_url" {
+  description = "RabbitMQ management console (from EC2 in VPC)."
+  value       = length(module.staging_mq) > 0 ? module.staging_mq[0].console_url : null
+}
+
+output "staging_mq_notification_rabbitmq_url" {
+  description = "Sensitive. Full NOTIFICATION_RABBITMQ_URL (amqps)."
+  value       = length(module.staging_mq) > 0 ? module.staging_mq[0].notification_rabbitmq_url : null
+  sensitive   = true
+}
+
+output "staging_mq_deploy_env" {
+  description = "Sensitive map for .env.deploy: RABBITMQ_* and NOTIFICATION_RABBITMQ_URL (terraform output -json staging_mq_deploy_env)."
+  value       = length(module.staging_mq) > 0 ? module.staging_mq[0].deploy_env : null
+  sensitive   = true
+}
+
+output "staging_mq" {
+  description = "Amazon MQ connection summary (null when is_alpha_test is false or compute stack is off)."
+  value = length(module.staging_mq) > 0 ? {
+    broker_id             = module.staging_mq[0].broker_id
+    amqp_hostname         = module.staging_mq[0].amqp_hostname
+    amqp_port             = module.staging_mq[0].amqp_port
+    amqp_endpoint         = module.staging_mq[0].amqp_endpoint
+    username              = module.staging_mq[0].username
+    ssl_enabled           = module.staging_mq[0].ssl_enabled
+    console_url           = module.staging_mq[0].console_url
+    security_group_id     = module.staging_mq[0].security_group_id
+    ec2_security_group_id = module.compute[0].instance_security_group_id
+  } : null
+}

@@ -245,6 +245,7 @@ resource "aws_lb_target_group" "app" {
   protocol    = "HTTP"
   vpc_id      = aws_vpc.this.id
 
+  # Probes web-edge /healthz (see docker/web-edge/nginx.conf.template). traffic-port = host bind (e.g. 8888→:80).
   health_check {
     enabled             = true
     path                = var.health_check_path
@@ -331,6 +332,10 @@ resource "aws_autoscaling_group" "app" {
   max_size                  = var.asg_max_size
   desired_capacity          = var.asg_desired_capacity
 
+  # Register every launched instance with the ALB target group (port = TG port, default 8888).
+  # Replaces a standalone aws_autoscaling_attachment so registration is visible on the ASG.
+  target_group_arns = [aws_lb_target_group.app.arn]
+
   launch_template {
     id      = aws_launch_template.app.id
     version = "$Latest"
@@ -351,9 +356,4 @@ resource "aws_autoscaling_group" "app" {
   lifecycle {
     create_before_destroy = true
   }
-}
-
-resource "aws_autoscaling_attachment" "app_to_target_group" {
-  autoscaling_group_name = aws_autoscaling_group.app.name
-  lb_target_group_arn    = aws_lb_target_group.app.arn
 }

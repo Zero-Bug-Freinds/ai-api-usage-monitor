@@ -63,6 +63,26 @@ module "staging_rds" {
   allocated_storage     = var.staging_rds_allocated_storage
 }
 
+check "staging_mq_needs_compute_vpc" {
+  assert {
+    condition     = !var.is_alpha_test || var.enable_compute_stack
+    error_message = "is_alpha_test Amazon MQ requires enable_compute_stack = true (broker is created in the compute VPC)."
+  }
+}
+
+module "staging_mq" {
+  count  = var.enable_compute_stack && var.is_alpha_test ? 1 : 0
+  source = "./modules/staging_mq"
+
+  project_name          = var.project_name
+  vpc_id                = module.compute[0].vpc_id
+  subnet_ids            = module.compute[0].public_subnet_ids
+  ec2_security_group_id = module.compute[0].instance_security_group_id
+  host_instance_type    = var.staging_mq_host_instance_type
+  engine_version        = var.staging_mq_engine_version
+  username              = var.staging_mq_username
+}
+
 check "compute_asg_capacity_ordering" {
   assert {
     condition = (

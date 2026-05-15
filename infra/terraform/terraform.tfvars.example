@@ -35,3 +35,9 @@ compute_asg_desired_capacity = 1
 enable_staging_rds = true
 # staging_rds_instance_class     = "db.t4g.micro"
 # staging_rds_allocated_storage  = 20
+
+# Alpha/staging Amazon MQ RabbitMQ (mq.t3.micro). Off when false — no broker cost.
+is_alpha_test = true
+# staging_mq_host_instance_type = "mq.t3.micro"
+# staging_mq_engine_version     = "3.13"
+# staging_mq_username           = "app"
