@@ -40,6 +40,10 @@ module "compute" {
   health_check_port     = var.alb_health_check_port
   vpc_cidr              = var.vpc_cidr
   public_subnet_cidrs   = var.public_subnet_cidrs
+
+  git_clone_at_boot = var.compute_git_clone_at_boot
+  github_org        = var.github_org
+  github_repo       = var.github_repo
 }
 
 check "staging_rds_needs_compute_vpc" {
