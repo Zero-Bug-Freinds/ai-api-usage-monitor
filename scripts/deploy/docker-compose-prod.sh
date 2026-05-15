@@ -16,7 +16,7 @@ if [[ -z "${DEPLOY_STATE_DIR:-}" ]]; then
     DEPLOY_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/ai-api-usage-monitor-deploy"
   fi
 fi
-COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose-prod.yml}"
 COMPOSE_ENV_FILE="${COMPOSE_ENV_FILE:-${DEPLOY_STATE_DIR}/compose.env}"
 
 if [[ ! -f "$COMPOSE_ENV_FILE" && -f "${DEPLOY_ROOT}/.env" ]]; then

@@ -1,6 +1,6 @@
 # AWS: GitHub OIDC for ECR push and SSM/ELB deploy
 
-This document is the operational companion to [`docker-compose.prod.yml`](../../docker-compose.prod.yml), [`.github/workflows/release.yml`](../../.github/workflows/release.yml), and [`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml).
+This document is the operational companion to [`docker-compose-prod.yml`](../../docker-compose-prod.yml), [`.github/workflows/release.yml`](../../.github/workflows/release.yml), and [`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml).
 
 ## Terraform (IaC)
 
@@ -188,7 +188,7 @@ Defaults in [`infra/terraform`](../infra/terraform) align **traffic** and **regi
 
 | Setting | Default value |
 |---------|----------------|
-| Target group **port** (instance registration) | **8888** (`alb_target_port`) — maps to `WEB_EDGE_HOST_PORT` / `docker-compose.prod.yml` |
+| Target group **port** (instance registration) | **8888** (`alb_target_port`) — maps to `WEB_EDGE_HOST_PORT` / `docker-compose-prod.yml` |
 | Health check **port** | **`traffic-port`** — same as target port |
 | Path | `/healthz` |
 | Matcher | `200` |
