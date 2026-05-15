@@ -91,12 +91,6 @@ variable "compute_environment_label" {
   default     = "staging"
 }
 
-variable "compute_git_clone_at_boot" {
-  type        = bool
-  description = "When enable_compute_stack is true, clone https://github.com/<github_org>/<github_repo> into /opt/<project_name> on first instance boot so SSM rolling deploy finds scripts/deploy/. Requires a reachable public clone URL. Set false for private repos and clone that directory manually (or use your own bootstrap)."
-  default     = true
-}
-
 variable "compute_instance_type" {
   type        = string
   description = "EC2 instance type for the optional ASG."

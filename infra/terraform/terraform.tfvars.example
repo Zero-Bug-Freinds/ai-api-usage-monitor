@@ -18,9 +18,6 @@ ecr_repository_prefix  = "ai-api-usage-monitor"
 # Optional compute (VPC + ALB + ASG).
 enable_compute_stack       = true
 compute_environment_label  = "staging"
-# Public GitHub repo only. For private repos: compute_git_clone_at_boot = false and clone /opt/<project_name> yourself (e.g. deploy key).
-# compute_git_clone_at_boot  = false
-
 # alb_target_port          = 80
 # ALB health: default probes web-edge :8080 /healthz (no Host allowlist). Use "traffic-port" to probe alb_target_port instead.
 # alb_health_check_port    = "8080"
