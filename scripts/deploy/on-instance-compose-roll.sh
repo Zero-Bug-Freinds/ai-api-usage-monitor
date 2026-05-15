@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run on the EC2 host (via SSM). Pulls ECR images and restarts the stack using `docker compose` (Compose v2 plugin).
-# Compose file defaults to `docker-compose.prod.yml` (filename in repo root; not the legacy `docker-compose` CLI).
+# Compose file defaults to `docker-compose-prod.yml` (filename in repo root; not the legacy `docker-compose` CLI).
 # Prerequisites: Docker, compose plugin, AWS CLI; repo at DEPLOY_ROOT; `.env.deploy` with secrets (not in git).
 #
 # Env (required unless noted):
@@ -10,7 +10,7 @@
 #   ENV_DEPLOY_FILE        — default .env.deploy (relative to DEPLOY_ROOT or absolute)
 #   ECR_REPOSITORY_PREFIX  — suffix after account ECR host when deriving ECR_IMAGE_PREFIX (default ai-api-usage-monitor)
 #   DEPLOY_STATE_DIR       — unset: root → /var/lib/...; non-root → ~/.local/state/... (override anytime)
-#   COMPOSE_FILE           — default compose file name docker-compose.prod.yml (passed to `docker compose -f`)
+#   COMPOSE_FILE           — default compose file name docker-compose-prod.yml (passed to `docker compose -f`)
 #   HEALTH_URL             — default http://127.0.0.1:8080/healthz (web-edge :8080 listener)
 #   HEALTH_RETRIES         — default 30
 #   HEALTH_INTERVAL_SEC    — default 2
@@ -28,7 +28,7 @@ if [[ -z "${DEPLOY_STATE_DIR:-}" ]]; then
     DEPLOY_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/ai-api-usage-monitor-deploy"
   fi
 fi
-COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose-prod.yml}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8080/healthz}"
 HEALTH_RETRIES="${HEALTH_RETRIES:-30}"
 HEALTH_INTERVAL_SEC="${HEALTH_INTERVAL_SEC:-2}"

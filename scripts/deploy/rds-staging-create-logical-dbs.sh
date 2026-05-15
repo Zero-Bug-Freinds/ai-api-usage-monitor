@@ -13,7 +13,7 @@ PGHOST="${PGHOST:?}"
 PGUSER="${PGUSER:?}"
 PGPASSWORD="${PGPASSWORD:?}"
 
-for db in identity usage billing team notification; do
+for db in identity usage billing team notification agent; do
   exists="$(psql -h "$PGHOST" -U "$PGUSER" -d postgres -Atc "SELECT 1 FROM pg_database WHERE datname = '$db'" || true)"
   if [[ "$exists" == "1" ]]; then
     echo "Database $db already exists, skip."

@@ -91,6 +91,12 @@ variable "compute_environment_label" {
   default     = "staging"
 }
 
+variable "compute_git_clone_at_boot" {
+  type        = bool
+  description = "When enable_compute_stack is true, clone https://github.com/<github_org>/<github_repo> into /opt/<project_name> on first instance boot so SSM rolling deploy finds scripts/deploy/. Requires a reachable public clone URL. Set false for private repos and clone that directory manually (or use your own bootstrap)."
+  default     = true
+}
+
 variable "compute_instance_type" {
   type        = string
   description = "EC2 instance type for the optional ASG."
@@ -99,19 +105,19 @@ variable "compute_instance_type" {
 
 variable "compute_asg_min_size" {
   type        = number
-  description = "ASG minimum size for optional compute stack."
+  description = "ASG minimum size. With enable_compute_stack, root check compute_asg_single_ec2 requires 1."
   default     = 1
 }
 
 variable "compute_asg_max_size" {
   type        = number
-  description = "ASG maximum size. Use 1 to allow at most one EC2 (no scale-out above desired)."
+  description = "ASG maximum size. With enable_compute_stack, root check compute_asg_single_ec2 requires 1 (single EC2 behind the ALB)."
   default     = 1
 }
 
 variable "compute_asg_desired_capacity" {
   type        = number
-  description = "ASG desired capacity for optional compute stack."
+  description = "ASG desired capacity. With enable_compute_stack, root check compute_asg_single_ec2 requires 1."
   default     = 1
 }
 

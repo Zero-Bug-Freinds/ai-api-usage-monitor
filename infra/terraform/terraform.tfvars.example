@@ -26,11 +26,10 @@ compute_environment_label  = "staging"
 # ec2_bootstrap_git_clone_enabled = true
 # ec2_bootstrap_git_clone_url     = "" # non-empty overrides https://github.com/<github_org>/<github_repo>.git
 
-# ASG sizing: keep all three at 1 for a single EC2 (see compute_stack ASG availability_zone_distribution).
-# Raise max/desired for HA only if you accept multiple instances behind the ALB.
-# compute_asg_min_size         = 1
-# compute_asg_max_size         = 1
-# compute_asg_desired_capacity = 1
+# ASG: exactly one EC2 when compute is on (enforced by check compute_asg_single_ec2 in main.tf).
+compute_asg_min_size         = 1
+compute_asg_max_size         = 1
+compute_asg_desired_capacity = 1
 
 # Staging PostgreSQL RDS in the compute VPC (EC2 instance SG → RDS SG on 5432).
 enable_staging_rds = true

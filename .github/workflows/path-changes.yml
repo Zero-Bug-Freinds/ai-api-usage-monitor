@@ -71,7 +71,7 @@ jobs:
               - 'apps/web/**'
               - 'services/team-service/web/**'
               - 'docker-compose.yml'
-              - 'docker-compose.prod.yml'
+              - 'docker-compose-prod.yml'
               - '.github/workflows/**'
             api_gateway:
               - 'services/api-gateway-service/**'

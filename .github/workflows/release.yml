@@ -21,7 +21,7 @@ on:
       - 'packages/**'
       - 'libs/**'
       - 'docker-compose.yml'
-      - 'docker-compose.prod.yml'
+      - 'docker-compose-prod.yml'
       - 'pnpm-workspace.yaml'
       - 'pnpm-lock.yaml'
       - 'package.json'

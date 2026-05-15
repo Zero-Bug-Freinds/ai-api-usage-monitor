@@ -73,6 +73,20 @@ check "compute_asg_capacity_ordering" {
   }
 }
 
+check "compute_asg_single_ec2" {
+  assert {
+    condition = (
+      !var.enable_compute_stack
+      || (
+        var.compute_asg_max_size == 1
+        && var.compute_asg_min_size == 1
+        && var.compute_asg_desired_capacity == 1
+      )
+    )
+    error_message = "When enable_compute_stack is true, use exactly one EC2: compute_asg_min_size, compute_asg_max_size, and compute_asg_desired_capacity must all be 1."
+  }
+}
+
 # Doc §1.2 — trust GitHub OIDC for this repository only (sub matches environment jobs too).
 resource "aws_iam_role" "release" {
   name = var.release_iam_role_name

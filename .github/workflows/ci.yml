@@ -17,7 +17,7 @@ on:
       - 'libs/**'
       - 'infra/terraform/**'
       - 'docker-compose.yml'
-      - 'docker-compose.prod.yml'
+      - 'docker-compose-prod.yml'
       - '.env.deploy.example'
       - 'pnpm-workspace.yaml'
       - 'pnpm-lock.yaml'
@@ -35,7 +35,7 @@ on:
       - 'libs/**'
       - 'infra/terraform/**'
       - 'docker-compose.yml'
-      - 'docker-compose.prod.yml'
+      - 'docker-compose-prod.yml'
       - '.env.deploy.example'
       - 'pnpm-workspace.yaml'
       - 'pnpm-lock.yaml'
@@ -95,8 +95,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker compose -f docker-compose.yml config
-      - name: Validate docker-compose.prod.yml (example env)
-        run: docker compose -f docker-compose.prod.yml --env-file .env.deploy.example config
+      - name: Validate docker-compose-prod.yml (example env)
+        run: docker compose -f docker-compose-prod.yml --env-file .env.deploy.example config
 
   identity-service:
     name: Build identity-service

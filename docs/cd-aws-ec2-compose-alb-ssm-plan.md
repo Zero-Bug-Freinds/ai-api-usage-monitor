@@ -17,7 +17,7 @@
 | Release (ECR) | [`.github/workflows/release.yml`](../.github/workflows/release.yml) |
 | Deploy (ALB+SSM) | [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) |
 | 로컬 Compose | [`docker-compose.yml`](../docker-compose.yml) |
-| 운영 Compose | [`docker-compose.prod.yml`](../docker-compose.prod.yml) |
+| 운영 Compose | [`docker-compose-prod.yml`](../docker-compose-prod.yml) |
 | 배포 env 예시 | [`.env.deploy.example`](../.env.deploy.example) |
 | IAM·ECR·헬스·롤백 정본 | [`aws-github-oidc-ecr-ssm.md`](aws-github-oidc-ecr-ssm.md) |
 | Terraform (OIDC·IAM·ECR·선택 인프라) | [`infra/terraform/README.md`](../infra/terraform/README.md) |
@@ -126,7 +126,7 @@ flowchart TD
 ## 운영용 Compose (설계)
 
 - 로컬 [`docker-compose.yml`](../docker-compose.yml)의 Postgres/RabbitMQ/Redis **컨테이너 정의는 운영 파일에서 제외**한다.
-- 별도 파일 예: `docker-compose.prod.yml` (저장소에 둘지, 배포 시 생성할지 팀 합의)
+- 별도 파일 예: `docker-compose-prod.yml` (저장소에 둘지, 배포 시 생성할지 팀 합의)
 - 앱 `environment`는 **RDS / Amazon MQ / ElastiCache 엔드포인트**와 자격증명(또는 IAM 가능 영역)을 가리키게 한다.
 - 비밀값: **SSM Parameter Store** 또는 **Secrets Manager**에서 주입(서버 로컬 `.env`만 쓸 경우 권한·로테이션 정책 필수)
 
@@ -164,7 +164,7 @@ flowchart TD
 - [ ] 스테이징/프로덕션 환경 수와 브랜치 트리거 확정 (`develop` / `main`)
 - [ ] 운영에 포함할 이미지 목록·ECR 리포지토리 네이밍 확정
 - [ ] GitHub OIDC IAM Role 및 최소 권한 정책 — Terraform [`infra/terraform`](../infra/terraform/README.md) 루트 또는 수동 JSON
-- [ ] `docker-compose.prod.yml`(또는 동등) 초안 및 env/secret 주입 방식 확정
+- [ ] `docker-compose-prod.yml`(또는 동등) 초안 및 env/secret 주입 방식 확정
 - [x] Release 워크플로(변경 감지, ECR push, sha 태그) 및 **성공 시 `roll-after-ecr` 자동 롤**(환경 변수 `ALB_TARGET_GROUP_ARN` 등)
 - [x] Deploy 워크플로(`workflow_dispatch`, SSM drain/roll, 선택 시 타깃 그룹에서 인스턴스 ID 자동 조회)
 - [ ] ALB Target Group 헬스 경로·타임아웃·재시도 정책 확정
