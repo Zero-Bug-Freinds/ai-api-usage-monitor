@@ -16,7 +16,7 @@ ecr_repository_prefix  = "ai-api-usage-monitor"
 # ecr_untagged_image_expire_days = 14
 
 # Optional compute (VPC + ALB + ASG).
-enable_compute_stack       = false
+enable_compute_stack       = true
 compute_environment_label  = "staging"
 # alb_target_port          = 80
 # ALB health: default probes web-edge :8080 /healthz (no Host allowlist). Use "traffic-port" to probe alb_target_port instead.

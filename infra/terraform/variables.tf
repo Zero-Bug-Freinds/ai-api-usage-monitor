@@ -82,7 +82,7 @@ variable "deploy_iam_role_name" {
 variable "enable_compute_stack" {
   type        = bool
   description = "When true, creates VPC (simple public layout), ALB, target group, ASG, launch template, and EC2 instance profile for ECR pull + SSM."
-  default     = false
+  default     = true
 }
 
 variable "compute_environment_label" {
