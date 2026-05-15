@@ -12,6 +12,22 @@ variable "ecr_repository_prefix" {
   type = string
 }
 
+variable "git_clone_at_boot" {
+  type        = bool
+  description = "Clone GitHub repo into /opt/<project_name> on first boot (public HTTPS). When false, only create empty deploy dir."
+  default     = true
+}
+
+variable "github_org" {
+  type        = string
+  description = "GitHub org or user for HTTPS clone URL (must match OIDC trust)."
+}
+
+variable "github_repo" {
+  type        = string
+  description = "GitHub repository name for HTTPS clone URL."
+}
+
 variable "instance_type" {
   type = string
 }
