@@ -9,13 +9,13 @@ AWS resources described here can be created as code under **[`infra/terraform/RE
 - **Optional — remote state bootstrap** (S3 + DynamoDB lock): **[`infra/terraform/bootstrap/README.md`](../infra/terraform/bootstrap/README.md)**. Many teams run the root module with **local `terraform.tfstate`** only; bootstrap is not mandatory.
 - **Apply order**: `cd infra/terraform` → `terraform init` (add backend config only if you adopt S3 remote state) → `terraform apply` → align GitHub Environment variables and workflow YAML with Terraform outputs (mapping table in the Terraform README).
 - **Trust policy (root module)**: IAM roles use `StringLike` on `repo:<org>/<repo>:*` (see §1.2), so tokens from jobs that use GitHub Environments (`environment: staging` / `production`) still match.
-- **Optional stack**: set `enable_compute_stack` for VPC + ALB + target group + ASG + EC2 instance profile; align `TARGET_PORT` with [`scripts/deploy/gha-roll-instance.sh`](../scripts/deploy/gha-roll-instance.sh) (default **80**).
+- **Optional stack**: set `enable_compute_stack` for VPC + ALB + target group + ASG + EC2 instance profile; align `TARGET_PORT` with [`scripts/deploy/gha-roll-instance.sh`](../scripts/deploy/gha-roll-instance.sh) (default **8888**, `terraform output alb_target_port`).
 - **Terraform from Actions**: [`.github/workflows/terraform-aws.yml`](../.github/workflows/terraform-aws.yml) runs `plan` / `apply` using repository secrets (long-lived IAM user keys), separate from OIDC-based Release/Deploy.
 
 ## CD automation (Release + Deploy)
 
 - **[`release.yml`](../.github/workflows/release.yml)** — after a successful **ECR build/push** when path filters (or `force_rebuild_all` on `workflow_dispatch`) imply at least one image was eligible to push, job **`roll-after-ecr`** runs in the same Environment. If **`ALB_TARGET_GROUP_ARN`** is set, it assumes the **deploy IAM role** configured in that workflow’s `env` (`AWS_DEPLOY_ROLE_ARN`, OIDC), lists EC2 instance targets with [`scripts/deploy/list-tg-instance-ids.sh`](../scripts/deploy/list-tg-instance-ids.sh), then runs [`scripts/deploy/gha-roll-instance.sh`](../scripts/deploy/gha-roll-instance.sh) per instance with **`IMAGE_TAG` = commit SHA**. If `ALB_TARGET_GROUP_ARN` is unset or the target group has no `i-*` targets, the roll step is skipped (ECR-only is still success).
-- **[`deploy.yml`](../.github/workflows/deploy.yml)** — **`workflow_dispatch`** for on-demand rolls: **`image_tag`** is required; **instance IDs** may be left empty to use the same target-group discovery. Set optional Environment variable **`TARGET_PORT`** so the workflow exports it (default **80** in the shell script).
+- **[`deploy.yml`](../.github/workflows/deploy.yml)** — **`workflow_dispatch`** for on-demand rolls: **`image_tag`** is required; **instance IDs** may be left empty to use the same target-group discovery. Set optional Environment variable **`TARGET_PORT`** so the workflow exports it (default **8888** in the shell script).
 - **Concurrency**: `release.yml` and `deploy.yml` use the same **`alb-ssm-roll-<staging|production>`** concurrency group so automatic and manual rolls for an environment do not overlap.
 
 If the GitHub OIDC provider already exists in the account, import it before the first apply (command in the Terraform README).
@@ -174,7 +174,23 @@ Tags: immutable `${{ github.sha }}` plus moving `:staging` / `:prod` (see `relea
 
 ---
 
-## 6. Secrets on EC2 (SSM Parameter Store / Secrets Manager)
+## 6. Alpha cost saving — stop/start without destroy (Method A)
+
+When `enable_compute_stack` and `enable_staging_rds` are on, use the repo scripts (AWS CLI + `terraform output`):
+
+| Script | Action |
+|--------|--------|
+| [`scripts/ops/alpha-stack-status.sh`](../scripts/ops/alpha-stack-status.sh) | EC2 / RDS / ALB DNS state |
+| [`scripts/ops/alpha-stack-stop.sh`](../scripts/ops/alpha-stack-stop.sh) | Stop EC2, then stop RDS (passwords and `.env.deploy` on the same volume are kept) |
+| [`scripts/ops/alpha-stack-start.sh`](../scripts/ops/alpha-stack-start.sh) | Start RDS, wait until `available`, start EC2 (systemd may run `ec2-boot-compose.sh`) |
+
+**Still billed while “stopped”:** ALB, Amazon MQ (`is_alpha_test`), EBS, RDS storage. MQ has no stop API — only delete (destroy) to remove that charge.
+
+**Do not** use `terraform destroy` for nightly shutdown if you want stable RDS/MQ passwords and data; use these scripts instead.
+
+---
+
+## 7. Secrets on EC2 (SSM Parameter Store / Secrets Manager)
 
 - **Do not** commit production `.env.deploy`. On the host, create `/opt/ai-api-usage-monitor/.env.deploy` (path configurable) from Parameter Store at boot or via SSM `GetParameters` in a thin wrapper before `docker compose`.
 - **Pattern**: `/ai-api/staging/IDENTITY_POSTGRES_PASSWORD` (hierarchy by environment); export into `.env.deploy` or use `docker compose --env-file` with a generated file (mode `0600`, root-owned).
@@ -182,7 +198,7 @@ Tags: immutable `${{ github.sha }}` plus moving `:staging` / `:prod` (see `relea
 
 ---
 
-## 7. ALB Target Group health (canonical)
+## 8. ALB Target Group health (canonical)
 
 Defaults in [`infra/terraform`](../infra/terraform) align **traffic** and **registration** with **web-edge** on the host:
 
@@ -202,7 +218,7 @@ The ALB listener stays **HTTP :80** on the load balancer; targets are **instance
 
 ---
 
-## 8. Previous successful `git sha` (rollback)
+## 9. Previous successful `git sha` (rollback)
 
 - **On instance**: `scripts/deploy/on-instance-compose-roll.sh` writes `/var/lib/ai-api-usage-monitor-deploy/last-success-sha` after a successful local health check.
 - On deploy failure after `compose up`, the script attempts `docker compose pull && up -d` with `IMAGE_TAG` reset to that file’s value (rollback).
@@ -210,7 +226,7 @@ The ALB listener stays **HTTP :80** on the load balancer; targets are **instance
 
 ---
 
-## 9. GitHub configuration checklist
+## 10. GitHub configuration checklist
 
 1. Environments **`staging`** and **`production`** (add required reviewers on `production`).
 2. **Per Environment variables:** `AWS_REGION`, optional `ECR_REPOSITORY_PREFIX`, `ALB_TARGET_GROUP_ARN` (set for post-Release auto roll), `SSM_DEPLOY_ROOT` (use `terraform output ssm_deploy_root_default`), optional `TARGET_PORT` (use `terraform output alb_target_port`, or leave unset — workflows default to **8888**), Next public origins for `release` (`NEXT_PUBLIC_*` as needed). **Release / Deploy OIDC role ARNs** are pinned in [`.github/workflows/release.yml`](../.github/workflows/release.yml) and [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) `env`; after `terraform apply`, ensure those ARNs match **`terraform output aws_release_role_arn`** / **`aws_deploy_role_arn`**, or switch the workflows back to `vars.AWS_*_ROLE_ARN` if you prefer Environment-stored ARNs.

@@ -162,6 +162,18 @@ variable "ec2_bootstrap_git_clone_url" {
   default     = ""
 }
 
+variable "compute_bootstrap_image_tag" {
+  type        = string
+  description = "ECR image tag for web-edge-only ALB health on new EC2 (must exist in ECR before instances launch; align with release pointer tag or a known sha)."
+  default     = "staging"
+}
+
+variable "compute_health_check_grace_period" {
+  type        = number
+  description = "ASG grace period (seconds) after launch before ELB health can terminate the instance; allow time for bootstrap web-edge + first SSM deploy."
+  default     = 900
+}
+
 variable "vpc_cidr" {
   type        = string
   description = "CIDR for optional VPC."

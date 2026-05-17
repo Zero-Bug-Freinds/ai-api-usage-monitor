@@ -241,6 +241,18 @@ validate_compose_interpolation() {
   echo "Compose interpolation OK (identity-service image tag present)"
 }
 
+stop_bootstrap_compose() {
+  docker rm -f aio-bootstrap-web-edge 2>/dev/null || true
+  local boot_env="${DEPLOY_STATE_DIR}/bootstrap.env"
+  if [[ ! -f "${DEPLOY_ROOT}/docker-compose-prod.bootstrap.yml" ]] || [[ ! -f "$boot_env" ]]; then
+    return 0
+  fi
+  if docker compose -p aio-bootstrap -f docker-compose-prod.bootstrap.yml --env-file "$boot_env" ps -q 2>/dev/null | grep -q .; then
+    echo "Stopping bootstrap web-edge (aio-bootstrap) before full stack deploy"
+    docker compose -p aio-bootstrap -f docker-compose-prod.bootstrap.yml --env-file "$boot_env" down --remove-orphans 2>/dev/null || true
+  fi
+}
+
 compose_cmd() {
   # Export critical vars so interpolation works even if --env-file is ignored by a plugin bug.
   env IMAGE_TAG="$IMAGE_TAG" ECR_IMAGE_PREFIX="$ECR_IMAGE_PREFIX" \
@@ -282,6 +294,7 @@ rollback() {
 }
 
 cd "$DEPLOY_ROOT"
+stop_bootstrap_compose
 
 ENV_DEPLOY_SOURCE="$(resolve_env_deploy_path)"
 ensure_env_deploy_readable "$ENV_DEPLOY_SOURCE"

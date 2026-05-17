@@ -21,6 +21,8 @@ compute_environment_label  = "staging"
 # alb_target_port          = 8888
 # ALB health: default "traffic-port" probes the same port as alb_target_port (/healthz on web-edge :80 in-container). Use "8080" for the dedicated web-edge health listener only.
 # alb_health_check_port    = "traffic-port"
+# compute_bootstrap_image_tag = "staging"  # ECR tag for web-edge on first boot (must exist in ECR)
+# compute_health_check_grace_period = 900  # ASG seconds before unhealthy ELB checks replace the instance
 
 # EC2 first boot: shallow clone repo into /opt/<project_name> when deploy scripts are missing (HTTPS; disable for private repos without token).
 # ec2_bootstrap_git_clone_enabled = true
