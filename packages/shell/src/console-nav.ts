@@ -46,28 +46,48 @@ function normalizePath(path: string): string {
   return path
 }
 
-const DEFAULT_TEAM_SHELL_ENTRY = "http://localhost:8888/teams"
+const LOCAL_DEV_WEB_EDGE_ORIGIN = "http://localhost:8888"
+const TEAM_SHELL_PUBLIC_PATH = "/teams"
+
+function teamShellEdgeOrigin(): string {
+  if (typeof process === "undefined") {
+    return LOCAL_DEV_WEB_EDGE_ORIGIN
+  }
+  const configured =
+    process.env.NEXT_PUBLIC_WEB_EDGE_ORIGIN?.trim() ||
+    process.env.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN?.trim() ||
+    ""
+  return configured.replace(/\/+$/, "") || LOCAL_DEV_WEB_EDGE_ORIGIN
+}
 
 /**
  * 사이드바「팀」→ Main Shell 팀 콘솔 절대 URL.
- * `NEXT_PUBLIC_TEAM_SHELL_HREF`가 http(s)면 그대로, `/…` 상대면 엣지 오리진(`8888`)에 붙인다.
+ * `NEXT_PUBLIC_TEAM_SHELL_HREF`가 http(s)면 그대로, `/…` 상대면 {@link teamShellEdgeOrigin}에 붙인다.
+ * 둘 다 없으면 `NEXT_PUBLIC_WEB_EDGE_ORIGIN`(또는 legacy identity origin)이 있으면 `/teams`를 붙이고,
+ * 없으면 로컬 web-edge 기본(`http://localhost:8888/teams`) — identity 단독 `:3000` dev에서 상대 `/teams` 이탈 방지(Task37-13).
  */
 export function resolveTeamShellEntryHref(): string {
   const raw =
     typeof process !== "undefined" ? process.env.NEXT_PUBLIC_TEAM_SHELL_HREF?.trim() ?? "" : ""
   if (!raw) {
-    return DEFAULT_TEAM_SHELL_ENTRY
+    const edge = teamShellEdgeOrigin()
+    const hasConfiguredOrigin =
+      typeof process !== "undefined" &&
+      Boolean(
+        process.env.NEXT_PUBLIC_WEB_EDGE_ORIGIN?.trim() ||
+          process.env.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN?.trim()
+      )
+    if (hasConfiguredOrigin) {
+      return `${edge}${TEAM_SHELL_PUBLIC_PATH}`
+    }
+    return `${LOCAL_DEV_WEB_EDGE_ORIGIN}${TEAM_SHELL_PUBLIC_PATH}`
   }
   const normalized = raw.replace(/\/+$/, "")
   if (normalized.startsWith("http://") || normalized.startsWith("https://")) {
     return normalized
   }
   const path = normalizePath(normalized)
-  const edgeOrigin =
-    typeof process !== "undefined"
-      ? (process.env.NEXT_PUBLIC_WEB_EDGE_ORIGIN ?? "http://localhost:8888").replace(/\/+$/, "")
-      : "http://localhost:8888"
-  return `${edgeOrigin}${path}`
+  return `${teamShellEdgeOrigin()}${path}`
 }
 
 /**
@@ -171,7 +191,7 @@ export function resolveConsoleNavLink(profile: ConsoleProfile, id: ConsoleNavId)
 
   /**
    * 팀 콘솔(web-host, basePath /teams)으로의 전환은 항상 풀 페이지 네비게이션(anchor).
-   * 기본 진입점은 web-edge Main Shell(`http://localhost:8888/teams` 등 절대 URL)로 고정해
+   * 기본 진입점은 {@link resolveTeamShellEntryHref}(배포 시 `NEXT_PUBLIC_WEB_EDGE_ORIGIN` + `/teams`)로 고정해
    * identity 등 타 오리진에서 상대 `/teams`로 잘못 이탈하는 것을 막는다(Task37-13).
    */
   if (id === "teams") {

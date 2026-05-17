@@ -297,6 +297,9 @@ jobs:
           push: true
           build-args: |
             NEXT_PUBLIC_USAGE_WEB_ORIGIN=${{ vars.NEXT_PUBLIC_USAGE_WEB_ORIGIN }}
+            NEXT_PUBLIC_WEB_EDGE_ORIGIN=${{ vars.NEXT_PUBLIC_WEB_EDGE_ORIGIN }}
+            NEXT_PUBLIC_IDENTITY_WEB_ORIGIN=${{ vars.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN }}
+            NEXT_PUBLIC_TEAM_SHELL_HREF=${{ vars.NEXT_PUBLIC_TEAM_SHELL_HREF }}
           tags: |
             ${{ steps.meta.outputs.image_prefix }}/identity-web:${{ steps.meta.outputs.tag_sha }}
             ${{ steps.meta.outputs.image_prefix }}/identity-web:${{ steps.meta.outputs.tag_pointer }}
