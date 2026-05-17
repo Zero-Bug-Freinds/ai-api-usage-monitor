@@ -3,6 +3,16 @@ output "aws_account_id" {
   value       = data.aws_caller_identity.current.account_id
 }
 
+output "aws_region" {
+  description = "Configured AWS region (alpha stop/start scripts, CLI)."
+  value       = var.aws_region
+}
+
+output "compute_asg_name" {
+  description = "ASG name when enable_compute_stack is true (scripts/ops/alpha-stack-*.sh)."
+  value       = var.enable_compute_stack ? module.compute[0].asg_name : null
+}
+
 output "github_oidc_provider_arn" {
   description = "IAM OIDC provider ARN for GitHub Actions (token.actions.githubusercontent.com)."
   value       = aws_iam_openid_connect_provider.github.arn

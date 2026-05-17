@@ -174,7 +174,23 @@ Tags: immutable `${{ github.sha }}` plus moving `:staging` / `:prod` (see `relea
 
 ---
 
-## 6. Secrets on EC2 (SSM Parameter Store / Secrets Manager)
+## 6. Alpha cost saving — stop/start without destroy (Method A)
+
+When `enable_compute_stack` and `enable_staging_rds` are on, use the repo scripts (AWS CLI + `terraform output`):
+
+| Script | Action |
+|--------|--------|
+| [`scripts/ops/alpha-stack-status.sh`](../scripts/ops/alpha-stack-status.sh) | EC2 / RDS / ALB DNS state |
+| [`scripts/ops/alpha-stack-stop.sh`](../scripts/ops/alpha-stack-stop.sh) | Stop EC2, then stop RDS (passwords and `.env.deploy` on the same volume are kept) |
+| [`scripts/ops/alpha-stack-start.sh`](../scripts/ops/alpha-stack-start.sh) | Start RDS, wait until `available`, start EC2 (systemd may run `ec2-boot-compose.sh`) |
+
+**Still billed while “stopped”:** ALB, Amazon MQ (`is_alpha_test`), EBS, RDS storage. MQ has no stop API — only delete (destroy) to remove that charge.
+
+**Do not** use `terraform destroy` for nightly shutdown if you want stable RDS/MQ passwords and data; use these scripts instead.
+
+---
+
+## 7. Secrets on EC2 (SSM Parameter Store / Secrets Manager)
 
 - **Do not** commit production `.env.deploy`. On the host, create `/opt/ai-api-usage-monitor/.env.deploy` (path configurable) from Parameter Store at boot or via SSM `GetParameters` in a thin wrapper before `docker compose`.
 - **Pattern**: `/ai-api/staging/IDENTITY_POSTGRES_PASSWORD` (hierarchy by environment); export into `.env.deploy` or use `docker compose --env-file` with a generated file (mode `0600`, root-owned).
@@ -182,7 +198,7 @@ Tags: immutable `${{ github.sha }}` plus moving `:staging` / `:prod` (see `relea
 
 ---
 
-## 7. ALB Target Group health (canonical)
+## 8. ALB Target Group health (canonical)
 
 Defaults in [`infra/terraform`](../infra/terraform) align **traffic** and **registration** with **web-edge** on the host:
 
@@ -202,7 +218,7 @@ The ALB listener stays **HTTP :80** on the load balancer; targets are **instance
 
 ---
 
-## 8. Previous successful `git sha` (rollback)
+## 9. Previous successful `git sha` (rollback)
 
 - **On instance**: `scripts/deploy/on-instance-compose-roll.sh` writes `/var/lib/ai-api-usage-monitor-deploy/last-success-sha` after a successful local health check.
 - On deploy failure after `compose up`, the script attempts `docker compose pull && up -d` with `IMAGE_TAG` reset to that file’s value (rollback).
@@ -210,7 +226,7 @@ The ALB listener stays **HTTP :80** on the load balancer; targets are **instance
 
 ---
 
-## 9. GitHub configuration checklist
+## 10. GitHub configuration checklist
 
 1. Environments **`staging`** and **`production`** (add required reviewers on `production`).
 2. **Per Environment variables:** `AWS_REGION`, optional `ECR_REPOSITORY_PREFIX`, `ALB_TARGET_GROUP_ARN` (set for post-Release auto roll), `SSM_DEPLOY_ROOT` (use `terraform output ssm_deploy_root_default`), optional `TARGET_PORT` (use `terraform output alb_target_port`, or leave unset — workflows default to **8888**), Next public origins for `release` (`NEXT_PUBLIC_*` as needed). **Release / Deploy OIDC role ARNs** are pinned in [`.github/workflows/release.yml`](../.github/workflows/release.yml) and [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) `env`; after `terraform apply`, ensure those ARNs match **`terraform output aws_release_role_arn`** / **`aws_deploy_role_arn`**, or switch the workflows back to `vars.AWS_*_ROLE_ARN` if you prefer Environment-stored ARNs.
