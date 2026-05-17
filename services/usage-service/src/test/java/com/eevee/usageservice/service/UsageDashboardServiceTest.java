@@ -241,4 +241,30 @@ class UsageDashboardServiceTest {
         verify(logRepository).findDistinctApiKeysForUserTeamMemberInRange(eq("u1"), any(), any(), isNull());
         verify(apiKeyMetadataRepository, never()).findPersonalKeysForDashboard(any(), any());
     }
+
+    @Test
+    void byModelForTeamAndUser_withApiKeyId_queriesLogsScopedToKey() {
+        LocalDate from = LocalDate.of(2025, 6, 1);
+        LocalDate to = LocalDate.of(2025, 6, 5);
+        when(analyticsJdbcRepository.aggregateByModelForTeamAndUserFromLogs(
+                eq("team-1"),
+                eq("member-1"),
+                any(),
+                any(),
+                isNull(),
+                eq("key-77")
+        )).thenReturn(List.of());
+
+        service.byModelForTeamAndUser("team-1", "member-1", from, to, null, "key-77");
+
+        verify(analyticsJdbcRepository).aggregateByModelForTeamAndUserFromLogs(
+                eq("team-1"),
+                eq("member-1"),
+                any(),
+                any(),
+                isNull(),
+                eq("key-77")
+        );
+        verify(analyticsJdbcRepository, never()).aggregateByModelForTeamAndUser(any(), any(), any(), any(), any());
+    }
 }

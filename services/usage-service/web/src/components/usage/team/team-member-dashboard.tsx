@@ -210,6 +210,8 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
               from: range.from,
               to: range.to,
               provider: provider === DASHBOARD_PROVIDER_ALL ? undefined : provider,
+              apiKeyId:
+                apiKeyId !== DASHBOARD_API_KEY_ALL && apiKeyId !== DASHBOARD_API_KEY_NONE ? apiKeyId : undefined,
             })
             const r = await fetch(`${base}/dashboard?${qMember}`, {
               credentials: "include",

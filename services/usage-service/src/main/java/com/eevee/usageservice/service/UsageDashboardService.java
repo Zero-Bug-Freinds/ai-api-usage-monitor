@@ -164,11 +164,37 @@ public class UsageDashboardService {
 
     @Transactional(readOnly = true)
     public UsageSummaryResponse summaryByTeamAndUser(String teamId, String userId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
+        return summaryByTeamAndUser(teamId, userId, from, toInclusive, provider, null);
+    }
+
+    @Transactional(readOnly = true)
+    public UsageSummaryResponse summaryByTeamAndUser(
+            String teamId,
+            String userId,
+            LocalDate from,
+            LocalDate toInclusive,
+            AiProvider provider,
+            String apiKeyId
+    ) {
         Range r = validateRange(from, toInclusive);
-        UsageSummaryResponse base = analyticsJdbcRepository.aggregateSummaryByTeamAndUser(
-                teamId, userId, r.from(), r.toExclusive(), provider);
-        Double avgLatencyMs = analyticsJdbcRepository.aggregateAvgLatencyMsByTeamAndUser(
-                teamId, userId, r.from(), r.toExclusive(), provider);
+        if (!restrictTeamToApiKey(apiKeyId)) {
+            UsageSummaryResponse base = analyticsJdbcRepository.aggregateSummaryByTeamAndUser(
+                    teamId, userId, r.from(), r.toExclusive(), provider);
+            Double avgLatencyMs = analyticsJdbcRepository.aggregateAvgLatencyMsByTeamAndUser(
+                    teamId, userId, r.from(), r.toExclusive(), provider);
+            return new UsageSummaryResponse(
+                    base.totalRequests(),
+                    base.totalErrors(),
+                    base.totalInputTokens(),
+                    base.totalEstimatedCost(),
+                    avgLatencyMs
+            );
+        }
+        String key = apiKeyId.trim();
+        UsageSummaryResponse base = analyticsJdbcRepository.aggregateSummaryForTeamAndUserFromLogs(
+                teamId, userId, r.from(), r.toExclusive(), provider, key);
+        Double avgLatencyMs = analyticsJdbcRepository.aggregateAvgLatencyMsByTeamAndUserFromLogs(
+                teamId, userId, r.from(), r.toExclusive(), provider, key);
         return new UsageSummaryResponse(
                 base.totalRequests(),
                 base.totalErrors(),
@@ -248,8 +274,24 @@ public class UsageDashboardService {
 
     @Transactional(readOnly = true)
     public List<DailyUsagePoint> dailySeriesByTeamAndUser(String teamId, String userId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
+        return dailySeriesByTeamAndUser(teamId, userId, from, toInclusive, provider, null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<DailyUsagePoint> dailySeriesByTeamAndUser(
+            String teamId,
+            String userId,
+            LocalDate from,
+            LocalDate toInclusive,
+            AiProvider provider,
+            String apiKeyId
+    ) {
+        if (!restrictTeamToApiKey(apiKeyId)) {
+            return dailySeriesByTeamAndUser(teamId, userId, from, toInclusive, provider);
+        }
         Range r = validateRange(from, toInclusive);
-        return analyticsJdbcRepository.aggregateDailyByTeamAndUser(teamId, userId, r.from(), r.toExclusive(), provider);
+        return analyticsJdbcRepository.aggregateDailyForTeamAndUserFromLogs(
+                teamId, userId, r.from(), r.toExclusive(), provider, apiKeyId.trim());
     }
 
     @Transactional(readOnly = true)
@@ -322,8 +364,24 @@ public class UsageDashboardService {
 
     @Transactional(readOnly = true)
     public List<MonthlyUsagePoint> monthlySeriesByTeamAndUser(String teamId, String userId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
+        return monthlySeriesByTeamAndUser(teamId, userId, from, toInclusive, provider, null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<MonthlyUsagePoint> monthlySeriesByTeamAndUser(
+            String teamId,
+            String userId,
+            LocalDate from,
+            LocalDate toInclusive,
+            AiProvider provider,
+            String apiKeyId
+    ) {
+        if (!restrictTeamToApiKey(apiKeyId)) {
+            return monthlySeriesByTeamAndUser(teamId, userId, from, toInclusive, provider);
+        }
         Range r = validateRange(from, toInclusive);
-        return analyticsJdbcRepository.aggregateMonthlyByTeamAndUser(teamId, userId, r.from(), r.toExclusive(), provider);
+        return analyticsJdbcRepository.aggregateMonthlyForTeamAndUserFromLogs(
+                teamId, userId, r.from(), r.toExclusive(), provider, apiKeyId.trim());
     }
 
     @Transactional(readOnly = true)
@@ -452,8 +510,24 @@ public class UsageDashboardService {
 
     @Transactional(readOnly = true)
     public List<ModelUsageAggregate> byModelForTeamAndUser(String teamId, String userId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
+        return byModelForTeamAndUser(teamId, userId, from, toInclusive, provider, null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ModelUsageAggregate> byModelForTeamAndUser(
+            String teamId,
+            String userId,
+            LocalDate from,
+            LocalDate toInclusive,
+            AiProvider provider,
+            String apiKeyId
+    ) {
+        if (!restrictTeamToApiKey(apiKeyId)) {
+            return byModelForTeamAndUser(teamId, userId, from, toInclusive, provider);
+        }
         Range r = validateRange(from, toInclusive);
-        return analyticsJdbcRepository.aggregateByModelForTeamAndUser(teamId, userId, r.from(), r.toExclusive(), provider);
+        return analyticsJdbcRepository.aggregateByModelForTeamAndUserFromLogs(
+                teamId, userId, r.from(), r.toExclusive(), provider, apiKeyId.trim());
     }
 
     @Transactional(readOnly = true)

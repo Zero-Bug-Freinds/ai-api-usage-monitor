@@ -1424,6 +1424,214 @@ public class UsageAnalyticsJdbcRepository {
         );
     }
 
+    public UsageSummaryResponse aggregateSummaryForTeamAndUserFromLogs(
+            String teamId,
+            String userId,
+            Instant from,
+            Instant toExclusive,
+            AiProvider provider,
+            String apiKeyFilter
+    ) {
+        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        String sql = """
+                SELECT COUNT(*)::bigint,
+                       COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0)::bigint,
+                       COALESCE(SUM(prompt_tokens), 0)::bigint,
+                       COALESCE(SUM(estimated_cost), 0)
+                FROM usage_recorded_log
+                WHERE team_id = ?
+                  AND user_id = ?
+                  AND occurred_at >= ? AND occurred_at < ?%s%s
+                """.formatted(ERR_PRED, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+        String p1 = provider == null ? null : provider.name();
+        return jdbc.queryForObject(
+                sql,
+                (rs, rowNum) -> new UsageSummaryResponse(
+                        rs.getLong(1),
+                        rs.getLong(2),
+                        rs.getLong(3),
+                        rs.getBigDecimal(4) != null ? rs.getBigDecimal(4) : BigDecimal.ZERO
+                ),
+                teamId,
+                userId,
+                Timestamp.from(from),
+                Timestamp.from(toExclusive),
+                af,
+                af,
+                p1,
+                p1
+        );
+    }
+
+    public Double aggregateAvgLatencyMsByTeamAndUserFromLogs(
+            String teamId,
+            String userId,
+            Instant from,
+            Instant toExclusive,
+            AiProvider provider,
+            String apiKeyFilter
+    ) {
+        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        String sql = """
+                SELECT AVG(latency_ms)::double precision
+                FROM usage_recorded_log
+                WHERE team_id = ?
+                  AND user_id = ?
+                  AND occurred_at >= ? AND occurred_at < ?
+                  AND latency_ms IS NOT NULL%s%s
+                """.formatted(TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+        String p1 = provider == null ? null : provider.name();
+        return jdbc.query(
+                sql,
+                rs -> {
+                    if (!rs.next()) {
+                        return null;
+                    }
+                    double v = rs.getDouble(1);
+                    return rs.wasNull() ? null : v;
+                },
+                teamId,
+                userId,
+                Timestamp.from(from),
+                Timestamp.from(toExclusive),
+                af,
+                af,
+                p1,
+                p1
+        );
+    }
+
+    public List<DailyUsagePoint> aggregateDailyForTeamAndUserFromLogs(
+            String teamId,
+            String userId,
+            Instant from,
+            Instant toExclusive,
+            AiProvider provider,
+            String apiKeyFilter
+    ) {
+        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        String sql = """
+                SELECT ((occurred_at AT TIME ZONE '%s'))::date AS d,
+                       COUNT(*)::bigint,
+                       COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0)::bigint,
+                       COALESCE(SUM(prompt_tokens), 0)::bigint,
+                       COALESCE(SUM(estimated_cost), 0)
+                FROM usage_recorded_log
+                WHERE team_id = ?
+                  AND user_id = ?
+                  AND occurred_at >= ? AND occurred_at < ?%s%s
+                GROUP BY 1
+                ORDER BY 1
+                """.formatted(BUCKET_ZONE, ERR_PRED, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+        String p1 = provider == null ? null : provider.name();
+        return jdbc.query(
+                sql,
+                (rs, rowNum) -> new DailyUsagePoint(
+                        rs.getDate("d").toLocalDate(),
+                        rs.getLong(2),
+                        rs.getLong(3),
+                        rs.getLong(4),
+                        rs.getBigDecimal(5) != null ? rs.getBigDecimal(5) : BigDecimal.ZERO
+                ),
+                teamId,
+                userId,
+                Timestamp.from(from),
+                Timestamp.from(toExclusive),
+                af,
+                af,
+                p1,
+                p1
+        );
+    }
+
+    public List<MonthlyUsagePoint> aggregateMonthlyForTeamAndUserFromLogs(
+            String teamId,
+            String userId,
+            Instant from,
+            Instant toExclusive,
+            AiProvider provider,
+            String apiKeyFilter
+    ) {
+        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        String sql = """
+                SELECT to_char((occurred_at AT TIME ZONE '%s'), 'YYYY-MM') AS ym,
+                       COUNT(*)::bigint,
+                       COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0)::bigint,
+                       COALESCE(SUM(prompt_tokens), 0)::bigint,
+                       COALESCE(SUM(estimated_cost), 0)
+                FROM usage_recorded_log
+                WHERE team_id = ?
+                  AND user_id = ?
+                  AND occurred_at >= ? AND occurred_at < ?%s%s
+                GROUP BY 1
+                ORDER BY 1
+                """.formatted(BUCKET_ZONE, ERR_PRED, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+        String p1 = provider == null ? null : provider.name();
+        return jdbc.query(
+                sql,
+                (rs, rowNum) -> new MonthlyUsagePoint(
+                        rs.getString("ym"),
+                        rs.getLong(2),
+                        rs.getLong(3),
+                        rs.getLong(4),
+                        rs.getBigDecimal(5) != null ? rs.getBigDecimal(5) : BigDecimal.ZERO
+                ),
+                teamId,
+                userId,
+                Timestamp.from(from),
+                Timestamp.from(toExclusive),
+                af,
+                af,
+                p1,
+                p1
+        );
+    }
+
+    public List<ModelUsageAggregate> aggregateByModelForTeamAndUserFromLogs(
+            String teamId,
+            String userId,
+            Instant from,
+            Instant toExclusive,
+            AiProvider provider,
+            String apiKeyFilter
+    ) {
+        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        String sql = """
+                SELECT COALESCE(NULLIF(TRIM(model), ''), LOWER(provider::text) || '_unknown') AS m,
+                       provider::text,
+                       COUNT(*)::bigint,
+                       COALESCE(SUM(prompt_tokens), 0)::bigint,
+                       COALESCE(SUM(estimated_reasoning_tokens), 0)::bigint,
+                       COALESCE(SUM(completion_tokens), 0)::bigint
+                FROM usage_recorded_log
+                WHERE team_id = ?
+                  AND user_id = ?
+                  AND occurred_at >= ? AND occurred_at < ?%s%s
+                GROUP BY model, provider
+                ORDER BY COUNT(*) DESC
+                """.formatted(TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+        String p1 = provider == null ? null : provider.name();
+        return jdbc.query(
+                sql,
+                (rs, rowNum) -> new ModelUsageAggregate(
+                        rs.getString("m"),
+                        rs.getString("provider"),
+                        rs.getLong(3),
+                        rs.getLong(4),
+                        rs.getLong(5),
+                        rs.getLong(6)
+                ),
+                teamId,
+                userId,
+                Timestamp.from(from),
+                Timestamp.from(toExclusive),
+                af,
+                af,
+                p1,
+                p1
+        );
+    }
+
     public List<UsageTeamUserSlice> findDistinctTeamUserSlices(LocalDate minUsageDateInclusive) {
         String sql = """
                 SELECT DISTINCT team_id, user_id
