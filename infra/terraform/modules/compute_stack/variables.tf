@@ -75,3 +75,20 @@ variable "bootstrap_git_clone_url" {
   description = "HTTPS git URL for optional bootstrap clone (ignored when bootstrap_git_clone_enabled is false)."
   default     = ""
 }
+
+variable "bootstrap_image_tag" {
+  type        = string
+  description = "ECR tag for web-edge-only bootstrap on first boot (must exist in ECR; e.g. staging or a recent release sha)."
+  default     = "staging"
+}
+
+variable "health_check_grace_period" {
+  type        = number
+  description = "ASG seconds to ignore ELB health after launch (allow SSM rolling deploy to finish)."
+  default     = 900
+
+  validation {
+    condition     = var.health_check_grace_period >= 300 && var.health_check_grace_period <= 7200
+    error_message = "health_check_grace_period must be between 300 and 7200 seconds."
+  }
+}

@@ -42,6 +42,8 @@ module "compute" {
   public_subnet_cidrs         = var.public_subnet_cidrs
   bootstrap_git_clone_enabled = var.ec2_bootstrap_git_clone_enabled
   bootstrap_git_clone_url     = var.ec2_bootstrap_git_clone_url != "" ? var.ec2_bootstrap_git_clone_url : "https://github.com/${var.github_org}/${var.github_repo}.git"
+  bootstrap_image_tag         = var.compute_bootstrap_image_tag
+  health_check_grace_period   = var.compute_health_check_grace_period
 }
 
 check "staging_rds_needs_compute_vpc" {

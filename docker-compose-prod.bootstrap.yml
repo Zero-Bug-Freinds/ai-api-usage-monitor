@@ -1,0 +1,14 @@
+# Minimal stack so a new EC2 passes ALB /healthz before the first SSM rolling deploy.
+# Started by scripts/deploy/ec2-bootstrap-health-edge.sh (Terraform user-data).
+# Removed by scripts/deploy/on-instance-compose-roll.sh when the full stack deploys.
+# GATEWAY_SHARED_SECRET is not used for /healthz; a placeholder is fine until full deploy.
+
+services:
+  web-edge:
+    restart: unless-stopped
+    image: ${ECR_IMAGE_PREFIX}/web-edge:${IMAGE_TAG}
+    environment:
+      GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET:-bootstrap-health-only}
+    ports:
+      - "${WEB_EDGE_HOST_PORT:-8888}:80"
+      - "${WEB_EDGE_HEALTH_HOST_PORT:-8080}:8080"

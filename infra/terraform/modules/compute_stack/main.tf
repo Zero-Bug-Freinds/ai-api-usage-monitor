@@ -236,6 +236,26 @@ locals {
 %{endif}
     chown -R ec2-user:ec2-user /opt/${var.project_name}
     chmod -R u+rwX /opt/${var.project_name}
+    chmod +x /opt/${var.project_name}/scripts/deploy/*.sh 2>/dev/null || true
+    if [ -x /opt/${var.project_name}/scripts/deploy/install-ec2-boot-systemd.sh ]; then
+      bash /opt/${var.project_name}/scripts/deploy/install-ec2-boot-systemd.sh /opt/${var.project_name}
+    fi
+    export AWS_REGION='${data.aws_region.current.name}'
+    export ECR_REPOSITORY_PREFIX='${var.ecr_repository_prefix}'
+    export BOOTSTRAP_IMAGE_TAG='${var.bootstrap_image_tag}'
+    export DEPLOY_ROOT="/opt/${var.project_name}"
+    if [ -x /opt/${var.project_name}/scripts/deploy/ec2-bootstrap-health-edge.sh ]; then
+      bash /opt/${var.project_name}/scripts/deploy/ec2-bootstrap-health-edge.sh || true
+    else
+      ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+      REGISTRY="$${ACCOUNT}.dkr.ecr.${data.aws_region.current.name}.amazonaws.com"
+      aws ecr get-login-password --region ${data.aws_region.current.name} | docker login --username AWS --password-stdin "$${REGISTRY}"
+      docker rm -f aio-bootstrap-web-edge 2>/dev/null || true
+      docker run -d --name aio-bootstrap-web-edge --restart unless-stopped \
+        -p ${var.target_port}:80 -p 8080:8080 \
+        -e GATEWAY_SHARED_SECRET=bootstrap-health-only \
+        "$${REGISTRY}/${var.ecr_repository_prefix}/web-edge:${var.bootstrap_image_tag}" || true
+    fi
   EOT
 }
 
@@ -327,7 +347,7 @@ resource "aws_autoscaling_group" "app" {
   name                      = "${var.project_name}-asg-${var.environment_label}"
   vpc_zone_identifier       = aws_subnet.public[*].id
   health_check_type         = "ELB"
-  health_check_grace_period = 300
+  health_check_grace_period = var.health_check_grace_period
   min_size                  = var.asg_min_size
   max_size                  = var.asg_max_size
   desired_capacity          = var.asg_desired_capacity
