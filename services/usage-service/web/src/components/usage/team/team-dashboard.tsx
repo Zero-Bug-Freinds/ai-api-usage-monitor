@@ -30,9 +30,11 @@ import {
 } from "@/lib/usage/dashboard-provider-api-keys"
 import { UsageFilterBar } from "@/components/usage/usage-filter-bar"
 import { useDashboardAggregateApiKeySync } from "@/lib/usage/use-dashboard-aggregate-api-key"
+import {
+  readTeamDashboardLastTeamId,
+  writeTeamDashboardLastTeamId,
+} from "@/lib/usage/team-dashboard-last-team"
 import { useFilterStorage } from "@/lib/usage/use-filter-storage"
-
-const LAST_TEAM_STORAGE_KEY = "last_team_id"
 
 export type TeamDashboardProps = {
   viewTeamIdFromQuery?: string
@@ -105,7 +107,7 @@ function pickTeamIdFromSources(list: TeamSummary[], viewQ: string | undefined): 
   if (list.length === 0) return ""
   if (viewQ && list.some((t) => t.id === viewQ)) return viewQ
   if (typeof window !== "undefined") {
-    const saved = window.localStorage.getItem(LAST_TEAM_STORAGE_KEY)
+    const saved = readTeamDashboardLastTeamId()
     if (saved && list.some((t) => t.id === saved)) {
       return saved
     }
@@ -252,7 +254,7 @@ export default function TeamDashboard({
 
   React.useEffect(() => {
     if (!selectedTeamId || typeof window === "undefined") return
-    window.localStorage.setItem(LAST_TEAM_STORAGE_KEY, selectedTeamId)
+    writeTeamDashboardLastTeamId(selectedTeamId)
   }, [selectedTeamId])
 
   React.useEffect(() => {
