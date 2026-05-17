@@ -419,6 +419,9 @@ services:
       args:
         WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
         NEXT_PUBLIC_USAGE_WEB_ORIGIN: ${NEXT_PUBLIC_USAGE_WEB_ORIGIN:-http://localhost:${WEB_EDGE_PORT:-8888}}
+        NEXT_PUBLIC_WEB_EDGE_ORIGIN: ${NEXT_PUBLIC_WEB_EDGE_ORIGIN:-http://localhost:${WEB_EDGE_PORT:-8888}}
+        NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${WEB_EDGE_PORT:-8888}}
+        NEXT_PUBLIC_TEAM_SHELL_HREF: ${NEXT_PUBLIC_TEAM_SHELL_HREF:-}
     depends_on:
       - api-gateway-service
     environment:
