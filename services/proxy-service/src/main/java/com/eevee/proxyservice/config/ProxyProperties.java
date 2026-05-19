@@ -16,6 +16,7 @@ public class ProxyProperties {
     private Rabbit rabbit = new Rabbit();
     private Gateway gateway = new Gateway();
     private FingerprintLookup fingerprintLookup = new FingerprintLookup();
+    private UsageSubject usageSubject = new UsageSubject();
 
     public Map<String, ProviderEndpoint> getProviders() {
         return providers;
@@ -59,6 +60,35 @@ public class ProxyProperties {
 
     public void setFingerprintLookup(FingerprintLookup fingerprintLookup) {
         this.fingerprintLookup = fingerprintLookup;
+    }
+
+    public UsageSubject getUsageSubject() {
+        return usageSubject;
+    }
+
+    public void setUsageSubject(UsageSubject usageSubject) {
+        this.usageSubject = usageSubject;
+    }
+
+    public static class UsageSubject {
+        private boolean enabled = true;
+        private String cacheTtl = "PT10M";
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getCacheTtl() {
+            return cacheTtl;
+        }
+
+        public void setCacheTtl(String cacheTtl) {
+            this.cacheTtl = cacheTtl;
+        }
     }
 
     public static class ProviderEndpoint {

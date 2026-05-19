@@ -14,8 +14,13 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 
+import com.eevee.proxyservice.identity.UsageSubjectResolver;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class ApiKeyClientFingerprintLookupTest {
 
@@ -44,6 +49,18 @@ class ApiKeyClientFingerprintLookupTest {
                         """);
                 return;
             }
+            if ("GET".equals(exchange.getRequestMethod()) && path.startsWith("/internal/users/principal")) {
+                respond(exchange, 200, """
+                        {"success":true,"message":"ok","data":{"userId":"1","email":"user@test.com"}}\
+                        """);
+                return;
+            }
+            if ("GET".equals(exchange.getRequestMethod()) && path.startsWith("/internal/users/email")) {
+                respond(exchange, 200, """
+                        {"success":true,"message":"ok","data":"user@test.com"}\
+                        """);
+                return;
+            }
             if ("GET".equals(exchange.getRequestMethod()) && path.contains("/internal/api-keys/openai")) {
                 respond(exchange, 200, "{\"plainKey\":\"sk-test-personal\",\"keyId\":\"99\"}");
                 return;
@@ -53,7 +70,9 @@ class ApiKeyClientFingerprintLookupTest {
         teamServer = startServer(exchange -> respond(exchange, 404, "{\"message\":\"not found\"}"));
 
         ProxyProperties props = baseProps(identityServer.getAddress().getPort(), teamServer.getAddress().getPort());
-        ApiKeyClient client = ApiKeyClient.forTests(props);
+        UsageSubjectResolver usageSubjectResolver = mock(UsageSubjectResolver.class);
+        when(usageSubjectResolver.resolveForFingerprintOwner(any(), any())).thenReturn("user@test.com");
+        ApiKeyClient client = ApiKeyClient.forTests(props, usageSubjectResolver);
 
         ApiKeyClient.ResolvedApiKey resolved = client.resolveApiKey(
                 null,
@@ -69,7 +88,7 @@ class ApiKeyClientFingerprintLookupTest {
         assertThat(resolved).isNotNull();
         assertThat(resolved.plainKey()).isEqualTo("sk-test-personal");
         assertThat(resolved.keyId()).isEqualTo("99");
-        assertThat(resolved.ownerUserId()).isEqualTo("u_1");
+        assertThat(resolved.ownerUserId()).isEqualTo("user@test.com");
     }
 
     @Test

@@ -37,6 +37,9 @@ proxy:
     # Dev-only: in-memory reverse lookup mocks (enable explicitly for local tests).
     reverse-lookup-mocks-enabled: ${PROXY_REVERSE_LOOKUP_MOCKS_ENABLED:false}
     reverse-lookup-mocks: []
+  usage-subject:
+    enabled: ${PROXY_USAGE_SUBJECT_ENABLED:true}
+    cache-ttl: ${PROXY_USAGE_SUBJECT_CACHE_TTL:PT10M}
   fingerprint-lookup:
     enabled: ${PROXY_FINGERPRINT_LOOKUP_ENABLED:true}
     internal-token: ${PROXY_FINGERPRINT_LOOKUP_TOKEN:${PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN:}}

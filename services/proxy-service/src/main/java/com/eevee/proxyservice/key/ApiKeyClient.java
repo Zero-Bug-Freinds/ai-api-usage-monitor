@@ -1,6 +1,7 @@
 package com.eevee.proxyservice.key;
 
 import com.eevee.proxyservice.config.ProxyProperties;
+import com.eevee.proxyservice.identity.UsageSubjectResolver;
 import com.eevee.usage.events.AiProvider;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.github.benmanes.caffeine.cache.Caffeine;
@@ -42,16 +43,32 @@ public class ApiKeyClient {
     private final ProxyProperties proxyProperties;
     private final FingerprintReverseLookupService fingerprintReverseLookupService;
     private final FingerprintLookupCache fingerprintLookupCache;
+    private final UsageSubjectResolver usageSubjectResolver;
     private final WebClient identityKeyServiceWebClient;
     private final WebClient teamKeyServiceWebClient;
     private final LoadingCache<String, ResolvedApiKey> cache;
     private final Map<String, List<ReverseLookupEntry>> reverseLookupIndexByHash = new ConcurrentHashMap<>();
 
     public static ApiKeyClient forTests(ProxyProperties proxyProperties) {
+        return forTests(proxyProperties, null);
+    }
+
+    public static ApiKeyClient forTests(ProxyProperties proxyProperties, UsageSubjectResolver usageSubjectResolver) {
+        UsageSubjectResolver resolver = usageSubjectResolver != null
+                ? usageSubjectResolver
+                : new UsageSubjectResolver(
+                        com.eevee.proxyservice.identity.IdentityUsageSubjectClient.forTests(
+                                WebClient.builder().baseUrl(proxyProperties.getKeyService().getBaseUrl()).build(),
+                                new com.fasterxml.jackson.databind.ObjectMapper(),
+                                Duration.ofSeconds(10)
+                        ),
+                        proxyProperties
+                );
         return new ApiKeyClient(
                 proxyProperties,
                 new FingerprintReverseLookupService(proxyProperties),
-                new FingerprintLookupCache(proxyProperties)
+                new FingerprintLookupCache(proxyProperties),
+                resolver
         );
     }
 
@@ -59,11 +76,13 @@ public class ApiKeyClient {
     public ApiKeyClient(
             ProxyProperties proxyProperties,
             FingerprintReverseLookupService fingerprintReverseLookupService,
-            FingerprintLookupCache fingerprintLookupCache
+            FingerprintLookupCache fingerprintLookupCache,
+            UsageSubjectResolver usageSubjectResolver
     ) {
         this.proxyProperties = proxyProperties;
         this.fingerprintReverseLookupService = fingerprintReverseLookupService;
         this.fingerprintLookupCache = fingerprintLookupCache;
+        this.usageSubjectResolver = usageSubjectResolver;
         this.identityKeyServiceWebClient = WebClient.builder()
                 .baseUrl(proxyProperties.getKeyService().getBaseUrl())
                 .build();
@@ -135,12 +154,14 @@ public class ApiKeyClient {
             return Mono.fromCallable(() -> cache.get(requiredLookupUserId + ":" + normalizedTeamId + ":" + provider.pathSegment()))
                     .subscribeOn(Schedulers.boundedElastic());
         }
+        String gatewaySubjectFallback = keyLookupUserId;
         if (normalizedFingerprint != null && proxyProperties.getFingerprintLookup().isEnabled()) {
             return resolveByFingerprint(
                     provider,
                     normalizedFingerprint,
                     normalizedRawApiKey,
-                    correlationId
+                    correlationId,
+                    gatewaySubjectFallback
             );
         }
         if (normalizedRawApiKey != null && proxyProperties.getKeyService().isReverseLookupMocksEnabled()) {
@@ -149,7 +170,13 @@ public class ApiKeyClient {
         }
         if (normalizedRawApiKey != null) {
             String derivedFingerprint = ApiKeyFingerprintNormalizer.sha256HexUtf8(normalizedRawApiKey);
-            return resolveByFingerprint(provider, derivedFingerprint, normalizedRawApiKey, correlationId);
+            return resolveByFingerprint(
+                    provider,
+                    derivedFingerprint,
+                    normalizedRawApiKey,
+                    correlationId,
+                    gatewaySubjectFallback
+            );
         }
         throw new ResponseStatusException(NOT_FOUND, "존재하지 않은 API key 입니다");
     }
@@ -158,20 +185,22 @@ public class ApiKeyClient {
             AiProvider provider,
             String fingerprint64,
             String rawApiKey,
-            String correlationId
+            String correlationId,
+            String gatewaySubjectFallback
     ) {
         String cacheKey = FingerprintLookupCache.cacheKey(provider.name(), fingerprint64);
         return fingerprintLookupCache.resolve(
                 cacheKey,
                 fingerprintReverseLookupService.lookup(provider, fingerprint64, correlationId)
-                        .flatMap(owner -> hydrateFromFingerprintOwner(owner, provider, rawApiKey))
+                        .flatMap(owner -> hydrateFromFingerprintOwner(owner, provider, rawApiKey, gatewaySubjectFallback))
         );
     }
 
     private Mono<ResolvedApiKey> hydrateFromFingerprintOwner(
             FingerprintOwnerLookup owner,
             AiProvider provider,
-            String rawApiKey
+            String rawApiKey,
+            String gatewaySubjectFallback
     ) {
         if (owner.isTeam()) {
             log.warn(
@@ -183,16 +212,17 @@ public class ApiKeyClient {
                     "team API key relay requires team-service trusted internal credential API"
             ));
         }
-        if (hasText(rawApiKey)) {
-            return Mono.just(toResolvedApiKey(rawApiKey, owner, provider));
-        }
-        String lookupUserId = owner.userId();
-        if (!hasText(lookupUserId)) {
-            return Mono.error(new ResponseStatusException(BAD_GATEWAY, "fingerprint lookup returned empty userId"));
-        }
         return Mono.fromCallable(() -> {
+                    String usageSubjectUserId = usageSubjectResolver.resolveForFingerprintOwner(owner, gatewaySubjectFallback);
+                    if (hasText(rawApiKey)) {
+                        return toResolvedApiKey(rawApiKey, owner, provider, owner.alias(), usageSubjectUserId);
+                    }
+                    String identityLookupUserId = hasText(usageSubjectUserId) ? usageSubjectUserId : owner.userId();
+                    if (!hasText(identityLookupUserId)) {
+                        throw new ResponseStatusException(BAD_GATEWAY, "fingerprint lookup returned empty userId");
+                    }
                     KeyResponse body = loadIdentityKeyByProviderSegment(
-                            lookupUserId,
+                            identityLookupUserId,
                             provider.pathSegment(),
                             FingerprintReverseLookupService.resolveInternalToken(proxyProperties),
                             owner.keyId(),
@@ -201,20 +231,17 @@ public class ApiKeyClient {
                     if (body == null || !hasText(body.plainKey())) {
                         throw new ResponseStatusException(BAD_GATEWAY, "Key lookup returned empty key");
                     }
-                    return toResolvedApiKey(body.plainKey(), owner, provider, body.alias());
+                    return toResolvedApiKey(body.plainKey(), owner, provider, body.alias(), usageSubjectUserId);
                 })
                 .subscribeOn(Schedulers.boundedElastic());
-    }
-
-    private ResolvedApiKey toResolvedApiKey(String plainKey, FingerprintOwnerLookup owner, AiProvider provider) {
-        return toResolvedApiKey(plainKey, owner, provider, owner.alias());
     }
 
     private ResolvedApiKey toResolvedApiKey(
             String plainKey,
             FingerprintOwnerLookup owner,
             AiProvider provider,
-            String alias
+            String alias,
+            String usageSubjectUserId
     ) {
         String teamApiKeyId = owner.isTeam() ? owner.keyId() : null;
         return new ResolvedApiKey(
@@ -224,7 +251,7 @@ public class ApiKeyClient {
                 alias,
                 fingerprint(plainKey),
                 hasText(owner.keySource()) ? owner.keySource() : "managed",
-                owner.userId(),
+                usageSubjectUserId,
                 owner.teamId()
         );
     }
