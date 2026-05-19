@@ -1,3 +1,5 @@
+import { warnStorageError } from "@/lib/usage/messaging/storage-errors"
+
 /** 팀별 나의 사용량·사용 로그 팀 탭과 동일 localStorage 키 (대시보드 `last_team_id` 와 분리). */
 export const MY_USAGE_BY_TEAM_LAST_SELECTED_TEAM_ID = "MY_USAGE_BY_TEAM_LAST_SELECTED_TEAM_ID"
 
@@ -13,9 +15,13 @@ export function pickOldestMemberTeamId(list: MemberTeamSummary[]): string {
 export function pickMemberTeamIdFromSources(list: MemberTeamSummary[]): string {
   if (list.length === 0) return ""
   if (typeof window !== "undefined") {
-    const saved = window.localStorage.getItem(MY_USAGE_BY_TEAM_LAST_SELECTED_TEAM_ID)
-    if (saved && list.some((t) => t.id === saved)) {
-      return saved
+    try {
+      const saved = window.localStorage.getItem(MY_USAGE_BY_TEAM_LAST_SELECTED_TEAM_ID)
+      if (saved && list.some((t) => t.id === saved)) {
+        return saved
+      }
+    } catch (e) {
+      warnStorageError(e)
     }
   }
   return pickOldestMemberTeamId(list)

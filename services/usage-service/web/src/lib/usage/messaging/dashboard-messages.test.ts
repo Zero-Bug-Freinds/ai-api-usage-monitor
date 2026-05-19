@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest"
 
+import { memberUsageFetchError } from "./team-bff-fetch-errors"
 import {
+  MEMBER_DETAIL_MESSAGES,
   PERSONAL_DASHBOARD_MESSAGES,
   TEAM_DASHBOARD_MESSAGES,
   latencyInsightBannerText,
@@ -67,6 +69,14 @@ describe("TEAM_DASHBOARD_MESSAGES", () => {
     expect(TEAM_DASHBOARD_MESSAGES.errors.teamsList).toContain("ERR_TEAM_LIST")
     expect(TEAM_DASHBOARD_MESSAGES.warnings.partialEnrichment).toContain("ERR_TEAM_PARTIAL")
     expect(TEAM_DASHBOARD_MESSAGES.hints.noModelUsage).toContain("멤버 모델 사용 데이터")
+  })
+})
+
+describe("MEMBER_DETAIL_MESSAGES", () => {
+  it("shares empty model copy with team dashboard and aligns bad request with BFF", () => {
+    expect(MEMBER_DETAIL_MESSAGES.hints.noModelUsage).toBe(TEAM_DASHBOARD_MESSAGES.hints.noModelUsage)
+    expect(MEMBER_DETAIL_MESSAGES.errors.badRequest).toBe(memberUsageFetchError(400))
+    expect(MEMBER_DETAIL_MESSAGES.errors.env).toContain("ERR_ENV_500")
   })
 })
 

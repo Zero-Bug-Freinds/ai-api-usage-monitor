@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import * as React from "react"
 import { CircleHelp, ChevronDown, ChevronRight, Filter, Loader2, RotateCcw, X } from "lucide-react"
@@ -42,6 +42,12 @@ import {
   readStoredLogDataTab,
   type UsageLogDataTab,
 } from "@/lib/usage/hooks/usage-log-tab-storage"
+import {
+  USAGELOG_MESSAGES,
+  logUsageLogFetchError,
+  logUsageLogPersonalApiKeysFetch,
+  toUsageLogFetchErrorMessage,
+} from "@/lib/usage/messaging/usagelog-messages"
 
 const LOGS_PAGE_SIZE = 20
 const LOG_PROVIDER_ALL = "__all__"
@@ -193,8 +199,11 @@ export function UsageLogPanel() {
         if (!cancelled) {
           setPersonalApiKeyOptions(Array.isArray(data) ? data : [])
         }
-      } catch {
-        if (!cancelled) setPersonalApiKeyOptions([])
+      } catch (e: unknown) {
+        if (!cancelled) {
+          logUsageLogPersonalApiKeysFetch({ error: e })
+          setPersonalApiKeyOptions([])
+        }
       }
     })()
     return () => {
@@ -269,7 +278,8 @@ export function UsageLogPanel() {
         if (!cancelled) setLogs(data)
       } catch (e) {
         if (!cancelled) {
-          setLogsError(e instanceof Error ? e.message : "로그를 불러오지 못했습니다")
+          logUsageLogFetchError({ error: e })
+          setLogsError(toUsageLogFetchErrorMessage(e))
         }
       } finally {
         if (!cancelled) setLogsLoading(false)
@@ -579,7 +589,7 @@ export function UsageLogPanel() {
         >
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
-            <span>로그를 불러오는 중입니다…</span>
+            <span>{USAGELOG_MESSAGES.loading.main}</span>
           </div>
           <div className="space-y-2">
             <div className="h-3 max-w-xs w-[40%] rounded bg-muted animate-pulse" />
@@ -587,7 +597,7 @@ export function UsageLogPanel() {
           </div>
         </div>
       ) : !logs || logs.content.length === 0 ? (
-        <p className="text-sm text-muted-foreground">사용 데이터가 없습니다</p>
+        <p className="text-sm text-muted-foreground">{USAGELOG_MESSAGES.empty.noData}</p>
       ) : (
         <>
           <div className="overflow-x-auto rounded-md border border-border">

@@ -8,6 +8,12 @@ import {
   pickMemberTeamIdFromSources,
 } from "@/lib/usage/team-member-team-picker"
 import { parseTeamBffApiKeysPayload, type TeamBffApiKeyRow } from "@/lib/usage/dashboard-provider-api-keys"
+import {
+  USAGELOG_MESSAGES,
+  logUsageLogMemberTeamsFetch,
+  logUsageLogTeamApiKeysFetch,
+} from "@/lib/usage/messaging/usagelog-messages"
+import { warnStorageError } from "@/lib/usage/messaging/storage-errors"
 
 /**
  * 팀 BFF `/teams`, `/teams/{id}/api-keys` 로 소속 팀·팀 API 키 목록을 로드한다.
@@ -36,17 +42,25 @@ export function useTeamBffTeamsAndApiKeys(enabled: boolean) {
       const base = teamUsageBffBase()
       if (!base) {
         if (!cancelled) {
-          setMemberTeamsErr("사용량 API 베이스 URL을 확인할 수 없습니다")
+          logUsageLogMemberTeamsFetch({
+            reason: "missing_team_bff_base",
+            originalMessage: USAGELOG_MESSAGES.internalLog.missingTeamBffBase,
+          })
+          setMemberTeamsErr(USAGELOG_MESSAGES.errors.memberTeamsEnv)
           setMemberTeams([])
           setMemberTeamsLoading(false)
         }
         return
       }
+      const teamsUrl = `${base}/teams`
       try {
-        const res = await fetch(`${base}/teams`, { credentials: "include", headers: { Accept: "application/json" } })
+        const res = await fetch(teamsUrl, { credentials: "include", headers: { Accept: "application/json" } })
         const json = (await res.json()) as { teams?: unknown }
         if (!res.ok || !Array.isArray(json.teams)) {
-          if (!cancelled) setMemberTeamsErr("팀 목록을 불러오지 못했습니다")
+          if (!cancelled) {
+            logUsageLogMemberTeamsFetch({ request: teamsUrl, status: res.status })
+            setMemberTeamsErr(USAGELOG_MESSAGES.errors.memberTeamsFooter)
+          }
           return
         }
         const list = (json.teams as unknown[])
@@ -66,8 +80,11 @@ export function useTeamBffTeamsAndApiKeys(enabled: boolean) {
           setMemberTeams(list)
           setMemberTeamsErr(null)
         }
-      } catch {
-        if (!cancelled) setMemberTeamsErr("팀 목록을 불러오지 못했습니다")
+      } catch (e: unknown) {
+        if (!cancelled) {
+          logUsageLogMemberTeamsFetch({ request: teamsUrl, error: e })
+          setMemberTeamsErr(USAGELOG_MESSAGES.errors.memberTeamsFooter)
+        }
       } finally {
         if (!cancelled) setMemberTeamsLoading(false)
       }
@@ -89,8 +106,8 @@ export function useTeamBffTeamsAndApiKeys(enabled: boolean) {
     if (!enabled || !teamMemberTeamId || typeof window === "undefined") return
     try {
       window.localStorage.setItem(MY_USAGE_BY_TEAM_LAST_SELECTED_TEAM_ID, teamMemberTeamId)
-    } catch {
-      /* ignore */
+    } catch (e) {
+      warnStorageError(e)
     }
   }, [enabled, teamMemberTeamId])
 
@@ -104,24 +121,34 @@ export function useTeamBffTeamsAndApiKeys(enabled: boolean) {
     setTeamMemberKeysLoading(true)
     const base = teamUsageBffBase()
     if (!base) {
+      logUsageLogTeamApiKeysFetch({ reason: "missing_team_bff_base", teamId: teamMemberTeamId })
       setTeamMemberRawApiKeyRows([])
       setTeamMemberKeysLoading(false)
       return
     }
-    void fetch(`${base}/teams/${encodeURIComponent(teamMemberTeamId)}/api-keys`, {
+    const apiKeysUrl = `${base}/teams/${encodeURIComponent(teamMemberTeamId)}/api-keys`
+    void fetch(apiKeysUrl, {
       credentials: "include",
       headers: { Accept: "application/json" },
     })
       .then(async (r) => {
         const json = await r.json()
         if (!r.ok) {
+          logUsageLogTeamApiKeysFetch({
+            request: apiKeysUrl,
+            teamId: teamMemberTeamId,
+            status: r.status,
+          })
           if (!cancelled) setTeamMemberRawApiKeyRows([])
           return
         }
         if (!cancelled) setTeamMemberRawApiKeyRows(parseTeamBffApiKeysPayload(json))
       })
-      .catch(() => {
-        if (!cancelled) setTeamMemberRawApiKeyRows([])
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          logUsageLogTeamApiKeysFetch({ request: apiKeysUrl, teamId: teamMemberTeamId, error: e })
+          setTeamMemberRawApiKeyRows([])
+        }
       })
       .finally(() => {
         if (!cancelled) setTeamMemberKeysLoading(false)

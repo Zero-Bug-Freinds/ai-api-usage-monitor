@@ -9,6 +9,7 @@ import {
   type StoredDashboardPeriod,
 } from "@/lib/usage/usage-filter-period"
 import { formatKstIsoDate } from "@/lib/usage/kst-dates"
+import { warnStorageError } from "@/lib/usage/messaging/storage-errors"
 
 export type UsageFilterScreen = "dashboard" | "team" | "usagelog"
 
@@ -97,7 +98,8 @@ function readPersonalApiKeyFromLegacy(): string {
     if (trimmed.length === 0 || trimmed === DASHBOARD_API_KEY_ALL) return DASHBOARD_API_KEY_ALL
     if (trimmed === DASHBOARD_API_KEY_NONE) return DASHBOARD_API_KEY_NONE
     return trimmed
-  } catch {
+  } catch (e) {
+    warnStorageError(e)
     return DASHBOARD_API_KEY_ALL
   }
 }
@@ -110,7 +112,8 @@ function readTeamMyUsageApiKeyFromLegacy(): string {
     const trimmed = raw.trim()
     if (trimmed.length === 0 || trimmed === DASHBOARD_API_KEY_ALL) return DASHBOARD_API_KEY_ALL
     return trimmed
-  } catch {
+  } catch (e) {
+    warnStorageError(e)
     return DASHBOARD_API_KEY_ALL
   }
 }
@@ -121,8 +124,8 @@ function clearLegacyPersonalDashboardKeys() {
     sessionStorage.removeItem(LEGACY_DASHBOARD_PROVIDER_KEY)
     sessionStorage.removeItem(LEGACY_DASHBOARD_PERIOD_KEY)
     sessionStorage.removeItem(LEGACY_PERSONAL_API_KEY_KEY)
-  } catch {
-    /* ignore */
+  } catch (e) {
+    warnStorageError(e)
   }
 }
 
@@ -132,8 +135,8 @@ function clearLegacyTeamMyUsageKeys() {
     sessionStorage.removeItem(LEGACY_TEAM_MY_USAGE_PROVIDER_KEY)
     sessionStorage.removeItem(LEGACY_TEAM_MY_USAGE_PERIOD_KEY)
     sessionStorage.removeItem(LEGACY_TEAM_MY_USAGE_API_KEY_KEY)
-  } catch {
-    /* ignore */
+  } catch (e) {
+    warnStorageError(e)
   }
 }
 
@@ -168,7 +171,8 @@ function migrateDashboardLegacyIfNeeded(
     if (mode === "personal-keys") clearLegacyPersonalDashboardKeys()
     else clearLegacyTeamMyUsageKeys()
     return migrated
-  } catch {
+  } catch (e) {
+    warnStorageError(e)
     return null
   }
 }
@@ -192,7 +196,8 @@ function parseFilterSettingsJson(
       typeof o.apiKeyId === "string" && o.apiKeyId.length > 0 ? o.apiKeyId : base.apiKeyId
     const teamId = typeof o.teamId === "string" && o.teamId.length > 0 ? o.teamId : undefined
     return teamId !== undefined ? { provider, period, apiKeyId, teamId } : { provider, period, apiKeyId }
-  } catch {
+  } catch (e) {
+    warnStorageError(e)
     return null
   }
 }
@@ -213,7 +218,8 @@ export function readUsageFilterSettings(
     const raw = sessionStorage.getItem(key)
     const parsed = parseFilterSettingsJson(raw, screen, mode, t)
     return parsed ?? defaultSettingsFor(screen, mode, t)
-  } catch {
+  } catch (e) {
+    warnStorageError(e)
     return defaultSettingsFor(screen, mode, t)
   }
 }
@@ -227,8 +233,8 @@ export function writeUsageFilterSettings(
   try {
     const key = buildUsageFilterStorageKey(screen, mode)
     sessionStorage.setItem(key, JSON.stringify(settings))
-  } catch {
-    /* quota / private mode */
+  } catch (e) {
+    warnStorageError(e)
   }
 }
 
@@ -318,7 +324,7 @@ export function clearUsageFilterSessionKeys(): void {
     for (const k of toRemove) {
       sessionStorage.removeItem(k)
     }
-  } catch {
-    /* ignore */
+  } catch (e) {
+    warnStorageError(e)
   }
 }

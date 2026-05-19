@@ -3,6 +3,9 @@ import type { LatencyInsightResponse } from "@/lib/usage/types"
 const COPY_NO_TEAM_MEMBERSHIP_BANNER = "팀에 속하게 되면 팀 대시보드 사용이 가능해집니다."
 const COPY_ENV_SYSTEM_ERROR =
   "시스템 오류가 발생했습니다. 잠시 후 다시 시도해 주세요. (Code: ERR_ENV_500)"
+const COPY_EMPTY_MEMBER_MODEL_USAGE = "선택한 팀/필터에서 멤버 모델 사용 데이터가 없습니다."
+const COPY_MEMBER_BAD_REQUEST =
+  "잘못된 요청입니다. 입력 조건을 다시 확인해 주세요. (Code: ERR_MBR_400)"
 
 /** 개인·팀별 나의 사용량 대시보드 (`usage-dashboard.tsx`) 전용 문구 */
 export const PERSONAL_DASHBOARD_MESSAGES = {
@@ -35,6 +38,7 @@ export const PERSONAL_DASHBOARD_MESSAGES = {
     logTags: {
       main: "Dashboard Main Error",
       memberTeams: "Member Teams Fetch Error",
+      personalApiKeysFetch: "Personal Dashboard Api Keys Fetch Error",
     },
     internalLog: {
       missingTeamBffBase: "사용량 API 베이스 URL을 확인할 수 없습니다",
@@ -51,7 +55,7 @@ export const TEAM_DASHBOARD_MESSAGES = {
   hints: {
     selectTeam: "조회할 팀을 선택해 주세요.",
     addApiKey: "API Key를 추가하여 AI를 호출하면 API 데이터가 쌓입니다.",
-    noModelUsage: "선택한 팀/필터에서 멤버 모델 사용 데이터가 없습니다.",
+    noModelUsage: COPY_EMPTY_MEMBER_MODEL_USAGE,
   },
   warnings: {
     partialEnrichment:
@@ -65,6 +69,25 @@ export const TEAM_DASHBOARD_MESSAGES = {
     partialWarning: "Team Partial Warning",
     apiKeysFetch: "Team Api Keys Fetch Error",
     teamsListFetch: "Team Dashboard Teams Fetch Error",
+  },
+  internalLog: {
+    missingTeamBffBase: "사용량 API 베이스 URL을 확인할 수 없습니다",
+  },
+} as const
+
+/** 팀 멤버 상세 탭 (`team-member-dashboard.tsx`) 전용 문구 */
+export const MEMBER_DETAIL_MESSAGES = {
+  inactiveTab: "멤버 상세 탭을 선택하면 데이터를 불러옵니다.",
+  errors: {
+    badRequest: COPY_MEMBER_BAD_REQUEST,
+    env: COPY_ENV_SYSTEM_ERROR,
+  },
+  hints: {
+    noModelUsage: COPY_EMPTY_MEMBER_MODEL_USAGE,
+  },
+  logTags: {
+    fetch: "Member Detail Fetch Error",
+    apiKeysFetch: "Member Detail Api Keys Fetch Error",
   },
   internalLog: {
     missingTeamBffBase: "사용량 API 베이스 URL을 확인할 수 없습니다",
@@ -155,4 +178,12 @@ export function logTeamDashboardApiKeysFetch(context: Record<string, unknown>): 
 
 export function logTeamDashboardTeamsListFetch(context: Record<string, unknown>): void {
   console.error(`[${TEAM_DASHBOARD_MESSAGES.logTags.teamsListFetch}]`, context)
+}
+
+export function logMemberDetailApiKeysFetch(context: Record<string, unknown>): void {
+  console.error(`[${MEMBER_DETAIL_MESSAGES.logTags.apiKeysFetch}]`, context)
+}
+
+export function logPersonalDashboardApiKeysFetch(context: Record<string, unknown>): void {
+  console.error(`[${PERSONAL_DASHBOARD_MESSAGES.errors.logTags.personalApiKeysFetch}]`, context)
 }

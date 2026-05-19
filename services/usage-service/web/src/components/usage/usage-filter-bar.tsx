@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import * as React from "react"
 import { Input, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ai-usage/ui"
@@ -8,6 +8,7 @@ import { formatKstIsoDate } from "@/lib/usage/kst-dates"
 import type { PeriodMode, StoredDashboardPeriod } from "@/lib/usage/usage-filter-period"
 import { patchPeriodMode } from "@/lib/usage/hooks/use-filter-storage"
 import type { UsageLogApiKeyItemResponse } from "@/lib/usage/types"
+import { COMMON_MESSAGES } from "@/lib/usage/messaging/common-messages"
 
 export type UsageFilterBarTeamConfig = {
   value: string
@@ -131,7 +132,11 @@ export function UsageFilterBar({
             <SelectTrigger id={team.selectId ?? `${idPrefix}-team`} className="w-full">
               <SelectValue
                 placeholder={
-                  team.loading ? "팀 목록 불러오는 중…" : team.teams.length === 0 ? "소속 팀 없음" : "팀 선택"
+                  team.loading
+                    ? COMMON_MESSAGES.filterBar.teamLoading
+                    : team.teams.length === 0
+                      ? COMMON_MESSAGES.filterBar.teamNone
+                      : COMMON_MESSAGES.filterBar.teamSelect
                 }
               />
             </SelectTrigger>
@@ -153,7 +158,11 @@ export function UsageFilterBar({
           <SelectTrigger id={apiKey.selectId ?? `${idPrefix}-api-key`}>
             <SelectValue
               placeholder={
-                apiKey.keysLoading ? "불러오는 중…" : apiKey.menuItems.length === 0 ? "없음" : "전체"
+                apiKey.keysLoading
+                  ? COMMON_MESSAGES.filterBar.apiKeyLoading
+                  : apiKey.menuItems.length === 0
+                    ? COMMON_MESSAGES.filterBar.apiKeyNone
+                    : COMMON_MESSAGES.filterBar.apiKeyAll
               }
             />
           </SelectTrigger>

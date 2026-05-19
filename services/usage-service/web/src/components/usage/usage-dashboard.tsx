@@ -28,10 +28,12 @@ import {
   latencyInsightBannerText,
   logDashboardMainError,
   logDashboardMemberTeamsError,
+  logPersonalDashboardApiKeysFetch,
   PERSONAL_DASHBOARD_MESSAGES,
   resolveEmptyDashboardHint,
   toDashboardMainErrorMessage,
 } from "@/lib/usage/messaging/dashboard-messages"
+import { warnStorageError } from "@/lib/usage/messaging/storage-errors"
 import { teamUsageBffBase } from "@/lib/usage/api/team-usage-bff-base"
 import {
   MY_USAGE_BY_TEAM_LAST_SELECTED_TEAM_ID,
@@ -793,8 +795,8 @@ export function UsageDashboard() {
     if (dataContext !== "TEAM_MEMBER_ONLY" || !teamMemberTeamId || typeof window === "undefined") return
     try {
       window.localStorage.setItem(MY_USAGE_BY_TEAM_LAST_SELECTED_TEAM_ID, teamMemberTeamId)
-    } catch {
-      /* ignore quota/private mode */
+    } catch (e) {
+      warnStorageError(e)
     }
   }, [dataContext, teamMemberTeamId])
 
@@ -808,24 +810,37 @@ export function UsageDashboard() {
     setTeamMemberKeysLoading(true)
     const base = teamUsageBffBase()
     if (!base) {
+      logPersonalDashboardApiKeysFetch({
+        reason: "missing_team_bff_base",
+        teamId: teamMemberTeamId,
+      })
       setTeamMemberRawApiKeyRows([])
       setTeamMemberKeysLoading(false)
       return
     }
-    void fetch(`${base}/teams/${encodeURIComponent(teamMemberTeamId)}/api-keys`, {
+    const apiKeysUrl = `${base}/teams/${encodeURIComponent(teamMemberTeamId)}/api-keys`
+    void fetch(apiKeysUrl, {
       credentials: "include",
       headers: { Accept: "application/json" },
     })
       .then(async (r) => {
         const json = await r.json()
         if (!r.ok) {
+          logPersonalDashboardApiKeysFetch({
+            request: apiKeysUrl,
+            teamId: teamMemberTeamId,
+            status: r.status,
+          })
           if (!cancelled) setTeamMemberRawApiKeyRows([])
           return
         }
         if (!cancelled) setTeamMemberRawApiKeyRows(parseTeamBffApiKeysPayload(json))
       })
-      .catch(() => {
-        if (!cancelled) setTeamMemberRawApiKeyRows([])
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          logPersonalDashboardApiKeysFetch({ request: apiKeysUrl, teamId: teamMemberTeamId, error: e })
+          setTeamMemberRawApiKeyRows([])
+        }
       })
       .finally(() => {
         if (!cancelled) setTeamMemberKeysLoading(false)

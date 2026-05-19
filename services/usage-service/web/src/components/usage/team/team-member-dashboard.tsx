@@ -2,7 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { TeamMemberAvatar } from "@/components/common/team-member-avatar"
-import { TEAM_DASHBOARD_MESSAGES } from "@/lib/usage/messaging/dashboard-messages"
+import {
+  MEMBER_DETAIL_MESSAGES,
+  logMemberDetailApiKeysFetch,
+} from "@/lib/usage/messaging/dashboard-messages"
 import { teamUsageBffBase } from "@/lib/usage/api/team-usage-bff-base"
 import { DASHBOARD_API_KEY_ALL, DASHBOARD_API_KEY_NONE } from "@/lib/usage/dashboard-api-key-constants"
 import {
@@ -53,8 +56,6 @@ type BffResponse = {
 type MemberSeries = { userId: string; displayName: string; requests: number }
 
 const memberDashboardCache = new Map<string, BffResponse>()
-
-const MEMBER_DETAIL_FETCH_LOG_TAG = "Member Detail Fetch Error"
 
 function usageQuery(params: Record<string, string | undefined>): string {
   const sp = new URLSearchParams()
@@ -123,7 +124,14 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
     })
       .then(async (r) => {
         const json = await r.json()
-        if (!r.ok) return []
+        if (!r.ok) {
+          logMemberDetailApiKeysFetch({
+            request: apiKeysUrl,
+            teamId,
+            status: r.status,
+          })
+          return []
+        }
         return parseTeamBffApiKeysPayload(json)
       })
       .then((rows) => {
@@ -167,7 +175,7 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
     }
     const base = teamUsageBffBase()
     if (!base) {
-      setError("사용량 API 베이스 URL을 확인할 수 없습니다.")
+      setError(MEMBER_DETAIL_MESSAGES.errors.env)
       return
     }
     let cancelled = false
@@ -190,7 +198,7 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
     })
       .then(async (r) => {
         await assertTeamBffResponseOk(r, {
-          logTag: MEMBER_DETAIL_FETCH_LOG_TAG,
+          logTag: MEMBER_DETAIL_MESSAGES.logTags.fetch,
           request: teamTotalUrl,
           maskMessage: memberUsageFetchError,
         })
@@ -224,7 +232,7 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
               headers: { Accept: "application/json" },
             })
             await assertTeamBffResponseOk(r, {
-              logTag: MEMBER_DETAIL_FETCH_LOG_TAG,
+              logTag: MEMBER_DETAIL_MESSAGES.logTags.fetch,
               request: memberUrl,
               maskMessage: memberUsageFetchError,
             })
@@ -238,7 +246,7 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
       .catch((e: unknown) => {
         if (cancelled) return
         if (!(e instanceof TeamBffMaskedHttpError)) {
-          logTeamBffCatchError(MEMBER_DETAIL_FETCH_LOG_TAG, { request: teamTotalUrl, teamId }, e)
+          logTeamBffCatchError(MEMBER_DETAIL_MESSAGES.logTags.fetch, { request: teamTotalUrl, teamId }, e)
         }
         setError(e instanceof Error ? e.message : memberUsageFetchError(0))
       })
@@ -274,7 +282,7 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
   if (!isActive) {
     return (
       <div className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
-        멤버 상세 탭을 선택하면 데이터를 불러옵니다.
+        {MEMBER_DETAIL_MESSAGES.inactiveTab}
       </div>
     )
   }
@@ -313,7 +321,7 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
         <section className="rounded-lg border border-border p-4 shadow-sm">
           <h2 className="mb-4 text-lg font-medium">팀원별 분석</h2>
           <div className="flex min-h-[240px] items-center justify-center rounded-md border border-dashed border-border bg-muted/20 px-4 py-12">
-            <p className="text-center text-sm text-muted-foreground">{TEAM_DASHBOARD_MESSAGES.hints.noModelUsage}</p>
+            <p className="text-center text-sm text-muted-foreground">{MEMBER_DETAIL_MESSAGES.hints.noModelUsage}</p>
           </div>
         </section>
       ) : null}

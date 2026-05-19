@@ -17,6 +17,7 @@ import {
 } from "recharts"
 import { TeamMemberAvatar } from "@/components/common/team-member-avatar"
 import { formatRequestCount } from "@/lib/usage/format"
+import { COMMON_MESSAGES } from "@/lib/usage/messaging/common-messages"
 import { colorForModel } from "@/lib/usage/model-colors"
 
 const MEMBER_MODEL_TOP = 4
@@ -377,7 +378,7 @@ function MemberTokenScatterChart({ memberRows }: { memberRows: MemberRow[] }) {
     return (
       <section className="rounded-lg border border-border p-4 shadow-sm">
         <h3 className="mb-3 text-base font-medium">토큰 효율성 (산점도)</h3>
-        <p className="text-sm text-muted-foreground">표시할 요청 데이터가 없습니다.</p>
+        <p className="text-sm text-muted-foreground">{COMMON_MESSAGES.memberAnalytics.noRequestData}</p>
       </section>
     )
   }

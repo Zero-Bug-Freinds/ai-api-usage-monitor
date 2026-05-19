@@ -1,3 +1,5 @@
+import { warnStorageError } from "@/lib/usage/messaging/storage-errors"
+
 export type UsageLogDataTab = "personal" | "team"
 
 const STORAGE_KEY = "usage-web.logDataTab"
@@ -7,7 +9,8 @@ export function readStoredLogDataTab(): UsageLogDataTab {
     try {
         const v = window.localStorage.getItem(STORAGE_KEY)
         return v === "team" ? "team" : "personal"
-    } catch {
+    } catch (e) {
+        warnStorageError(e)
         return "personal"
     }
 }
@@ -16,8 +19,8 @@ export function persistLogDataTab(tab: UsageLogDataTab): void {
     if (typeof window === "undefined") return
     try {
         window.localStorage.setItem(STORAGE_KEY, tab)
-    } catch {
-        /* ignore quota / private mode */
+    } catch (e) {
+        warnStorageError(e)
     }
 }
 
