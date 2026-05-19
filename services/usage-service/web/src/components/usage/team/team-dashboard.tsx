@@ -35,6 +35,12 @@ import {
   writeTeamDashboardLastTeamId,
 } from "@/lib/usage/team-dashboard-last-team"
 import { useFilterStorage } from "@/lib/usage/use-filter-storage"
+import {
+  assertTeamBffResponseOk,
+  logTeamBffCatchError,
+  TeamBffMaskedHttpError,
+  usageFetchErrorMessage,
+} from "@/lib/usage/team-bff-fetch-errors"
 
 export type TeamDashboardProps = {
   viewTeamIdFromQuery?: string
@@ -78,13 +84,7 @@ type TeamSummary = { id: string; name: string; createdAt?: string }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const AnyLegend = Legend as any
 
-function usageFetchErrorMessage(status: number): string {
-  if (status === 400) return "팀/기간 필터를 확인해 주세요."
-  if (status === 401 || status === 403) return "인증이 만료되었거나 권한이 없습니다. 다시 로그인해 주세요."
-  if (status === 404) return "대시보드 페이지를 찾지 못했습니다."
-  if (status >= 500) return "서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
-  return `사용량 데이터를 불러오지 못했습니다. (HTTP ${status})`
-}
+const TEAM_DASHBOARD_FETCH_LOG_TAG = "Team Dashboard Fetch Error"
 
 function buildUsageDashboardQuery(params: Record<string, string | undefined | null>): string {
   const sp = new URLSearchParams()
@@ -334,9 +334,14 @@ export default function TeamDashboard({
           ? selectedApiKeyId
           : undefined,
     })
-    fetch(`${base}/dashboard?${q}`, { credentials: "include", headers: { Accept: "application/json" } })
+    const dashboardUrl = `${base}/dashboard?${q}`
+    fetch(dashboardUrl, { credentials: "include", headers: { Accept: "application/json" } })
       .then(async (r) => {
-        if (!r.ok) throw new Error(usageFetchErrorMessage(r.status))
+        await assertTeamBffResponseOk(r, {
+          logTag: TEAM_DASHBOARD_FETCH_LOG_TAG,
+          request: dashboardUrl,
+          maskMessage: usageFetchErrorMessage,
+        })
         return (await r.json()) as BffResponse
       })
       .then((body) => {
@@ -344,11 +349,17 @@ export default function TeamDashboard({
         setData(body)
         onSelectUser(body.memberProfiles?.[0]?.userId ?? "")
       })
-      .catch((e: Error) => {
-        if (!cancelled) {
-          setError(e.message)
-          onSelectUser("")
+      .catch((e: unknown) => {
+        if (cancelled) return
+        if (!(e instanceof TeamBffMaskedHttpError)) {
+          logTeamBffCatchError(
+            TEAM_DASHBOARD_FETCH_LOG_TAG,
+            { request: dashboardUrl, teamId: effectiveTeamId },
+            e,
+          )
         }
+        setError(e instanceof Error ? e.message : usageFetchErrorMessage(0))
+        onSelectUser("")
       })
       .finally(() => {
         if (!cancelled) setLoading(false)

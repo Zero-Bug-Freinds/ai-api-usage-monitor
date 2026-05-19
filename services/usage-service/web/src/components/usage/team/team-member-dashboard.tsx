@@ -15,6 +15,12 @@ import {
 import { UsageFilterBar } from "@/components/usage/usage-filter-bar"
 import { useDashboardAggregateApiKeySync } from "@/lib/usage/use-dashboard-aggregate-api-key"
 import { useFilterStorage } from "@/lib/usage/use-filter-storage"
+import {
+  assertTeamBffResponseOk,
+  logTeamBffCatchError,
+  memberUsageFetchError,
+  TeamBffMaskedHttpError,
+} from "@/lib/usage/team-bff-fetch-errors"
 import { MemberAnalyticsCharts, type MemberRow } from "./member-analytics-charts"
 
 type TeamMemberDashboardProps = {
@@ -48,13 +54,7 @@ type MemberSeries = { userId: string; displayName: string; requests: number }
 
 const memberDashboardCache = new Map<string, BffResponse>()
 
-function memberUsageFetchError(status: number): string {
-  if (status === 400) return "멤버 상세 조회 파라미터가 올바르지 않습니다."
-  if (status === 401 || status === 403) return "로그인 세션이 만료되었거나 접근 권한이 없습니다."
-  if (status === 404) return "멤버 상세 엔드포인트를 찾지 못했습니다."
-  if (status >= 500) return "멤버 상세 서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
-  return `멤버 상세 조회 실패 (HTTP ${status})`
-}
+const MEMBER_DETAIL_FETCH_LOG_TAG = "Member Detail Fetch Error"
 
 function usageQuery(params: Record<string, string | undefined>): string {
   const sp = new URLSearchParams()
@@ -183,12 +183,17 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
         apiKeyId !== DASHBOARD_API_KEY_ALL && apiKeyId !== DASHBOARD_API_KEY_NONE ? apiKeyId : undefined,
     })
 
-    fetch(`${base}/dashboard?${qTotal}`, {
+    const teamTotalUrl = `${base}/dashboard?${qTotal}`
+    fetch(teamTotalUrl, {
       credentials: "include",
       headers: { Accept: "application/json" },
     })
       .then(async (r) => {
-        if (!r.ok) throw new Error(memberUsageFetchError(r.status))
+        await assertTeamBffResponseOk(r, {
+          logTag: MEMBER_DETAIL_FETCH_LOG_TAG,
+          request: teamTotalUrl,
+          maskMessage: memberUsageFetchError,
+        })
         return (await r.json()) as BffResponse
       })
       .then(async (teamTotal) => {
@@ -213,11 +218,16 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
               apiKeyId:
                 apiKeyId !== DASHBOARD_API_KEY_ALL && apiKeyId !== DASHBOARD_API_KEY_NONE ? apiKeyId : undefined,
             })
-            const r = await fetch(`${base}/dashboard?${qMember}`, {
+            const memberUrl = `${base}/dashboard?${qMember}`
+            const r = await fetch(memberUrl, {
               credentials: "include",
               headers: { Accept: "application/json" },
             })
-            if (!r.ok) throw new Error(memberUsageFetchError(r.status))
+            await assertTeamBffResponseOk(r, {
+              logTag: MEMBER_DETAIL_FETCH_LOG_TAG,
+              request: memberUrl,
+              maskMessage: memberUsageFetchError,
+            })
             const body = (await r.json()) as BffResponse
             memberDashboardCache.set(cacheKey, body)
             return rowFromBff(profile, body)
@@ -225,8 +235,12 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
         )
         if (!cancelled) setMemberRows(results)
       })
-      .catch((e: Error) => {
-        if (!cancelled) setError(e.message)
+      .catch((e: unknown) => {
+        if (cancelled) return
+        if (!(e instanceof TeamBffMaskedHttpError)) {
+          logTeamBffCatchError(MEMBER_DETAIL_FETCH_LOG_TAG, { request: teamTotalUrl, teamId }, e)
+        }
+        setError(e instanceof Error ? e.message : memberUsageFetchError(0))
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
