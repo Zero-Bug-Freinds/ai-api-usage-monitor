@@ -19,9 +19,10 @@ class ApiKeyClientReverseLookupTest {
         mock.setProvider("openai");
         mock.setKeyId("key-ext-1");
         mock.setStatus("ACTIVE");
+        props.getKeyService().setReverseLookupMocksEnabled(true);
         props.getKeyService().getReverseLookupMocks().add(mock);
 
-        ApiKeyClient client = new ApiKeyClient(props);
+        ApiKeyClient client = ApiKeyClient.forTests(props);
         ApiKeyClient.ResolvedApiKey resolved = client.resolveApiKey(null, null, AiProvider.OPENAI, null, null, "sk-ext-raw")
                 .block();
 
@@ -39,9 +40,10 @@ class ApiKeyClientReverseLookupTest {
         mock.setProvider("openai");
         mock.setKeyId("key-ext-1");
         mock.setStatus("INACTIVE");
+        props.getKeyService().setReverseLookupMocksEnabled(true);
         props.getKeyService().getReverseLookupMocks().add(mock);
 
-        ApiKeyClient client = new ApiKeyClient(props);
+        ApiKeyClient client = ApiKeyClient.forTests(props);
         assertThatThrownBy(() -> client.resolveApiKey(null, null, AiProvider.OPENAI, null, null, "sk-ext-raw").block())
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("404");
@@ -55,6 +57,7 @@ class ApiKeyClientReverseLookupTest {
         personal.setRawKey("sk-dup");
         personal.setProvider("openai");
         personal.setKeyId("key-user");
+        props.getKeyService().setReverseLookupMocksEnabled(true);
         props.getKeyService().getReverseLookupMocks().add(personal);
 
         ProxyProperties.ReverseLookupMock team = new ProxyProperties.ReverseLookupMock();
@@ -64,7 +67,7 @@ class ApiKeyClientReverseLookupTest {
         team.setTeamId("team-1");
         props.getKeyService().getReverseLookupMocks().add(team);
 
-        assertThatThrownBy(() -> new ApiKeyClient(props))
+        assertThatThrownBy(() -> ApiKeyClient.forTests(props))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("duplicate raw key");
     }
@@ -77,9 +80,10 @@ class ApiKeyClientReverseLookupTest {
         mock.setProvider("openai");
         mock.setKeyId("key-ext-1");
         mock.setStatus("ACTIVE");
+        props.getKeyService().setReverseLookupMocksEnabled(true);
         props.getKeyService().getReverseLookupMocks().add(mock);
 
-        ApiKeyClient client = new ApiKeyClient(props);
+        ApiKeyClient client = ApiKeyClient.forTests(props);
         assertThatThrownBy(() -> client.resolveApiKey(null, null, AiProvider.OPENAI, null, "alias", "sk-ext-raw").block())
                 .isInstanceOf(ResponseStatusException.class)
                 .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));

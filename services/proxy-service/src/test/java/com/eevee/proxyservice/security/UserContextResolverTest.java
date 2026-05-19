@@ -59,6 +59,23 @@ class UserContextResolverTest {
     }
 
     @Test
+    void allowsFingerprintHeaderWithoutUserId() {
+        MockServerHttpRequest request = MockServerHttpRequest.get("/proxy/openai/")
+                .header("X-Api-Key-Fingerprint", "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08")
+                .build();
+        MockServerWebExchange exchange = MockServerWebExchange.from(request);
+
+        StepVerifier.create(resolver.fromExchange(exchange))
+                .assertNext(ctx -> {
+                    assertThat(ctx.userId()).isNull();
+                    assertThat(ctx.apiKeyFingerprint64()).isEqualTo(
+                            "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+                    );
+                })
+                .verifyComplete();
+    }
+
+    @Test
     void mapsTeamHeaderIntoUserContext() {
         MockServerHttpRequest request = MockServerHttpRequest.get("/proxy/google/")
                 .header("X-User-Id", "a@b.com")

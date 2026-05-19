@@ -34,8 +34,15 @@ proxy:
     mock-key-google: ${PROXY_GOOGLE_TEST_API_KEY:}
     mock-key: ${PROXY_MOCK_KEY_FALLBACK:}
     cache-ttl: PT5M
-    # Contract-gap fallback for ext raw-key reverse lookup (identity/team not yet supporting reverse API).
+    # Dev-only: in-memory reverse lookup mocks (enable explicitly for local tests).
+    reverse-lookup-mocks-enabled: ${PROXY_REVERSE_LOOKUP_MOCKS_ENABLED:false}
     reverse-lookup-mocks: []
+  fingerprint-lookup:
+    enabled: ${PROXY_FINGERPRINT_LOOKUP_ENABLED:true}
+    internal-token: ${PROXY_FINGERPRINT_LOOKUP_TOKEN:${PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN:}}
+    positive-ttl: ${PROXY_FINGERPRINT_POSITIVE_TTL:PT10M}
+    negative-ttl: ${PROXY_FINGERPRINT_NEGATIVE_TTL:PT30S}
+    fingerprint-log-prefix-length: ${PROXY_FINGERPRINT_LOG_PREFIX_LENGTH:8}
   team-key-service:
     base-url: ${PROXY_TEAM_KEY_SERVICE_BASE_URL:http://localhost:8093}
     internal-token: ${PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN:change-this-team-internal-api-token}

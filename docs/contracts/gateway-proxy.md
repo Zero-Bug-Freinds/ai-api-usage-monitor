@@ -101,7 +101,7 @@ Proxy key selection priority for ext/JWT 공통:
 - `X-Api-Key-Id` > `X-Api-Key-Alias` > fingerprint reverse lookup > latest fallback lookup
 - `ACTIVE` 상태 키만 허용 (inactive/deleted는 `404`)
 - **Gateway(Task56):** ext 요청에서 provider raw key가 있으면 `X-Api-Key-Fingerprint`(기본) + `X-Ai-Provider` 를 Proxy로 전달하고 raw key 헤더는 제거한다. raw key가 없으면 fingerprint 헤더 없이 전달(HMAC-only ext 호출).
-- **Proxy(후속):** fingerprint + provider로 identity/team `POST /internal/v1/api-keys/lookup` 병렬 조회 후 `UserContext` 채움. 개발용 `reverse-lookup-mocks`는 proxy 후속에서 dev-only로 정리한다.
+- **Proxy(Task56-1):** fingerprint + provider로 identity/team `POST /internal/v1/api-keys/lookup` 병렬 조회(first-success) 후 personal 키는 `GET /internal/api-keys/{provider}` 로 plain key hydration. 팀 소유 키 plain hydration은 team-service trusted internal API 선행 필요(현재 502). 개발용 `reverse-lookup-mocks`는 `proxy.key-service.reverse-lookup-mocks-enabled=true` 일 때만.
 - 동일 raw key hash를 personal/team에 동시에 등록하는 구성은 금지한다(기동 시 예외).
 
 #### 3.3.1 Provider API key headers (ext ingress)
@@ -132,7 +132,7 @@ Gateway filter: [`ExtAiApiKeyFingerprintWebFilter`](../../services/api-gateway-s
 
 **내부 lookup API (문서만 — Gateway는 호출하지 않음):**
 
-`POST /internal/v1/api-keys/lookup` — body `{ "fingerprint": "<64 hex>", "provider": "OPENAI" }` — identity-service·team-service 구현. 404/409/502 매핑·캐시(10m/30s)는 **proxy-service** 후속.
+`POST /internal/v1/api-keys/lookup` — body `{ "fingerprint": "<64 hex>", "provider": "OPENAI" }` — identity-service·team-service 구현. Proxy가 병렬 호출·404/409/502 매핑·Caffeine 캐시(positive 10m / negative 30s) 적용.
 
 **인프라(보고):** identity/team/proxy의 `/internal/**` 는 LB에서 공인 인터넷 차단. Gateway `/internal/**` 는 `X-Web-Edge-Auth == gateway.shared-secret` 또는 `Authorization: Bearer <gateway.internal-auth.bearer-token>` (`InternalServiceAuthWebFilter`).
 

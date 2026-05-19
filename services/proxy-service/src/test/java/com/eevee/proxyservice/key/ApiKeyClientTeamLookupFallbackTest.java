@@ -51,7 +51,7 @@ class ApiKeyClientTeamLookupFallbackTest {
             respond(exchange, 404, "{\"message\":\"unknown\"}");
         });
 
-        ApiKeyClient client = new ApiKeyClient(baseProps(server.getAddress().getPort()));
+        ApiKeyClient client = ApiKeyClient.forTests(baseProps(server.getAddress().getPort()));
         ApiKeyClient.ResolvedApiKey resolved = client.resolveApiKey("user-1", "123", AiProvider.GOOGLE, null, null, null).block();
 
         assertThat(resolved).isNotNull();
@@ -65,7 +65,7 @@ class ApiKeyClientTeamLookupFallbackTest {
     void teamLookupReturnsNotFoundWithProviderAndTeamContextWhenAllMissed() throws Exception {
         startServer(exchange -> respond(exchange, 404, "{\"message\":\"not found\"}"));
 
-        ApiKeyClient client = new ApiKeyClient(baseProps(server.getAddress().getPort()));
+        ApiKeyClient client = ApiKeyClient.forTests(baseProps(server.getAddress().getPort()));
 
         assertThatThrownBy(() -> client.resolveApiKey("user-1", "999", AiProvider.GOOGLE, null, null, null).block())
                 .isInstanceOf(ResponseStatusException.class)
@@ -95,7 +95,7 @@ class ApiKeyClientTeamLookupFallbackTest {
             respond(exchange, 404, "{\"message\":\"unknown\"}");
         });
 
-        ApiKeyClient client = new ApiKeyClient(baseProps(server.getAddress().getPort()));
+        ApiKeyClient client = ApiKeyClient.forTests(baseProps(server.getAddress().getPort()));
 
         assertThatThrownBy(() -> client.resolveApiKey("user-1", "123", AiProvider.GOOGLE, null, null, null).block())
                 .isInstanceOf(ResponseStatusException.class)
