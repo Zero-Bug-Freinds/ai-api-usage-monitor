@@ -14,9 +14,10 @@ import {
   buildExternalApiKeyStatusChangedCopy,
   type IdentityExternalApiKeyNotificationLocale,
 } from './identity-external-api-key-notification-templates';
-
-const IN_APP_CHANNEL = 'in-app';
-const DELIVERY_STATUS = 'delivered';
+import {
+  IN_APP_DELIVERY_CHANNEL,
+  IN_APP_DELIVERY_STATUS,
+} from '../in-app-notifications/in-app-delivery.constants';
 
 function inAppTypeForStatus(status: ExternalApiKeyStatusChangedEventPayload['status']): string {
   const slug = status.toLowerCase().replace(/_/g, '-');
@@ -59,8 +60,8 @@ export class IdentityExternalApiKeyInAppHandlerService {
         await tx.notificationDelivery.create({
           data: {
             dedupeKey,
-            channel: IN_APP_CHANNEL,
-            status: DELIVERY_STATUS,
+            channel: IN_APP_DELIVERY_CHANNEL,
+            status: IN_APP_DELIVERY_STATUS,
             payload: {
               eventKind: 'EXTERNAL_API_KEY_DELETED',
               userId,
@@ -120,8 +121,8 @@ export class IdentityExternalApiKeyInAppHandlerService {
         await tx.notificationDelivery.create({
           data: {
             dedupeKey,
-            channel: IN_APP_CHANNEL,
-            status: DELIVERY_STATUS,
+            channel: IN_APP_DELIVERY_CHANNEL,
+            status: IN_APP_DELIVERY_STATUS,
             payload: {
               eventKind: 'ExternalApiKeyStatusChangedEvent',
               userId,

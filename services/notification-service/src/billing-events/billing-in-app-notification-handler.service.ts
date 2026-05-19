@@ -7,10 +7,11 @@ import {
   buildBillingBudgetInAppDedupeKey,
   type BillingSubjectType,
 } from './billing-dedupe-keys';
+import {
+  IN_APP_DELIVERY_CHANNEL,
+  IN_APP_DELIVERY_STATUS,
+} from '../in-app-notifications/in-app-delivery.constants';
 import { buildBillingBudgetThresholdCopy } from './billing-notification-templates';
-
-const IN_APP_CHANNEL = 'in-app';
-const DELIVERY_STATUS = 'delivered';
 
 @Injectable()
 export class BillingInAppNotificationHandlerService {
@@ -63,8 +64,8 @@ export class BillingInAppNotificationHandlerService {
         await tx.notificationDelivery.create({
           data: {
             dedupeKey,
-            channel: IN_APP_CHANNEL,
-            status: DELIVERY_STATUS,
+            channel: IN_APP_DELIVERY_CHANNEL,
+            status: IN_APP_DELIVERY_STATUS,
             payload: {
               eventType: 'BILLING_BUDGET_THRESHOLD_REACHED',
               subjectType: params.subjectType,
