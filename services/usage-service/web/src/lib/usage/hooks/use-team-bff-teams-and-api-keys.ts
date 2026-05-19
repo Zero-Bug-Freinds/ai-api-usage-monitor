@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { teamUsageBffBase } from "@/lib/usage/team-usage-bff-base"
+import { teamUsageBffBase } from "@/lib/usage/api/team-usage-bff-base"
 import {
   MY_USAGE_BY_TEAM_LAST_SELECTED_TEAM_ID,
   type MemberTeamSummary,

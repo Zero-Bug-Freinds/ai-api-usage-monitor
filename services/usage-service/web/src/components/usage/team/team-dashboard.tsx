@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import * as React from "react"
 import {
@@ -18,8 +18,8 @@ import {
 } from "recharts"
 import { Button } from "@ai-usage/ui"
 import { formatRequestCount, formatTokenCount, formatUsd, toNumber } from "@/lib/usage/format"
-import { EMPTY_MEMBER_MODEL_USAGE_MSG } from "@/lib/usage/team-dashboard-empty"
-import { teamUsageBffBase } from "@/lib/usage/team-usage-bff-base"
+import { EMPTY_MEMBER_MODEL_USAGE_MSG } from "@/lib/usage/messaging/team-dashboard-empty"
+import { teamUsageBffBase } from "@/lib/usage/api/team-usage-bff-base"
 import { DASHBOARD_API_KEY_ALL, DASHBOARD_API_KEY_NONE } from "@/lib/usage/dashboard-api-key-constants"
 import {
   DASHBOARD_PROVIDER_ALL,
@@ -29,18 +29,18 @@ import {
   teamBffRowsToUsageMenuItems,
 } from "@/lib/usage/dashboard-provider-api-keys"
 import { UsageFilterBar } from "@/components/usage/usage-filter-bar"
-import { useDashboardAggregateApiKeySync } from "@/lib/usage/use-dashboard-aggregate-api-key"
+import { useDashboardAggregateApiKeySync } from "@/lib/usage/hooks/use-dashboard-aggregate-api-key"
 import {
   readTeamDashboardLastTeamId,
   writeTeamDashboardLastTeamId,
 } from "@/lib/usage/team-dashboard-last-team"
-import { useFilterStorage } from "@/lib/usage/use-filter-storage"
+import { useFilterStorage } from "@/lib/usage/hooks/use-filter-storage"
 import {
   assertTeamBffResponseOk,
   logTeamBffCatchError,
   TeamBffMaskedHttpError,
   usageFetchErrorMessage,
-} from "@/lib/usage/team-bff-fetch-errors"
+} from "@/lib/usage/messaging/team-bff-fetch-errors"
 
 export type TeamDashboardProps = {
   viewTeamIdFromQuery?: string

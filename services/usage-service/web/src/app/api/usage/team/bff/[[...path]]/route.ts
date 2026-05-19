@@ -1,8 +1,8 @@
-import {
+﻿import {
   encodeUsagePathSegments,
   proxyUsageToGateway,
   usageProxyJsonError,
-} from "@/lib/usage/usage-gateway-bff-proxy"
+} from "@/lib/usage/api/usage-gateway-bff-proxy"
 
 type RouteContext = { params: Promise<{ path?: string[] }> }
 

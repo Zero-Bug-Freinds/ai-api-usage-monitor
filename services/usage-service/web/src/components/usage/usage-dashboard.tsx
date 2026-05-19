@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import * as React from "react"
 import { useSearchParams } from "next/navigation"
@@ -23,7 +23,7 @@ import {
 } from "recharts"
 
 import { Button } from "@ai-usage/ui"
-import { buildUsageQuery, fetchUsageJson } from "@/lib/usage/fetch-usage"
+import { buildUsageQuery, fetchUsageJson } from "@/lib/usage/api/fetch-usage"
 import {
   DASHBOARD_BANNERS,
   DASHBOARD_EMPTY,
@@ -34,8 +34,8 @@ import {
   logDashboardMemberTeamsError,
   resolveEmptyDashboardHint,
   toDashboardMainErrorMessage,
-} from "@/lib/usage/dashboard-messages"
-import { teamUsageBffBase } from "@/lib/usage/team-usage-bff-base"
+} from "@/lib/usage/messaging/dashboard-messages"
+import { teamUsageBffBase } from "@/lib/usage/api/team-usage-bff-base"
 import {
   MY_USAGE_BY_TEAM_LAST_SELECTED_TEAM_ID,
   type MemberTeamSummary,
@@ -64,9 +64,9 @@ import {
   teamBffRowsToUsageMenuItems,
   type TeamBffApiKeyRow,
 } from "@/lib/usage/dashboard-provider-api-keys"
-import { useDashboardAggregateApiKeySync } from "@/lib/usage/use-dashboard-aggregate-api-key"
+import { useDashboardAggregateApiKeySync } from "@/lib/usage/hooks/use-dashboard-aggregate-api-key"
 import { UsageFilterBar } from "@/components/usage/usage-filter-bar"
-import { useFilterStorage } from "@/lib/usage/use-filter-storage"
+import { useFilterStorage } from "@/lib/usage/hooks/use-filter-storage"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const AnyLegend = Legend as any

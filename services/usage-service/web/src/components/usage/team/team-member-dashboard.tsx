@@ -1,9 +1,9 @@
-"use client"
+﻿"use client"
 
 import { useEffect, useMemo, useState } from "react"
 import { TeamMemberAvatar } from "@/components/common/team-member-avatar"
-import { EMPTY_MEMBER_MODEL_USAGE_MSG } from "@/lib/usage/team-dashboard-empty"
-import { teamUsageBffBase } from "@/lib/usage/team-usage-bff-base"
+import { EMPTY_MEMBER_MODEL_USAGE_MSG } from "@/lib/usage/messaging/team-dashboard-empty"
+import { teamUsageBffBase } from "@/lib/usage/api/team-usage-bff-base"
 import { DASHBOARD_API_KEY_ALL, DASHBOARD_API_KEY_NONE } from "@/lib/usage/dashboard-api-key-constants"
 import {
   DASHBOARD_PROVIDER_ALL,
@@ -13,14 +13,14 @@ import {
   teamBffRowsToUsageMenuItems,
 } from "@/lib/usage/dashboard-provider-api-keys"
 import { UsageFilterBar } from "@/components/usage/usage-filter-bar"
-import { useDashboardAggregateApiKeySync } from "@/lib/usage/use-dashboard-aggregate-api-key"
-import { useFilterStorage } from "@/lib/usage/use-filter-storage"
+import { useDashboardAggregateApiKeySync } from "@/lib/usage/hooks/use-dashboard-aggregate-api-key"
+import { useFilterStorage } from "@/lib/usage/hooks/use-filter-storage"
 import {
   assertTeamBffResponseOk,
   logTeamBffCatchError,
   memberUsageFetchError,
   TeamBffMaskedHttpError,
-} from "@/lib/usage/team-bff-fetch-errors"
+} from "@/lib/usage/messaging/team-bff-fetch-errors"
 import { MemberAnalyticsCharts, type MemberRow } from "./member-analytics-charts"
 
 type TeamMemberDashboardProps = {

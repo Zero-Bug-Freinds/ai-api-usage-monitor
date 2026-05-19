@@ -8,7 +8,7 @@ import {
   readUsageFilterSettings,
   writeUsageFilterSettings,
   type UsageFilterSettings,
-} from "@/lib/usage/use-filter-storage"
+} from "@/lib/usage/hooks/use-filter-storage"
 
 function installSessionStorageMock() {
   const store = new Map<string, string>()

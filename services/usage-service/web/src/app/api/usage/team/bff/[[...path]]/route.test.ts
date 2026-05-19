@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+﻿import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { USAGE_PROXY_MESSAGE_404 } from "@/lib/usage/usage-gateway-bff-proxy"
+import { USAGE_PROXY_MESSAGE_404 } from "@/lib/usage/api/usage-gateway-bff-proxy"
 
 import { GET } from "./route"
 
