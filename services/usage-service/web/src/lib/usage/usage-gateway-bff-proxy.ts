@@ -76,8 +76,25 @@ function filterUpstreamResponseHeaders(upstream: Response): Headers {
   return out
 }
 
+/** BFF 프록시가 upstream 전에 반환하는 공통 사용자 메시지 */
+export const USAGE_PROXY_MESSAGE_404 = "잘못된 요청이거나 존재하지 않는 페이지입니다."
+export const USAGE_PROXY_MESSAGE_500 =
+  "시스템 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요. (Code: 500-SYS)"
+export const USAGE_PROXY_MESSAGE_502 =
+  "서비스가 일시적으로 원활하지 않습니다. 페이지를 새로고침해 주세요. (Code: 502-GW)"
+
 function jsonError(status: number, message: string) {
   return NextResponse.json({ message }, { status, headers: noStoreHeaders() })
+}
+
+export function usageProxyJsonError(status: 404 | 500 | 502) {
+  const message =
+    status === 404
+      ? USAGE_PROXY_MESSAGE_404
+      : status === 500
+        ? USAGE_PROXY_MESSAGE_500
+        : USAGE_PROXY_MESSAGE_502
+  return jsonError(status, message)
 }
 
 /**
@@ -99,7 +116,7 @@ export async function proxyUsageToGateway(request: Request, usagePath: string): 
 
   const gatewayBase = envGatewayBaseUrl()
   if (!gatewayBase) {
-    return jsonError(500, "서버 설정이 필요합니다 (API_GATEWAY_URL)")
+    return usageProxyJsonError(500)
   }
 
   const url = new URL(request.url)
@@ -120,7 +137,7 @@ export async function proxyUsageToGateway(request: Request, usagePath: string): 
   if (isGatewayDevMode()) {
     const identityBase = envIdentityBaseUrl()
     if (!identityBase) {
-      return jsonError(500, "서버 설정이 필요합니다 (GATEWAY_DEV_MODE 사용 시 IDENTITY_SERVICE_URL)")
+      return usageProxyJsonError(500)
     }
     const userId = await fetchSessionEmailForDev(identityBase, token)
     if (!userId) {
@@ -149,7 +166,7 @@ export async function proxyUsageToGateway(request: Request, usagePath: string): 
   try {
     upstream = await fetch(targetUrl, init)
   } catch {
-    return jsonError(502, "API 게이트웨이에 연결할 수 없습니다")
+    return usageProxyJsonError(502)
   }
 
   const resHeaders = filterUpstreamResponseHeaders(upstream)

@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
+import {
+  USAGE_PROXY_MESSAGE_404,
+  USAGE_PROXY_MESSAGE_500,
+  USAGE_PROXY_MESSAGE_502,
+} from "@/lib/usage/usage-gateway-bff-proxy"
+
 import { GET } from "./route"
 
 afterEach(() => {
@@ -32,7 +38,7 @@ describe("GET /api/usage/[[...path]] (BFF proxy)", () => {
     const res = await GET(req, ctx(["dashboard", "summary"]))
     expect(res.status).toBe(500)
     const json = (await res.json()) as { message: string }
-    expect(json.message).toContain("API_GATEWAY_URL")
+    expect(json.message).toBe(USAGE_PROXY_MESSAGE_500)
   })
 
   it("returns 404 when path segments are empty", async () => {
@@ -43,6 +49,8 @@ describe("GET /api/usage/[[...path]] (BFF proxy)", () => {
 
     const res = await GET(req, ctx(undefined))
     expect(res.status).toBe(404)
+    const json = (await res.json()) as { message: string }
+    expect(json.message).toBe(USAGE_PROXY_MESSAGE_404)
   })
 
   it("proxies to gateway /api/v1/usage/... with Bearer (JWT 게이트웨이 모드)", async () => {
@@ -159,5 +167,7 @@ describe("GET /api/usage/[[...path]] (BFF proxy)", () => {
 
     const res = await GET(req, ctx(["a"]))
     expect(res.status).toBe(502)
+    const json = (await res.json()) as { message: string }
+    expect(json.message).toBe(USAGE_PROXY_MESSAGE_502)
   })
 })
