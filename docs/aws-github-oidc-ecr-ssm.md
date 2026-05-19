@@ -184,9 +184,9 @@ When `enable_compute_stack` and `enable_staging_rds` are on, use the repo script
 | [`scripts/ops/alpha-stack-stop.sh`](../scripts/ops/alpha-stack-stop.sh) | Stop EC2, then stop RDS (passwords and `.env.deploy` on the same volume are kept) |
 | [`scripts/ops/alpha-stack-start.sh`](../scripts/ops/alpha-stack-start.sh) | Start RDS, wait until `available`, start EC2 (systemd may run `ec2-boot-compose.sh`) |
 
-**Still billed while “stopped”:** ALB, Amazon MQ (`is_alpha_test`), EBS, RDS storage. MQ has no stop API — only delete (destroy) to remove that charge.
+**Still billed while “stopped”:** ALB, EBS, RDS storage.
 
-**Do not** use `terraform destroy` for nightly shutdown if you want stable RDS/MQ passwords and data; use these scripts instead.
+**Do not** use `terraform destroy` for nightly shutdown if you want stable RDS passwords and data; use these scripts instead. RabbitMQ (if installed on EC2) stops with the instance.
 
 ---
 
