@@ -1,8 +1,8 @@
-﻿"use client"
+"use client"
 
 import { useEffect, useMemo, useState } from "react"
 import { TeamMemberAvatar } from "@/components/common/team-member-avatar"
-import { EMPTY_MEMBER_MODEL_USAGE_MSG } from "@/lib/usage/messaging/team-dashboard-empty"
+import { TEAM_DASHBOARD_MESSAGES } from "@/lib/usage/messaging/dashboard-messages"
 import { teamUsageBffBase } from "@/lib/usage/api/team-usage-bff-base"
 import { DASHBOARD_API_KEY_ALL, DASHBOARD_API_KEY_NONE } from "@/lib/usage/dashboard-api-key-constants"
 import {
@@ -313,7 +313,7 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
         <section className="rounded-lg border border-border p-4 shadow-sm">
           <h2 className="mb-4 text-lg font-medium">팀원별 분석</h2>
           <div className="flex min-h-[240px] items-center justify-center rounded-md border border-dashed border-border bg-muted/20 px-4 py-12">
-            <p className="text-center text-sm text-muted-foreground">{EMPTY_MEMBER_MODEL_USAGE_MSG}</p>
+            <p className="text-center text-sm text-muted-foreground">{TEAM_DASHBOARD_MESSAGES.hints.noModelUsage}</p>
           </div>
         </section>
       ) : null}

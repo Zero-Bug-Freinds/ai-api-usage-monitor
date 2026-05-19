@@ -1,22 +1,74 @@
 import type { LatencyInsightResponse } from "@/lib/usage/types"
 
-/** 로딩·빈 상태·안내 배너·힌트 등 화면 표시용 문구 */
-export const DASHBOARD_LOADING = {
-  main: "불러오는 중…",
+const COPY_NO_TEAM_MEMBERSHIP_BANNER = "팀에 속하게 되면 팀 대시보드 사용이 가능해집니다."
+const COPY_ENV_SYSTEM_ERROR =
+  "시스템 오류가 발생했습니다. 잠시 후 다시 시도해 주세요. (Code: ERR_ENV_500)"
+
+/** 개인·팀별 나의 사용량 대시보드 (`usage-dashboard.tsx`) 전용 문구 */
+export const PERSONAL_DASHBOARD_MESSAGES = {
+  loading: {
+    main: "불러오는 중…",
+  },
+  empty: {
+    chartAggregated: "집계 데이터 없음",
+  },
+  banners: {
+    noTeamMembership: COPY_NO_TEAM_MEMBERSHIP_BANNER,
+  },
+  hints: {
+    noTeams: "소속 팀이 있으면 팀을 선택해 팀 키 기준 나의 사용량을 확인할 수 있습니다.",
+    noApiKeys: "선택한 팀에 등록된 API Key가 없거나, 해당 공급사에 맞는 팀 키가 없습니다.",
+    noUsageData: "선택한 기간·공급사에 대한 사용 데이터가 없습니다",
+  },
+  latency: {
+    noData: "선택 구간에 지연(latency) 데이터가 없거나 부족합니다.",
+    noCompare: "이전 동일 길이 구간의 평균 지연과 비교할 수 없습니다.",
+  },
+  errors: {
+    validation: {
+      endBeforeStart: "종료일은 시작일보다 앞설 수 없습니다.",
+      maxRangeDays: "조회 기간은 최대 1년(366일)까지 가능합니다.",
+    },
+    mainSystem: "대시보드 데이터를 불러오지 못했습니다. (Code: ERR_MAIN_500)",
+    memberTeamsEnv: COPY_ENV_SYSTEM_ERROR,
+    memberTeamsList: "소속된 팀 정보를 불러오지 못했습니다. (Code: ERR_TEAM_LIST)",
+    logTags: {
+      main: "Dashboard Main Error",
+      memberTeams: "Member Teams Fetch Error",
+    },
+    internalLog: {
+      missingTeamBffBase: "사용량 API 베이스 URL을 확인할 수 없습니다",
+      teamsPayloadNotArray: "teams payload is not an array",
+    },
+  },
 } as const
 
-export const DASHBOARD_EMPTY = {
-  chartAggregated: "집계 데이터 없음",
-} as const
-
-export const DASHBOARD_BANNERS = {
-  noTeamMembership: "팀에 속하게 되면 팀 대시보드 사용이 가능해집니다.",
-} as const
-
-export const DASHBOARD_HINTS = {
-  noTeams: "소속 팀이 있으면 팀을 선택해 팀 키 기준 나의 사용량을 확인할 수 있습니다.",
-  noApiKeys: "선택한 팀에 등록된 API Key가 없거나, 해당 공급사에 맞는 팀 키가 없습니다.",
-  noUsageData: "선택한 기간·공급사에 대한 사용 데이터가 없습니다",
+/** 팀 사용량 대시보드 (`team-dashboard.tsx`) 전용 문구 */
+export const TEAM_DASHBOARD_MESSAGES = {
+  banners: {
+    noTeamMembership: COPY_NO_TEAM_MEMBERSHIP_BANNER,
+  },
+  hints: {
+    selectTeam: "조회할 팀을 선택해 주세요.",
+    addApiKey: "API Key를 추가하여 AI를 호출하면 API 데이터가 쌓입니다.",
+    noModelUsage: "선택한 팀/필터에서 멤버 모델 사용 데이터가 없습니다.",
+  },
+  warnings: {
+    partialEnrichment:
+      "일부 팀 정보 및 멤버 프로필을 불러오지 못했습니다. (Code: ERR_TEAM_PARTIAL)",
+  },
+  errors: {
+    teamsEnv: COPY_ENV_SYSTEM_ERROR,
+    teamsList: "소속된 팀 정보를 불러오지 못했습니다. (Code: ERR_TEAM_LIST)",
+  },
+  logTags: {
+    partialWarning: "Team Partial Warning",
+    apiKeysFetch: "Team Api Keys Fetch Error",
+    teamsListFetch: "Team Dashboard Teams Fetch Error",
+  },
+  internalLog: {
+    missingTeamBffBase: "사용량 API 베이스 URL을 확인할 수 없습니다",
+  },
 } as const
 
 export type DashboardMessagesDataContext = "PERSONAL" | "TEAM_MEMBER_ONLY"
@@ -27,30 +79,25 @@ export function resolveEmptyDashboardHint(
   apiKeyOptionsLength: number,
 ): string {
   if (dataContext === "TEAM_MEMBER_ONLY" && !memberHasTeams) {
-    return DASHBOARD_HINTS.noTeams
+    return PERSONAL_DASHBOARD_MESSAGES.hints.noTeams
   }
   if (dataContext === "TEAM_MEMBER_ONLY" && apiKeyOptionsLength === 0) {
-    return DASHBOARD_HINTS.noApiKeys
+    return PERSONAL_DASHBOARD_MESSAGES.hints.noApiKeys
   }
-  return DASHBOARD_HINTS.noUsageData
+  return PERSONAL_DASHBOARD_MESSAGES.hints.noUsageData
 }
-
-/** 지연 인사이트 배너 정적 문구 */
-export const LATENCY_INSIGHTS = {
-  noData: "선택 구간에 지연(latency) 데이터가 없거나 부족합니다.",
-  noCompare: "이전 동일 길이 구간의 평균 지연과 비교할 수 없습니다.",
-} as const
 
 export function latencyInsightBannerText(
   insight: LatencyInsightResponse | null,
   comparePhrase: string,
   formatLatencyMs: (ms: number | null | undefined) => string,
 ): string {
+  const latency = PERSONAL_DASHBOARD_MESSAGES.latency
   if (!insight || insight.currentAvgLatencyMs == null) {
-    return LATENCY_INSIGHTS.noData
+    return latency.noData
   }
   if (insight.previousAvgLatencyMs == null) {
-    return LATENCY_INSIGHTS.noCompare
+    return latency.noCompare
   }
   const cp = insight.changePercent
   const currentFormatted = formatLatencyMs(insight.currentAvgLatencyMs)
@@ -68,26 +115,9 @@ export function latencyInsightBannerText(
   return `평균 응답 지연이 ${comparePhrase} ${abs}% 악화되었습니다 (현재 ${currentFormatted}).`
 }
 
-/** 마스킹된 API/팀 목록 오류 및 클라이언트 검증 문구 */
-export const DASHBOARD_ERRORS = {
-  validation: {
-    endBeforeStart: "종료일은 시작일보다 앞설 수 없습니다.",
-    maxRangeDays: "조회 기간은 최대 1년(366일)까지 가능합니다.",
-  },
-  mainSystem: "대시보드 데이터를 불러오지 못했습니다. (Code: ERR_MAIN_500)",
-  memberTeamsEnv: "시스템 오류가 발생했습니다. 잠시 후 다시 시도해 주세요. (Code: ERR_ENV_500)",
-  memberTeamsList: "소속된 팀 정보를 불러오지 못했습니다. (Code: ERR_TEAM_LIST)",
-  logTags: {
-    main: "Dashboard Main Error",
-    memberTeams: "Member Teams Fetch Error",
-  },
-  internalLog: {
-    missingTeamBffBase: "사용량 API 베이스 URL을 확인할 수 없습니다",
-    teamsPayloadNotArray: "teams payload is not an array",
-  },
-} as const
-
-const DASHBOARD_CLIENT_VALIDATION_MESSAGES = new Set<string>(Object.values(DASHBOARD_ERRORS.validation))
+const DASHBOARD_CLIENT_VALIDATION_MESSAGES = new Set<string>(
+  Object.values(PERSONAL_DASHBOARD_MESSAGES.errors.validation),
+)
 
 export function isDashboardClientValidationMessage(message: string): boolean {
   return DASHBOARD_CLIENT_VALIDATION_MESSAGES.has(message)
@@ -97,12 +127,12 @@ export function toDashboardMainErrorMessage(error: unknown): string {
   if (error instanceof Error && isDashboardClientValidationMessage(error.message)) {
     return error.message
   }
-  return DASHBOARD_ERRORS.mainSystem
+  return PERSONAL_DASHBOARD_MESSAGES.errors.mainSystem
 }
 
 export function logDashboardMainError(error: unknown, context?: Record<string, unknown>): void {
   const originalMessage = error instanceof Error ? error.message : String(error)
-  console.error(`[${DASHBOARD_ERRORS.logTags.main}]`, {
+  console.error(`[${PERSONAL_DASHBOARD_MESSAGES.errors.logTags.main}]`, {
     ...context,
     originalMessage,
     error,
@@ -110,5 +140,19 @@ export function logDashboardMainError(error: unknown, context?: Record<string, u
 }
 
 export function logDashboardMemberTeamsError(context: Record<string, unknown>): void {
-  console.error(`[${DASHBOARD_ERRORS.logTags.memberTeams}]`, context)
+  console.error(`[${PERSONAL_DASHBOARD_MESSAGES.errors.logTags.memberTeams}]`, context)
+}
+
+export function warnTeamPartialEnrichment(rawWarnings: string[] | undefined): void {
+  console.warn(`[${TEAM_DASHBOARD_MESSAGES.logTags.partialWarning}]`, {
+    rawCodes: rawWarnings ?? [],
+  })
+}
+
+export function logTeamDashboardApiKeysFetch(context: Record<string, unknown>): void {
+  console.error(`[${TEAM_DASHBOARD_MESSAGES.logTags.apiKeysFetch}]`, context)
+}
+
+export function logTeamDashboardTeamsListFetch(context: Record<string, unknown>): void {
+  console.error(`[${TEAM_DASHBOARD_MESSAGES.logTags.teamsListFetch}]`, context)
 }

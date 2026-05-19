@@ -1,35 +1,43 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import {
-  DASHBOARD_ERRORS,
-  DASHBOARD_HINTS,
+  PERSONAL_DASHBOARD_MESSAGES,
+  TEAM_DASHBOARD_MESSAGES,
   latencyInsightBannerText,
-  LATENCY_INSIGHTS,
   resolveEmptyDashboardHint,
   toDashboardMainErrorMessage,
+  warnTeamPartialEnrichment,
 } from "./dashboard-messages"
 
 describe("toDashboardMainErrorMessage", () => {
   it("keeps client validation copy", () => {
-    expect(toDashboardMainErrorMessage(new Error(DASHBOARD_ERRORS.validation.endBeforeStart))).toBe(
-      DASHBOARD_ERRORS.validation.endBeforeStart,
-    )
-    expect(toDashboardMainErrorMessage(new Error(DASHBOARD_ERRORS.validation.maxRangeDays))).toBe(
-      DASHBOARD_ERRORS.validation.maxRangeDays,
-    )
+    expect(
+      toDashboardMainErrorMessage(
+        new Error(PERSONAL_DASHBOARD_MESSAGES.errors.validation.endBeforeStart),
+      ),
+    ).toBe(PERSONAL_DASHBOARD_MESSAGES.errors.validation.endBeforeStart)
+    expect(
+      toDashboardMainErrorMessage(new Error(PERSONAL_DASHBOARD_MESSAGES.errors.validation.maxRangeDays)),
+    ).toBe(PERSONAL_DASHBOARD_MESSAGES.errors.validation.maxRangeDays)
   })
 
   it("masks system and upstream errors", () => {
-    expect(toDashboardMainErrorMessage(new Error("Date range too large"))).toBe(DASHBOARD_ERRORS.mainSystem)
-    expect(toDashboardMainErrorMessage("network")).toBe(DASHBOARD_ERRORS.mainSystem)
+    expect(toDashboardMainErrorMessage(new Error("Date range too large"))).toBe(
+      PERSONAL_DASHBOARD_MESSAGES.errors.mainSystem,
+    )
+    expect(toDashboardMainErrorMessage("network")).toBe(PERSONAL_DASHBOARD_MESSAGES.errors.mainSystem)
   })
 })
 
 describe("resolveEmptyDashboardHint", () => {
   it("branches by team membership and api keys", () => {
-    expect(resolveEmptyDashboardHint("TEAM_MEMBER_ONLY", false, 3)).toBe(DASHBOARD_HINTS.noTeams)
-    expect(resolveEmptyDashboardHint("TEAM_MEMBER_ONLY", true, 0)).toBe(DASHBOARD_HINTS.noApiKeys)
-    expect(resolveEmptyDashboardHint("PERSONAL", true, 0)).toBe(DASHBOARD_HINTS.noUsageData)
+    expect(resolveEmptyDashboardHint("TEAM_MEMBER_ONLY", false, 3)).toBe(
+      PERSONAL_DASHBOARD_MESSAGES.hints.noTeams,
+    )
+    expect(resolveEmptyDashboardHint("TEAM_MEMBER_ONLY", true, 0)).toBe(
+      PERSONAL_DASHBOARD_MESSAGES.hints.noApiKeys,
+    )
+    expect(resolveEmptyDashboardHint("PERSONAL", true, 0)).toBe(PERSONAL_DASHBOARD_MESSAGES.hints.noUsageData)
   })
 })
 
@@ -37,16 +45,39 @@ describe("latencyInsightBannerText", () => {
   const fmt = (ms: number | null | undefined) => (ms == null ? "—" : `${ms}ms`)
 
   it("returns static copy when data is missing", () => {
-    expect(latencyInsightBannerText(null, "전일 동기 대비", fmt)).toBe(LATENCY_INSIGHTS.noData)
+    expect(latencyInsightBannerText(null, "전일 동기 대비", fmt)).toBe(
+      PERSONAL_DASHBOARD_MESSAGES.latency.noData,
+    )
     expect(
       latencyInsightBannerText({ currentAvgLatencyMs: 10, previousAvgLatencyMs: null }, "전일 동기 대비", fmt),
-    ).toBe(LATENCY_INSIGHTS.noCompare)
+    ).toBe(PERSONAL_DASHBOARD_MESSAGES.latency.noCompare)
   })
 })
 
-describe("member teams masked messages", () => {
+describe("PERSONAL_DASHBOARD_MESSAGES member teams errors", () => {
   it("uses stable error codes", () => {
-    expect(DASHBOARD_ERRORS.memberTeamsEnv).toContain("ERR_ENV_500")
-    expect(DASHBOARD_ERRORS.memberTeamsList).toContain("ERR_TEAM_LIST")
+    expect(PERSONAL_DASHBOARD_MESSAGES.errors.memberTeamsEnv).toContain("ERR_ENV_500")
+    expect(PERSONAL_DASHBOARD_MESSAGES.errors.memberTeamsList).toContain("ERR_TEAM_LIST")
+  })
+})
+
+describe("TEAM_DASHBOARD_MESSAGES", () => {
+  it("uses stable error codes and hints", () => {
+    expect(TEAM_DASHBOARD_MESSAGES.errors.teamsEnv).toContain("ERR_ENV_500")
+    expect(TEAM_DASHBOARD_MESSAGES.errors.teamsList).toContain("ERR_TEAM_LIST")
+    expect(TEAM_DASHBOARD_MESSAGES.warnings.partialEnrichment).toContain("ERR_TEAM_PARTIAL")
+    expect(TEAM_DASHBOARD_MESSAGES.hints.noModelUsage).toContain("멤버 모델 사용 데이터")
+  })
+})
+
+describe("warnTeamPartialEnrichment", () => {
+  it("logs raw warning codes without exposing them in return value", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    warnTeamPartialEnrichment(["TEAM_NAME_UNAVAILABLE", "TEAM_MEMBERS_UNAVAILABLE"])
+    expect(warn).toHaveBeenCalledWith(
+      `[${TEAM_DASHBOARD_MESSAGES.logTags.partialWarning}]`,
+      { rawCodes: ["TEAM_NAME_UNAVAILABLE", "TEAM_MEMBERS_UNAVAILABLE"] },
+    )
+    warn.mockRestore()
   })
 })

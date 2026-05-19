@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import * as React from "react"
 import {
@@ -18,7 +18,12 @@ import {
 } from "recharts"
 import { Button } from "@ai-usage/ui"
 import { formatRequestCount, formatTokenCount, formatUsd, toNumber } from "@/lib/usage/format"
-import { EMPTY_MEMBER_MODEL_USAGE_MSG } from "@/lib/usage/messaging/team-dashboard-empty"
+import {
+  logTeamDashboardApiKeysFetch,
+  logTeamDashboardTeamsListFetch,
+  TEAM_DASHBOARD_MESSAGES,
+  warnTeamPartialEnrichment,
+} from "@/lib/usage/messaging/dashboard-messages"
 import { teamUsageBffBase } from "@/lib/usage/api/team-usage-bff-base"
 import { DASHBOARD_API_KEY_ALL, DASHBOARD_API_KEY_NONE } from "@/lib/usage/dashboard-api-key-constants"
 import {
@@ -85,6 +90,32 @@ type TeamSummary = { id: string; name: string; createdAt?: string }
 const AnyLegend = Legend as any
 
 const TEAM_DASHBOARD_FETCH_LOG_TAG = "Team Dashboard Fetch Error"
+
+function messageFromJsonBody(body: unknown): string | null {
+  if (!body || typeof body !== "object") return null
+  const record = body as Record<string, unknown>
+  if (typeof record.message === "string" && record.message.length > 0) {
+    return record.message
+  }
+  if (typeof record.error === "string" && record.error.length > 0) {
+    return record.error
+  }
+  return null
+}
+
+function TeamPartialEnrichmentNotice({ warnings }: { warnings?: string[] }) {
+  const lastWarnedKey = React.useRef("")
+  const key = (warnings ?? []).join("|")
+  if (key !== lastWarnedKey.current) {
+    lastWarnedKey.current = key
+    warnTeamPartialEnrichment(warnings)
+  }
+  return (
+    <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900" role="note">
+      {TEAM_DASHBOARD_MESSAGES.warnings.partialEnrichment}
+    </div>
+  )
+}
 
 function buildUsageDashboardQuery(params: Record<string, string | undefined | null>): string {
   const sp = new URLSearchParams()
@@ -209,16 +240,32 @@ export default function TeamDashboard({
       const base = teamUsageBffBase()
       if (!base) {
         if (!cancelled) {
-          setTeamsErr("사용량 API 베이스 URL을 확인할 수 없습니다")
+          logTeamDashboardTeamsListFetch({
+            reason: "missing_team_bff_base",
+            originalMessage: TEAM_DASHBOARD_MESSAGES.internalLog.missingTeamBffBase,
+          })
+          setTeamsErr(TEAM_DASHBOARD_MESSAGES.errors.teamsEnv)
           setTeamsLoading(false)
         }
         return
       }
+      const teamsUrl = `${base}/teams`
       try {
-        const res = await fetch(`${base}/teams`, { credentials: "include", headers: { Accept: "application/json" } })
+        const res = await fetch(teamsUrl, { credentials: "include", headers: { Accept: "application/json" } })
         const json = (await res.json()) as { teams?: unknown }
         if (!res.ok || !Array.isArray(json.teams)) {
-          if (!cancelled) setTeamsErr("팀 목록을 불러오지 못했습니다")
+          if (!cancelled) {
+            const upstreamMessage = !res.ok
+              ? messageFromJsonBody(json) ?? res.statusText
+              : TEAM_DASHBOARD_MESSAGES.internalLog.missingTeamBffBase
+            logTeamDashboardTeamsListFetch({
+              request: teamsUrl,
+              status: res.status,
+              statusText: res.statusText,
+              upstreamMessage,
+            })
+            setTeamsErr(TEAM_DASHBOARD_MESSAGES.errors.teamsList)
+          }
           return
         }
         const list = (json.teams as unknown[])
@@ -233,8 +280,11 @@ export default function TeamDashboard({
         if (cancelled) return
         setTeams(list)
         setTeamsErr(null)
-      } catch {
-        if (!cancelled) setTeamsErr("팀 목록을 불러오지 못했습니다")
+      } catch (e) {
+        if (!cancelled) {
+          logTeamDashboardTeamsListFetch({ request: teamsUrl, error: e })
+          setTeamsErr(TEAM_DASHBOARD_MESSAGES.errors.teamsList)
+        }
       } finally {
         if (!cancelled) setTeamsLoading(false)
       }
@@ -266,25 +316,39 @@ export default function TeamDashboard({
     setKeysLoading(true)
     const base = teamUsageBffBase()
     if (!base) {
+      logTeamDashboardApiKeysFetch({ reason: "missing_team_bff_base", teamId: selectedTeamId })
       setApiKeyRows([])
       setKeysLoading(false)
       return
     }
-    fetch(`${base}/teams/${encodeURIComponent(selectedTeamId)}/api-keys`, {
+    const apiKeysUrl = `${base}/teams/${encodeURIComponent(selectedTeamId)}/api-keys`
+    fetch(apiKeysUrl, {
       credentials: "include",
       headers: { Accept: "application/json" },
     })
       .then(async (r) => {
         const json = await r.json()
-        if (!r.ok) return []
+        if (!r.ok) {
+          logTeamDashboardApiKeysFetch({
+            request: apiKeysUrl,
+            teamId: selectedTeamId,
+            status: r.status,
+            statusText: r.statusText,
+            upstreamMessage: messageFromJsonBody(json) ?? r.statusText,
+          })
+          return []
+        }
         return parseTeamBffApiKeysPayload(json)
       })
       .then((sorted) => {
         if (cancelled) return
         setApiKeyRows(sorted)
       })
-      .catch(() => {
-        if (!cancelled) setApiKeyRows([])
+      .catch((e) => {
+        if (!cancelled) {
+          logTeamDashboardApiKeysFetch({ request: apiKeysUrl, teamId: selectedTeamId, error: e })
+          setApiKeyRows([])
+        }
       })
       .finally(() => {
         if (!cancelled) setKeysLoading(false)
@@ -318,7 +382,7 @@ export default function TeamDashboard({
     }
     const base = teamUsageBffBase()
     if (!base) {
-      setError("사용량 API 베이스 URL을 확인할 수 없습니다")
+      setError(TEAM_DASHBOARD_MESSAGES.errors.teamsEnv)
       return
     }
     let cancelled = false
@@ -476,7 +540,7 @@ export default function TeamDashboard({
       {teamsErr ? <p className="mb-4 text-sm text-amber-700">{teamsErr}</p> : null}
       {showNoTeamBanner ? (
         <div className="mb-6 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-950 dark:text-amber-100" role="note">
-          팀에 속하게 되면 팀 대시보드 사용이 가능해집니다.
+          {TEAM_DASHBOARD_MESSAGES.banners.noTeamMembership}
         </div>
       ) : null}
       {showDashChartShell && showMainChartError ? (
@@ -527,7 +591,7 @@ export default function TeamDashboard({
             {showMainChartSkeleton ? <TeamDashStatsRowSkeleton /> : null}
             {showMainChartError ? <div className={TEAM_DASH_STATS_ROW_MIN} aria-hidden="true" /> : null}
             {showComposedChart && !hasMainData ? (
-              <p className="mt-3 text-center text-sm text-muted-foreground">{EMPTY_MEMBER_MODEL_USAGE_MSG}</p>
+              <p className="mt-3 text-center text-sm text-muted-foreground">{TEAM_DASHBOARD_MESSAGES.hints.noModelUsage}</p>
             ) : null}
             {showComposedChart && hasMainData ? (
               <div className="mt-3 text-xs text-muted-foreground">
@@ -536,11 +600,13 @@ export default function TeamDashboard({
             ) : null}
             {shouldShowNoDataGuide ? (
               <div className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-950 dark:text-amber-100" role="note">
-                Api key를 추가하여 AI를 호출하면 API 데이터가 쌓입니다.
+                {TEAM_DASHBOARD_MESSAGES.hints.addApiKey}
               </div>
             ) : null}
             {showMainChartSkeleton && hasTeamMembership && !effectiveTeamId && !teamsLoading ? (
-              <p className="mt-2 text-center text-xs text-muted-foreground">조회할 팀을 선택해 주세요.</p>
+              <p className="mt-2 text-center text-xs text-muted-foreground">
+                {TEAM_DASHBOARD_MESSAGES.hints.selectTeam}
+              </p>
             ) : null}
           </section>
           <div className="mb-8 flex min-w-0 flex-col gap-6">
@@ -576,7 +642,7 @@ export default function TeamDashboard({
                     </ul>
                   </div>
                   {pieData.length === 0 ? (
-                    <p className="mt-3 text-center text-sm text-muted-foreground">{EMPTY_MEMBER_MODEL_USAGE_MSG}</p>
+                    <p className="mt-3 text-center text-sm text-muted-foreground">{TEAM_DASHBOARD_MESSAGES.hints.noModelUsage}</p>
                   ) : null}
                 </>
               ) : null}
@@ -603,14 +669,14 @@ export default function TeamDashboard({
                     </ResponsiveContainer>
                   </div>
                   {barModelData.length === 0 ? (
-                    <p className="mt-3 text-center text-sm text-muted-foreground">{EMPTY_MEMBER_MODEL_USAGE_MSG}</p>
+                    <p className="mt-3 text-center text-sm text-muted-foreground">{TEAM_DASHBOARD_MESSAGES.hints.noModelUsage}</p>
                   ) : null}
                 </>
               )}
             </section>
           </div>
           {showComposedChart && data?.enrichment?.partial ? (
-            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">프로필 일부 결합 실패: {(data.enrichment.warnings ?? []).join(", ")}</div>
+            <TeamPartialEnrichmentNotice warnings={data.enrichment.warnings} />
           ) : null}
         </div>
       ) : null}

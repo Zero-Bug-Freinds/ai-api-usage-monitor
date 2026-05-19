@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import * as React from "react"
 import { useSearchParams } from "next/navigation"
@@ -25,13 +25,10 @@ import {
 import { Button } from "@ai-usage/ui"
 import { buildUsageQuery, fetchUsageJson } from "@/lib/usage/api/fetch-usage"
 import {
-  DASHBOARD_BANNERS,
-  DASHBOARD_EMPTY,
-  DASHBOARD_ERRORS,
-  DASHBOARD_LOADING,
   latencyInsightBannerText,
   logDashboardMainError,
   logDashboardMemberTeamsError,
+  PERSONAL_DASHBOARD_MESSAGES,
   resolveEmptyDashboardHint,
   toDashboardMainErrorMessage,
 } from "@/lib/usage/messaging/dashboard-messages"
@@ -726,9 +723,9 @@ export function UsageDashboard() {
         if (!cancelled) {
           logDashboardMemberTeamsError({
             reason: "missing_team_bff_base",
-            originalMessage: DASHBOARD_ERRORS.internalLog.missingTeamBffBase,
+            originalMessage: PERSONAL_DASHBOARD_MESSAGES.errors.internalLog.missingTeamBffBase,
           })
-          setMemberTeamsErr(DASHBOARD_ERRORS.memberTeamsEnv)
+          setMemberTeamsErr(PERSONAL_DASHBOARD_MESSAGES.errors.memberTeamsEnv)
           setMemberTeams([])
           setMemberTeamsLoading(false)
         }
@@ -742,14 +739,14 @@ export function UsageDashboard() {
           if (!cancelled) {
             const upstreamMessage = !res.ok
               ? messageFromJsonBody(json) ?? res.statusText
-              : DASHBOARD_ERRORS.internalLog.teamsPayloadNotArray
+              : PERSONAL_DASHBOARD_MESSAGES.errors.internalLog.teamsPayloadNotArray
             logDashboardMemberTeamsError({
               request: teamsUrl,
               status: res.status,
               statusText: res.statusText,
               upstreamMessage,
             })
-            setMemberTeamsErr(DASHBOARD_ERRORS.memberTeamsList)
+            setMemberTeamsErr(PERSONAL_DASHBOARD_MESSAGES.errors.memberTeamsList)
           }
           return
         }
@@ -773,7 +770,7 @@ export function UsageDashboard() {
       } catch (e) {
         if (!cancelled) {
           logDashboardMemberTeamsError({ request: teamsUrl, error: e })
-          setMemberTeamsErr(DASHBOARD_ERRORS.memberTeamsList)
+          setMemberTeamsErr(PERSONAL_DASHBOARD_MESSAGES.errors.memberTeamsList)
         }
       } finally {
         if (!cancelled) setMemberTeamsLoading(false)
@@ -857,11 +854,11 @@ export function UsageDashboard() {
         const rf = customFrom || t
         const rt = customTo || t
         if (Date.parse(`${rt}T12:00:00+09:00`) < Date.parse(`${rf}T12:00:00+09:00`)) {
-          throw new Error(DASHBOARD_ERRORS.validation.endBeforeStart)
+          throw new Error(PERSONAL_DASHBOARD_MESSAGES.errors.validation.endBeforeStart)
         }
         const rangeDays = kstDaysInclusive(rf, rt)
         if (rangeDays > MAX_RANGE_DAYS) {
-          throw new Error(DASHBOARD_ERRORS.validation.maxRangeDays)
+          throw new Error(PERSONAL_DASHBOARD_MESSAGES.errors.validation.maxRangeDays)
         }
         if (dataContext === "TEAM_MEMBER_ONLY" && !teamMemberTeamId) {
           if (!cancelled) {
@@ -1427,7 +1424,7 @@ export function UsageDashboard() {
           className="mb-6 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-950 dark:text-amber-100"
           role="note"
         >
-          {DASHBOARD_BANNERS.noTeamMembership}
+          {PERSONAL_DASHBOARD_MESSAGES.banners.noTeamMembership}
         </div>
       ) : null}
 
@@ -1479,7 +1476,7 @@ export function UsageDashboard() {
       ) : null}
 
       {!clientReady || mainLoading ? (
-        <p className="mb-8 text-sm text-muted-foreground">{DASHBOARD_LOADING.main}</p>
+        <p className="mb-8 text-sm text-muted-foreground">{PERSONAL_DASHBOARD_MESSAGES.loading.main}</p>
       ) : (
         <>
           <section className="mb-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -1554,7 +1551,7 @@ export function UsageDashboard() {
               </ResponsiveContainer>
             </div>
             {mainStabilityNoRequests ? (
-              <p className="mt-2 text-center text-sm text-muted-foreground">{DASHBOARD_EMPTY.chartAggregated}</p>
+              <p className="mt-2 text-center text-sm text-muted-foreground">{PERSONAL_DASHBOARD_MESSAGES.empty.chartAggregated}</p>
             ) : null}
           </section>
 
@@ -1716,7 +1713,7 @@ export function UsageDashboard() {
                 </div>
                 <div className="flex-1 max-h-[320px] overflow-y-auto p-1">
                   {isModelPiePlaceholder ? (
-                    <p className="text-sm text-muted-foreground">{DASHBOARD_EMPTY.chartAggregated}</p>
+                    <p className="text-sm text-muted-foreground">{PERSONAL_DASHBOARD_MESSAGES.empty.chartAggregated}</p>
                   ) : (
                     <div className="space-y-1.5">
                       {pieData.map((entry, i) => (
@@ -1780,7 +1777,7 @@ export function UsageDashboard() {
                 </ResponsiveContainer>
               </div>
               {isProviderPiePlaceholder ? (
-                <p className="mt-2 text-center text-sm text-muted-foreground">{DASHBOARD_EMPTY.chartAggregated}</p>
+                <p className="mt-2 text-center text-sm text-muted-foreground">{PERSONAL_DASHBOARD_MESSAGES.empty.chartAggregated}</p>
               ) : null}
             </section>
           </div>
@@ -1831,7 +1828,7 @@ export function UsageDashboard() {
                 </ResponsiveContainer>
               </div>
               {modelBarRows.length === 0 ? (
-                <p className="mt-2 text-center text-sm text-muted-foreground">{DASHBOARD_EMPTY.chartAggregated}</p>
+                <p className="mt-2 text-center text-sm text-muted-foreground">{PERSONAL_DASHBOARD_MESSAGES.empty.chartAggregated}</p>
               ) : null}
               {modelBarRows.length > 0 ? (
                 <p className="mt-3 text-xs text-muted-foreground">
@@ -1973,7 +1970,7 @@ export function UsageDashboard() {
                 </ResponsiveContainer>
               </div>
               {tokenStackRows.length === 0 ? (
-                <p className="mt-2 text-center text-sm text-muted-foreground">{DASHBOARD_EMPTY.chartAggregated}</p>
+                <p className="mt-2 text-center text-sm text-muted-foreground">{PERSONAL_DASHBOARD_MESSAGES.empty.chartAggregated}</p>
               ) : null}
               {tokenStackRows.length > 0 ? (
                 <p className="mt-3 text-xs text-muted-foreground">
@@ -2052,7 +2049,7 @@ export function UsageDashboard() {
               </ResponsiveContainer>
             </div>
             {!monthlyHasActivity ? (
-              <p className="mt-2 text-center text-sm text-muted-foreground">{DASHBOARD_EMPTY.chartAggregated}</p>
+              <p className="mt-2 text-center text-sm text-muted-foreground">{PERSONAL_DASHBOARD_MESSAGES.empty.chartAggregated}</p>
             ) : null}
           </section>
         </>
