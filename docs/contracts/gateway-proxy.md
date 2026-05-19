@@ -1,6 +1,6 @@
 # Gateway ↔ Proxy 서비스 간 계약
 
-버전: 1.6  
+버전: 1.7  
 관련: [docs/architecture.md](../architecture.md) §4.1, §4.2, §8.2, §10.1, §10.2, 루트 [`docker-compose.yml`](../../docker-compose.yml)(`web-edge`, `docker/web-edge/nginx.conf.template`), 루트 [`.env.example`](../../.env.example), [`services/usage-service/web/.env.example`](../../services/usage-service/web/.env.example), [Web·Gateway Usage BFF](./web-gateway-bff.md)(Usage BFF 브라우저 경로·`basePath`는 [web-split-boundary.md](./web-split-boundary.md))
 
 **v1.1:** `application.yml` 라우트·`RemoveRequestHeader=Authorization`·Bearer 검증·Web `API_GATEWAY_URL` 합의를 §1.1·§3·§9에 명시(게이트웨이·Usage BFF 담당 정합).  
@@ -9,6 +9,7 @@
 **v1.4:** §5.1 Docker Compose·루트 `.env`와 `GATEWAY_SHARED_SECRET` 빈 값 주의, 로컬 기본 문자열을 게이트웨이·Proxy·usage와 정합.
 **v1.5:** `/api/v1/ai/ext/**` key-only ingress(HMAC+timestamp+nonce) 경로를 추가하고 기존 `/api/v1/ai/**` JWT 경로와 분리.
 **v1.6:** §6.1 `UsageRecordedEvent.metadataOwnerUserId` — PERSONAL `api_key_metadata` upsert 시 Identity MQ와 동일한 소유 `user_id`(플랫폼 사용자 id 문자열)를 쓰기 위한 선택 필드; Proxy는 `UserContext.keyLookupUserId()` 로 채운다.
+**v1.7:** §3.3.1 ext provider API key → gateway fingerprint 헤더; gateway `/internal/**` Bearer 보강; proxy reverse lookup 후속 작업 명시.
 
 ---
 
@@ -53,7 +54,7 @@
 
 | Route ID | Predicate | Upstream URI (환경 변수) | 필터 |
 |----------|-----------|--------------------------|------|
-| `proxy-ai-ext` | `Path=/api/v1/ai/ext/**` | `GATEWAY_PROXY_URI` (기본 `http://localhost:8081`) | `RemoveRequestHeader=Authorization`, `RewritePath=/api/v1/ai/ext/(?<segment>.*), /proxy/${segment}` |
+| `proxy-ai-ext` | `Path=/api/v1/ai/ext/**` | `GATEWAY_PROXY_URI` (기본 `http://localhost:8081`) | `RemoveRequestHeader=Authorization`, `RemoveRequestHeader=X-Api-Key`, `RemoveRequestHeader=X-Goog-Api-Key`, `RemoveRequestHeader=X-Ext-Raw-Api-Key`, `RewritePath=/api/v1/ai/ext/(?<segment>.*), /proxy/${segment}` |
 | `proxy-ai` | `Path=/api/v1/ai/**` | `GATEWAY_PROXY_URI` (기본 `http://localhost:8081`) | `RemoveRequestHeader=Authorization`, `RewritePath=/api/v1/ai/(?<segment>.*), /proxy/${segment}` |
 | `usage-http` | `Path=/api/v1/usage/**` | `GATEWAY_USAGE_URI` (기본 `http://localhost:8092`) | `RemoveRequestHeader=Authorization` |
 
@@ -97,10 +98,45 @@ Canonical string:
 
 Proxy key selection priority for ext/JWT 공통:
 
-- `X-Api-Key-Id` > `X-Api-Key-Alias` > raw key reverse lookup > latest fallback lookup
+- `X-Api-Key-Id` > `X-Api-Key-Alias` > fingerprint reverse lookup > latest fallback lookup
 - `ACTIVE` 상태 키만 허용 (inactive/deleted는 `404`)
-- reverse lookup 경로는 현재 identity/team 정식 API 미지원으로, `proxy.key-service.reverse-lookup-mocks`(테스트/임시 운영)로 보완한다.
+- **Gateway(Task56):** ext 요청에서 provider raw key가 있으면 `X-Api-Key-Fingerprint`(기본) + `X-Ai-Provider` 를 Proxy로 전달하고 raw key 헤더는 제거한다. raw key가 없으면 fingerprint 헤더 없이 전달(HMAC-only ext 호출).
+- **Proxy(후속):** fingerprint + provider로 identity/team `POST /internal/v1/api-keys/lookup` 병렬 조회 후 `UserContext` 채움. 개발용 `reverse-lookup-mocks`는 proxy 후속에서 dev-only로 정리한다.
 - 동일 raw key hash를 personal/team에 동시에 등록하는 구성은 금지한다(기동 시 예외).
+
+#### 3.3.1 Provider API key headers (ext ingress)
+
+Gateway filter: [`ExtAiApiKeyFingerprintWebFilter`](../../services/api-gateway-service/src/main/java/com/eevee/apigateway/filter/ExtAiApiKeyFingerprintWebFilter.java) — `ExtAiHmacAuthWebFilter` **이후**, `ProxyTrustHeadersWebFilter` **이전**. `gateway.ext-ai.enabled=true` 일 때만 동작.
+
+**클라이언트 → Gateway (raw key, 우선순위):**
+
+| 우선순위 | 헤더 | 비고 |
+|----------|------|------|
+| 1 | `X-Ext-Raw-Api-Key` | Proxy 상수와 동일 이름 |
+| 2 | `X-Api-Key` | OpenAI 스타일 |
+| 3 | `X-Goog-Api-Key` | Google |
+| 4 | `Authorization: Bearer <token>` | provider 키 휴리스틱(`sk-`, `AIza`, `xai-` 등)에만 해당; 플랫폼 JWT는 ext에서 보내지 않음(§3.1·web-edge에서 `Authorization` 제거) |
+
+- 평문 키는 **trim** 후 fingerprint(Identity 등록과 동일: `SHA-256(UTF-8 plain)` → **소문자 64 hex**). `key_hash`(provider+키 uniqueness)와 **다름**.
+- raw key가 **없으면** fingerprint 헤더를 넣지 않음(선택). Proxy는 키 material 없이 404 등 처리(후속 lookup).
+- 잘못된 provider path segment / 빈·과장 키 → Gateway `400`.
+
+**Gateway → Proxy (raw key 발견 시):**
+
+| 헤더 | 기본값 | 설명 |
+|------|--------|------|
+| `X-Api-Key-Fingerprint` | `gateway.ext-ai.fingerprint-header` | 64 hex SHA-256 |
+| `X-Ai-Provider` | `gateway.ext-ai.provider-header` | `OPENAI` \| `GOOGLE` \| `ANTHROPIC` (path segment에서 파생) |
+
+제거(필터 + SCG `RemoveRequestHeader` 이중 방어): `Authorization`, `X-Api-Key`, `X-Goog-Api-Key`, `X-Ext-Raw-Api-Key`, ext HMAC 검증 헤더(`X-Ext-Key-Id`, `X-Ext-Timestamp`, `X-Ext-Nonce`, `X-Ext-Signature`, `X-Ext-Body-Sha256`).
+
+**내부 lookup API (문서만 — Gateway는 호출하지 않음):**
+
+`POST /internal/v1/api-keys/lookup` — body `{ "fingerprint": "<64 hex>", "provider": "OPENAI" }` — identity-service·team-service 구현. 404/409/502 매핑·캐시(10m/30s)는 **proxy-service** 후속.
+
+**인프라(보고):** identity/team/proxy의 `/internal/**` 는 LB에서 공인 인터넷 차단. Gateway `/internal/**` 는 `X-Web-Edge-Auth == gateway.shared-secret` 또는 `Authorization: Bearer <gateway.internal-auth.bearer-token>` (`InternalServiceAuthWebFilter`).
+
+**web-edge(보고):** ext location은 기본적으로 `Authorization`을 비운다. Bearer provider 키는 `X-Api-Key` / `X-Goog-Api-Key` / `X-Ext-Raw-Api-Key` 사용. ext 전용 Bearer 전달은 web-edge 후속.
 
 ---
 

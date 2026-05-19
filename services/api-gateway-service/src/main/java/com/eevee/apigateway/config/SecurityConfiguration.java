@@ -1,8 +1,10 @@
 package com.eevee.apigateway.config;
 
 import com.eevee.apigateway.filter.WebEdgePreAuthWebFilter;
+import com.eevee.apigateway.filter.ExtAiApiKeyFingerprintWebFilter;
 import com.eevee.apigateway.filter.ExtAiHmacAuthWebFilter;
 import com.eevee.apigateway.filter.ExtAiNonceReplayGuard;
+import com.eevee.apigateway.filter.InternalServiceAuthWebFilter;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -31,7 +33,7 @@ public class SecurityConfiguration {
 
     @Bean
     @Order(Ordered.HIGHEST_PRECEDENCE)
-    public SecurityWebFilterChain internalSecurityWebFilterChain() {
+    public SecurityWebFilterChain internalSecurityWebFilterChain(GatewayProperties gatewayProperties) {
         ServerHttpSecurity http = ServerHttpSecurity.http();
         http.securityMatcher(exchange -> {
             String path = exchange.getRequest().getPath().value();
@@ -48,6 +50,10 @@ public class SecurityConfiguration {
                 .pathMatchers("/internal/web-edge/auth/resolve").permitAll()
                 .pathMatchers("/actuator/health", "/actuator/info").permitAll()
                 .anyExchange().denyAll()
+        );
+        http.addFilterBefore(
+                new InternalServiceAuthWebFilter(gatewayProperties),
+                SecurityWebFiltersOrder.AUTHENTICATION
         );
         return http.build();
     }
@@ -112,6 +118,7 @@ public class SecurityConfiguration {
         );
         http.addFilterBefore(new WebEdgePreAuthWebFilter(gatewayProperties), SecurityWebFiltersOrder.AUTHENTICATION);
         http.addFilterAfter(new ExtAiHmacAuthWebFilter(gatewayProperties, nonceReplayGuard), SecurityWebFiltersOrder.AUTHENTICATION);
+        http.addFilterAfter(new ExtAiApiKeyFingerprintWebFilter(gatewayProperties), SecurityWebFiltersOrder.AUTHENTICATION);
         http.addFilterAfter(new ProxyTrustHeadersWebFilter(gatewayProperties), SecurityWebFiltersOrder.AUTHORIZATION);
         return http.build();
     }
@@ -140,7 +147,10 @@ public class SecurityConfiguration {
                 "X-Ext-Nonce",
                 "X-Ext-Body-Sha256",
                 "X-Ext-Signature",
-                "X-Ext-User-Id"
+                "X-Ext-User-Id",
+                "X-Api-Key",
+                "X-Goog-Api-Key",
+                "X-Ext-Raw-Api-Key"
         ));
         config.setExposedHeaders(List.of("X-Correlation-Id"));
         config.setAllowCredentials(true);

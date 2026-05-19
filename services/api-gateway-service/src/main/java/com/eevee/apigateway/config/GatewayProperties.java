@@ -23,6 +23,7 @@ public class GatewayProperties {
     private final Jwt jwt = new Jwt();
     private final Cors cors = new Cors();
     private final ExtAi extAi = new ExtAi();
+    private final InternalAuth internalAuth = new InternalAuth();
 
     public boolean isDevMode() {
         return devMode;
@@ -50,6 +51,10 @@ public class GatewayProperties {
 
     public ExtAi getExtAi() {
         return extAi;
+    }
+
+    public InternalAuth getInternalAuth() {
+        return internalAuth;
     }
 
     public static class Jwt {
@@ -85,6 +90,9 @@ public class GatewayProperties {
         private String hmacSecret = "";
         private long timestampSkewSeconds = 300;
         private long nonceTtlSeconds = 300;
+        private String fingerprintHeader = "X-Api-Key-Fingerprint";
+        private String providerHeader = "X-Ai-Provider";
+        private int fingerprintLogPrefixLength = 8;
 
         public boolean isEnabled() {
             return enabled;
@@ -124,6 +132,42 @@ public class GatewayProperties {
 
         public void setNonceTtlSeconds(long nonceTtlSeconds) {
             this.nonceTtlSeconds = nonceTtlSeconds;
+        }
+
+        public String getFingerprintHeader() {
+            return fingerprintHeader;
+        }
+
+        public void setFingerprintHeader(String fingerprintHeader) {
+            this.fingerprintHeader = fingerprintHeader;
+        }
+
+        public String getProviderHeader() {
+            return providerHeader;
+        }
+
+        public void setProviderHeader(String providerHeader) {
+            this.providerHeader = providerHeader;
+        }
+
+        public int getFingerprintLogPrefixLength() {
+            return fingerprintLogPrefixLength;
+        }
+
+        public void setFingerprintLogPrefixLength(int fingerprintLogPrefixLength) {
+            this.fingerprintLogPrefixLength = fingerprintLogPrefixLength;
+        }
+    }
+
+    public static class InternalAuth {
+        private String bearerToken = "";
+
+        public String getBearerToken() {
+            return bearerToken;
+        }
+
+        public void setBearerToken(String bearerToken) {
+            this.bearerToken = bearerToken;
         }
     }
 }

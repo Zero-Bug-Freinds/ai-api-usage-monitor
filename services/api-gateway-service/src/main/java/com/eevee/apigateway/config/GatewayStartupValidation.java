@@ -1,5 +1,7 @@
 package com.eevee.apigateway.config;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
@@ -8,6 +10,7 @@ import org.springframework.util.StringUtils;
 @Component
 public class GatewayStartupValidation implements ApplicationRunner {
 
+    private static final Logger log = LoggerFactory.getLogger(GatewayStartupValidation.class);
     private static final int HMAC256_MIN_SECRET_LENGTH = 32;
 
     private final GatewayProperties gatewayProperties;
@@ -21,6 +24,7 @@ public class GatewayStartupValidation implements ApplicationRunner {
         validateSharedSecret();
         validateJwtSecretForProdMode();
         validateExtAiSettings();
+        validateInternalAuthForProdMode();
     }
 
     private void validateSharedSecret() {
@@ -63,6 +67,19 @@ public class GatewayStartupValidation implements ApplicationRunner {
         if (extAi.getTimestampSkewSeconds() <= 0 || extAi.getNonceTtlSeconds() <= 0) {
             throw new IllegalStateException(
                     "gateway.ext-ai timestamp/nonce settings must be positive");
+        }
+    }
+
+    private void validateInternalAuthForProdMode() {
+        if (!StringUtils.hasText(gatewayProperties.getInternalAuth().getBearerToken())) {
+            if (gatewayProperties.isDevMode()) {
+                log.warn(
+                        "gateway.internal-auth.bearer-token is unset; /internal/** accepts X-Web-Edge-Auth only");
+                return;
+            }
+            throw new IllegalStateException(
+                    "gateway.internal-auth.bearer-token is required when gateway.dev-mode=false. "
+                            + "Set GATEWAY_INTERNAL_BEARER_TOKEN.");
         }
     }
 }
