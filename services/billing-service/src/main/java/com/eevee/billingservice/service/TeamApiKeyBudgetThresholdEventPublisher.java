@@ -12,11 +12,9 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.List;
 
 @Component
@@ -24,19 +22,7 @@ public class TeamApiKeyBudgetThresholdEventPublisher {
 
     private static final Logger log = LoggerFactory.getLogger(TeamApiKeyBudgetThresholdEventPublisher.class);
 
-    private static final int PERCENT_STEP = 1;
-    private static final List<BigDecimal> DEFAULT_THRESHOLDS = buildPercentThresholdsInclusive(PERCENT_STEP, 100, PERCENT_STEP);
-
-    private static List<BigDecimal> buildPercentThresholdsInclusive(int fromPercent, int toPercent, int stepPercent) {
-        if (fromPercent <= 0 || toPercent <= 0 || toPercent < fromPercent || stepPercent <= 0) {
-            throw new IllegalArgumentException("Invalid percent threshold range");
-        }
-        List<BigDecimal> thresholds = new ArrayList<>((toPercent - fromPercent) / stepPercent + 1);
-        for (int pct = fromPercent; pct <= toPercent; pct += stepPercent) {
-            thresholds.add(BigDecimal.valueOf(pct).movePointLeft(2));
-        }
-        return List.copyOf(thresholds);
-    }
+    private static final List<BigDecimal> DEFAULT_THRESHOLDS = BudgetThresholdMath.DEFAULT_MONTHLY_THRESHOLDS;
 
     private final RabbitTemplate rabbitTemplate;
     private final BillingRabbitProperties rabbitProperties;
@@ -78,7 +64,7 @@ public class TeamApiKeyBudgetThresholdEventPublisher {
         }
 
         for (BigDecimal threshold : DEFAULT_THRESHOLDS) {
-            if (!isCrossed(monthlyTotalUsdBefore, monthlyTotalUsdAfter, monthlyBudgetUsd, threshold)) {
+            if (!BudgetThresholdMath.isCrossed(monthlyTotalUsdBefore, monthlyTotalUsdAfter, monthlyBudgetUsd, threshold)) {
                 continue;
             }
             publishOne(out, triggerUserId, teamId, teamApiKeyId, provider, apiKeyAlias, monthStart, threshold, monthlyTotalUsdAfter, monthlyBudgetUsd);
@@ -144,23 +130,4 @@ public class TeamApiKeyBudgetThresholdEventPublisher {
             throw new IllegalStateException("team api key budget threshold serialization failed", e);
         }
     }
-
-    private static boolean isCrossed(
-            BigDecimal beforeTotalUsd,
-            BigDecimal afterTotalUsd,
-            BigDecimal budgetUsd,
-            BigDecimal thresholdPct
-    ) {
-        BigDecimal beforePct = safeRatio(beforeTotalUsd, budgetUsd);
-        BigDecimal afterPct = safeRatio(afterTotalUsd, budgetUsd);
-        return beforePct.compareTo(thresholdPct) < 0 && afterPct.compareTo(thresholdPct) >= 0;
-    }
-
-    private static BigDecimal safeRatio(BigDecimal total, BigDecimal budget) {
-        if (total == null || budget == null || budget.signum() <= 0) {
-            return BigDecimal.ZERO;
-        }
-        return total.divide(budget, 8, RoundingMode.HALF_UP);
-    }
 }
-

@@ -4,6 +4,7 @@ import com.eevee.billingservice.api.dto.ApiKeySeenResponse;
 import com.eevee.billingservice.api.dto.BudgetAuthorityScope;
 import com.eevee.billingservice.api.dto.DailyExpenditurePoint;
 import com.eevee.billingservice.api.dto.ExpenditureSummaryResponse;
+import com.eevee.billingservice.api.dto.MeResponse;
 import com.eevee.billingservice.api.dto.MonthlyBudgetAuthorityResponse;
 import com.eevee.billingservice.api.dto.MonthlyBudgetStatusResponse;
 import com.eevee.billingservice.api.dto.MonthlyExpenditurePoint;
@@ -27,7 +28,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.context.request.WebRequest;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -161,13 +161,5 @@ public class ExpenditureController {
             return s;
         }
         throw new IllegalStateException("Missing authenticated user");
-    }
-
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<String> badRequest(IllegalArgumentException ex, WebRequest req) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ex.getMessage());
-    }
-
-    public record MeResponse(String userId) {
     }
 }
