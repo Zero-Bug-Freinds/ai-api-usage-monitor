@@ -10,6 +10,9 @@ import com.eevee.usageservice.domain.ApiKeyStatus;
 import com.eevee.usageservice.repository.ApiKeyMetadataRepository;
 import com.eevee.usageservice.repository.UsageRecordedLogRepository;
 import com.eevee.usageservice.repository.analytics.UsageAnalyticsJdbcRepository;
+import com.eevee.usageservice.service.filter.ApiKeyCredentialFilter;
+import com.eevee.usageservice.service.filter.UsageApiKeyFilterConsolidationService;
+import com.eevee.usageservice.service.filter.UsageApiKeyFilterResolutionService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -46,6 +49,12 @@ class UsageDashboardServiceTest {
     @Mock
     private ApiKeyMetadataRepository apiKeyMetadataRepository;
 
+    @Mock
+    private UsageApiKeyFilterConsolidationService apiKeyFilterConsolidationService;
+
+    @Mock
+    private UsageApiKeyFilterResolutionService apiKeyFilterResolutionService;
+
     private final UsageServiceProperties properties = new UsageServiceProperties();
 
     private final Clock fixedClock = Clock.fixed(Instant.parse("2025-06-15T08:30:00Z"), ZoneOffset.UTC);
@@ -59,6 +68,8 @@ class UsageDashboardServiceTest {
                 analyticsJdbcRepository,
                 logRepository,
                 apiKeyMetadataRepository,
+                apiKeyFilterConsolidationService,
+                apiKeyFilterResolutionService,
                 properties,
                 fixedClock,
                 new ObjectMapper());
@@ -105,12 +116,14 @@ class UsageDashboardServiceTest {
 
     @Test
     void latencyInsight_comparesCurrentRangeToPreviousWindow() {
+        when(apiKeyFilterResolutionService.resolvePersonal(eq("user-1"), isNull(), isNull()))
+                .thenReturn(ApiKeyCredentialFilter.unrestricted());
         when(analyticsJdbcRepository.aggregateAvgLatencyMsForUserFromLogs(
                 eq("user-1"),
                 any(),
                 any(),
                 isNull(),
-                eq(""),
+                any(ApiKeyCredentialFilter.class),
                 eq(UsageDataContext.PERSONAL),
                 isNull()))
                 .thenReturn(100.0, 80.0);
@@ -132,7 +145,7 @@ class UsageDashboardServiceTest {
                 any(),
                 any(),
                 isNull(),
-                eq(""),
+                any(ApiKeyCredentialFilter.class),
                 eq(UsageDataContext.PERSONAL),
                 isNull());
     }
@@ -167,6 +180,8 @@ class UsageDashboardServiceTest {
         when(apiKeyMetadataRepository.findPersonalKeysForDashboard("u1", "openai")).thenReturn(List.of(stub, rich));
         when(logRepository.findDistinctApiKeysForUserPersonalInRange(eq("u1"), any(), any(), eq(AiProvider.OPENAI)))
                 .thenReturn(List.of());
+        when(apiKeyFilterConsolidationService.consolidatePersonal(any(), eq("u1"), isNull()))
+                .thenAnswer(inv -> inv.getArgument(0));
 
         var keys = service.logApiKeys("u1", AiProvider.OPENAI, UsageDataContext.PERSONAL);
 
@@ -183,6 +198,8 @@ class UsageDashboardServiceTest {
         when(apiKeyMetadataRepository.findPersonalKeysForDashboard("u1", "openai")).thenReturn(List.of(newer, older));
         when(logRepository.findDistinctApiKeysForUserPersonalInRange(eq("u1"), any(), any(), eq(AiProvider.OPENAI)))
                 .thenReturn(List.of());
+        when(apiKeyFilterConsolidationService.consolidatePersonal(any(), eq("u1"), isNull()))
+                .thenAnswer(inv -> inv.getArgument(0));
 
         var keys = service.logApiKeys("u1", AiProvider.OPENAI, UsageDataContext.PERSONAL);
 
@@ -201,6 +218,8 @@ class UsageDashboardServiceTest {
         when(apiKeyMetadataRepository.findPersonalKeysForDashboard("sub-9", "openai")).thenReturn(List.of(fromAlt));
         when(logRepository.findDistinctApiKeysForUserPersonalInRange(any(), any(), any(), eq(AiProvider.OPENAI)))
                 .thenReturn(List.of());
+        when(apiKeyFilterConsolidationService.consolidatePersonal(any(), eq("a@b.com"), eq("sub-9")))
+                .thenAnswer(inv -> inv.getArgument(0));
 
         var keys = service.logApiKeys("a@b.com", "sub-9", AiProvider.OPENAI, UsageDataContext.PERSONAL);
 
@@ -215,6 +234,8 @@ class UsageDashboardServiceTest {
     void logApiKeys_personal_skipsSecondMetadataQueryWhenAlternateEqualsPrimary() {
         when(apiKeyMetadataRepository.findPersonalKeysForDashboard("u1", null)).thenReturn(List.of());
         when(logRepository.findDistinctApiKeysForUserPersonalInRange(eq("u1"), any(), any(), isNull())).thenReturn(List.of());
+        when(apiKeyFilterConsolidationService.consolidatePersonal(any(), eq("u1"), eq("u1")))
+                .thenAnswer(inv -> inv.getArgument(0));
         service.logApiKeys("u1", "u1", null, UsageDataContext.PERSONAL);
         verify(apiKeyMetadataRepository, times(1)).findPersonalKeysForDashboard("u1", null);
     }
@@ -224,6 +245,8 @@ class UsageDashboardServiceTest {
         when(apiKeyMetadataRepository.findPersonalKeysForDashboard("u1", null)).thenReturn(List.of());
         when(logRepository.findDistinctApiKeysForUserPersonalInRange(eq("u1"), any(), any(), isNull()))
                 .thenReturn(List.of(new UsageLogApiKeyItemResponse("k1", "from-logs", ApiKeyStatus.ACTIVE)));
+        when(apiKeyFilterConsolidationService.consolidatePersonal(any(), eq("u1"), isNull()))
+                .thenAnswer(inv -> inv.getArgument(0));
 
         var keys = service.logApiKeys("u1", null, null, UsageDataContext.PERSONAL);
 
@@ -246,13 +269,15 @@ class UsageDashboardServiceTest {
     void byModelForTeamAndUser_withApiKeyId_queriesLogsScopedToKey() {
         LocalDate from = LocalDate.of(2025, 6, 1);
         LocalDate to = LocalDate.of(2025, 6, 5);
+        when(apiKeyFilterResolutionService.resolveTeam("team-1", "key-77"))
+                .thenReturn(ApiKeyCredentialFilter.forCredential(List.of("key-77"), null));
         when(analyticsJdbcRepository.aggregateByModelForTeamAndUserFromLogs(
                 eq("team-1"),
                 eq("member-1"),
                 any(),
                 any(),
                 isNull(),
-                eq("key-77")
+                any(ApiKeyCredentialFilter.class)
         )).thenReturn(List.of());
 
         service.byModelForTeamAndUser("team-1", "member-1", from, to, null, "key-77");
@@ -263,7 +288,7 @@ class UsageDashboardServiceTest {
                 any(),
                 any(),
                 isNull(),
-                eq("key-77")
+                any(ApiKeyCredentialFilter.class)
         );
         verify(analyticsJdbcRepository, never()).aggregateByModelForTeamAndUser(any(), any(), any(), any(), any());
     }

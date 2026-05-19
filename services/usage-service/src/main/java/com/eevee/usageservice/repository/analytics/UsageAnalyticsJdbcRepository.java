@@ -11,6 +11,7 @@ import com.eevee.usageservice.api.dto.UsageSummaryResponse;
 import com.eevee.usageservice.api.dto.UsageTeamUserSlice;
 import com.eevee.usageservice.api.dto.ProviderModelCostTokenRow;
 import com.eevee.usageservice.api.dto.UsageWindowTotals;
+import com.eevee.usageservice.service.filter.ApiKeyCredentialFilter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -808,11 +809,11 @@ public class UsageAnalyticsJdbcRepository {
             Instant from,
             Instant toExclusive,
             AiProvider provider,
-            String apiKeyFilter,
+            ApiKeyCredentialFilter credentialFilter,
             UsageDataContext scope,
             String restrictToTeamId
     ) {
-        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        CredentialSql cred = credentialClause(credentialFilter);
         String scopeFrag = logScopeSqlForUserLogs(scope, restrictToTeamId);
         String sql = """
                 SELECT COUNT(*)::bigint,
@@ -823,7 +824,7 @@ public class UsageAnalyticsJdbcRepository {
                 WHERE user_id = ?
                   AND occurred_at >= ? AND occurred_at < ?
                   %s%s%s
-                """.formatted(ERR_PRED, scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+                """.formatted(ERR_PRED, scopeFrag, cred.fragment(), PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         if (restrictLogsToSingleTeam(scope, restrictToTeamId)) {
             String tid = restrictToTeamId.trim();
@@ -835,14 +836,11 @@ public class UsageAnalyticsJdbcRepository {
                             rs.getLong(3),
                             rs.getBigDecimal(4) != null ? rs.getBigDecimal(4) : BigDecimal.ZERO
                     ),
-                    userId,
-                    Timestamp.from(from),
-                    Timestamp.from(toExclusive),
-                    tid,
-                    af,
-                    af,
-                    p1,
-                    p1
+                    mergeArgs(
+                            new Object[] {userId, Timestamp.from(from), Timestamp.from(toExclusive), tid},
+                            cred,
+                            new Object[] {p1, p1}
+                    )
             );
         }
         return jdbc.queryForObject(
@@ -853,13 +851,11 @@ public class UsageAnalyticsJdbcRepository {
                         rs.getLong(3),
                         rs.getBigDecimal(4) != null ? rs.getBigDecimal(4) : BigDecimal.ZERO
                 ),
-                userId,
-                Timestamp.from(from),
-                Timestamp.from(toExclusive),
-                af,
-                af,
-                p1,
-                p1
+                mergeArgs(
+                        new Object[] {userId, Timestamp.from(from), Timestamp.from(toExclusive)},
+                        cred,
+                        new Object[] {p1, p1}
+                )
         );
     }
 
@@ -868,11 +864,11 @@ public class UsageAnalyticsJdbcRepository {
             Instant from,
             Instant toExclusive,
             AiProvider provider,
-            String apiKeyFilter,
+            ApiKeyCredentialFilter credentialFilter,
             UsageDataContext scope,
             String restrictToTeamId
     ) {
-        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        CredentialSql cred = credentialClause(credentialFilter);
         String scopeFrag = logScopeSqlForUserLogs(scope, restrictToTeamId);
         String sql = """
                 SELECT ((occurred_at AT TIME ZONE '%s'))::date AS d,
@@ -886,7 +882,7 @@ public class UsageAnalyticsJdbcRepository {
                   %s%s%s
                 GROUP BY 1
                 ORDER BY 1
-                """.formatted(BUCKET_ZONE, ERR_PRED, scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+                """.formatted(BUCKET_ZONE, ERR_PRED, scopeFrag, cred.fragment(), PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         if (restrictLogsToSingleTeam(scope, restrictToTeamId)) {
             String tid = restrictToTeamId.trim();
@@ -899,14 +895,11 @@ public class UsageAnalyticsJdbcRepository {
                             rs.getLong(4),
                             rs.getBigDecimal(5) != null ? rs.getBigDecimal(5) : BigDecimal.ZERO
                     ),
-                    userId,
-                    Timestamp.from(from),
-                    Timestamp.from(toExclusive),
-                    tid,
-                    af,
-                    af,
-                    p1,
-                    p1
+                    mergeArgs(
+                            new Object[] {userId, Timestamp.from(from), Timestamp.from(toExclusive), tid},
+                            cred,
+                            new Object[] {p1, p1}
+                    )
             );
         }
         return jdbc.query(
@@ -918,13 +911,11 @@ public class UsageAnalyticsJdbcRepository {
                         rs.getLong(4),
                         rs.getBigDecimal(5) != null ? rs.getBigDecimal(5) : BigDecimal.ZERO
                 ),
-                userId,
-                Timestamp.from(from),
-                Timestamp.from(toExclusive),
-                af,
-                af,
-                p1,
-                p1
+                mergeArgs(
+                        new Object[] {userId, Timestamp.from(from), Timestamp.from(toExclusive)},
+                        cred,
+                        new Object[] {p1, p1}
+                )
         );
     }
 
@@ -933,11 +924,11 @@ public class UsageAnalyticsJdbcRepository {
             Instant from,
             Instant toExclusive,
             AiProvider provider,
-            String apiKeyFilter,
+            ApiKeyCredentialFilter credentialFilter,
             UsageDataContext scope,
             String restrictToTeamId
     ) {
-        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        CredentialSql cred = credentialClause(credentialFilter);
         String scopeFrag = logScopeSqlForUserLogs(scope, restrictToTeamId);
         String sql = """
                 SELECT to_char((occurred_at AT TIME ZONE '%s'), 'YYYY-MM') AS ym,
@@ -951,7 +942,7 @@ public class UsageAnalyticsJdbcRepository {
                   %s%s%s
                 GROUP BY 1
                 ORDER BY 1
-                """.formatted(BUCKET_ZONE, ERR_PRED, scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+                """.formatted(BUCKET_ZONE, ERR_PRED, scopeFrag, cred.fragment(), PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         if (restrictLogsToSingleTeam(scope, restrictToTeamId)) {
             String tid = restrictToTeamId.trim();
@@ -964,14 +955,11 @@ public class UsageAnalyticsJdbcRepository {
                             rs.getLong(4),
                             rs.getBigDecimal(5) != null ? rs.getBigDecimal(5) : BigDecimal.ZERO
                     ),
-                    userId,
-                    Timestamp.from(from),
-                    Timestamp.from(toExclusive),
-                    tid,
-                    af,
-                    af,
-                    p1,
-                    p1
+                    mergeArgs(
+                            new Object[] {userId, Timestamp.from(from), Timestamp.from(toExclusive), tid},
+                            cred,
+                            new Object[] {p1, p1}
+                    )
             );
         }
         return jdbc.query(
@@ -983,13 +971,11 @@ public class UsageAnalyticsJdbcRepository {
                         rs.getLong(4),
                         rs.getBigDecimal(5) != null ? rs.getBigDecimal(5) : BigDecimal.ZERO
                 ),
-                userId,
-                Timestamp.from(from),
-                Timestamp.from(toExclusive),
-                af,
-                af,
-                p1,
-                p1
+                mergeArgs(
+                        new Object[] {userId, Timestamp.from(from), Timestamp.from(toExclusive)},
+                        cred,
+                        new Object[] {p1, p1}
+                )
         );
     }
 
@@ -998,11 +984,11 @@ public class UsageAnalyticsJdbcRepository {
             Instant from,
             Instant toExclusive,
             AiProvider provider,
-            String apiKeyFilter,
+            ApiKeyCredentialFilter credentialFilter,
             UsageDataContext scope,
             String restrictToTeamId
     ) {
-        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        CredentialSql cred = credentialClause(credentialFilter);
         String scopeFrag = logScopeSqlForUserLogs(scope, restrictToTeamId);
         String sql = """
                 SELECT COALESCE(NULLIF(TRIM(model), ''), LOWER(provider::text) || '_unknown') AS m,
@@ -1017,7 +1003,7 @@ public class UsageAnalyticsJdbcRepository {
                   %s%s%s
                 GROUP BY model, provider
                 ORDER BY COUNT(*) DESC
-                """.formatted(scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+                """.formatted(scopeFrag, cred.fragment(), PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         if (restrictLogsToSingleTeam(scope, restrictToTeamId)) {
             String tid = restrictToTeamId.trim();
@@ -1031,14 +1017,11 @@ public class UsageAnalyticsJdbcRepository {
                             rs.getLong(5),
                             rs.getLong(6)
                     ),
-                    userId,
-                    Timestamp.from(from),
-                    Timestamp.from(toExclusive),
-                    tid,
-                    af,
-                    af,
-                    p1,
-                    p1
+                    mergeArgs(
+                            new Object[] {userId, Timestamp.from(from), Timestamp.from(toExclusive), tid},
+                            cred,
+                            new Object[] {p1, p1}
+                    )
             );
         }
         return jdbc.query(
@@ -1051,13 +1034,11 @@ public class UsageAnalyticsJdbcRepository {
                         rs.getLong(5),
                         rs.getLong(6)
                 ),
-                userId,
-                Timestamp.from(from),
-                Timestamp.from(toExclusive),
-                af,
-                af,
-                p1,
-                p1
+                mergeArgs(
+                        new Object[] {userId, Timestamp.from(from), Timestamp.from(toExclusive)},
+                        cred,
+                        new Object[] {p1, p1}
+                )
         );
     }
 
@@ -1066,11 +1047,11 @@ public class UsageAnalyticsJdbcRepository {
             Instant from,
             Instant toExclusive,
             AiProvider provider,
-            String apiKeyFilter,
+            ApiKeyCredentialFilter credentialFilter,
             UsageDataContext scope,
             String restrictToTeamId
     ) {
-        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        CredentialSql cred = credentialClause(credentialFilter);
         String scopeFrag = logScopeSqlForUserLogs(scope, restrictToTeamId);
         String sql = """
                 SELECT COALESCE(SUM(estimated_cost), 0)
@@ -1078,7 +1059,7 @@ public class UsageAnalyticsJdbcRepository {
                 WHERE user_id = ?
                   AND occurred_at >= ? AND occurred_at < ?
                   %s%s%s
-                """.formatted(scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+                """.formatted(scopeFrag, cred.fragment(), PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         BigDecimal v;
         if (restrictLogsToSingleTeam(scope, restrictToTeamId)) {
@@ -1086,26 +1067,21 @@ public class UsageAnalyticsJdbcRepository {
             v = jdbc.queryForObject(
                     sql,
                     BigDecimal.class,
-                    userId,
-                    Timestamp.from(from),
-                    Timestamp.from(toExclusive),
-                    tid,
-                    af,
-                    af,
-                    p1,
-                    p1
+                    mergeArgs(
+                            new Object[] {userId, Timestamp.from(from), Timestamp.from(toExclusive), tid},
+                            cred,
+                            new Object[] {p1, p1}
+                    )
             );
         } else {
             v = jdbc.queryForObject(
                     sql,
                     BigDecimal.class,
-                    userId,
-                    Timestamp.from(from),
-                    Timestamp.from(toExclusive),
-                    af,
-                    af,
-                    p1,
-                    p1
+                    mergeArgs(
+                            new Object[] {userId, Timestamp.from(from), Timestamp.from(toExclusive)},
+                            cred,
+                            new Object[] {p1, p1}
+                    )
             );
         }
         return v != null ? v : BigDecimal.ZERO;
@@ -1126,7 +1102,7 @@ public class UsageAnalyticsJdbcRepository {
                 kstDayEndExclusiveUtc,
                 provider,
                 UsageDataContext.PERSONAL,
-                "",
+                ApiKeyCredentialFilter.unrestricted(),
                 null
         );
     }
@@ -1137,10 +1113,10 @@ public class UsageAnalyticsJdbcRepository {
             Instant kstDayEndExclusiveUtc,
             AiProvider provider,
             UsageDataContext scope,
-            String apiKeyFilter,
+            ApiKeyCredentialFilter credentialFilter,
             String restrictToTeamId
     ) {
-        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        CredentialSql cred = credentialClause(credentialFilter);
         String scopeFrag = logScopeSqlForUserLogs(scope, restrictToTeamId);
         String sql = """
                 SELECT (EXTRACT(HOUR FROM (occurred_at AT TIME ZONE '%s')))::int AS h,
@@ -1153,7 +1129,7 @@ public class UsageAnalyticsJdbcRepository {
                   %s%s%s
                 GROUP BY 1
                 ORDER BY 1
-                """.formatted(BUCKET_ZONE, ERR_PRED, scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+                """.formatted(BUCKET_ZONE, ERR_PRED, scopeFrag, cred.fragment(), PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         List<HourlyUsagePoint> rows;
         if (restrictLogsToSingleTeam(scope, restrictToTeamId)) {
@@ -1166,14 +1142,16 @@ public class UsageAnalyticsJdbcRepository {
                             rs.getLong(3),
                             rs.getBigDecimal(4) != null ? rs.getBigDecimal(4) : BigDecimal.ZERO
                     ),
-                    userId,
-                    Timestamp.from(kstDayStartUtc),
-                    Timestamp.from(kstDayEndExclusiveUtc),
-                    tid,
-                    af,
-                    af,
-                    p1,
-                    p1
+                    mergeArgs(
+                            new Object[] {
+                                    userId,
+                                    Timestamp.from(kstDayStartUtc),
+                                    Timestamp.from(kstDayEndExclusiveUtc),
+                                    tid
+                            },
+                            cred,
+                            new Object[] {p1, p1}
+                    )
             );
         } else {
             rows = jdbc.query(
@@ -1184,13 +1162,15 @@ public class UsageAnalyticsJdbcRepository {
                             rs.getLong(3),
                             rs.getBigDecimal(4) != null ? rs.getBigDecimal(4) : BigDecimal.ZERO
                     ),
-                    userId,
-                    Timestamp.from(kstDayStartUtc),
-                    Timestamp.from(kstDayEndExclusiveUtc),
-                    af,
-                    af,
-                    p1,
-                    p1
+                    mergeArgs(
+                            new Object[] {
+                                    userId,
+                                    Timestamp.from(kstDayStartUtc),
+                                    Timestamp.from(kstDayEndExclusiveUtc)
+                            },
+                            cred,
+                            new Object[] {p1, p1}
+                    )
             );
         }
         Map<Integer, HourlyUsagePoint> byHour = new HashMap<>();
@@ -1209,19 +1189,34 @@ public class UsageAnalyticsJdbcRepository {
         return out;
     }
 
-    private static final String TEAM_API_KEY_FILTER = " AND ((?::text) = '' OR api_key_id = (?::text))";
+    private record CredentialSql(String fragment, Object[] binds) {
+    }
+
+    private static CredentialSql credentialClause(ApiKeyCredentialFilter filter) {
+        ApiKeyCredentialFilter f = filter != null ? filter : ApiKeyCredentialFilter.unrestricted();
+        ApiKeyCredentialFilter.SqlCredentialClause clause = f.toLogSqlClause();
+        return new CredentialSql(clause.sql(), clause.bindValues().toArray());
+    }
+
+    private static Object[] mergeArgs(Object[] head, CredentialSql cred, Object[] tail) {
+        Object[] out = new Object[head.length + cred.binds().length + tail.length];
+        System.arraycopy(head, 0, out, 0, head.length);
+        System.arraycopy(cred.binds(), 0, out, head.length, cred.binds().length);
+        System.arraycopy(tail, 0, out, head.length + cred.binds().length, tail.length);
+        return out;
+    }
 
     /**
-     * Hour buckets for one KST day, team scope (logs). {@code apiKeyFilter} empty string = all keys for team.
+     * Hour buckets for one KST day, team scope (logs). Unrestricted filter = all keys for team.
      */
     public List<HourlyUsagePoint> aggregateHourlyForKstDayForTeam(
             String teamId,
             Instant kstDayStartUtc,
             Instant kstDayEndExclusiveUtc,
             AiProvider provider,
-            String apiKeyFilter
+            ApiKeyCredentialFilter credentialFilter
     ) {
-        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        CredentialSql cred = credentialClause(credentialFilter);
         String sql = """
                 SELECT (EXTRACT(HOUR FROM (occurred_at AT TIME ZONE '%s')))::int AS h,
                        COUNT(*)::bigint,
@@ -1232,7 +1227,7 @@ public class UsageAnalyticsJdbcRepository {
                   AND occurred_at >= ? AND occurred_at < ?%s%s
                 GROUP BY 1
                 ORDER BY 1
-                """.formatted(BUCKET_ZONE, ERR_PRED, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+                """.formatted(BUCKET_ZONE, ERR_PRED, cred.fragment(), PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         List<HourlyUsagePoint> rows = jdbc.query(
                 sql,
@@ -1242,13 +1237,15 @@ public class UsageAnalyticsJdbcRepository {
                         rs.getLong(3),
                         rs.getBigDecimal(4) != null ? rs.getBigDecimal(4) : BigDecimal.ZERO
                 ),
-                teamId,
-                Timestamp.from(kstDayStartUtc),
-                Timestamp.from(kstDayEndExclusiveUtc),
-                af,
-                af,
-                p1,
-                p1
+                mergeArgs(
+                        new Object[] {
+                                teamId,
+                                Timestamp.from(kstDayStartUtc),
+                                Timestamp.from(kstDayEndExclusiveUtc)
+                        },
+                        cred,
+                        new Object[] {p1, p1}
+                )
         );
         Map<Integer, HourlyUsagePoint> byHour = new HashMap<>();
         for (HourlyUsagePoint row : rows) {
@@ -1271,9 +1268,9 @@ public class UsageAnalyticsJdbcRepository {
             Instant from,
             Instant toExclusive,
             AiProvider provider,
-            String apiKeyFilter
+            ApiKeyCredentialFilter credentialFilter
     ) {
-        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        CredentialSql cred = credentialClause(credentialFilter);
         String sql = """
                 SELECT COUNT(*)::bigint,
                        COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0)::bigint,
@@ -1282,7 +1279,7 @@ public class UsageAnalyticsJdbcRepository {
                 FROM usage_recorded_log
                 WHERE team_id = ?
                   AND occurred_at >= ? AND occurred_at < ?%s%s
-                """.formatted(ERR_PRED, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+                """.formatted(ERR_PRED, cred.fragment(), PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         return jdbc.queryForObject(
                 sql,
@@ -1292,13 +1289,11 @@ public class UsageAnalyticsJdbcRepository {
                         rs.getLong(3),
                         rs.getBigDecimal(4) != null ? rs.getBigDecimal(4) : BigDecimal.ZERO
                 ),
-                teamId,
-                Timestamp.from(from),
-                Timestamp.from(toExclusive),
-                af,
-                af,
-                p1,
-                p1
+                mergeArgs(
+                        new Object[] {teamId, Timestamp.from(from), Timestamp.from(toExclusive)},
+                        cred,
+                        new Object[] {p1, p1}
+                )
         );
     }
 
@@ -1307,9 +1302,9 @@ public class UsageAnalyticsJdbcRepository {
             Instant from,
             Instant toExclusive,
             AiProvider provider,
-            String apiKeyFilter
+            ApiKeyCredentialFilter credentialFilter
     ) {
-        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        CredentialSql cred = credentialClause(credentialFilter);
         String sql = """
                 SELECT ((occurred_at AT TIME ZONE '%s'))::date AS d,
                        COUNT(*)::bigint,
@@ -1321,7 +1316,7 @@ public class UsageAnalyticsJdbcRepository {
                   AND occurred_at >= ? AND occurred_at < ?%s%s
                 GROUP BY 1
                 ORDER BY 1
-                """.formatted(BUCKET_ZONE, ERR_PRED, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+                """.formatted(BUCKET_ZONE, ERR_PRED, cred.fragment(), PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         return jdbc.query(
                 sql,
@@ -1332,13 +1327,11 @@ public class UsageAnalyticsJdbcRepository {
                         rs.getLong(4),
                         rs.getBigDecimal(5) != null ? rs.getBigDecimal(5) : BigDecimal.ZERO
                 ),
-                teamId,
-                Timestamp.from(from),
-                Timestamp.from(toExclusive),
-                af,
-                af,
-                p1,
-                p1
+                mergeArgs(
+                        new Object[] {teamId, Timestamp.from(from), Timestamp.from(toExclusive)},
+                        cred,
+                        new Object[] {p1, p1}
+                )
         );
     }
 
@@ -1347,9 +1340,9 @@ public class UsageAnalyticsJdbcRepository {
             Instant from,
             Instant toExclusive,
             AiProvider provider,
-            String apiKeyFilter
+            ApiKeyCredentialFilter credentialFilter
     ) {
-        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        CredentialSql cred = credentialClause(credentialFilter);
         String sql = """
                 SELECT to_char((occurred_at AT TIME ZONE '%s'), 'YYYY-MM') AS ym,
                        COUNT(*)::bigint,
@@ -1361,7 +1354,7 @@ public class UsageAnalyticsJdbcRepository {
                   AND occurred_at >= ? AND occurred_at < ?%s%s
                 GROUP BY 1
                 ORDER BY 1
-                """.formatted(BUCKET_ZONE, ERR_PRED, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+                """.formatted(BUCKET_ZONE, ERR_PRED, cred.fragment(), PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         return jdbc.query(
                 sql,
@@ -1372,13 +1365,11 @@ public class UsageAnalyticsJdbcRepository {
                         rs.getLong(4),
                         rs.getBigDecimal(5) != null ? rs.getBigDecimal(5) : BigDecimal.ZERO
                 ),
-                teamId,
-                Timestamp.from(from),
-                Timestamp.from(toExclusive),
-                af,
-                af,
-                p1,
-                p1
+                mergeArgs(
+                        new Object[] {teamId, Timestamp.from(from), Timestamp.from(toExclusive)},
+                        cred,
+                        new Object[] {p1, p1}
+                )
         );
     }
 
@@ -1387,9 +1378,9 @@ public class UsageAnalyticsJdbcRepository {
             Instant from,
             Instant toExclusive,
             AiProvider provider,
-            String apiKeyFilter
+            ApiKeyCredentialFilter credentialFilter
     ) {
-        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        CredentialSql cred = credentialClause(credentialFilter);
         String sql = """
                 SELECT COALESCE(NULLIF(TRIM(model), ''), LOWER(provider::text) || '_unknown') AS m,
                        provider::text,
@@ -1402,7 +1393,7 @@ public class UsageAnalyticsJdbcRepository {
                   AND occurred_at >= ? AND occurred_at < ?%s%s
                 GROUP BY model, provider
                 ORDER BY COUNT(*) DESC
-                """.formatted(TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+                """.formatted(cred.fragment(), PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         return jdbc.query(
                 sql,
@@ -1414,13 +1405,11 @@ public class UsageAnalyticsJdbcRepository {
                         rs.getLong(5),
                         rs.getLong(6)
                 ),
-                teamId,
-                Timestamp.from(from),
-                Timestamp.from(toExclusive),
-                af,
-                af,
-                p1,
-                p1
+                mergeArgs(
+                        new Object[] {teamId, Timestamp.from(from), Timestamp.from(toExclusive)},
+                        cred,
+                        new Object[] {p1, p1}
+                )
         );
     }
 
@@ -1430,9 +1419,9 @@ public class UsageAnalyticsJdbcRepository {
             Instant from,
             Instant toExclusive,
             AiProvider provider,
-            String apiKeyFilter
+            ApiKeyCredentialFilter credentialFilter
     ) {
-        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        CredentialSql cred = credentialClause(credentialFilter);
         String sql = """
                 SELECT COUNT(*)::bigint,
                        COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0)::bigint,
@@ -1442,7 +1431,7 @@ public class UsageAnalyticsJdbcRepository {
                 WHERE team_id = ?
                   AND user_id = ?
                   AND occurred_at >= ? AND occurred_at < ?%s%s
-                """.formatted(ERR_PRED, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+                """.formatted(ERR_PRED, cred.fragment(), PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         return jdbc.queryForObject(
                 sql,
@@ -1452,14 +1441,11 @@ public class UsageAnalyticsJdbcRepository {
                         rs.getLong(3),
                         rs.getBigDecimal(4) != null ? rs.getBigDecimal(4) : BigDecimal.ZERO
                 ),
-                teamId,
-                userId,
-                Timestamp.from(from),
-                Timestamp.from(toExclusive),
-                af,
-                af,
-                p1,
-                p1
+                mergeArgs(
+                        new Object[] {teamId, userId, Timestamp.from(from), Timestamp.from(toExclusive)},
+                        cred,
+                        new Object[] {p1, p1}
+                )
         );
     }
 
@@ -1469,9 +1455,9 @@ public class UsageAnalyticsJdbcRepository {
             Instant from,
             Instant toExclusive,
             AiProvider provider,
-            String apiKeyFilter
+            ApiKeyCredentialFilter credentialFilter
     ) {
-        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        CredentialSql cred = credentialClause(credentialFilter);
         String sql = """
                 SELECT AVG(latency_ms)::double precision
                 FROM usage_recorded_log
@@ -1479,7 +1465,7 @@ public class UsageAnalyticsJdbcRepository {
                   AND user_id = ?
                   AND occurred_at >= ? AND occurred_at < ?
                   AND latency_ms IS NOT NULL%s%s
-                """.formatted(TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+                """.formatted(cred.fragment(), PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         return jdbc.query(
                 sql,
@@ -1490,14 +1476,11 @@ public class UsageAnalyticsJdbcRepository {
                     double v = rs.getDouble(1);
                     return rs.wasNull() ? null : v;
                 },
-                teamId,
-                userId,
-                Timestamp.from(from),
-                Timestamp.from(toExclusive),
-                af,
-                af,
-                p1,
-                p1
+                mergeArgs(
+                        new Object[] {teamId, userId, Timestamp.from(from), Timestamp.from(toExclusive)},
+                        cred,
+                        new Object[] {p1, p1}
+                )
         );
     }
 
@@ -1507,9 +1490,9 @@ public class UsageAnalyticsJdbcRepository {
             Instant from,
             Instant toExclusive,
             AiProvider provider,
-            String apiKeyFilter
+            ApiKeyCredentialFilter credentialFilter
     ) {
-        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        CredentialSql cred = credentialClause(credentialFilter);
         String sql = """
                 SELECT ((occurred_at AT TIME ZONE '%s'))::date AS d,
                        COUNT(*)::bigint,
@@ -1522,7 +1505,7 @@ public class UsageAnalyticsJdbcRepository {
                   AND occurred_at >= ? AND occurred_at < ?%s%s
                 GROUP BY 1
                 ORDER BY 1
-                """.formatted(BUCKET_ZONE, ERR_PRED, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+                """.formatted(BUCKET_ZONE, ERR_PRED, cred.fragment(), PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         return jdbc.query(
                 sql,
@@ -1533,14 +1516,11 @@ public class UsageAnalyticsJdbcRepository {
                         rs.getLong(4),
                         rs.getBigDecimal(5) != null ? rs.getBigDecimal(5) : BigDecimal.ZERO
                 ),
-                teamId,
-                userId,
-                Timestamp.from(from),
-                Timestamp.from(toExclusive),
-                af,
-                af,
-                p1,
-                p1
+                mergeArgs(
+                        new Object[] {teamId, userId, Timestamp.from(from), Timestamp.from(toExclusive)},
+                        cred,
+                        new Object[] {p1, p1}
+                )
         );
     }
 
@@ -1550,9 +1530,9 @@ public class UsageAnalyticsJdbcRepository {
             Instant from,
             Instant toExclusive,
             AiProvider provider,
-            String apiKeyFilter
+            ApiKeyCredentialFilter credentialFilter
     ) {
-        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        CredentialSql cred = credentialClause(credentialFilter);
         String sql = """
                 SELECT to_char((occurred_at AT TIME ZONE '%s'), 'YYYY-MM') AS ym,
                        COUNT(*)::bigint,
@@ -1565,7 +1545,7 @@ public class UsageAnalyticsJdbcRepository {
                   AND occurred_at >= ? AND occurred_at < ?%s%s
                 GROUP BY 1
                 ORDER BY 1
-                """.formatted(BUCKET_ZONE, ERR_PRED, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+                """.formatted(BUCKET_ZONE, ERR_PRED, cred.fragment(), PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         return jdbc.query(
                 sql,
@@ -1576,14 +1556,11 @@ public class UsageAnalyticsJdbcRepository {
                         rs.getLong(4),
                         rs.getBigDecimal(5) != null ? rs.getBigDecimal(5) : BigDecimal.ZERO
                 ),
-                teamId,
-                userId,
-                Timestamp.from(from),
-                Timestamp.from(toExclusive),
-                af,
-                af,
-                p1,
-                p1
+                mergeArgs(
+                        new Object[] {teamId, userId, Timestamp.from(from), Timestamp.from(toExclusive)},
+                        cred,
+                        new Object[] {p1, p1}
+                )
         );
     }
 
@@ -1593,9 +1570,9 @@ public class UsageAnalyticsJdbcRepository {
             Instant from,
             Instant toExclusive,
             AiProvider provider,
-            String apiKeyFilter
+            ApiKeyCredentialFilter credentialFilter
     ) {
-        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        CredentialSql cred = credentialClause(credentialFilter);
         String sql = """
                 SELECT COALESCE(NULLIF(TRIM(model), ''), LOWER(provider::text) || '_unknown') AS m,
                        provider::text,
@@ -1609,7 +1586,7 @@ public class UsageAnalyticsJdbcRepository {
                   AND occurred_at >= ? AND occurred_at < ?%s%s
                 GROUP BY model, provider
                 ORDER BY COUNT(*) DESC
-                """.formatted(TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+                """.formatted(cred.fragment(), PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         return jdbc.query(
                 sql,
@@ -1621,14 +1598,11 @@ public class UsageAnalyticsJdbcRepository {
                         rs.getLong(5),
                         rs.getLong(6)
                 ),
-                teamId,
-                userId,
-                Timestamp.from(from),
-                Timestamp.from(toExclusive),
-                af,
-                af,
-                p1,
-                p1
+                mergeArgs(
+                        new Object[] {teamId, userId, Timestamp.from(from), Timestamp.from(toExclusive)},
+                        cred,
+                        new Object[] {p1, p1}
+                )
         );
     }
 
@@ -1719,11 +1693,11 @@ public class UsageAnalyticsJdbcRepository {
             Instant from,
             Instant toExclusive,
             AiProvider provider,
-            String apiKeyFilter,
+            ApiKeyCredentialFilter credentialFilter,
             UsageDataContext scope,
             String restrictToTeamId
     ) {
-        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        CredentialSql cred = credentialClause(credentialFilter);
         String scopeFrag = logScopeSqlForUserLogs(scope, restrictToTeamId);
         String sql = """
                 SELECT AVG(latency_ms)::double precision
@@ -1732,7 +1706,7 @@ public class UsageAnalyticsJdbcRepository {
                   AND occurred_at >= ? AND occurred_at < ?
                   AND latency_ms IS NOT NULL
                   %s%s%s
-                """.formatted(scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+                """.formatted(scopeFrag, cred.fragment(), PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         Double v;
         if (restrictLogsToSingleTeam(scope, restrictToTeamId)) {
@@ -1745,14 +1719,11 @@ public class UsageAnalyticsJdbcRepository {
                         }
                         return rs.getObject(1) != null ? rs.getDouble(1) : null;
                     },
-                    userId,
-                    Timestamp.from(from),
-                    Timestamp.from(toExclusive),
-                    tid,
-                    af,
-                    af,
-                    p1,
-                    p1
+                    mergeArgs(
+                            new Object[] {userId, Timestamp.from(from), Timestamp.from(toExclusive), tid},
+                            cred,
+                            new Object[] {p1, p1}
+                    )
             );
         } else {
             v = jdbc.query(
@@ -1763,13 +1734,11 @@ public class UsageAnalyticsJdbcRepository {
                         }
                         return rs.getObject(1) != null ? rs.getDouble(1) : null;
                     },
-                    userId,
-                    Timestamp.from(from),
-                    Timestamp.from(toExclusive),
-                    af,
-                    af,
-                    p1,
-                    p1
+                    mergeArgs(
+                            new Object[] {userId, Timestamp.from(from), Timestamp.from(toExclusive)},
+                            cred,
+                            new Object[] {p1, p1}
+                    )
             );
         }
         return v;
@@ -1784,10 +1753,10 @@ public class UsageAnalyticsJdbcRepository {
             Instant kstDayEndExclusiveUtc,
             AiProvider provider,
             UsageDataContext scope,
-            String apiKeyFilter,
+            ApiKeyCredentialFilter credentialFilter,
             String restrictToTeamId
     ) {
-        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        CredentialSql cred = credentialClause(credentialFilter);
         String scopeFrag = logScopeSqlForUserLogs(scope, restrictToTeamId);
         String sqlStats = """
                 SELECT (EXTRACT(HOUR FROM (occurred_at AT TIME ZONE '%s')))::int AS h,
@@ -1809,7 +1778,7 @@ public class UsageAnalyticsJdbcRepository {
                   %s%s%s
                 GROUP BY 1
                 ORDER BY 1
-                """.formatted(BUCKET_ZONE, ERR_PRED, scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+                """.formatted(BUCKET_ZONE, ERR_PRED, scopeFrag, cred.fragment(), PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         Map<Integer, LatencyStabilityPoint> byHour = new HashMap<>();
         if (restrictLogsToSingleTeam(scope, restrictToTeamId)) {
@@ -1852,14 +1821,16 @@ public class UsageAnalyticsJdbcRepository {
                         }
                         return null;
                     },
-                    userId,
-                    Timestamp.from(kstDayStartUtc),
-                    Timestamp.from(kstDayEndExclusiveUtc),
-                    tid,
-                    af,
-                    af,
-                    p1,
-                    p1
+                    mergeArgs(
+                            new Object[] {
+                                    userId,
+                                    Timestamp.from(kstDayStartUtc),
+                                    Timestamp.from(kstDayEndExclusiveUtc),
+                                    tid
+                            },
+                            cred,
+                            new Object[] {p1, p1}
+                    )
             );
         } else {
             jdbc.query(
@@ -1900,13 +1871,15 @@ public class UsageAnalyticsJdbcRepository {
                         }
                         return null;
                     },
-                    userId,
-                    Timestamp.from(kstDayStartUtc),
-                    Timestamp.from(kstDayEndExclusiveUtc),
-                    af,
-                    af,
-                    p1,
-                    p1
+                    mergeArgs(
+                            new Object[] {
+                                    userId,
+                                    Timestamp.from(kstDayStartUtc),
+                                    Timestamp.from(kstDayEndExclusiveUtc)
+                            },
+                            cred,
+                            new Object[] {p1, p1}
+                    )
             );
         }
 
@@ -1925,7 +1898,7 @@ public class UsageAnalyticsJdbcRepository {
                 SELECT DISTINCT ON (h) h, m, p
                 FROM cnt
                 ORDER BY h, c DESC
-                """.formatted(BUCKET_ZONE, scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+                """.formatted(BUCKET_ZONE, scopeFrag, cred.fragment(), PROVIDER_FILTER);
         Map<Integer, String[]> topByHour = new HashMap<>();
         if (restrictLogsToSingleTeam(scope, restrictToTeamId)) {
             String tid = restrictToTeamId.trim();
@@ -1937,14 +1910,16 @@ public class UsageAnalyticsJdbcRepository {
                         }
                         return null;
                     },
-                    userId,
-                    Timestamp.from(kstDayStartUtc),
-                    Timestamp.from(kstDayEndExclusiveUtc),
-                    tid,
-                    af,
-                    af,
-                    p1,
-                    p1
+                    mergeArgs(
+                            new Object[] {
+                                    userId,
+                                    Timestamp.from(kstDayStartUtc),
+                                    Timestamp.from(kstDayEndExclusiveUtc),
+                                    tid
+                            },
+                            cred,
+                            new Object[] {p1, p1}
+                    )
             );
         } else {
             jdbc.query(
@@ -1955,13 +1930,15 @@ public class UsageAnalyticsJdbcRepository {
                         }
                         return null;
                     },
-                    userId,
-                    Timestamp.from(kstDayStartUtc),
-                    Timestamp.from(kstDayEndExclusiveUtc),
-                    af,
-                    af,
-                    p1,
-                    p1
+                    mergeArgs(
+                            new Object[] {
+                                    userId,
+                                    Timestamp.from(kstDayStartUtc),
+                                    Timestamp.from(kstDayEndExclusiveUtc)
+                            },
+                            cred,
+                            new Object[] {p1, p1}
+                    )
             );
         }
 
@@ -2014,11 +1991,11 @@ public class UsageAnalyticsJdbcRepository {
             Instant fromUtc,
             Instant toExclusiveUtc,
             AiProvider provider,
-            String apiKeyFilter,
+            ApiKeyCredentialFilter credentialFilter,
             UsageDataContext scope,
             String restrictToTeamId
     ) {
-        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        CredentialSql cred = credentialClause(credentialFilter);
         String scopeFrag = logScopeSqlForUserLogs(scope, restrictToTeamId);
         String sqlStats = """
                 SELECT ((occurred_at AT TIME ZONE '%s'))::date AS d,
@@ -2040,7 +2017,7 @@ public class UsageAnalyticsJdbcRepository {
                   %s%s%s
                 GROUP BY 1
                 ORDER BY 1
-                """.formatted(BUCKET_ZONE, ERR_PRED, scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+                """.formatted(BUCKET_ZONE, ERR_PRED, scopeFrag, cred.fragment(), PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         Map<LocalDate, LatencyStabilityPoint> byDay = new HashMap<>();
         if (restrictLogsToSingleTeam(scope, restrictToTeamId)) {
@@ -2083,14 +2060,16 @@ public class UsageAnalyticsJdbcRepository {
                         }
                         return null;
                     },
-                    userId,
-                    Timestamp.from(fromUtc),
-                    Timestamp.from(toExclusiveUtc),
-                    tid,
-                    af,
-                    af,
-                    p1,
-                    p1
+                    mergeArgs(
+                            new Object[] {
+                                    userId,
+                                    Timestamp.from(fromUtc),
+                                    Timestamp.from(toExclusiveUtc),
+                                    tid
+                            },
+                            cred,
+                            new Object[] {p1, p1}
+                    )
             );
         } else {
             jdbc.query(
@@ -2131,13 +2110,15 @@ public class UsageAnalyticsJdbcRepository {
                         }
                         return null;
                     },
-                    userId,
-                    Timestamp.from(fromUtc),
-                    Timestamp.from(toExclusiveUtc),
-                    af,
-                    af,
-                    p1,
-                    p1
+                    mergeArgs(
+                            new Object[] {
+                                    userId,
+                                    Timestamp.from(fromUtc),
+                                    Timestamp.from(toExclusiveUtc)
+                            },
+                            cred,
+                            new Object[] {p1, p1}
+                    )
             );
         }
 
@@ -2156,7 +2137,7 @@ public class UsageAnalyticsJdbcRepository {
                 SELECT DISTINCT ON (d) d, m, p
                 FROM cnt
                 ORDER BY d, c DESC
-                """.formatted(BUCKET_ZONE, scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+                """.formatted(BUCKET_ZONE, scopeFrag, cred.fragment(), PROVIDER_FILTER);
         Map<LocalDate, String[]> topByDay = new HashMap<>();
         if (restrictLogsToSingleTeam(scope, restrictToTeamId)) {
             String tid = restrictToTeamId.trim();
@@ -2169,14 +2150,16 @@ public class UsageAnalyticsJdbcRepository {
                         }
                         return null;
                     },
-                    userId,
-                    Timestamp.from(fromUtc),
-                    Timestamp.from(toExclusiveUtc),
-                    tid,
-                    af,
-                    af,
-                    p1,
-                    p1
+                    mergeArgs(
+                            new Object[] {
+                                    userId,
+                                    Timestamp.from(fromUtc),
+                                    Timestamp.from(toExclusiveUtc),
+                                    tid
+                            },
+                            cred,
+                            new Object[] {p1, p1}
+                    )
             );
         } else {
             jdbc.query(
@@ -2188,13 +2171,15 @@ public class UsageAnalyticsJdbcRepository {
                         }
                         return null;
                     },
-                    userId,
-                    Timestamp.from(fromUtc),
-                    Timestamp.from(toExclusiveUtc),
-                    af,
-                    af,
-                    p1,
-                    p1
+                    mergeArgs(
+                            new Object[] {
+                                    userId,
+                                    Timestamp.from(fromUtc),
+                                    Timestamp.from(toExclusiveUtc)
+                            },
+                            cred,
+                            new Object[] {p1, p1}
+                    )
             );
         }
 
@@ -2247,11 +2232,11 @@ public class UsageAnalyticsJdbcRepository {
             Instant fromUtc,
             Instant toExclusiveUtc,
             AiProvider provider,
-            String apiKeyFilter,
+            ApiKeyCredentialFilter credentialFilter,
             UsageDataContext scope,
             String restrictToTeamId
     ) {
-        String af = apiKeyFilter == null ? "" : apiKeyFilter.trim();
+        CredentialSql cred = credentialClause(credentialFilter);
         String scopeFrag = logScopeSqlForUserLogs(scope, restrictToTeamId);
         String sqlStats = """
                 SELECT to_char((occurred_at AT TIME ZONE '%s'), 'YYYY-MM') AS ym,
@@ -2273,7 +2258,7 @@ public class UsageAnalyticsJdbcRepository {
                   %s%s%s
                 GROUP BY 1
                 ORDER BY 1
-                """.formatted(BUCKET_ZONE, ERR_PRED, scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+                """.formatted(BUCKET_ZONE, ERR_PRED, scopeFrag, cred.fragment(), PROVIDER_FILTER);
         String p1 = provider == null ? null : provider.name();
         Map<String, LatencyStabilityPoint> byYm = new HashMap<>();
         if (restrictLogsToSingleTeam(scope, restrictToTeamId)) {
@@ -2315,14 +2300,16 @@ public class UsageAnalyticsJdbcRepository {
                         }
                         return null;
                     },
-                    userId,
-                    Timestamp.from(fromUtc),
-                    Timestamp.from(toExclusiveUtc),
-                    tid,
-                    af,
-                    af,
-                    p1,
-                    p1
+                    mergeArgs(
+                            new Object[] {
+                                    userId,
+                                    Timestamp.from(fromUtc),
+                                    Timestamp.from(toExclusiveUtc),
+                                    tid
+                            },
+                            cred,
+                            new Object[] {p1, p1}
+                    )
             );
         } else {
             jdbc.query(
@@ -2362,13 +2349,15 @@ public class UsageAnalyticsJdbcRepository {
                         }
                         return null;
                     },
-                    userId,
-                    Timestamp.from(fromUtc),
-                    Timestamp.from(toExclusiveUtc),
-                    af,
-                    af,
-                    p1,
-                    p1
+                    mergeArgs(
+                            new Object[] {
+                                    userId,
+                                    Timestamp.from(fromUtc),
+                                    Timestamp.from(toExclusiveUtc)
+                            },
+                            cred,
+                            new Object[] {p1, p1}
+                    )
             );
         }
 
@@ -2387,7 +2376,7 @@ public class UsageAnalyticsJdbcRepository {
                 SELECT DISTINCT ON (ym) ym, m, p
                 FROM cnt
                 ORDER BY ym, c DESC
-                """.formatted(BUCKET_ZONE, scopeFrag, TEAM_API_KEY_FILTER, PROVIDER_FILTER);
+                """.formatted(BUCKET_ZONE, scopeFrag, cred.fragment(), PROVIDER_FILTER);
         Map<String, String[]> topByYm = new HashMap<>();
         if (restrictLogsToSingleTeam(scope, restrictToTeamId)) {
             String tid = restrictToTeamId.trim();
@@ -2399,14 +2388,16 @@ public class UsageAnalyticsJdbcRepository {
                         }
                         return null;
                     },
-                    userId,
-                    Timestamp.from(fromUtc),
-                    Timestamp.from(toExclusiveUtc),
-                    tid,
-                    af,
-                    af,
-                    p1,
-                    p1
+                    mergeArgs(
+                            new Object[] {
+                                    userId,
+                                    Timestamp.from(fromUtc),
+                                    Timestamp.from(toExclusiveUtc),
+                                    tid
+                            },
+                            cred,
+                            new Object[] {p1, p1}
+                    )
             );
         } else {
             jdbc.query(
@@ -2417,13 +2408,15 @@ public class UsageAnalyticsJdbcRepository {
                         }
                         return null;
                     },
-                    userId,
-                    Timestamp.from(fromUtc),
-                    Timestamp.from(toExclusiveUtc),
-                    af,
-                    af,
-                    p1,
-                    p1
+                    mergeArgs(
+                            new Object[] {
+                                    userId,
+                                    Timestamp.from(fromUtc),
+                                    Timestamp.from(toExclusiveUtc)
+                            },
+                            cred,
+                            new Object[] {p1, p1}
+                    )
             );
         }
 
