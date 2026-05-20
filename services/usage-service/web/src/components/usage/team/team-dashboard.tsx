@@ -507,6 +507,11 @@ export default function TeamDashboard({
         </div>
         <Button type="button" variant="outline" size="sm" disabled={loading || teamsLoading} onClick={() => setRefresh((n) => n + 1)}>새로고침</Button>
       </header>
+      {showNoTeamBanner ? (
+        <div className="mb-6 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-950 dark:text-amber-100" role="note">
+          {TEAM_DASHBOARD_MESSAGES.banners.noTeamMembership}
+        </div>
+      ) : null}
       <div className="mb-6 flex flex-col gap-4">
         <UsageFilterBar
           idPrefix="team-dash"
@@ -538,11 +543,6 @@ export default function TeamDashboard({
       </div>
 
       {teamsErr ? <p className="mb-4 text-sm text-amber-700">{teamsErr}</p> : null}
-      {showNoTeamBanner ? (
-        <div className="mb-6 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-950 dark:text-amber-100" role="note">
-          {TEAM_DASHBOARD_MESSAGES.banners.noTeamMembership}
-        </div>
-      ) : null}
       {showDashChartShell && showMainChartError ? (
         <p className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert" aria-live="polite">
           {error}

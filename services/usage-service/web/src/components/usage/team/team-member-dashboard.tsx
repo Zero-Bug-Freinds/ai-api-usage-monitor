@@ -118,7 +118,8 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
       setKeysLoading(false)
       return
     }
-    fetch(`${base}/teams/${encodeURIComponent(teamId)}/api-keys`, {
+    const apiKeysUrl = `${base}/teams/${encodeURIComponent(teamId)}/api-keys`
+    fetch(apiKeysUrl, {
       credentials: "include",
       headers: { Accept: "application/json" },
     })
