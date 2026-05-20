@@ -77,6 +77,55 @@ if [[ ${#hosts[@]} -gt 0 ]]; then
   echo "OK: postgres host(s) look like hostname-only (example endpoint shape): ${hosts[0]}"
 fi
 
+env_file_value() {
+  local key="$1"
+  local line val
+  line="$(grep -E "^${key}=" "$ENV_FILE" | tail -n 1 || true)"
+  [[ -z "$line" ]] && return 0
+  val="${line#*=}"
+  sanitize_env_value "$val"
+}
+
+gateway_dev_mode_enabled() {
+  local raw
+  raw="$(env_file_value GATEWAY_DEV_MODE)"
+  raw="${raw,,}"
+  [[ "$raw" == "true" || "$raw" == "1" ]]
+}
+
+# Gateway env: WARN only — do not block on-instance-compose-roll (existing EC2 stacks may omit until next gateway recreate).
+gw_shared="$(env_file_value GATEWAY_SHARED_SECRET)"
+if [[ -z "${gw_shared//[[:space:]]/}" ]]; then
+  echo "WARN: GATEWAY_SHARED_SECRET is empty — api-gateway GatewayStartupValidation may fail" >&2
+  warns=$((warns + 1))
+fi
+
+gw_jwt="$(env_file_value GATEWAY_JWT_SECRET)"
+jwt_secret="$(env_file_value JWT_SECRET)"
+if [[ -z "${gw_jwt//[[:space:]]/}" ]]; then
+  echo "WARN: GATEWAY_JWT_SECRET is empty — gateway JWT verification unavailable when dev-mode=false" >&2
+  warns=$((warns + 1))
+fi
+if [[ -z "${jwt_secret//[[:space:]]/}" ]]; then
+  echo "WARN: JWT_SECRET is empty — identity JWT signing unavailable" >&2
+  warns=$((warns + 1))
+fi
+if [[ -n "${gw_jwt//[[:space:]]/}" && -n "${jwt_secret//[[:space:]]/}" && "$gw_jwt" != "$jwt_secret" ]]; then
+  echo "WARN: GATEWAY_JWT_SECRET and JWT_SECRET differ — login JWT may fail at gateway (401)" >&2
+  warns=$((warns + 1))
+fi
+
+if ! gateway_dev_mode_enabled; then
+  gw_bearer="$(env_file_value GATEWAY_INTERNAL_BEARER_TOKEN)"
+  if [[ -z "${gw_bearer//[[:space:]]/}" ]]; then
+    echo "WARN: GATEWAY_INTERNAL_BEARER_TOKEN is empty while GATEWAY_DEV_MODE is not true — api-gateway recreate may crash (502)" >&2
+    warns=$((warns + 1))
+  elif [[ ${#gw_bearer} -lt 32 ]]; then
+    echo "WARN: GATEWAY_INTERNAL_BEARER_TOKEN is shorter than 32 characters — api-gateway startup validation may fail" >&2
+    warns=$((warns + 1))
+  fi
+fi
+
 if [[ "$errors" -gt 0 ]]; then
   echo "validate-env-deploy: ${errors} error(s), ${warns} warning(s)" >&2
   exit 1

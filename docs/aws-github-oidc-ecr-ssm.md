@@ -194,6 +194,7 @@ When `enable_compute_stack` and `enable_staging_rds` are on, use the repo script
 
 - **Do not** commit production `.env.deploy`. On the host, create `/opt/ai-api-usage-monitor/.env.deploy` (path configurable) from Parameter Store at boot or via SSM `GetParameters` in a thin wrapper before `docker compose`.
 - **Pattern**: `/ai-api/staging/IDENTITY_POSTGRES_PASSWORD` (hierarchy by environment); export into `.env.deploy` or use `docker compose --env-file` with a generated file (mode `0600`, root-owned).
+- **Gateway (Task56):** with `GATEWAY_DEV_MODE=false` (prod compose default), set **`GATEWAY_INTERNAL_BEARER_TOKEN`** (32+ chars) and keep **`JWT_SECRET` = `GATEWAY_JWT_SECRET`**. See [gateway-proxy.md §5.1](contracts/gateway-proxy.md). `scripts/deploy/validate-env-deploy.sh` reports gateway gaps as **WARN only** (does not block roll); confirm env before **api-gateway** `--force-recreate`.
 - **Rotation**: prefer Secrets Manager rotation + task to refresh env file and `docker compose up -d` for affected services.
 
 ---

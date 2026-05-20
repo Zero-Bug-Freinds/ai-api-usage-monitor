@@ -1,5 +1,6 @@
 # Production-oriented Compose: app containers (pattern B).
 # RDS is external; RabbitMQ runs on the EC2 host (Terraform user-data) — use RABBITMQ_HOST=host.docker.internal.
+# GATEWAY_DEV_MODE defaults false; api-gateway needs GATEWAY_INTERNAL_BEARER_TOKEN in .env.deploy + environment below — gateway-proxy.md §5.1.
 # Set RABBITMQ_* / NOTIFICATION_RABBITMQ_URL in `.env.deploy` (or merge from terraform-rabbitmq.env on the host).
 # See `.env.deploy.example` and `docs/aws-github-oidc-ecr-ssm.md`.
 # Build images in CI (`release.yml`); hosts set `ECR_IMAGE_PREFIX` + immutable `IMAGE_TAG` (git sha).
@@ -180,6 +181,7 @@ services:
       GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET}
       GATEWAY_JWT_SECRET: ${GATEWAY_JWT_SECRET}
       GATEWAY_DEV_MODE: ${GATEWAY_DEV_MODE:-false}
+      GATEWAY_INTERNAL_BEARER_TOKEN: ${GATEWAY_INTERNAL_BEARER_TOKEN:-}
     networks:
       - app-network
     depends_on:

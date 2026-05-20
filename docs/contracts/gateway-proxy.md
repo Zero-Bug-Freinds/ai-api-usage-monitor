@@ -10,6 +10,7 @@
 **v1.5:** `/api/v1/ai/ext/**` key-only ingress(HMAC+timestamp+nonce) 경로를 추가하고 기존 `/api/v1/ai/**` JWT 경로와 분리.
 **v1.6:** §6.1 `UsageRecordedEvent.metadataOwnerUserId` — PERSONAL `api_key_metadata` upsert 시 Identity MQ와 동일한 소유 `user_id`(플랫폼 사용자 id 문자열)를 쓰기 위한 선택 필드; Proxy는 `UserContext.keyLookupUserId()` 로 채운다.
 **v1.7:** §3.3.1 ext provider API key → gateway fingerprint 헤더; gateway `/internal/**` Bearer 보강; proxy reverse lookup 후속 작업 명시.
+**v1.8:** §5.1 `GATEWAY_INTERNAL_BEARER_TOKEN`·Compose 전달·JWT 정합·`validate-env-deploy.sh` WARN 정책.
 
 ---
 
@@ -187,6 +188,9 @@ Gateway는 JWT 검증에 성공한 뒤(또는 개발 모드 규칙에 따라) �
 - **usage-service** 는 게이트웨이에서 오는 내부 호출 검증에 동일한 공유 비밀을 쓴다(`usage.gateway.shared-secret` — 구현은 `services/usage-service` `application.yml`). **게이트웨이·Proxy·usage 세 곳**의 값은 운영·로컬 모두 **일치**해야 한다.
 - **로컬 전용 기본 문자열(팀 합의 샘플):** `local-dev-gateway-shared-secret-do-not-use-in-prod` — `api-gateway-service`·`proxy-service`·`usage-service` 의 `application.yml` 기본값과 동일하다. **운영**에서는 반드시 강한 값으로 **`GATEWAY_SHARED_SECRET`** 환경 변수로 덮어쓴다.
 - **Docker Compose:** 루트 `docker-compose.yml`은 `GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET:-}` 처럼 변수를 넘긴다. 루트 **`.env`에 `GATEWAY_SHARED_SECRET=` 만 두거나 변수를 빼서 Compose가 빈 문자열을 주입하면**, 컨테이너 프로세스에는 “설정됨이지만 비어 있는” 환경 변수로 들어가 **Spring이 yml 기본값을 쓰지 못하고** 게이트웨이 기동 검증(`GatewayStartupValidation`)에서 실패할 수 있다. **비어 있지 않은 값**으로 맞추거나(루트 `.env.example` 참고) 해당 키 줄을 `.env`에서 **아예 제거**한다. `docker compose`는 **`.env.example`을 자동 로드하지 않는다** — 복사해 `.env`로 쓴 뒤 기동한다.
+- **`GATEWAY_INTERNAL_BEARER_TOKEN` (`gateway.internal-auth.bearer-token`):** Task56 이후 **`gateway.dev-mode=false`** 이면 api-gateway **기동 시 필수**(32자 이상). 게이트웨이 `/internal/**` 입구용 Bearer(서비스 간 호출); **web-edge**의 `/_edge_auth`는 **`GATEWAY_SHARED_SECRET`** (`X-Web-Edge-Auth`)을 사용한다. 루트 `.env` / EC2 `.env.deploy`에 값을 두더라도 **`docker-compose.yml`·`docker-compose-prod.yml`의 `api-gateway-service.environment`에 `${GATEWAY_INTERNAL_BEARER_TOKEN:-}` 로 전달**해야 컨테이너가 읽는다.
+- **로컬 JWT 정합:** 루트 Compose는 identity에 `JWT_SECRET: ${GATEWAY_JWT_SECRET}` 를 주입한다 — 로컬은 **`GATEWAY_JWT_SECRET` 하나**로 identity·gateway 서명 키를 맞춘다. **운영(`docker-compose-prod.yml`)** 은 `JWT_SECRET`과 `GATEWAY_JWT_SECRET` **변수 이름이 둘**이므로 **동일 값**을 넣어야 한다.
+- **배포 검증:** `scripts/deploy/validate-env-deploy.sh`는 게이트웨이 env 누락·JWT 불일치를 **WARN**만 출력한다(roll 차단 없음). api-gateway **recreate 전** EC2 env를 수동 확인한다.
 
 ---
 
