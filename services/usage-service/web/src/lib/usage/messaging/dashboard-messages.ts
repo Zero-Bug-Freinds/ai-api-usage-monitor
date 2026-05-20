@@ -75,8 +75,16 @@ export const TEAM_DASHBOARD_MESSAGES = {
   },
 } as const
 
+const COPY_DASHBOARD_KST_FOOTER =
+  "자세한 비용 내역은 '지출' 메뉴를 통해 확인하세요. 집계 구간은 KST 기준입니다."
+
 /** 팀 멤버 상세 탭 (`team-member-dashboard.tsx`) 전용 문구 */
 export const MEMBER_DETAIL_MESSAGES = {
+  header: {
+    title: "팀원별 분석",
+    badge: "멤버",
+    subtitle: COPY_DASHBOARD_KST_FOOTER,
+  },
   inactiveTab: "멤버 상세 탭을 선택하면 데이터를 불러옵니다.",
   errors: {
     badRequest: COPY_MEMBER_BAD_REQUEST,

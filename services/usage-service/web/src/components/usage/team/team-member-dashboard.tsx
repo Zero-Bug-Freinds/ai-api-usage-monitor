@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { Button } from "@ai-usage/ui"
 import { TeamMemberAvatar } from "@/components/common/team-member-avatar"
 import {
   MEMBER_DETAIL_MESSAGES,
@@ -102,6 +103,7 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [memberRows, setMemberRows] = useState<MemberRow[]>([])
+  const [refresh, setRefresh] = useState(0)
 
   useEffect(() => {
     if (!teamId || !isActive) {
@@ -258,7 +260,7 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
     return () => {
       cancelled = true
     }
-  }, [isActive, teamId, range.from, range.to, provider, apiKeyId])
+  }, [isActive, teamId, range.from, range.to, provider, apiKeyId, refresh])
 
   const memberSeries = useMemo<MemberSeries[]>(
     () =>
@@ -289,27 +291,58 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
   }
 
   return (
-    <div className="w-full min-w-0 space-y-6">
-      <UsageFilterBar
-        idPrefix="member-dash"
-        provider={provider}
-        onProviderChange={(v) => patch({ provider: v })}
-        period={settings.period}
-        onPeriodChange={(p) => patch({ period: p })}
-        apiKey={{
-          value: apiKeyId,
-          onValueChange: (id) => patch({ apiKeyId: id }),
-          menuItems: apiKeyMenuItems,
-          keysLoading,
-          allValue: DASHBOARD_API_KEY_ALL,
-          showAllOption: apiKeyMenuItems.length > 0,
-          noneValue: DASHBOARD_API_KEY_NONE,
-          showNoneOption: apiKeyMenuItems.length === 0,
-          selectId: "member-api-key",
-        }}
-      />
+    <div className="w-full min-h-full pb-6">
+      <header className="mb-6 flex flex-col gap-4 border-b border-border pb-6 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight">{MEMBER_DETAIL_MESSAGES.header.title}</h1>
+            <span className="rounded-full border border-border bg-muted/50 px-2 py-0.5 text-xs font-medium text-muted-foreground">
+              {MEMBER_DETAIL_MESSAGES.header.badge}
+            </span>
+          </div>
+          <p className="text-sm text-muted-foreground">{MEMBER_DETAIL_MESSAGES.header.subtitle}</p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={loading || keysLoading}
+          onClick={() => {
+            memberDashboardCache.clear()
+            setRefresh((n) => n + 1)
+          }}
+        >
+          새로고침
+        </Button>
+      </header>
 
-      {error ? <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p> : null}
+      <div className="mb-6 flex flex-col gap-4">
+        <UsageFilterBar
+          idPrefix="member-dash"
+          provider={provider}
+          onProviderChange={(v) => patch({ provider: v })}
+          period={settings.period}
+          onPeriodChange={(p) => patch({ period: p })}
+          apiKey={{
+            value: apiKeyId,
+            onValueChange: (id) => patch({ apiKeyId: id }),
+            menuItems: apiKeyMenuItems,
+            keysLoading,
+            allValue: DASHBOARD_API_KEY_ALL,
+            showAllOption: apiKeyMenuItems.length > 0,
+            noneValue: DASHBOARD_API_KEY_NONE,
+            showNoneOption: apiKeyMenuItems.length === 0,
+            selectId: "member-api-key",
+          }}
+        />
+      </div>
+
+      <div className="space-y-6">
+      {error ? (
+        <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
+          {error}
+        </p>
+      ) : null}
       {loading ? (
         <div className="space-y-4" aria-busy="true">
           <div className="h-[320px] animate-pulse rounded-lg border border-border bg-muted/40" />
@@ -320,7 +353,6 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
 
       {!loading && !error && !hasData ? (
         <section className="rounded-lg border border-border p-4 shadow-sm">
-          <h2 className="mb-4 text-lg font-medium">팀원별 분석</h2>
           <div className="flex min-h-[240px] items-center justify-center rounded-md border border-dashed border-border bg-muted/20 px-4 py-12">
             <p className="text-center text-sm text-muted-foreground">{MEMBER_DETAIL_MESSAGES.hints.noModelUsage}</p>
           </div>
@@ -352,6 +384,7 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
           현재 선택된 사용자 힌트: <span className="font-medium text-foreground">{userId}</span> (멤버 전체 집계 기준으로 표시 중)
         </p>
       ) : null}
+      </div>
     </div>
   )
 }
