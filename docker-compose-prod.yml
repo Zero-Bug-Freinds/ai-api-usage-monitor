@@ -1,12 +1,18 @@
 # Production-oriented Compose: app containers (pattern B).
-# RDS and RabbitMQ are external (Terraform). Set RABBITMQ_* / NOTIFICATION_RABBITMQ_URL in `.env.deploy`.
+# RDS is external; RabbitMQ runs on the EC2 host (Terraform user-data) — use RABBITMQ_HOST=host.docker.internal.
+# Set RABBITMQ_* / NOTIFICATION_RABBITMQ_URL in `.env.deploy` (or merge from terraform-rabbitmq.env on the host).
 # See `.env.deploy.example` and `docs/aws-github-oidc-ecr-ssm.md`.
 # Build images in CI (`release.yml`); hosts set `ECR_IMAGE_PREFIX` + immutable `IMAGE_TAG` (git sha).
 # On EC2, `scripts/deploy/on-instance-compose-roll.sh` writes compose.env + `.env` and passes `--env-file`.
 # Manual ops: `scripts/deploy/docker-compose-prod.sh` (not bare `docker compose` without env).
 
+x-host-rabbitmq-access: &host-rabbitmq-access
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+
 services:
   identity-service:
+    <<: *host-rabbitmq-access
     restart: unless-stopped
     image: ${ECR_IMAGE_PREFIX}/identity-service:${IMAGE_TAG}
     environment:
@@ -25,6 +31,7 @@ services:
       - app-network
 
   agent-service:
+    <<: *host-rabbitmq-access
     restart: unless-stopped
     image: ${ECR_IMAGE_PREFIX}/agent-service:${IMAGE_TAG}
     environment:
@@ -50,6 +57,7 @@ services:
       - app-network
 
   usage-service:
+    <<: *host-rabbitmq-access
     restart: unless-stopped
     image: ${ECR_IMAGE_PREFIX}/usage-service:${IMAGE_TAG}
     environment:
@@ -69,6 +77,7 @@ services:
       - app-network
 
   billing-service:
+    <<: *host-rabbitmq-access
     restart: unless-stopped
     image: ${ECR_IMAGE_PREFIX}/billing-service:${IMAGE_TAG}
     environment:
@@ -91,6 +100,7 @@ services:
       - app-network
 
   proxy-service:
+    <<: *host-rabbitmq-access
     restart: unless-stopped
     image: ${ECR_IMAGE_PREFIX}/proxy-service:${IMAGE_TAG}
     environment:
@@ -112,6 +122,7 @@ services:
       - identity-service
 
   team-service:
+    <<: *host-rabbitmq-access
     restart: unless-stopped
     image: ${ECR_IMAGE_PREFIX}/team-service:${IMAGE_TAG}
     environment:
@@ -136,6 +147,7 @@ services:
         condition: service_started
 
   notification-service:
+    <<: *host-rabbitmq-access
     restart: unless-stopped
     image: ${ECR_IMAGE_PREFIX}/notification-service:${IMAGE_TAG}
     environment:

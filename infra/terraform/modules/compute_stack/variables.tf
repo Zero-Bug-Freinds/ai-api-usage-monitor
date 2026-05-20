@@ -92,3 +92,15 @@ variable "health_check_grace_period" {
     error_message = "health_check_grace_period must be between 300 and 7200 seconds."
   }
 }
+
+variable "enable_ec2_rabbitmq" {
+  type        = bool
+  description = "When true, user-data starts a host RabbitMQ container (Docker) and writes terraform-rabbitmq.env for deploy rolls."
+  default     = true
+}
+
+variable "ec2_rabbitmq_user" {
+  type        = string
+  description = "RabbitMQ application user created on first boot (RABBITMQ_USER in .env.deploy)."
+  default     = "app"
+}
