@@ -512,6 +512,7 @@ export default function TeamDashboard({
           {TEAM_DASHBOARD_MESSAGES.banners.noTeamMembership}
         </div>
       ) : null}
+      {teamsErr ? <p className="mb-4 text-sm text-amber-700">{teamsErr}</p> : null}
       <div className="mb-6 flex flex-col gap-4">
         <UsageFilterBar
           idPrefix="team-dash"
@@ -542,12 +543,6 @@ export default function TeamDashboard({
         />
       </div>
 
-      {teamsErr ? <p className="mb-4 text-sm text-amber-700">{teamsErr}</p> : null}
-      {showDashChartShell && showMainChartError ? (
-        <p className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert" aria-live="polite">
-          {error}
-        </p>
-      ) : null}
       {showDashChartShell ? (
         <div aria-busy={dashAriaBusy ? "true" : undefined}>
           <section className="mb-8 w-full min-w-0 rounded-lg border border-border p-4 shadow-sm">
@@ -558,10 +553,12 @@ export default function TeamDashboard({
               ) : null}
               {showMainChartError ? (
                 <div
-                  className="h-full min-h-0 rounded-md border border-destructive/30 bg-destructive/5"
+                  className="flex h-full min-h-0 items-center justify-center rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
                   role="alert"
                   aria-live="polite"
-                />
+                >
+                  {error}
+                </div>
               ) : null}
               {showComposedChart ? (
                 <ResponsiveContainer width="100%" height="100%">

@@ -316,6 +316,12 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
         </Button>
       </header>
 
+      {error ? (
+        <p className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
+          {error}
+        </p>
+      ) : null}
+
       <div className="mb-6 flex flex-col gap-4">
         <UsageFilterBar
           idPrefix="member-dash"
@@ -338,11 +344,6 @@ export default function TeamMemberDashboard({ teamId, userId, isActive }: TeamMe
       </div>
 
       <div className="space-y-6">
-      {error ? (
-        <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
-          {error}
-        </p>
-      ) : null}
       {loading ? (
         <div className="space-y-4" aria-busy="true">
           <div className="h-[320px] animate-pulse rounded-lg border border-border bg-muted/40" />
