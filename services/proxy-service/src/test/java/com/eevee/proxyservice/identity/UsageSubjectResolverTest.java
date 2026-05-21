@@ -51,6 +51,28 @@ class UsageSubjectResolverTest {
     }
 
     @Test
+    void teamOwner_usesLookupUserIdWhenGatewayAbsent() {
+        IdentityUsageSubjectClient client = mock(IdentityUsageSubjectClient.class);
+        UsageSubjectResolver resolver = resolver(client, true);
+        FingerprintOwnerLookup owner = new FingerprintOwnerLookup(
+                "TEAM", "Registrar@Example.com", "42", "77", "team-key", "team", "ACTIVE"
+        );
+
+        assertThat(resolver.resolveForFingerprintOwner(owner, null)).isEqualTo("registrar@example.com");
+    }
+
+    @Test
+    void teamOwner_gatewayPreferredOverLookupUserId() {
+        IdentityUsageSubjectClient client = mock(IdentityUsageSubjectClient.class);
+        UsageSubjectResolver resolver = resolver(client, true);
+        FingerprintOwnerLookup owner = new FingerprintOwnerLookup(
+                "TEAM", "Registrar@Example.com", "42", "77", "team-key", "team", "ACTIVE"
+        );
+
+        assertThat(resolver.resolveForFingerprintOwner(owner, "Caller@Team.com")).isEqualTo("caller@team.com");
+    }
+
+    @Test
     void personalOpaqueOwner_identityMiss_throws502() {
         IdentityUsageSubjectClient client = mock(IdentityUsageSubjectClient.class);
         when(client.resolveEmailFromOpaqueOwner(anyString())).thenReturn(Optional.empty());

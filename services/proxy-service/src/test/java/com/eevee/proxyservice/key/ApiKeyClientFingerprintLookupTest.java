@@ -92,15 +92,64 @@ class ApiKeyClientFingerprintLookupTest {
     }
 
     @Test
-    void teamOwnerReturns502UntilTeamCredentialApiExists() throws Exception {
+    void teamOwnerResolvesViaFingerprintLookupAndCredentialApi() throws Exception {
         String fingerprint = ApiKeyFingerprintNormalizer.sha256HexUtf8("sk-test-team");
         identityServer = startServer(exchange -> respond(exchange, 404, "{}"));
         teamServer = startServer(exchange -> {
-            if ("POST".equals(exchange.getRequestMethod())) {
+            String path = exchange.getRequestURI().getPath();
+            if ("POST".equals(exchange.getRequestMethod()) && path.endsWith("/internal/v1/api-keys/lookup")) {
                 respond(exchange, 200, """
                         {"found":true,"ownerType":"TEAM","userId":null,"teamId":42,\
                         "keyId":"77","alias":"team-key","status":"ACTIVE","keySource":"team"}\
                         """);
+                return;
+            }
+            if ("GET".equals(exchange.getRequestMethod())
+                    && path.contains("/internal/v1/team-api-keys/77/credential")) {
+                respond(exchange, 200, "{\"plainKey\":\"sk-test-team\",\"keyId\":\"77\"}");
+                return;
+            }
+            respond(exchange, 404, "{}");
+        });
+
+        ProxyProperties props = baseProps(identityServer.getAddress().getPort(), teamServer.getAddress().getPort());
+        ApiKeyClient client = ApiKeyClient.forTests(props);
+
+        ApiKeyClient.ResolvedApiKey resolved = client.resolveApiKey(
+                "member@team.com",
+                "42",
+                AiProvider.OPENAI,
+                null,
+                null,
+                null,
+                fingerprint,
+                "corr-2"
+        ).block();
+
+        assertThat(resolved).isNotNull();
+        assertThat(resolved.plainKey()).isEqualTo("sk-test-team");
+        assertThat(resolved.keyId()).isEqualTo("77");
+        assertThat(resolved.ownerTeamId()).isEqualTo("42");
+        assertThat(resolved.ownerUserId()).isEqualTo("member@team.com");
+        assertThat(resolved.keySource()).isEqualTo("team");
+    }
+
+    @Test
+    void teamOwnerCredentialNotFound_returns404() throws Exception {
+        String fingerprint = ApiKeyFingerprintNormalizer.sha256HexUtf8("sk-missing-team");
+        identityServer = startServer(exchange -> respond(exchange, 404, "{}"));
+        teamServer = startServer(exchange -> {
+            String path = exchange.getRequestURI().getPath();
+            if ("POST".equals(exchange.getRequestMethod()) && path.endsWith("/internal/v1/api-keys/lookup")) {
+                respond(exchange, 200, """
+                        {"found":true,"ownerType":"TEAM","userId":null,"teamId":42,\
+                        "keyId":"77","alias":"team-key","status":"ACTIVE","keySource":"team"}\
+                        """);
+                return;
+            }
+            if ("GET".equals(exchange.getRequestMethod())
+                    && path.contains("/internal/v1/team-api-keys/77/credential")) {
+                respond(exchange, 404, "{\"message\":\"not found\"}");
                 return;
             }
             respond(exchange, 404, "{}");
@@ -117,11 +166,11 @@ class ApiKeyClientFingerprintLookupTest {
                 null,
                 null,
                 fingerprint,
-                "corr-2"
+                "corr-3"
         ).block())
                 .isInstanceOf(ResponseStatusException.class)
                 .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode())
-                        .isEqualTo(HttpStatus.BAD_GATEWAY));
+                        .isEqualTo(HttpStatus.NOT_FOUND));
     }
 
     private static HttpServer startServer(IoHandler handler) throws IOException {

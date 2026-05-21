@@ -50,6 +50,8 @@ proxy:
     base-url: ${PROXY_TEAM_KEY_SERVICE_BASE_URL:http://localhost:8093}
     internal-token: ${PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN:change-this-team-internal-api-token}
     path-template: ${PROXY_TEAM_KEY_SERVICE_PATH_TEMPLATE:/internal/api-keys/{provider}}
+    # Ext team fingerprint plain-key hydration (team-service trusted internal API)
+    credential-path-template: ${PROXY_TEAM_KEY_CREDENTIAL_PATH_TEMPLATE:/internal/v1/team-api-keys/{keyId}/credential}
   rabbit:
     usage-exchange: usage.events
     usage-routing-key: usage.recorded

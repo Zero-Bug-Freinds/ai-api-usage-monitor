@@ -43,13 +43,22 @@ public class UsageSubjectResolver {
             throw new IllegalArgumentException("owner is required");
         }
         if (!enabled) {
+            if (owner.isTeam()) {
+                return firstPresent(
+                        UsageSubjectNormalizer.normalizeSubject(gatewaySubjectFallback),
+                        UsageSubjectNormalizer.normalizeSubject(owner.userId())
+                );
+            }
             return firstPresent(
                     UsageSubjectNormalizer.normalizeSubject(owner.userId()),
                     UsageSubjectNormalizer.normalizeSubject(gatewaySubjectFallback)
             );
         }
         if (owner.isTeam()) {
-            return UsageSubjectNormalizer.normalizeSubject(gatewaySubjectFallback);
+            return firstPresent(
+                    UsageSubjectNormalizer.normalizeSubject(gatewaySubjectFallback),
+                    UsageSubjectNormalizer.normalizeSubject(owner.userId())
+            );
         }
         return resolvePersonalFingerprintOwner(owner.userId(), gatewaySubjectFallback);
     }

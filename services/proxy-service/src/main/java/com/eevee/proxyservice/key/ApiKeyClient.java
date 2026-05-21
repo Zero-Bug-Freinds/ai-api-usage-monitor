@@ -44,6 +44,7 @@ public class ApiKeyClient {
     private final FingerprintReverseLookupService fingerprintReverseLookupService;
     private final FingerprintLookupCache fingerprintLookupCache;
     private final UsageSubjectResolver usageSubjectResolver;
+    private final TeamKeyCredentialClient teamKeyCredentialClient;
     private final WebClient identityKeyServiceWebClient;
     private final WebClient teamKeyServiceWebClient;
     private final LoadingCache<String, ResolvedApiKey> cache;
@@ -68,7 +69,8 @@ public class ApiKeyClient {
                 proxyProperties,
                 new FingerprintReverseLookupService(proxyProperties),
                 new FingerprintLookupCache(proxyProperties),
-                resolver
+                resolver,
+                new TeamKeyCredentialClient(proxyProperties)
         );
     }
 
@@ -77,12 +79,14 @@ public class ApiKeyClient {
             ProxyProperties proxyProperties,
             FingerprintReverseLookupService fingerprintReverseLookupService,
             FingerprintLookupCache fingerprintLookupCache,
-            UsageSubjectResolver usageSubjectResolver
+            UsageSubjectResolver usageSubjectResolver,
+            TeamKeyCredentialClient teamKeyCredentialClient
     ) {
         this.proxyProperties = proxyProperties;
         this.fingerprintReverseLookupService = fingerprintReverseLookupService;
         this.fingerprintLookupCache = fingerprintLookupCache;
         this.usageSubjectResolver = usageSubjectResolver;
+        this.teamKeyCredentialClient = teamKeyCredentialClient;
         this.identityKeyServiceWebClient = WebClient.builder()
                 .baseUrl(proxyProperties.getKeyService().getBaseUrl())
                 .build();
@@ -203,14 +207,29 @@ public class ApiKeyClient {
             String gatewaySubjectFallback
     ) {
         if (owner.isTeam()) {
-            log.warn(
-                    "team fingerprint owner cannot hydrate plain key without team-service trusted credential API keyId={}",
-                    masked(owner.keyId())
-            );
-            return Mono.error(new ResponseStatusException(
-                    BAD_GATEWAY,
-                    "team API key relay requires team-service trusted internal credential API"
-            ));
+            return Mono.fromCallable(() -> {
+                        String usageSubjectUserId = usageSubjectResolver.resolveForFingerprintOwner(
+                                owner,
+                                gatewaySubjectFallback
+                        );
+                        if (hasText(rawApiKey)) {
+                            return toResolvedApiKey(rawApiKey, owner, provider, owner.alias(), usageSubjectUserId);
+                        }
+                        var credential = teamKeyCredentialClient.loadCredential(
+                                owner.teamId(),
+                                owner.keyId(),
+                                provider
+                        );
+                        String resolvedAlias = hasText(owner.alias()) ? owner.alias() : null;
+                        return toResolvedApiKey(
+                                credential.plainKey(),
+                                owner,
+                                provider,
+                                resolvedAlias,
+                                usageSubjectUserId
+                        );
+                    })
+                    .subscribeOn(Schedulers.boundedElastic());
         }
         return Mono.fromCallable(() -> {
                     String usageSubjectUserId = usageSubjectResolver.resolveForFingerprintOwner(owner, gatewaySubjectFallback);

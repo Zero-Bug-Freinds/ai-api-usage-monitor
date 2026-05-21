@@ -314,6 +314,7 @@ public class ProxyProperties {
         private String baseUrl = "http://localhost:8093";
         private String internalToken = "";
         private String pathTemplate = "/internal/api-keys/{provider}";
+        private String credentialPathTemplate = "/internal/v1/team-api-keys/{keyId}/credential";
 
         public String getBaseUrl() {
             return baseUrl;
@@ -337,6 +338,14 @@ public class ProxyProperties {
 
         public void setPathTemplate(String pathTemplate) {
             this.pathTemplate = pathTemplate;
+        }
+
+        public String getCredentialPathTemplate() {
+            return credentialPathTemplate;
+        }
+
+        public void setCredentialPathTemplate(String credentialPathTemplate) {
+            this.credentialPathTemplate = credentialPathTemplate;
         }
     }
 
