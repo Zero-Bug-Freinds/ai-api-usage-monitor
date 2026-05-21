@@ -482,8 +482,9 @@ export default function TeamDashboard({
     !error &&
     (!hasMainData || apiKeyRows.length === 0)
 
-  /** 팀 목록 오류가 아니면, 팀 목록 로딩 중이거나 소속 팀이 있을 때 동일한 차트 격자를 유지한다. */
-  const showDashChartShell = !teamsErr && (teamsLoading || hasTeamMembership)
+  /** 팀 목록 오류가 아니면 차트 격자 유지(목록 로딩 중·소속 팀 있음·미소속+로딩 완료). */
+  const showDashChartShell =
+    !teamsErr && (teamsLoading || hasTeamMembership || (!teamsLoading && !hasTeamMembership))
   const showComposedChart = Boolean(
     effectiveTeamId && !teamsLoading && !keysLoading && !loading && !error,
   )

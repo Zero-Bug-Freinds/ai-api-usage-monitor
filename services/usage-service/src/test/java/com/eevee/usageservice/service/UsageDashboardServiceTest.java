@@ -266,6 +266,84 @@ class UsageDashboardServiceTest {
     }
 
     @Test
+    void dailySeriesByTeamAndUser_withoutApiKeyId_queriesAnalyticsJdbcOnce() {
+        LocalDate from = LocalDate.of(2025, 6, 1);
+        LocalDate to = LocalDate.of(2025, 6, 5);
+        when(analyticsJdbcRepository.aggregateDailyByTeamAndUser(
+                eq("team-1"),
+                eq("member-1"),
+                any(),
+                any(),
+                isNull()
+        )).thenReturn(List.of());
+
+        service.dailySeriesByTeamAndUser("team-1", "member-1", from, to, null, null);
+
+        verify(analyticsJdbcRepository, times(1)).aggregateDailyByTeamAndUser(
+                eq("team-1"),
+                eq("member-1"),
+                any(),
+                any(),
+                isNull()
+        );
+        verify(analyticsJdbcRepository, never()).aggregateDailyForTeamAndUserFromLogs(
+                any(), any(), any(), any(), any(), any());
+        verify(apiKeyFilterResolutionService, never()).resolveTeam(any(), any());
+    }
+
+    @Test
+    void monthlySeriesByTeamAndUser_withoutApiKeyId_queriesAnalyticsJdbcOnce() {
+        LocalDate from = LocalDate.of(2025, 6, 1);
+        LocalDate to = LocalDate.of(2025, 6, 5);
+        when(analyticsJdbcRepository.aggregateMonthlyByTeamAndUser(
+                eq("team-1"),
+                eq("member-1"),
+                any(),
+                any(),
+                isNull()
+        )).thenReturn(List.of());
+
+        service.monthlySeriesByTeamAndUser("team-1", "member-1", from, to, null);
+
+        verify(analyticsJdbcRepository, times(1)).aggregateMonthlyByTeamAndUser(
+                eq("team-1"),
+                eq("member-1"),
+                any(),
+                any(),
+                isNull()
+        );
+        verify(analyticsJdbcRepository, never()).aggregateMonthlyForTeamAndUserFromLogs(
+                any(), any(), any(), any(), any(), any());
+        verify(apiKeyFilterResolutionService, never()).resolveTeam(any(), any());
+    }
+
+    @Test
+    void byModelForTeamAndUser_withoutApiKeyId_queriesAnalyticsJdbcOnce() {
+        LocalDate from = LocalDate.of(2025, 6, 1);
+        LocalDate to = LocalDate.of(2025, 6, 5);
+        when(analyticsJdbcRepository.aggregateByModelForTeamAndUser(
+                eq("team-1"),
+                eq("member-1"),
+                any(),
+                any(),
+                isNull()
+        )).thenReturn(List.of());
+
+        service.byModelForTeamAndUser("team-1", "member-1", from, to, null);
+
+        verify(analyticsJdbcRepository, times(1)).aggregateByModelForTeamAndUser(
+                eq("team-1"),
+                eq("member-1"),
+                any(),
+                any(),
+                isNull()
+        );
+        verify(analyticsJdbcRepository, never()).aggregateByModelForTeamAndUserFromLogs(
+                any(), any(), any(), any(), any(), any());
+        verify(apiKeyFilterResolutionService, never()).resolveTeam(any(), any());
+    }
+
+    @Test
     void byModelForTeamAndUser_withApiKeyId_queriesLogsScopedToKey() {
         LocalDate from = LocalDate.of(2025, 6, 1);
         LocalDate to = LocalDate.of(2025, 6, 5);

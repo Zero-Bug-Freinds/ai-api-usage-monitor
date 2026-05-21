@@ -299,7 +299,9 @@ public class UsageDashboardService {
             String apiKeyId
     ) {
         if (!restrictTeamToApiKey(apiKeyId)) {
-            return dailySeriesByTeamAndUser(teamId, userId, from, toInclusive, provider);
+            Range r = validateRange(from, toInclusive);
+            return analyticsJdbcRepository.aggregateDailyByTeamAndUser(
+                    teamId, userId, r.from(), r.toExclusive(), provider);
         }
         Range r = validateRange(from, toInclusive);
         return analyticsJdbcRepository.aggregateDailyForTeamAndUserFromLogs(
@@ -390,7 +392,9 @@ public class UsageDashboardService {
             String apiKeyId
     ) {
         if (!restrictTeamToApiKey(apiKeyId)) {
-            return monthlySeriesByTeamAndUser(teamId, userId, from, toInclusive, provider);
+            Range r = validateRange(from, toInclusive);
+            return analyticsJdbcRepository.aggregateMonthlyByTeamAndUser(
+                    teamId, userId, r.from(), r.toExclusive(), provider);
         }
         Range r = validateRange(from, toInclusive);
         return analyticsJdbcRepository.aggregateMonthlyForTeamAndUserFromLogs(
@@ -539,7 +543,9 @@ public class UsageDashboardService {
             String apiKeyId
     ) {
         if (!restrictTeamToApiKey(apiKeyId)) {
-            return byModelForTeamAndUser(teamId, userId, from, toInclusive, provider);
+            Range r = validateRange(from, toInclusive);
+            return analyticsJdbcRepository.aggregateByModelForTeamAndUser(
+                    teamId, userId, r.from(), r.toExclusive(), provider);
         }
         Range r = validateRange(from, toInclusive);
         return analyticsJdbcRepository.aggregateByModelForTeamAndUserFromLogs(
