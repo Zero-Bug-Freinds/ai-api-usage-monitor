@@ -340,6 +340,9 @@ jobs:
           context: .
           file: services/team-service/web/Dockerfile
           push: true
+          build-args: |
+            NEXT_PUBLIC_MFE_ASSET_PREFIX=/teams
+            NEXT_PUBLIC_MFE_USAGE_REMOTE_URL=${{ vars.NEXT_PUBLIC_MFE_USAGE_REMOTE_URL }}
           tags: |
             ${{ steps.meta.outputs.image_prefix }}/team-web:${{ steps.meta.outputs.tag_sha }}
             ${{ steps.meta.outputs.image_prefix }}/team-web:${{ steps.meta.outputs.tag_pointer }}
