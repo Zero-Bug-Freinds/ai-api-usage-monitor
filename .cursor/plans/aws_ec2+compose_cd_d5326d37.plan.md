@@ -34,7 +34,7 @@ isProject: false
 ## 목표
 
 - 저장소 정본에 맞춰 **AWS ECR**에 서비스별 이미지를 푸시하고, **ALB 뒤 EC2 2대 이상**에서 **Docker Compose**로 앱 스택을 기동한다.
-- **RDS / Amazon MQ(RabbitMQ) / ElastiCache**는 매니지드로 두고, EC2에는 **앱·웹·web-edge 컨테이너만** 올린다.
+- **RDS**는 매니지드로 두고, **RabbitMQ는 EC2 호스트 Docker**(`enable_ec2_rabbitmq`, Amazon MQ 아님). EC2에는 **앱·웹·web-edge**와 **호스트 RabbitMQ**를 둔다.
 - 배포는 **GitHub Actions → SSM Run Command**로 EC2에 내려보내고, **인스턴스 단위 롤링**(drain → 배포 → 헬스체크 → 재등록)으로 무중단에 가깝게 만든다.
 
 ## 레포 근거
@@ -65,12 +65,11 @@ flowchart LR
     subgraph asg [EC2_AutoScalingGroup]
       EC2A[EC2_Instance_A]
       EC2B[EC2_Instance_B]
+      HostMQ[RabbitMQ_host_Docker]
     end
 
     subgraph managed [Managed_Dependencies]
       RDS[RDS_PostgreSQL]
-      MQ[Amazon_MQ_RabbitMQ]
-      Cache[ElastiCache_Redis]
     end
   end
 
@@ -81,12 +80,9 @@ flowchart LR
   ALB -->|HTTP_80_or_443| EC2B
 
   EC2A -->|compose_up| RDS
-  EC2A -->|AMQP| MQ
-  EC2A -->|TCP| Cache
-
   EC2B -->|compose_up| RDS
-  EC2B -->|AMQP| MQ
-  EC2B -->|TCP| Cache
+  EC2A -->|AMQP_host.docker.internal| HostMQ
+  EC2B -->|AMQP_host.docker.internal| HostMQ
 
   Actions -->|SSM_RunCommand| EC2A
   Actions -->|SSM_RunCommand| EC2B
@@ -145,7 +141,7 @@ flowchart TD
 
 - 로컬 `docker-compose.yml`의 Postgres/RabbitMQ/Redis **컨테이너 정의는 운영 파일에서 제외**
 - 별도 파일 예: `docker-compose.prod.yml`
-- 앱 `environment`는 RDS / Amazon MQ / ElastiCache 엔드포인트를 가리킴
+- 앱 `environment`는 RDS·호스트 RabbitMQ(`RABBITMQ_*`, Amazon MQ 아님)를 가리킴
 - 비밀값: SSM Parameter Store 또는 Secrets Manager
 
 ## 헬스체크·롤백

@@ -5,7 +5,7 @@
 ## 목표
 
 - 이 저장소 정본에 맞춰 **AWS ECR**에 서비스별 이미지를 푸시하고, **ALB 뒤 EC2 2대 이상**에서 **Docker Compose**로 앱 스택을 기동한다.
-- **RDS / Amazon MQ(RabbitMQ) / ElastiCache**는 매니지드로 두고, EC2에는 **앱·웹·web-edge 컨테이너만** 올린다.
+- **RDS(PostgreSQL)** 는 매니지드(RDS)로 두고, **RabbitMQ는 Amazon MQ를 쓰지 않는다** — compute 스택 기본(`enable_ec2_rabbitmq`)대로 **EC2 호스트 Docker** 브로커(`host.docker.internal:5672`). EC2에는 **앱·웹·web-edge 컨테이너**와 **동일 인스턴스의 호스트 RabbitMQ**를 둔다.
 - 배포는 **GitHub Actions → SSM Run Command**로 EC2에 내려보내고, **인스턴스 단위 롤링**(drain → 배포 → 헬스체크 → 재등록)으로 무중단에 가깝게 만든다.
 
 ## 레포 근거
@@ -43,12 +43,11 @@ flowchart LR
     subgraph asg [EC2_AutoScalingGroup]
       EC2A[EC2_Instance_A]
       EC2B[EC2_Instance_B]
+      HostMQ[RabbitMQ_host_Docker]
     end
 
     subgraph managed [Managed_Dependencies]
       RDS[RDS_PostgreSQL]
-      MQ[Amazon_MQ_RabbitMQ]
-      Cache[ElastiCache_Redis]
     end
   end
 
@@ -59,12 +58,9 @@ flowchart LR
   ALB -->|HTTP_80_or_443| EC2B
 
   EC2A -->|compose_up| RDS
-  EC2A -->|AMQP| MQ
-  EC2A -->|TCP| Cache
-
   EC2B -->|compose_up| RDS
-  EC2B -->|AMQP| MQ
-  EC2B -->|TCP| Cache
+  EC2A -->|AMQP_host.docker.internal| HostMQ
+  EC2B -->|AMQP_host.docker.internal| HostMQ
 
   Actions -->|SSM_RunCommand| EC2A
   Actions -->|SSM_RunCommand| EC2B
@@ -125,9 +121,9 @@ flowchart TD
 
 ## 운영용 Compose (설계)
 
-- 로컬 [`docker-compose.yml`](../docker-compose.yml)의 Postgres/RabbitMQ/Redis **컨테이너 정의는 운영 파일에서 제외**한다.
+- 로컬 [`docker-compose.yml`](../docker-compose.yml)의 Postgres/RabbitMQ/Redis **컨테이너 정의는 운영 파일에서 제외**한다. 운영 RabbitMQ는 [`docker-compose-prod.yml`](../docker-compose-prod.yml) 주석·[`.env.deploy.example`](../.env.deploy.example)처럼 **EC2 호스트 브로커**(`RABBITMQ_HOST=host.docker.internal`)를 전제로 한다.
 - 별도 파일 예: `docker-compose-prod.yml` (저장소에 둘지, 배포 시 생성할지 팀 합의)
-- 앱 `environment`는 **RDS / Amazon MQ / ElastiCache 엔드포인트**와 자격증명(또는 IAM 가능 영역)을 가리키게 한다.
+- 앱 `environment`는 **RDS 엔드포인트**·**호스트 RabbitMQ 자격증명**(`RABBITMQ_*`, `NOTIFICATION_RABBITMQ_URL`)·기타 비밀(`.env.deploy` / `terraform-rabbitmq.env` 병합)을 가리키게 한다. **Amazon MQ 엔드포인트는 사용하지 않는다.**
 - 비밀값: **SSM Parameter Store** 또는 **Secrets Manager**에서 주입(서버 로컬 `.env`만 쓸 경우 권한·로테이션 정책 필수)
 
 ## 헬스체크·롤백
@@ -151,7 +147,7 @@ flowchart TD
 - IAM: GitHub OIDC Role(ECR push + SSM `SendCommand` 등) — Terraform 루트 [`infra/terraform`](../infra/terraform) 또는 수동 JSON([`aws-github-oidc-ecr-ssm.md`](aws-github-oidc-ecr-ssm.md)); 선택 레퍼런스 모듈 [`modules/github_env_roles`](../infra/terraform/modules/github_env_roles)
 - EC2: Instance Profile(ECR pull + SSM Agent), ASG 최소 2대, Launch Template에 Docker/Compose — Terraform [`modules/compute_stack`](../infra/terraform/modules/compute_stack) 선택 또는 수동
 - ALB + Target Group + 보안 그룹 — 선택 모듈 또는 수동; 배포 스크립트 [`gha-roll-instance.sh`](../scripts/deploy/gha-roll-instance.sh) 의 `TARGET_PORT`(기본 8888, `terraform output alb_target_port`와 일치)와 TG 포트 일치
-- EC2 → RDS / MQ / Redis 네트워크 허용
+- EC2 → RDS 네트워크 허용(RDS 보안 그룹). RabbitMQ는 **동일 EC2 호스트**에서 5672로 수신(앱은 `host.docker.internal`). Redis/ElastiCache는 **현재 `docker-compose-prod.yml` 범위 밖**(로컬 dev Compose 전용).
 
 ## 주의사항 (이 프로젝트 특성)
 
