@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Alpha Method A — stop app EC2 and staging RDS (no terraform destroy).
-# ALB and Amazon MQ keep running (still billed). .env.deploy on the same EBS is preserved.
+# ALB keeps running (still billed). EC2 stop also stops host RabbitMQ on that instance. .env.deploy on the same EBS is preserved.
 #
 # Usage (from repo root, AWS credentials configured):
 #   ./scripts/ops/alpha-stack-stop.sh
@@ -19,7 +19,7 @@ echo "Alpha stack stop (Method A)"
 echo "  Region:  $AWS_REGION"
 echo "  EC2:     $EC2_INSTANCE_ID"
 echo "  RDS:     $RDS_INSTANCE_ID"
-echo "  Note:    ALB + Amazon MQ are not stopped (see docs/aws-github-oidc-ecr-ssm.md)."
+echo "  Note:    ALB is not stopped; RabbitMQ on EC2 stops with the instance (see docs/aws-github-oidc-ecr-ssm.md)."
 
 ec2_s="$(ec2_state 2>/dev/null || echo unknown)"
 if [[ "$ec2_s" == "running" ]]; then
