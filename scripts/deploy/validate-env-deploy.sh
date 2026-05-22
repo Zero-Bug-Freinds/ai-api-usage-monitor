@@ -22,6 +22,15 @@ sanitize_env_value() {
   printf '%s' "$v"
 }
 
+env_file_value() {
+  local key="$1"
+  local line val
+  line="$(grep -E "^${key}=" "$ENV_FILE" | tail -n 1 || true)"
+  [[ -z "$line" ]] && return 0
+  val="${line#*=}"
+  sanitize_env_value "$val"
+}
+
 errors=0
 warns=0
 
@@ -98,15 +107,6 @@ fi
 if [[ ${#hosts[@]} -gt 0 ]]; then
   echo "OK: postgres host(s) look like hostname-only (example endpoint shape): ${hosts[0]}"
 fi
-
-env_file_value() {
-  local key="$1"
-  local line val
-  line="$(grep -E "^${key}=" "$ENV_FILE" | tail -n 1 || true)"
-  [[ -z "$line" ]] && return 0
-  val="${line#*=}"
-  sanitize_env_value "$val"
-}
 
 gateway_dev_mode_enabled() {
   local raw
