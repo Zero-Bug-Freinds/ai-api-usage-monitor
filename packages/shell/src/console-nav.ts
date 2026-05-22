@@ -72,6 +72,37 @@ function isLocalhostHostname(hostname: string): boolean {
 }
 
 /**
+ * 로컬에서 usage/team 등 앱을 단독 포트(:3000, :3012 …)로 띄울 때만 절대 web-edge URL이 필요하다.
+ * ALB·web-edge 통합 진입(:8888 또는 비로컬 호스트)에서는 상대 경로로 충분하다.
+ */
+function isStandaloneMicroAppDev(): boolean {
+  if (typeof window === "undefined") {
+    return false
+  }
+  const { hostname, port } = window.location
+  if (!isLocalhostHostname(hostname)) {
+    return false
+  }
+  return port !== "" && port !== "8888"
+}
+
+/**
+ * 배포·web-edge에서는 SSR/CSR 모두 호스트를 유지하는 루트 상대 경로를 쓴다.
+ * (빌드에 `localhost:8888`이 박혀 있어도 `<a href="/teams">`가 ALB에서 동작)
+ */
+function preferRelativeWebEdgeHref(path: string): string {
+  const normalized = normalizePath(path)
+  if (typeof window === "undefined") {
+    return normalized
+  }
+  if (!isStandaloneMicroAppDev()) {
+    return normalized
+  }
+  const origin = effectiveWebEdgeOriginForHref()
+  return origin ? `${origin}${normalized}` : normalized
+}
+
+/**
  * Sidebar / cross-app 링크용 origin.
  * 이미지에 로컬 dev origin(`localhost:8888`)이 박혀 있어도 배포 URL(ALB·도메인)에서는 브라우저 현재 origin을 쓴다.
  * identity 단독 `:3000` dev 만 예외로 configured web-edge(8888)를 유지한다.
@@ -107,24 +138,6 @@ function effectiveWebEdgeOriginForHref(): string {
 }
 
 /**
- * 로컬은 web-edge `:8888` 단일 진입만 런타임 edge로 본다 (`docs/contracts/gateway-proxy.md`).
- * 그 외 localhost 포트(예: 앱 단독 dev 서버)는 null → {@link LOCAL_DEV_WEB_EDGE_ORIGIN} fallback.
- */
-function runtimeTeamShellEdgeOrigin(): string | null {
-  if (typeof window === "undefined") {
-    return null
-  }
-  const { origin, hostname, port } = window.location
-  if (hostname === "localhost" || hostname === "127.0.0.1") {
-    if (port === "8888") {
-      return origin.replace(/\/+$/, "")
-    }
-    return null
-  }
-  return origin.replace(/\/+$/, "")
-}
-
-/**
  * 사이드바「팀」→ Main Shell 팀 콘솔 절대 URL.
  * `NEXT_PUBLIC_TEAM_SHELL_HREF`가 http(s)면 그대로, `/…` 상대면 {@link teamShellEdgeOrigin}에 붙인다.
  * 둘 다 없으면 `NEXT_PUBLIC_WEB_EDGE_ORIGIN`(또는 legacy identity origin)이 있으면 `/teams`를 붙이고,
@@ -135,32 +148,18 @@ export function resolveTeamShellEntryHref(): string {
   const raw =
     typeof process !== "undefined" ? process.env.NEXT_PUBLIC_TEAM_SHELL_HREF?.trim() ?? "" : ""
   if (!raw) {
-    const edge = effectiveWebEdgeOriginForHref()
-    if (edge) {
-      if (typeof window !== "undefined") {
-        const current = window.location.origin.replace(/\/+$/, "")
-        if (edge === current) {
-          return TEAM_SHELL_PUBLIC_PATH
-        }
-      }
-      return `${edge}${TEAM_SHELL_PUBLIC_PATH}`
+    if (!isStandaloneMicroAppDev()) {
+      return TEAM_SHELL_PUBLIC_PATH
     }
-    const runtimeEdge = runtimeTeamShellEdgeOrigin()
-    if (runtimeEdge) {
-      return `${runtimeEdge}${TEAM_SHELL_PUBLIC_PATH}`
-    }
-    if (typeof window !== "undefined") {
-      return `${window.location.origin.replace(/\/+$/, "")}${TEAM_SHELL_PUBLIC_PATH}`
-    }
-    return `${LOCAL_DEV_WEB_EDGE_ORIGIN}${TEAM_SHELL_PUBLIC_PATH}`
+    const edge = effectiveWebEdgeOriginForHref() || teamShellEdgeOrigin()
+    return `${edge}${TEAM_SHELL_PUBLIC_PATH}`
   }
   const normalized = raw.replace(/\/+$/, "")
   if (normalized.startsWith("http://") || normalized.startsWith("https://")) {
     return normalized
   }
   const path = normalizePath(normalized)
-  const edge = effectiveWebEdgeOriginForHref() || teamShellEdgeOrigin()
-  return `${edge}${path}`
+  return preferRelativeWebEdgeHref(path)
 }
 
 /**
@@ -199,11 +198,7 @@ function consoleCrossAppHref(profile: ConsoleProfile, publicPath: string): strin
   if (profile === "identity") {
     return path
   }
-  const origin = effectiveWebEdgeOriginForHref()
-  if (!origin) {
-    return path
-  }
-  return `${origin}${path}`
+  return preferRelativeWebEdgeHref(path)
 }
 
 export type ConsoleNavLinkSpec =
@@ -317,17 +312,7 @@ export function identityWebOrigin(): string {
 }
 
 export function webEdgeHref(path: string): string {
-  const normalized = normalizePath(path)
-  if (typeof window === "undefined") {
-    const origin = configuredWebEdgeOrigin()
-    return origin ? `${origin}${normalized}` : normalized
-  }
-  const origin = effectiveWebEdgeOriginForHref()
-  const current = window.location.origin.replace(/\/+$/, "")
-  if (!origin || origin === current) {
-    return normalized
-  }
-  return `${origin}${normalized}`
+  return preferRelativeWebEdgeHref(path)
 }
 
 export function resolveWebEdgeLogoutPathsFromEnv(): {
@@ -350,11 +335,7 @@ export function notificationUnreadCountFetchUrl(profile: ConsoleProfile): string
   if (profile === "notification") {
     return NOTIFICATION_UNREAD_COUNT_PATH
   }
-  const origin = effectiveWebEdgeOriginForHref()
-  if (!origin) {
-    return NOTIFICATION_UNREAD_COUNT_PATH
-  }
-  return `${origin}${NOTIFICATION_UNREAD_COUNT_PATH}`
+  return preferRelativeWebEdgeHref(NOTIFICATION_UNREAD_COUNT_PATH)
 }
 
 /**
