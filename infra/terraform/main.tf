@@ -28,25 +28,25 @@ module "compute" {
   count  = var.enable_compute_stack ? 1 : 0
   source = "./modules/compute_stack"
 
-  project_name                = var.project_name
-  environment_label           = var.compute_environment_label
-  ecr_repository_prefix       = var.ecr_repository_prefix
-  instance_type               = var.compute_instance_type
-  asg_min_size                = var.compute_asg_min_size
-  asg_max_size                = var.compute_asg_max_size
-  asg_desired_capacity        = var.compute_asg_desired_capacity
-  target_port                 = var.alb_target_port
-  health_check_path           = var.alb_health_check_path
-  health_check_port           = var.alb_health_check_port
-  vpc_cidr                    = var.vpc_cidr
-  public_subnet_cidrs         = var.public_subnet_cidrs
-  bootstrap_git_clone_enabled = var.ec2_bootstrap_git_clone_enabled
-  bootstrap_git_clone_url     = var.ec2_bootstrap_git_clone_url != "" ? var.ec2_bootstrap_git_clone_url : "https://github.com/${var.github_org}/${var.github_repo}.git"
-  bootstrap_image_tag         = var.compute_bootstrap_image_tag
-  health_check_grace_period   = var.compute_health_check_grace_period
-  enable_ec2_rabbitmq             = var.enable_ec2_rabbitmq
-  ec2_rabbitmq_user               = var.ec2_rabbitmq_user
-  agent_credentials_secret_ids    = var.ec2_agent_credentials_secret_ids
+  project_name                 = var.project_name
+  environment_label            = var.compute_environment_label
+  ecr_repository_prefix        = var.ecr_repository_prefix
+  instance_type                = var.compute_instance_type
+  asg_min_size                 = var.compute_asg_min_size
+  asg_max_size                 = var.compute_asg_max_size
+  asg_desired_capacity         = var.compute_asg_desired_capacity
+  target_port                  = var.alb_target_port
+  health_check_path            = var.alb_health_check_path
+  health_check_port            = var.alb_health_check_port
+  vpc_cidr                     = var.vpc_cidr
+  public_subnet_cidrs          = var.public_subnet_cidrs
+  bootstrap_git_clone_enabled  = var.ec2_bootstrap_git_clone_enabled
+  bootstrap_git_clone_url      = var.ec2_bootstrap_git_clone_url != "" ? var.ec2_bootstrap_git_clone_url : "https://github.com/${var.github_org}/${var.github_repo}.git"
+  bootstrap_image_tag          = var.compute_bootstrap_image_tag
+  health_check_grace_period    = var.compute_health_check_grace_period
+  enable_ec2_rabbitmq          = var.enable_ec2_rabbitmq
+  ec2_rabbitmq_user            = var.ec2_rabbitmq_user
+  agent_credentials_secret_ids = var.ec2_agent_credentials_secret_ids
 }
 
 check "staging_rds_needs_compute_vpc" {
