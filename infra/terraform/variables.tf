@@ -186,6 +186,12 @@ variable "ec2_rabbitmq_user" {
   default     = "app"
 }
 
+variable "ec2_agent_credentials_secret_ids" {
+  type        = list(string)
+  description = "Secrets Manager secret ids for agent LLM keys (on-instance-compose-roll.sh). EC2 instance role receives secretsmanager:GetSecretValue."
+  default     = ["prod/ai-agent/credentials"]
+}
+
 variable "vpc_cidr" {
   type        = string
   description = "CIDR for optional VPC."

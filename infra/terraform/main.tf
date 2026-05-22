@@ -44,8 +44,9 @@ module "compute" {
   bootstrap_git_clone_url     = var.ec2_bootstrap_git_clone_url != "" ? var.ec2_bootstrap_git_clone_url : "https://github.com/${var.github_org}/${var.github_repo}.git"
   bootstrap_image_tag         = var.compute_bootstrap_image_tag
   health_check_grace_period   = var.compute_health_check_grace_period
-  enable_ec2_rabbitmq         = var.enable_ec2_rabbitmq
-  ec2_rabbitmq_user           = var.ec2_rabbitmq_user
+  enable_ec2_rabbitmq             = var.enable_ec2_rabbitmq
+  ec2_rabbitmq_user               = var.ec2_rabbitmq_user
+  agent_credentials_secret_ids    = var.ec2_agent_credentials_secret_ids
 }
 
 check "staging_rds_needs_compute_vpc" {
