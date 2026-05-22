@@ -49,15 +49,58 @@ function normalizePath(path: string): string {
 const LOCAL_DEV_WEB_EDGE_ORIGIN = "http://localhost:8888"
 const TEAM_SHELL_PUBLIC_PATH = "/teams"
 
+function configuredWebEdgeOrigin(): string {
+  if (typeof process === "undefined") {
+    return ""
+  }
+  return (
+    process.env.NEXT_PUBLIC_WEB_EDGE_ORIGIN?.trim() ||
+    process.env.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN?.trim() ||
+    ""
+  ).replace(/\/+$/, "")
+}
+
 function teamShellEdgeOrigin(): string {
   if (typeof process === "undefined") {
     return LOCAL_DEV_WEB_EDGE_ORIGIN
   }
-  const configured =
-    process.env.NEXT_PUBLIC_WEB_EDGE_ORIGIN?.trim() ||
-    process.env.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN?.trim() ||
-    ""
-  return configured.replace(/\/+$/, "") || LOCAL_DEV_WEB_EDGE_ORIGIN
+  return configuredWebEdgeOrigin() || LOCAL_DEV_WEB_EDGE_ORIGIN
+}
+
+/**
+ * Sidebar / cross-app 링크용 origin.
+ * 브라우저에서 빌드 시 박힌 NEXT_PUBLIC_* ALB 호스트와 현재 호스트가 다르면(인프라 재생성 후) 현재 origin 우선.
+ */
+function effectiveWebEdgeOriginForHref(): string {
+  const configured = configuredWebEdgeOrigin()
+  if (typeof window === "undefined") {
+    return configured
+  }
+  const current = window.location.origin.replace(/\/+$/, "")
+  const host = window.location.hostname
+  if (host.includes(".elb.amazonaws.com")) {
+    if (!configured) {
+      return current
+    }
+    try {
+      if (new URL(configured).hostname !== host) {
+        return current
+      }
+    } catch {
+      return current
+    }
+  }
+  const runtimeLocal = runtimeTeamShellEdgeOrigin()
+  if (runtimeLocal && configured) {
+    try {
+      if (new URL(configured).hostname !== new URL(runtimeLocal).hostname) {
+        return runtimeLocal
+      }
+    } catch {
+      return runtimeLocal
+    }
+  }
+  return configured
 }
 
 /**
@@ -89,14 +132,8 @@ export function resolveTeamShellEntryHref(): string {
   const raw =
     typeof process !== "undefined" ? process.env.NEXT_PUBLIC_TEAM_SHELL_HREF?.trim() ?? "" : ""
   if (!raw) {
-    const edge = teamShellEdgeOrigin()
-    const hasConfiguredOrigin =
-      typeof process !== "undefined" &&
-      Boolean(
-        process.env.NEXT_PUBLIC_WEB_EDGE_ORIGIN?.trim() ||
-          process.env.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN?.trim()
-      )
-    if (hasConfiguredOrigin) {
+    const edge = effectiveWebEdgeOriginForHref()
+    if (edge) {
       return `${edge}${TEAM_SHELL_PUBLIC_PATH}`
     }
     const runtimeEdge = runtimeTeamShellEdgeOrigin()
@@ -132,7 +169,7 @@ function consoleCrossAppHref(profile: ConsoleProfile, publicPath: string): strin
   if (profile === "identity") {
     return path
   }
-  const origin = webEdgeOrigin()
+  const origin = effectiveWebEdgeOriginForHref()
   if (!origin) {
     return path
   }
@@ -241,11 +278,7 @@ export function usageDashboardHref(): string {
  * as a fallback for older service env files, but new code should use NEXT_PUBLIC_WEB_EDGE_ORIGIN.
  */
 export function webEdgeOrigin(): string {
-  return (
-    process.env.NEXT_PUBLIC_WEB_EDGE_ORIGIN ??
-    process.env.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN ??
-    ""
-  ).replace(/\/$/, "")
+  return configuredWebEdgeOrigin()
 }
 
 /** @deprecated Use webEdgeOrigin. */
@@ -255,7 +288,7 @@ export function identityWebOrigin(): string {
 
 export function webEdgeHref(path: string): string {
   const normalized = normalizePath(path)
-  const origin = webEdgeOrigin()
+  const origin = effectiveWebEdgeOriginForHref()
   return origin ? `${origin}${normalized}` : normalized
 }
 
@@ -279,7 +312,7 @@ export function notificationUnreadCountFetchUrl(profile: ConsoleProfile): string
   if (profile === "notification") {
     return NOTIFICATION_UNREAD_COUNT_PATH
   }
-  const origin = webEdgeOrigin()
+  const origin = effectiveWebEdgeOriginForHref()
   if (!origin) {
     return NOTIFICATION_UNREAD_COUNT_PATH
   }
