@@ -8,10 +8,12 @@ spring:
     deserialization:
       fail-on-unknown-properties: false
   rabbitmq:
-    host: localhost
-    port: 5672
-    username: guest
-    password: guest
+    host: ${SPRING_RABBITMQ_HOST:localhost}
+    port: ${SPRING_RABBITMQ_PORT:5672}
+    username: ${SPRING_RABBITMQ_USERNAME:${RABBITMQ_USER:guest}}
+    password: ${SPRING_RABBITMQ_PASSWORD:${RABBITMQ_PASSWORD:guest}}
+    ssl:
+      enabled: ${SPRING_RABBITMQ_SSL_ENABLED:false}
 
 management:
   endpoints:
@@ -34,12 +36,24 @@ proxy:
     mock-key-google: ${PROXY_GOOGLE_TEST_API_KEY:}
     mock-key: ${PROXY_MOCK_KEY_FALLBACK:}
     cache-ttl: PT5M
-    # Contract-gap fallback for ext raw-key reverse lookup (identity/team not yet supporting reverse API).
+    # Dev-only: in-memory reverse lookup mocks (enable explicitly for local tests).
+    reverse-lookup-mocks-enabled: ${PROXY_REVERSE_LOOKUP_MOCKS_ENABLED:false}
     reverse-lookup-mocks: []
+  usage-subject:
+    enabled: ${PROXY_USAGE_SUBJECT_ENABLED:true}
+    cache-ttl: ${PROXY_USAGE_SUBJECT_CACHE_TTL:PT10M}
+  fingerprint-lookup:
+    enabled: ${PROXY_FINGERPRINT_LOOKUP_ENABLED:true}
+    internal-token: ${PROXY_FINGERPRINT_LOOKUP_TOKEN:${PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN:}}
+    positive-ttl: ${PROXY_FINGERPRINT_POSITIVE_TTL:PT10M}
+    negative-ttl: ${PROXY_FINGERPRINT_NEGATIVE_TTL:PT30S}
+    fingerprint-log-prefix-length: ${PROXY_FINGERPRINT_LOG_PREFIX_LENGTH:8}
   team-key-service:
     base-url: ${PROXY_TEAM_KEY_SERVICE_BASE_URL:http://localhost:8093}
     internal-token: ${PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN:change-this-team-internal-api-token}
     path-template: ${PROXY_TEAM_KEY_SERVICE_PATH_TEMPLATE:/internal/api-keys/{provider}}
+    # Ext team fingerprint plain-key hydration (team-service trusted internal API)
+    credential-path-template: ${PROXY_TEAM_KEY_CREDENTIAL_PATH_TEMPLATE:/internal/v1/team-api-keys/{keyId}/credential}
   rabbit:
     usage-exchange: usage.events
     usage-routing-key: usage.recorded

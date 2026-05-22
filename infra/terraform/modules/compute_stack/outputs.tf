@@ -42,3 +42,32 @@ output "asg_name" {
   value       = aws_autoscaling_group.app.name
   description = "Auto Scaling group name (alpha stop/start scripts)."
 }
+
+output "ec2_rabbitmq_enabled" {
+  value       = var.enable_ec2_rabbitmq
+  description = "True when user-data installs RabbitMQ on the host via Docker."
+}
+
+output "ec2_rabbitmq_user" {
+  value       = var.enable_ec2_rabbitmq ? var.ec2_rabbitmq_user : null
+  description = "Broker username written to terraform-rabbitmq.env on the instance."
+}
+
+output "ec2_rabbitmq_password" {
+  value       = var.enable_ec2_rabbitmq ? random_password.ec2_rabbitmq[0].result : null
+  description = "Sensitive. Broker password; also in terraform output ec2_rabbitmq_deploy_env."
+  sensitive   = true
+}
+
+output "ec2_rabbitmq_deploy_env" {
+  value = var.enable_ec2_rabbitmq ? {
+    RABBITMQ_HOST             = "host.docker.internal"
+    RABBITMQ_PORT             = "5672"
+    RABBITMQ_USER             = var.ec2_rabbitmq_user
+    RABBITMQ_PASSWORD         = random_password.ec2_rabbitmq[0].result
+    RABBITMQ_SSL_ENABLED      = "false"
+    NOTIFICATION_RABBITMQ_URL = local.ec2_rabbitmq_notification_url
+  } : null
+  description = "Sensitive map for .env.deploy RABBITMQ_* (host uses host.docker.internal from app containers)."
+  sensitive   = true
+}

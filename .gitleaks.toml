@@ -8,9 +8,10 @@ title = "ai-api-usage-monitor gitleaks"
 useDefault = true
 
 [allowlist]
-description = "Vitest cookie fixtures; documented placeholders in .env.example / .env.deploy.example (not production secrets)"
+description = "Vitest cookie fixtures; proxy BFF test fingerprints; documented placeholders in .env.example / .env.deploy.example (not production secrets)"
 paths = [
   '''services/[^/]+/web/middleware\.test\.ts$''',
+  '''services/proxy-service/src/test/java/com/eevee/proxyservice/security/UserContextResolverTest\.java$''',
   '''^\.env\.example$''',
   '''^\.env\.deploy\.example$''',
 ]

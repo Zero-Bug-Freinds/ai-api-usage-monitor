@@ -110,8 +110,8 @@ public class UsageBffDashboardController {
             if (explicit == UsageDashboardMode.TEAM_TOTAL && (teamId == null || userId != null)) {
                 throw new IllegalArgumentException("TEAM_TOTAL mode requires teamId and disallows userId");
             }
-            if (explicit == UsageDashboardMode.TEAM_MEMBER && (teamId == null || userId == null || apiKeyId != null)) {
-                throw new IllegalArgumentException("TEAM_MEMBER mode requires teamId/userId and disallows apiKeyId");
+            if (explicit == UsageDashboardMode.TEAM_MEMBER && (teamId == null || userId == null)) {
+                throw new IllegalArgumentException("TEAM_MEMBER mode requires teamId and userId");
             }
             return explicit;
         }
@@ -120,9 +120,6 @@ public class UsageBffDashboardController {
                 throw new IllegalArgumentException("PERSONAL mode does not accept team/member filters");
             }
             return UsageDashboardMode.PERSONAL;
-        }
-        if (userId != null && apiKeyId != null) {
-            throw new IllegalArgumentException("TEAM_MEMBER mode does not accept apiKeyId");
         }
         return userId == null ? UsageDashboardMode.TEAM_TOTAL : UsageDashboardMode.TEAM_MEMBER;
     }

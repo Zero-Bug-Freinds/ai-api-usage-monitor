@@ -2,11 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { BillingTeamBudgetThresholdReachedEventPayload } from './billing-team-budget-threshold-event.schema';
+import {
+  IN_APP_DELIVERY_CHANNEL,
+  IN_APP_DELIVERY_STATUS,
+} from '../in-app-notifications/in-app-delivery.constants';
+import { buildBillingTeamApiKeyBudgetThresholdCopy } from './billing-notification-templates';
 import { buildBillingTeamBudgetInAppDedupeKey } from './billing-team-dedupe-keys';
 import { TeamServiceClient } from './team-service.client';
-
-const IN_APP_CHANNEL = 'in-app';
-const DELIVERY_STATUS = 'delivered';
 
 @Injectable()
 export class BillingTeamInAppNotificationHandlerService {
@@ -54,17 +56,15 @@ export class BillingTeamInAppNotificationHandlerService {
         continue;
       }
 
-      const title = '팀 API 키 예산 임계치 도달';
-      const pct = Math.round(payload.thresholdPct * 100);
-      const body = `팀 ${teamName}의 ${payload.provider} API 키(${payload.apiKeyAlias}) 사용량이 월 예산의 ${pct}%를 넘었습니다.`;
+      const copy = buildBillingTeamApiKeyBudgetThresholdCopy({ teamName, payload });
 
       try {
         await this.prisma.$transaction(async (tx) => {
           await tx.notificationDelivery.create({
             data: {
               dedupeKey,
-              channel: IN_APP_CHANNEL,
-              status: DELIVERY_STATUS,
+              channel: IN_APP_DELIVERY_CHANNEL,
+              status: IN_APP_DELIVERY_STATUS,
               payload: {
                 eventType: 'BILLING_TEAM_API_KEY_BUDGET_THRESHOLD_REACHED',
                 teamId: payload.teamId,
@@ -81,8 +81,8 @@ export class BillingTeamInAppNotificationHandlerService {
           await tx.inAppNotification.create({
             data: {
               userId: targetUserId,
-              title,
-              body,
+              title: copy.title,
+              body: copy.body,
               type: 'billing:team-api-key-budget-threshold',
             },
           });

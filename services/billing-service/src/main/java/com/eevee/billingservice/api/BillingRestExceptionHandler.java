@@ -32,6 +32,11 @@ public class BillingRestExceptionHandler {
         this.billingProperties = billingProperties;
     }
 
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<String> handleIllegalArgument(IllegalArgumentException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ex.getMessage());
+    }
+
     @ExceptionHandler(DataAccessException.class)
     public ResponseEntity<Map<String, Object>> handleDataAccess(
             DataAccessException ex,

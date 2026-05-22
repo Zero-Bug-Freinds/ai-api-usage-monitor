@@ -9,7 +9,8 @@ public record UserContext(
         String requestedApiKeyId,
         String requestedApiKeyAlias,
         String extUserId,
-        String rawApiKey
+        String rawApiKey,
+        String apiKeyFingerprint64
 ) {
     /**
      * Internal API key lookup uses numeric user PK when present; otherwise falls back to gateway subject (e.g. email).
@@ -20,5 +21,9 @@ public record UserContext(
 
     public boolean hasUserContext() {
         return keyLookupUserId() != null && !keyLookupUserId().isBlank();
+    }
+
+    public boolean hasFingerprintMaterial() {
+        return apiKeyFingerprint64 != null && !apiKeyFingerprint64.isBlank();
     }
 }

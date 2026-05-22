@@ -6,6 +6,7 @@ import com.eevee.usageservice.domain.ApiKeyMetadataEntity;
 import com.eevee.usageservice.domain.ApiKeyMetadataScope;
 import com.eevee.usageservice.domain.ApiKeyStatus;
 import com.eevee.usageservice.repository.ApiKeyMetadataRepository;
+import com.eevee.usageservice.service.filter.UsageApiKeyFilterConsolidationService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -24,13 +25,16 @@ public class TeamBffQueryService {
 
     private final TeamServiceClient teamServiceClient;
     private final ApiKeyMetadataRepository apiKeyMetadataRepository;
+    private final UsageApiKeyFilterConsolidationService apiKeyFilterConsolidationService;
 
     public TeamBffQueryService(
             TeamServiceClient teamServiceClient,
-            ApiKeyMetadataRepository apiKeyMetadataRepository
+            ApiKeyMetadataRepository apiKeyMetadataRepository,
+            UsageApiKeyFilterConsolidationService apiKeyFilterConsolidationService
     ) {
         this.teamServiceClient = teamServiceClient;
         this.apiKeyMetadataRepository = apiKeyMetadataRepository;
+        this.apiKeyFilterConsolidationService = apiKeyFilterConsolidationService;
     }
 
     @Transactional(readOnly = true)
@@ -58,7 +62,7 @@ public class TeamBffQueryService {
         for (ApiKeyMetadataEntity m : rows) {
             byLogicalKey.putIfAbsent(m.getKeyId(), m);
         }
-        return byLogicalKey.values().stream()
+        List<TeamApiKeyOptionItem> raw = byLogicalKey.values().stream()
                 .sorted((a, b) -> a.getKeyId().compareTo(b.getKeyId()))
                 .map(entity -> new TeamApiKeyOptionItem(
                         entity.getKeyId(),
@@ -68,5 +72,6 @@ public class TeamBffQueryService {
                         entity.getStatus().name()
                 ))
                 .toList();
+        return apiKeyFilterConsolidationService.consolidateTeam(raw, teamId.trim());
     }
 }

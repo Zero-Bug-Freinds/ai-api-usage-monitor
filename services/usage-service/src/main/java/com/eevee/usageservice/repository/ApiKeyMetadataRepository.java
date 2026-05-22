@@ -71,4 +71,56 @@ public interface ApiKeyMetadataRepository extends JpaRepository<ApiKeyMetadataEn
                     """
     )
     int deleteAllTeamMetadataRowsForKey(@Param("keyId") String keyId, @Param("teamId") String teamId);
+
+    @Query(
+            """
+                    select m from ApiKeyMetadataEntity m
+                    where m.id.keyId in :keyIds
+                    and m.id.userId = :userId
+                    and m.id.keyScope = com.eevee.usageservice.domain.ApiKeyMetadataScope.PERSONAL
+                    """
+    )
+    List<ApiKeyMetadataEntity> findPersonalByKeyIds(
+            @Param("userId") String userId,
+            @Param("keyIds") Collection<String> keyIds
+    );
+
+    @Query(
+            """
+                    select m from ApiKeyMetadataEntity m
+                    where m.id.keyId in :keyIds
+                    and m.teamId = :teamId
+                    and m.id.keyScope = com.eevee.usageservice.domain.ApiKeyMetadataScope.TEAM
+                    """
+    )
+    List<ApiKeyMetadataEntity> findTeamByKeyIds(
+            @Param("teamId") String teamId,
+            @Param("keyIds") Collection<String> keyIds
+    );
+
+    @Query(
+            """
+                    select m from ApiKeyMetadataEntity m
+                    where m.id.userId = :userId
+                    and m.id.keyScope = com.eevee.usageservice.domain.ApiKeyMetadataScope.PERSONAL
+                    and m.keyHash = :keyHash
+                    """
+    )
+    List<ApiKeyMetadataEntity> findPersonalByKeyHash(
+            @Param("userId") String userId,
+            @Param("keyHash") String keyHash
+    );
+
+    @Query(
+            """
+                    select m from ApiKeyMetadataEntity m
+                    where m.teamId = :teamId
+                    and m.id.keyScope = com.eevee.usageservice.domain.ApiKeyMetadataScope.TEAM
+                    and m.keyHash = :keyHash
+                    """
+    )
+    List<ApiKeyMetadataEntity> findTeamByKeyHash(
+            @Param("teamId") String teamId,
+            @Param("keyHash") String keyHash
+    );
 }

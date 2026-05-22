@@ -1,4 +1,5 @@
 import type { BillingBudgetThresholdReachedEventPayload } from './billing-budget-threshold-event.schema';
+import type { BillingTeamBudgetThresholdReachedEventPayload } from './billing-team-budget-threshold-event.schema';
 
 export interface BillingNotificationCopy {
   title: string;
@@ -33,6 +34,17 @@ export function buildBillingBudgetThresholdCopy(
   return {
     title: 'Budget threshold reached',
     body: `This month’s spend for ${keyLabel} exceeded ${thresholdPct}% of your monthly budget (total ${total} / budget ${budget}).`,
+  };
+}
+
+export function buildBillingTeamApiKeyBudgetThresholdCopy(params: {
+  teamName: string;
+  payload: BillingTeamBudgetThresholdReachedEventPayload;
+}): BillingNotificationCopy {
+  const pct = Math.round(params.payload.thresholdPct * 100);
+  return {
+    title: '팀 API 키 예산 임계치 도달',
+    body: `팀 ${params.teamName}의 ${params.payload.provider} API 키(${params.payload.apiKeyAlias}) 사용량이 월 예산의 ${pct}%를 넘었습니다.`,
   };
 }
 

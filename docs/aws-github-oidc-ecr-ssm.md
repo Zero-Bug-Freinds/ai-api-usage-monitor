@@ -184,9 +184,9 @@ When `enable_compute_stack` and `enable_staging_rds` are on, use the repo script
 | [`scripts/ops/alpha-stack-stop.sh`](../scripts/ops/alpha-stack-stop.sh) | Stop EC2, then stop RDS (passwords and `.env.deploy` on the same volume are kept) |
 | [`scripts/ops/alpha-stack-start.sh`](../scripts/ops/alpha-stack-start.sh) | Start RDS, wait until `available`, start EC2 (systemd may run `ec2-boot-compose.sh`) |
 
-**Still billed while “stopped”:** ALB, Amazon MQ (`is_alpha_test`), EBS, RDS storage. MQ has no stop API — only delete (destroy) to remove that charge.
+**Still billed while “stopped”:** ALB, EBS, RDS storage.
 
-**Do not** use `terraform destroy` for nightly shutdown if you want stable RDS/MQ passwords and data; use these scripts instead.
+**Do not** use `terraform destroy` for nightly shutdown if you want stable RDS passwords and data; use these scripts instead. RabbitMQ (if installed on EC2) stops with the instance.
 
 ---
 
@@ -194,6 +194,7 @@ When `enable_compute_stack` and `enable_staging_rds` are on, use the repo script
 
 - **Do not** commit production `.env.deploy`. On the host, create `/opt/ai-api-usage-monitor/.env.deploy` (path configurable) from Parameter Store at boot or via SSM `GetParameters` in a thin wrapper before `docker compose`.
 - **Pattern**: `/ai-api/staging/IDENTITY_POSTGRES_PASSWORD` (hierarchy by environment); export into `.env.deploy` or use `docker compose --env-file` with a generated file (mode `0600`, root-owned).
+- **Gateway (Task56):** with `GATEWAY_DEV_MODE=false` (prod compose default), set **`GATEWAY_INTERNAL_BEARER_TOKEN`** (32+ chars) and keep **`JWT_SECRET` = `GATEWAY_JWT_SECRET`**. See [gateway-proxy.md §5.1](contracts/gateway-proxy.md). `scripts/deploy/validate-env-deploy.sh` reports gateway gaps as **WARN only** (does not block roll); confirm env before **api-gateway** `--force-recreate`.
 - **Rotation**: prefer Secrets Manager rotation + task to refresh env file and `docker compose up -d` for affected services.
 
 ---
@@ -232,5 +233,6 @@ The ALB listener stays **HTTP :80** on the load balancer; targets are **instance
 2. **Per Environment variables:** `AWS_REGION`, optional `ECR_REPOSITORY_PREFIX`, `ALB_TARGET_GROUP_ARN` (set for post-Release auto roll), `SSM_DEPLOY_ROOT` (use `terraform output ssm_deploy_root_default`), optional `TARGET_PORT` (use `terraform output alb_target_port`, or leave unset — workflows default to **8888**), Next public origins for `release` (`NEXT_PUBLIC_*` as needed). **Release / Deploy OIDC role ARNs** are pinned in [`.github/workflows/release.yml`](../.github/workflows/release.yml) and [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) `env`; after `terraform apply`, ensure those ARNs match **`terraform output aws_release_role_arn`** / **`aws_deploy_role_arn`**, or switch the workflows back to `vars.AWS_*_ROLE_ARN` if you prefer Environment-stored ARNs.
 3. **Terraform from GitHub Actions (optional):** repository secrets `AWS_SECRET_ACCESS_KEY` and `AWS_ACCESS_KEY_ID` (or `AWS_ACCESS_KEY`) for [`.github/workflows/terraform-aws.yml`](../.github/workflows/terraform-aws.yml); optional repo variable `AWS_REGION`.
 4. Branch rules: require CI green before merge to `develop` / `main`; optional rule to require `Release` success after merge.
+5. **Messaging (RabbitMQ):** this stack does **not** use **Amazon MQ**. With **`enable_ec2_rabbitmq`** (Terraform default when compute is on), the broker runs in **Docker on the EC2 host**; app containers use **`RABBITMQ_HOST=host.docker.internal`** in [`.env.deploy.example`](../.env.deploy.example) / deploy roll merge from `terraform-rabbitmq.env`. Do not point `RABBITMQ_*` at an `*.mq.amazonaws.com` endpoint unless you deliberately change the architecture.
 
 Details and output mapping: **[`infra/terraform/README.md`](../infra/terraform/README.md)**.

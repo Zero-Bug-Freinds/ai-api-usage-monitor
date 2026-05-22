@@ -28,6 +28,7 @@ import org.springframework.util.StringUtils;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 @Service
 public class ApiKeyMetadataSyncService {
@@ -62,7 +63,8 @@ public class ApiKeyMetadataSyncService {
                 .orElseGet(() -> ApiKeyMetadataEntity.createPersonal(keyId, userId));
 
         String alias = StringUtils.hasText(event.alias()) ? event.alias().trim() : entity.getAlias();
-        entity.apply(null, event.provider(), alias, mapStatus(event.status()), updatedAt);
+        String keyHash = normalizeKeyHash(event.keyHash());
+        entity.apply(null, event.provider(), alias, mapStatus(event.status()), updatedAt, keyHash);
         apiKeyMetadataRepository.save(entity);
     }
 
@@ -182,12 +184,14 @@ public class ApiKeyMetadataSyncService {
             String alias = StringUtils.hasText(event.apiKeyAlias()) ? event.apiKeyAlias().trim() : entity.getAlias();
             String teamIdForApply = StringUtils.hasText(normalizedTeamId) ? normalizedTeamId : entity.getTeamId();
             String resolvedProvider = resolveProviderStringFromUsage(event, entity);
+            String keyHash = normalizeKeyHash(event.apiKeyFingerprint());
             entity.apply(
                     teamIdForApply,
                     resolvedProvider,
                     alias,
                     entity.getStatus() != null ? entity.getStatus() : ApiKeyStatus.ACTIVE,
-                    updatedAt
+                    updatedAt,
+                    keyHash
             );
             apiKeyMetadataRepository.save(entity);
             return;
@@ -200,14 +204,23 @@ public class ApiKeyMetadataSyncService {
 
         String alias = StringUtils.hasText(event.apiKeyAlias()) ? event.apiKeyAlias().trim() : entity.getAlias();
         String resolvedProvider = resolveProviderStringFromUsage(event, entity);
+        String keyHash = normalizeKeyHash(event.apiKeyFingerprint());
         entity.apply(
                 null,
                 resolvedProvider,
                 alias,
                 entity.getStatus() != null ? entity.getStatus() : ApiKeyStatus.ACTIVE,
-                updatedAt
+                updatedAt,
+                keyHash
         );
         apiKeyMetadataRepository.save(entity);
+    }
+
+    private static String normalizeKeyHash(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return null;
+        }
+        return raw.trim().toLowerCase(Locale.ROOT);
     }
 
     private static String resolvePersonalMetadataOwnerUserId(UsageRecordedEvent event, String metadataKeyId) {

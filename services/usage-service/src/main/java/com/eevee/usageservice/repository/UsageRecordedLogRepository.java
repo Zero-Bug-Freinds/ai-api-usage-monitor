@@ -12,12 +12,24 @@ import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
 public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedLogEntity, UUID> {
 
     long countByApiKeyId(String apiKeyId);
+
+    @Query(
+            """
+                    select distinct u.apiKeyId, u.apiKeyFingerprint
+                    from UsageRecordedLogEntity u
+                    where u.apiKeyId in :apiKeyIds
+                    and u.apiKeyFingerprint is not null
+                    and trim(u.apiKeyFingerprint) <> ''
+                    """
+    )
+    List<Object[]> findFingerprintsByApiKeyIds(@Param("apiKeyIds") Collection<String> apiKeyIds);
 
     boolean existsByEventId(UUID eventId);
 
@@ -39,7 +51,13 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
                     and u.occurredAt < :toExclusive
                     and (u.teamId is null or trim(u.teamId) = '')
                     and (:provider is null or u.provider = :provider)
-                    and (:apiKeyId is null or :apiKeyId = '' or u.apiKeyId = :apiKeyId)
+                    and (
+                        :applyCredentialFilter = false
+                        or u.apiKeyId in :credentialApiKeyIds
+                        or (u.teamApiKeyId is not null and u.teamApiKeyId in :credentialApiKeyIds)
+                        or (:credentialFingerprint is not null and :credentialFingerprint <> ''
+                            and u.apiKeyFingerprint = :credentialFingerprint)
+                    )
                     and (:requestSuccessful is null or u.requestSuccessful = :requestSuccessful)
                     and (:modelMask is null or :modelMask = '' or lower(coalesce(u.model, '')) like lower(concat('%', :modelMask, '%')))
                     and (
@@ -56,7 +74,13 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
                     and u.occurredAt < :toExclusive
                     and (u.teamId is null or trim(u.teamId) = '')
                     and (:provider is null or u.provider = :provider)
-                    and (:apiKeyId is null or :apiKeyId = '' or u.apiKeyId = :apiKeyId)
+                    and (
+                        :applyCredentialFilter = false
+                        or u.apiKeyId in :credentialApiKeyIds
+                        or (u.teamApiKeyId is not null and u.teamApiKeyId in :credentialApiKeyIds)
+                        or (:credentialFingerprint is not null and :credentialFingerprint <> ''
+                            and u.apiKeyFingerprint = :credentialFingerprint)
+                    )
                     and (:requestSuccessful is null or u.requestSuccessful = :requestSuccessful)
                     and (:modelMask is null or :modelMask = '' or lower(coalesce(u.model, '')) like lower(concat('%', :modelMask, '%')))
                     and (
@@ -71,7 +95,9 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
             @Param("from") Instant from,
             @Param("toExclusive") Instant toExclusive,
             @Param("provider") AiProvider provider,
-            @Param("apiKeyId") String apiKeyId,
+            @Param("applyCredentialFilter") boolean applyCredentialFilter,
+            @Param("credentialApiKeyIds") Collection<String> credentialApiKeyIds,
+            @Param("credentialFingerprint") String credentialFingerprint,
             @Param("requestSuccessful") Boolean requestSuccessful,
             @Param("modelMask") String modelMask,
             @Param("reasoningPresence") String reasoningPresence,
@@ -89,7 +115,13 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
                     and u.teamId is not null
                     and trim(u.teamId) <> ''
                     and (:provider is null or u.provider = :provider)
-                    and (:apiKeyId is null or :apiKeyId = '' or u.apiKeyId = :apiKeyId)
+                    and (
+                        :applyCredentialFilter = false
+                        or u.apiKeyId in :credentialApiKeyIds
+                        or (u.teamApiKeyId is not null and u.teamApiKeyId in :credentialApiKeyIds)
+                        or (:credentialFingerprint is not null and :credentialFingerprint <> ''
+                            and u.apiKeyFingerprint = :credentialFingerprint)
+                    )
                     and (:requestSuccessful is null or u.requestSuccessful = :requestSuccessful)
                     and (:modelMask is null or :modelMask = '' or lower(coalesce(u.model, '')) like lower(concat('%', :modelMask, '%')))
                     and (
@@ -107,7 +139,13 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
                     and u.teamId is not null
                     and trim(u.teamId) <> ''
                     and (:provider is null or u.provider = :provider)
-                    and (:apiKeyId is null or :apiKeyId = '' or u.apiKeyId = :apiKeyId)
+                    and (
+                        :applyCredentialFilter = false
+                        or u.apiKeyId in :credentialApiKeyIds
+                        or (u.teamApiKeyId is not null and u.teamApiKeyId in :credentialApiKeyIds)
+                        or (:credentialFingerprint is not null and :credentialFingerprint <> ''
+                            and u.apiKeyFingerprint = :credentialFingerprint)
+                    )
                     and (:requestSuccessful is null or u.requestSuccessful = :requestSuccessful)
                     and (:modelMask is null or :modelMask = '' or lower(coalesce(u.model, '')) like lower(concat('%', :modelMask, '%')))
                     and (
@@ -122,7 +160,9 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
             @Param("from") Instant from,
             @Param("toExclusive") Instant toExclusive,
             @Param("provider") AiProvider provider,
-            @Param("apiKeyId") String apiKeyId,
+            @Param("applyCredentialFilter") boolean applyCredentialFilter,
+            @Param("credentialApiKeyIds") Collection<String> credentialApiKeyIds,
+            @Param("credentialFingerprint") String credentialFingerprint,
             @Param("requestSuccessful") Boolean requestSuccessful,
             @Param("modelMask") String modelMask,
             @Param("reasoningPresence") String reasoningPresence,
@@ -199,7 +239,13 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
                     and u.occurredAt >= :from
                     and u.occurredAt < :toExclusive
                     and (:provider is null or u.provider = :provider)
-                    and (:apiKeyId is null or :apiKeyId = '' or u.apiKeyId = :apiKeyId)
+                    and (
+                        :applyCredentialFilter = false
+                        or u.apiKeyId in :credentialApiKeyIds
+                        or (u.teamApiKeyId is not null and u.teamApiKeyId in :credentialApiKeyIds)
+                        or (:credentialFingerprint is not null and :credentialFingerprint <> ''
+                            and u.apiKeyFingerprint = :credentialFingerprint)
+                    )
                     and (:requestSuccessful is null or u.requestSuccessful = :requestSuccessful)
                     and (:modelMask is null or :modelMask = '' or lower(coalesce(u.model, '')) like lower(concat('%', :modelMask, '%')))
                     and (
@@ -215,7 +261,13 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
                     and u.occurredAt >= :from
                     and u.occurredAt < :toExclusive
                     and (:provider is null or u.provider = :provider)
-                    and (:apiKeyId is null or :apiKeyId = '' or u.apiKeyId = :apiKeyId)
+                    and (
+                        :applyCredentialFilter = false
+                        or u.apiKeyId in :credentialApiKeyIds
+                        or (u.teamApiKeyId is not null and u.teamApiKeyId in :credentialApiKeyIds)
+                        or (:credentialFingerprint is not null and :credentialFingerprint <> ''
+                            and u.apiKeyFingerprint = :credentialFingerprint)
+                    )
                     and (:requestSuccessful is null or u.requestSuccessful = :requestSuccessful)
                     and (:modelMask is null or :modelMask = '' or lower(coalesce(u.model, '')) like lower(concat('%', :modelMask, '%')))
                     and (
@@ -230,7 +282,9 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
             @Param("from") Instant from,
             @Param("toExclusive") Instant toExclusive,
             @Param("provider") AiProvider provider,
-            @Param("apiKeyId") String apiKeyId,
+            @Param("applyCredentialFilter") boolean applyCredentialFilter,
+            @Param("credentialApiKeyIds") Collection<String> credentialApiKeyIds,
+            @Param("credentialFingerprint") String credentialFingerprint,
             @Param("requestSuccessful") Boolean requestSuccessful,
             @Param("modelMask") String modelMask,
             @Param("reasoningPresence") String reasoningPresence,
@@ -247,7 +301,13 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
                     and u.occurredAt >= :from
                     and u.occurredAt < :toExclusive
                     and (:provider is null or u.provider = :provider)
-                    and (:apiKeyId is null or :apiKeyId = '' or u.apiKeyId = :apiKeyId)
+                    and (
+                        :applyCredentialFilter = false
+                        or u.apiKeyId in :credentialApiKeyIds
+                        or (u.teamApiKeyId is not null and u.teamApiKeyId in :credentialApiKeyIds)
+                        or (:credentialFingerprint is not null and :credentialFingerprint <> ''
+                            and u.apiKeyFingerprint = :credentialFingerprint)
+                    )
                     and (:requestSuccessful is null or u.requestSuccessful = :requestSuccessful)
                     and (:modelMask is null or :modelMask = '' or lower(coalesce(u.model, '')) like lower(concat('%', :modelMask, '%')))
                     and (
@@ -264,7 +324,13 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
                     and u.occurredAt >= :from
                     and u.occurredAt < :toExclusive
                     and (:provider is null or u.provider = :provider)
-                    and (:apiKeyId is null or :apiKeyId = '' or u.apiKeyId = :apiKeyId)
+                    and (
+                        :applyCredentialFilter = false
+                        or u.apiKeyId in :credentialApiKeyIds
+                        or (u.teamApiKeyId is not null and u.teamApiKeyId in :credentialApiKeyIds)
+                        or (:credentialFingerprint is not null and :credentialFingerprint <> ''
+                            and u.apiKeyFingerprint = :credentialFingerprint)
+                    )
                     and (:requestSuccessful is null or u.requestSuccessful = :requestSuccessful)
                     and (:modelMask is null or :modelMask = '' or lower(coalesce(u.model, '')) like lower(concat('%', :modelMask, '%')))
                     and (
@@ -280,7 +346,9 @@ public interface UsageRecordedLogRepository extends JpaRepository<UsageRecordedL
             @Param("from") Instant from,
             @Param("toExclusive") Instant toExclusive,
             @Param("provider") AiProvider provider,
-            @Param("apiKeyId") String apiKeyId,
+            @Param("applyCredentialFilter") boolean applyCredentialFilter,
+            @Param("credentialApiKeyIds") Collection<String> credentialApiKeyIds,
+            @Param("credentialFingerprint") String credentialFingerprint,
             @Param("requestSuccessful") Boolean requestSuccessful,
             @Param("modelMask") String modelMask,
             @Param("reasoningPresence") String reasoningPresence,

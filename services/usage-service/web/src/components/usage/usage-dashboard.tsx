@@ -23,8 +23,18 @@ import {
 } from "recharts"
 
 import { Button } from "@ai-usage/ui"
-import { buildUsageQuery, fetchUsageJson } from "@/lib/usage/fetch-usage"
-import { teamUsageBffBase } from "@/lib/usage/team-usage-bff-base"
+import { buildUsageQuery, fetchUsageJson } from "@/lib/usage/api/fetch-usage"
+import {
+  latencyInsightBannerText,
+  logDashboardMainError,
+  logDashboardMemberTeamsError,
+  logPersonalDashboardApiKeysFetch,
+  PERSONAL_DASHBOARD_MESSAGES,
+  resolveEmptyDashboardHint,
+  toDashboardMainErrorMessage,
+} from "@/lib/usage/messaging/dashboard-messages"
+import { warnStorageError } from "@/lib/usage/messaging/storage-errors"
+import { teamUsageBffBase } from "@/lib/usage/api/team-usage-bff-base"
 import {
   MY_USAGE_BY_TEAM_LAST_SELECTED_TEAM_ID,
   type MemberTeamSummary,
@@ -53,9 +63,9 @@ import {
   teamBffRowsToUsageMenuItems,
   type TeamBffApiKeyRow,
 } from "@/lib/usage/dashboard-provider-api-keys"
-import { useDashboardAggregateApiKeySync } from "@/lib/usage/use-dashboard-aggregate-api-key"
+import { useDashboardAggregateApiKeySync } from "@/lib/usage/hooks/use-dashboard-aggregate-api-key"
 import { UsageFilterBar } from "@/components/usage/usage-filter-bar"
-import { useFilterStorage } from "@/lib/usage/use-filter-storage"
+import { useFilterStorage } from "@/lib/usage/hooks/use-filter-storage"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const AnyLegend = Legend as any
@@ -446,27 +456,6 @@ type LatencyChartRow = LatencyStabilityPoint & {
   bandSpread: number
 }
 
-/** comparePhrase: {@link costCompareLabel} 값 — 예: 「이전 7일 대비」, 「전일 동기 대비」 */
-function latencyInsightBannerText(insight: LatencyInsightResponse | null, comparePhrase: string): string {
-  if (!insight || insight.currentAvgLatencyMs == null) {
-    return "선택 구간에 지연(latency) 데이터가 없거나 부족합니다."
-  }
-  if (insight.previousAvgLatencyMs == null) {
-    return "이전 동일 길이 구간의 평균 지연과 비교할 수 없습니다."
-  }
-  const cp = insight.changePercent
-  if (cp == null) return `평균 응답 지연은 ${formatLatencyMsHuman(insight.currentAvgLatencyMs)}입니다.`
-  const abs = Math.abs(cp).toFixed(1)
-  if (Math.abs(cp) < 0.05) {
-    return `평균 응답 지연이 ${comparePhrase}와 거의 같습니다 (${formatLatencyMsHuman(insight.currentAvgLatencyMs)}).`
-  }
-  const improved = cp < 0
-  if (improved) {
-    return `평균 응답 지연이 ${comparePhrase} ${abs}% 개선되었습니다 (현재 ${formatLatencyMsHuman(insight.currentAvgLatencyMs)}).`
-  }
-  return `평균 응답 지연이 ${comparePhrase} ${abs}% 악화되었습니다 (현재 ${formatLatencyMsHuman(insight.currentAvgLatencyMs)}).`
-}
-
 type LatencyStabilityTooltipProps = {
   active?: boolean
   label?: string | number
@@ -643,6 +632,18 @@ function isAbortError(e: unknown): boolean {
   )
 }
 
+function messageFromJsonBody(body: unknown): string | null {
+  if (!body || typeof body !== "object") return null
+  const record = body as Record<string, unknown>
+  if (typeof record.message === "string" && record.message.length > 0) {
+    return record.message
+  }
+  if (typeof record.error === "string" && record.error.length > 0) {
+    return record.error
+  }
+  return null
+}
+
 const H_BAR_MARGIN = { left: 8, right: 16 }
 /** 토큰 스택 막대: 행당 높이·차트 높이 상한 (가독성·스크롤 균형) */
 const TOKEN_ROW_HEIGHT_PX = 36
@@ -722,17 +723,33 @@ export function UsageDashboard() {
       const base = teamUsageBffBase()
       if (!base) {
         if (!cancelled) {
-          setMemberTeamsErr("사용량 API 베이스 URL을 확인할 수 없습니다")
+          logDashboardMemberTeamsError({
+            reason: "missing_team_bff_base",
+            originalMessage: PERSONAL_DASHBOARD_MESSAGES.errors.internalLog.missingTeamBffBase,
+          })
+          setMemberTeamsErr(PERSONAL_DASHBOARD_MESSAGES.errors.memberTeamsEnv)
           setMemberTeams([])
           setMemberTeamsLoading(false)
         }
         return
       }
+      const teamsUrl = `${base}/teams`
       try {
-        const res = await fetch(`${base}/teams`, { credentials: "include", headers: { Accept: "application/json" } })
+        const res = await fetch(teamsUrl, { credentials: "include", headers: { Accept: "application/json" } })
         const json = (await res.json()) as { teams?: unknown }
         if (!res.ok || !Array.isArray(json.teams)) {
-          if (!cancelled) setMemberTeamsErr("팀 목록을 불러오지 못했습니다")
+          if (!cancelled) {
+            const upstreamMessage = !res.ok
+              ? messageFromJsonBody(json) ?? res.statusText
+              : PERSONAL_DASHBOARD_MESSAGES.errors.internalLog.teamsPayloadNotArray
+            logDashboardMemberTeamsError({
+              request: teamsUrl,
+              status: res.status,
+              statusText: res.statusText,
+              upstreamMessage,
+            })
+            setMemberTeamsErr(PERSONAL_DASHBOARD_MESSAGES.errors.memberTeamsList)
+          }
           return
         }
         const list = (json.teams as unknown[])
@@ -752,8 +769,11 @@ export function UsageDashboard() {
           setMemberTeams(list)
           setMemberTeamsErr(null)
         }
-      } catch {
-        if (!cancelled) setMemberTeamsErr("팀 목록을 불러오지 못했습니다")
+      } catch (e) {
+        if (!cancelled) {
+          logDashboardMemberTeamsError({ request: teamsUrl, error: e })
+          setMemberTeamsErr(PERSONAL_DASHBOARD_MESSAGES.errors.memberTeamsList)
+        }
       } finally {
         if (!cancelled) setMemberTeamsLoading(false)
       }
@@ -775,8 +795,8 @@ export function UsageDashboard() {
     if (dataContext !== "TEAM_MEMBER_ONLY" || !teamMemberTeamId || typeof window === "undefined") return
     try {
       window.localStorage.setItem(MY_USAGE_BY_TEAM_LAST_SELECTED_TEAM_ID, teamMemberTeamId)
-    } catch {
-      /* ignore quota/private mode */
+    } catch (e) {
+      warnStorageError(e)
     }
   }, [dataContext, teamMemberTeamId])
 
@@ -790,24 +810,37 @@ export function UsageDashboard() {
     setTeamMemberKeysLoading(true)
     const base = teamUsageBffBase()
     if (!base) {
+      logPersonalDashboardApiKeysFetch({
+        reason: "missing_team_bff_base",
+        teamId: teamMemberTeamId,
+      })
       setTeamMemberRawApiKeyRows([])
       setTeamMemberKeysLoading(false)
       return
     }
-    void fetch(`${base}/teams/${encodeURIComponent(teamMemberTeamId)}/api-keys`, {
+    const apiKeysUrl = `${base}/teams/${encodeURIComponent(teamMemberTeamId)}/api-keys`
+    void fetch(apiKeysUrl, {
       credentials: "include",
       headers: { Accept: "application/json" },
     })
       .then(async (r) => {
         const json = await r.json()
         if (!r.ok) {
+          logPersonalDashboardApiKeysFetch({
+            request: apiKeysUrl,
+            teamId: teamMemberTeamId,
+            status: r.status,
+          })
           if (!cancelled) setTeamMemberRawApiKeyRows([])
           return
         }
         if (!cancelled) setTeamMemberRawApiKeyRows(parseTeamBffApiKeysPayload(json))
       })
-      .catch(() => {
-        if (!cancelled) setTeamMemberRawApiKeyRows([])
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          logPersonalDashboardApiKeysFetch({ request: apiKeysUrl, teamId: teamMemberTeamId, error: e })
+          setTeamMemberRawApiKeyRows([])
+        }
       })
       .finally(() => {
         if (!cancelled) setTeamMemberKeysLoading(false)
@@ -836,11 +869,11 @@ export function UsageDashboard() {
         const rf = customFrom || t
         const rt = customTo || t
         if (Date.parse(`${rt}T12:00:00+09:00`) < Date.parse(`${rf}T12:00:00+09:00`)) {
-          throw new Error("종료일은 시작일보다 앞설 수 없습니다.")
+          throw new Error(PERSONAL_DASHBOARD_MESSAGES.errors.validation.endBeforeStart)
         }
         const rangeDays = kstDaysInclusive(rf, rt)
         if (rangeDays > MAX_RANGE_DAYS) {
-          throw new Error("조회 기간은 최대 1년(366일)까지 가능합니다.")
+          throw new Error(PERSONAL_DASHBOARD_MESSAGES.errors.validation.maxRangeDays)
         }
         if (dataContext === "TEAM_MEMBER_ONLY" && !teamMemberTeamId) {
           if (!cancelled) {
@@ -965,7 +998,8 @@ export function UsageDashboard() {
       } catch (e) {
         if (isAbortError(e)) return
         if (!cancelled) {
-          setMainError(e instanceof Error ? e.message : "데이터를 불러오지 못했습니다")
+          logDashboardMainError(e, { dataContext, from: customFrom, to: customTo })
+          setMainError(toDashboardMainErrorMessage(e))
         }
       } finally {
         if (!cancelled) setMainLoading(false)
@@ -1279,12 +1313,11 @@ export function UsageDashboard() {
     dataContext === "TEAM_MEMBER_ONLY" &&
     (memberTeamsLoading || !memberHasTeams || (Boolean(teamMemberTeamId) && teamMemberKeysLoading))
 
-  const emptyDashboardHint =
-    dataContext === "TEAM_MEMBER_ONLY" && !memberHasTeams
-      ? "소속 팀이 있으면 팀을 선택해 팀 키 기준 나의 사용량을 확인할 수 있습니다."
-      : dataContext === "TEAM_MEMBER_ONLY" && apiKeyOptions.length === 0
-        ? "선택한 팀에 등록된 API Key가 없거나, 해당 공급사에 맞는 팀 키가 없습니다."
-        : "선택한 기간·공급사에 대한 사용 데이터가 없습니다"
+  const emptyDashboardHint = resolveEmptyDashboardHint(
+    dataContext,
+    memberHasTeams,
+    apiKeyOptions.length,
+  )
 
   const todayKst = formatKstIsoDate()
   const periodPrefix = kpiPeriodPrefix(rangeFrom, rangeTo, todayKst)
@@ -1406,7 +1439,7 @@ export function UsageDashboard() {
           className="mb-6 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-950 dark:text-amber-100"
           role="note"
         >
-          팀에 속하게 되면 팀 대시보드 사용이 가능해집니다.
+          {PERSONAL_DASHBOARD_MESSAGES.banners.noTeamMembership}
         </div>
       ) : null}
 
@@ -1458,7 +1491,7 @@ export function UsageDashboard() {
       ) : null}
 
       {!clientReady || mainLoading ? (
-        <p className="mb-8 text-sm text-muted-foreground">불러오는 중…</p>
+        <p className="mb-8 text-sm text-muted-foreground">{PERSONAL_DASHBOARD_MESSAGES.loading.main}</p>
       ) : (
         <>
           <section className="mb-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -1533,14 +1566,14 @@ export function UsageDashboard() {
               </ResponsiveContainer>
             </div>
             {mainStabilityNoRequests ? (
-              <p className="mt-2 text-center text-sm text-muted-foreground">집계 데이터 없음</p>
+              <p className="mt-2 text-center text-sm text-muted-foreground">{PERSONAL_DASHBOARD_MESSAGES.empty.chartAggregated}</p>
             ) : null}
           </section>
 
           <section className="mb-8 rounded-lg border border-border p-4 shadow-sm">
             <h2 className="mb-3 text-lg font-medium">응답 성능 및 안정성</h2>
             <div className="mb-4 rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm leading-relaxed text-foreground">
-              {latencyInsightBannerText(latencyInsight, compareCostLabel)}
+              {latencyInsightBannerText(latencyInsight, compareCostLabel, formatLatencyMsHuman)}
             </div>
             <div className="h-[400px] min-h-[400px] w-full min-w-0">
               <ResponsiveContainer width="100%" height="100%">
@@ -1695,7 +1728,7 @@ export function UsageDashboard() {
                 </div>
                 <div className="flex-1 max-h-[320px] overflow-y-auto p-1">
                   {isModelPiePlaceholder ? (
-                    <p className="text-sm text-muted-foreground">집계 데이터 없음</p>
+                    <p className="text-sm text-muted-foreground">{PERSONAL_DASHBOARD_MESSAGES.empty.chartAggregated}</p>
                   ) : (
                     <div className="space-y-1.5">
                       {pieData.map((entry, i) => (
@@ -1759,7 +1792,7 @@ export function UsageDashboard() {
                 </ResponsiveContainer>
               </div>
               {isProviderPiePlaceholder ? (
-                <p className="mt-2 text-center text-sm text-muted-foreground">집계 데이터 없음</p>
+                <p className="mt-2 text-center text-sm text-muted-foreground">{PERSONAL_DASHBOARD_MESSAGES.empty.chartAggregated}</p>
               ) : null}
             </section>
           </div>
@@ -1810,7 +1843,7 @@ export function UsageDashboard() {
                 </ResponsiveContainer>
               </div>
               {modelBarRows.length === 0 ? (
-                <p className="mt-2 text-center text-sm text-muted-foreground">집계 데이터 없음</p>
+                <p className="mt-2 text-center text-sm text-muted-foreground">{PERSONAL_DASHBOARD_MESSAGES.empty.chartAggregated}</p>
               ) : null}
               {modelBarRows.length > 0 ? (
                 <p className="mt-3 text-xs text-muted-foreground">
@@ -1952,7 +1985,7 @@ export function UsageDashboard() {
                 </ResponsiveContainer>
               </div>
               {tokenStackRows.length === 0 ? (
-                <p className="mt-2 text-center text-sm text-muted-foreground">집계 데이터 없음</p>
+                <p className="mt-2 text-center text-sm text-muted-foreground">{PERSONAL_DASHBOARD_MESSAGES.empty.chartAggregated}</p>
               ) : null}
               {tokenStackRows.length > 0 ? (
                 <p className="mt-3 text-xs text-muted-foreground">
@@ -2031,7 +2064,7 @@ export function UsageDashboard() {
               </ResponsiveContainer>
             </div>
             {!monthlyHasActivity ? (
-              <p className="mt-2 text-center text-sm text-muted-foreground">집계 데이터 없음</p>
+              <p className="mt-2 text-center text-sm text-muted-foreground">{PERSONAL_DASHBOARD_MESSAGES.empty.chartAggregated}</p>
             ) : null}
           </section>
         </>

@@ -3,6 +3,7 @@ package com.eevee.usageservice.repository.analytics;
 import com.eevee.usageservice.api.dto.HourlyUsagePoint;
 import com.eevee.usageservice.api.dto.UsageDataContext;
 import com.eevee.usageservice.api.dto.UsageSummaryResponse;
+import com.eevee.usageservice.service.filter.ApiKeyCredentialFilter;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -46,8 +47,6 @@ class UsageAnalyticsJdbcRepositoryTeamScopeBindOrderTest {
                 eq(Timestamp.from(kstDayStart)),
                 eq(Timestamp.from(kstDayEndExclusive)),
                 eq("team-9"),
-                eq(""),
-                eq(""),
                 isNull(),
                 isNull()
         )).thenReturn(List.<HourlyUsagePoint>of());
@@ -58,7 +57,7 @@ class UsageAnalyticsJdbcRepositoryTeamScopeBindOrderTest {
                 kstDayEndExclusive,
                 null,
                 UsageDataContext.TEAM_MEMBER_ONLY,
-                "",
+                ApiKeyCredentialFilter.unrestricted(),
                 "team-9"
         );
 
@@ -69,8 +68,6 @@ class UsageAnalyticsJdbcRepositoryTeamScopeBindOrderTest {
                 eq(Timestamp.from(kstDayStart)),
                 eq(Timestamp.from(kstDayEndExclusive)),
                 eq("team-9"),
-                eq(""),
-                eq(""),
                 isNull(),
                 isNull()
         );
@@ -89,8 +86,6 @@ class UsageAnalyticsJdbcRepositoryTeamScopeBindOrderTest {
                 eq(Timestamp.from(from)),
                 eq(Timestamp.from(toExclusive)),
                 eq("team-9"),
-                eq(""),
-                eq(""),
                 isNull(),
                 isNull()
         )).thenReturn(new UsageSummaryResponse(0L, 0L, 0L, BigDecimal.ZERO));
@@ -100,7 +95,7 @@ class UsageAnalyticsJdbcRepositoryTeamScopeBindOrderTest {
                 from,
                 toExclusive,
                 null,
-                "",
+                ApiKeyCredentialFilter.unrestricted(),
                 UsageDataContext.TEAM_MEMBER_ONLY,
                 "team-9"
         );
@@ -112,8 +107,6 @@ class UsageAnalyticsJdbcRepositoryTeamScopeBindOrderTest {
                 eq(Timestamp.from(from)),
                 eq(Timestamp.from(toExclusive)),
                 eq("team-9"),
-                eq(""),
-                eq(""),
                 isNull(),
                 isNull()
         );

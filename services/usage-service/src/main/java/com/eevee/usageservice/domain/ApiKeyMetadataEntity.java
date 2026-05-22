@@ -30,6 +30,9 @@ public class ApiKeyMetadataEntity {
     @Column(nullable = false)
     private Instant updatedAt;
 
+    @Column(name = "key_hash", length = 64)
+    private String keyHash;
+
     protected ApiKeyMetadataEntity() {
     }
 
@@ -58,11 +61,28 @@ public class ApiKeyMetadataEntity {
      * Updates non-key fields. Does not change {@link #id}; caller must load the correct composite row.
      */
     public void apply(String teamId, String provider, String alias, ApiKeyStatus status, Instant updatedAt) {
+        apply(teamId, provider, alias, status, updatedAt, null);
+    }
+
+    /**
+     * Updates non-key fields. {@code keyHash} is set when non-blank; otherwise the existing hash is kept.
+     */
+    public void apply(
+            String teamId,
+            String provider,
+            String alias,
+            ApiKeyStatus status,
+            Instant updatedAt,
+            String keyHash
+    ) {
         this.teamId = teamId;
         this.provider = provider;
         this.alias = alias;
         this.status = status;
         this.updatedAt = updatedAt;
+        if (keyHash != null && !keyHash.isBlank()) {
+            this.keyHash = keyHash.trim().toLowerCase();
+        }
     }
 
     public ApiKeyMetadataEntityId getId() {
@@ -99,5 +119,9 @@ public class ApiKeyMetadataEntity {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    public String getKeyHash() {
+        return keyHash;
     }
 }

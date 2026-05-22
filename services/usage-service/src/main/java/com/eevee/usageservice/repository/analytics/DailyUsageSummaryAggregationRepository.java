@@ -108,6 +108,7 @@ public class DailyUsageSummaryAggregationRepository {
         return value != null ? value : BigDecimal.ZERO;
     }
 
+    /** Analytics PK uses empty string for personal scope; do not reuse {@link com.eevee.usageservice.usage.UsageRecordedEventScopeNormalizer} (null). */
     private static String normalizeTeamId(String teamId) {
         if (teamId == null) {
             return "";

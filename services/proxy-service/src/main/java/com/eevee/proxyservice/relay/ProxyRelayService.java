@@ -87,9 +87,18 @@ public class ProxyRelayService {
                                 provider,
                                 ctx.requestedApiKeyId(),
                                 ctx.requestedApiKeyAlias(),
-                                ctx.rawApiKey()
+                                ctx.rawApiKey(),
+                                ctx.apiKeyFingerprint64(),
+                                ctx.correlationId()
                         )
-                        .flatMap(resolvedApiKey -> forward(exchange, ctx, handler, provider, remainder, resolvedApiKey)));
+                        .flatMap(resolvedApiKey -> forward(
+                                exchange,
+                                enrichContext(ctx, resolvedApiKey),
+                                handler,
+                                provider,
+                                remainder,
+                                resolvedApiKey
+                        )));
     }
 
     private Mono<ResponseEntity<Flux<DataBuffer>>> forward(
@@ -246,9 +255,29 @@ public class ProxyRelayService {
                 streaming,
                 successful,
                 statusCode,
-                ctx.keyLookupUserId()
+                resolvedApiKey.metadataOwnerUserId(ctx.keyLookupUserId())
         );
         return usageEventPublisher.publish(event);
+    }
+
+    private static UserContext enrichContext(UserContext ctx, ApiKeyClient.ResolvedApiKey resolved) {
+        if (resolved.ownerUserId() == null && resolved.ownerTeamId() == null) {
+            return ctx;
+        }
+        String userId = resolved.ownerUserId() != null ? resolved.ownerUserId() : ctx.userId();
+        String teamId = resolved.ownerTeamId() != null ? resolved.ownerTeamId() : ctx.teamId();
+        return new UserContext(
+                userId,
+                ctx.platformUserId(),
+                ctx.organizationId(),
+                teamId,
+                ctx.correlationId(),
+                ctx.requestedApiKeyId(),
+                ctx.requestedApiKeyAlias(),
+                ctx.extUserId(),
+                ctx.rawApiKey(),
+                ctx.apiKeyFingerprint64()
+        );
     }
 
     private static boolean requiresBody(HttpMethod method) {

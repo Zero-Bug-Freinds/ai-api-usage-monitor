@@ -5,6 +5,8 @@
 #   .env 에서 변수를 빼면 Compose 가 빈 문자열을 주입해 Spring 이 application.yml 기본값을 못 쓸 수 있다.
 #   비어 있지 않은 값으로 맞추거나(루트 .env.example 로컬 전용 문자열) 줄 자체를 두지 않는다.
 #   게이트웨이·proxy·usage-service 의 shared-secret 은 동일해야 한다 — docs/contracts/gateway-proxy.md §5.
+# GATEWAY_DEV_MODE=false (루트 .env.example 기본) 이면 api-gateway-service 에 GATEWAY_INTERNAL_BEARER_TOKEN(32자+) 도
+#   .env + 아래 environment 로 컨테이너에 전달해야 기동한다 — docs/contracts/gateway-proxy.md §5.1.
 #
 # [Java] 앱 이미지: proxy·api-gateway 는 각 디렉터리에서 ./gradlew bootJar 후 Dockerfile COPY.
 # identity·usage 백엔드는 패턴 B Dockerfile 이 Gradle 을 이미지 안에서 실행(사전 JAR 불필요).
@@ -365,6 +367,10 @@ services:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: docker
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
       PROXY_KEY_SERVICE_BASE_URL: ${PROXY_KEY_SERVICE_BASE_URL:-http://identity-service:8080}
       PROXY_TEAM_KEY_SERVICE_BASE_URL: ${PROXY_TEAM_KEY_SERVICE_BASE_URL:-http://team-service:8093}
       # proxy.jar 수정 없이 Spring 이 기존 설정으로 읽음 — team-service 내부 토큰과 동일해야 함
@@ -404,6 +410,7 @@ services:
       GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET:-}
       GATEWAY_JWT_SECRET: ${GATEWAY_JWT_SECRET:-}
       GATEWAY_DEV_MODE: ${GATEWAY_DEV_MODE:-true}
+      GATEWAY_INTERNAL_BEARER_TOKEN: ${GATEWAY_INTERNAL_BEARER_TOKEN:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:

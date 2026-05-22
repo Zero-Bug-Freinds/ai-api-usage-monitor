@@ -173,6 +173,24 @@ log_postgres_host_summary() {
   echo "  TEAM_POSTGRES_HOST=${TEAM_POSTGRES_HOST:-<unset>}"
 }
 
+# Terraform user-data writes /var/lib/.../terraform-rabbitmq.env on EC2; overlay wins over .env.deploy for broker keys.
+overlay_terraform_rabbitmq_env() {
+  local dst="$1"
+  local overlay="${DEPLOY_STATE_DIR}/terraform-rabbitmq.env"
+  [[ -f "$overlay" ]] || return 0
+  local tmp
+  tmp="$(mktemp)"
+  if [[ -s "$dst" ]]; then
+    grep -Ev '^(RABBITMQ_|NOTIFICATION_RABBITMQ_URL)' "$dst" >"$tmp" || : >"$tmp"
+  else
+    : >"$tmp"
+  fi
+  cat "$overlay" >>"$tmp"
+  mv -f "$tmp" "$dst"
+  chmod 600 "$dst"
+  echo "Merged Terraform RabbitMQ env from ${overlay}"
+}
+
 write_compose_env_file() {
   local normalized_source="$1"
   local dest_path="$2"
@@ -266,6 +284,7 @@ prepare_compose_environment() {
   normalize_env_source_copy "$ENV_DEPLOY_SOURCE" "$raw"
   sanitize_env_deploy_file "$raw" "$normalized"
   rm -f "$raw"
+  overlay_terraform_rabbitmq_env "$normalized"
   load_deploy_variables "$normalized"
   log_postgres_host_summary
   write_compose_env_file "$normalized" "$COMPOSE_ENV_FILE"

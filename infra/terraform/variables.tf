@@ -174,6 +174,18 @@ variable "compute_health_check_grace_period" {
   default     = 900
 }
 
+variable "enable_ec2_rabbitmq" {
+  type        = bool
+  description = "When enable_compute_stack is true, user-data installs RabbitMQ (Docker on the host) and writes terraform-rabbitmq.env for deploy rolls."
+  default     = true
+}
+
+variable "ec2_rabbitmq_user" {
+  type        = string
+  description = "RabbitMQ user for EC2 host broker (RABBITMQ_USER)."
+  default     = "app"
+}
+
 variable "vpc_cidr" {
   type        = string
   description = "CIDR for optional VPC."
@@ -212,28 +224,4 @@ variable "staging_rds_allocated_storage" {
   type        = number
   description = "Initial allocated storage (GB) for staging RDS."
   default     = 20
-}
-
-variable "is_alpha_test" {
-  type        = bool
-  description = "When true (with enable_compute_stack), provisions a single-instance Amazon MQ RabbitMQ broker for alpha/staging (.env.deploy RABBITMQ_*)."
-  default     = false
-}
-
-variable "staging_mq_host_instance_type" {
-  type        = string
-  description = "Amazon MQ RabbitMQ host size. Cheapest: mq.t3.micro (not EC2 t3.micro)."
-  default     = "mq.t3.micro"
-}
-
-variable "staging_mq_engine_version" {
-  type        = string
-  description = "RabbitMQ engine version for Amazon MQ (must be supported in aws_region)."
-  default     = "3.13"
-}
-
-variable "staging_mq_username" {
-  type        = string
-  description = "Broker user for RABBITMQ_USER / SPRING_RABBITMQ_USERNAME."
-  default     = "app"
 }

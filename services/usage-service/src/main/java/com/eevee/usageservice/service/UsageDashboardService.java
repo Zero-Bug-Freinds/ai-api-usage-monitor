@@ -22,6 +22,9 @@ import com.eevee.usageservice.domain.UsageRecordedLogEntity;
 import com.eevee.usageservice.repository.ApiKeyMetadataRepository;
 import com.eevee.usageservice.repository.UsageRecordedLogRepository;
 import com.eevee.usageservice.repository.analytics.UsageAnalyticsJdbcRepository;
+import com.eevee.usageservice.service.filter.ApiKeyCredentialFilter;
+import com.eevee.usageservice.service.filter.UsageApiKeyFilterConsolidationService;
+import com.eevee.usageservice.service.filter.UsageApiKeyFilterResolutionService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -43,6 +46,7 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -74,6 +78,8 @@ public class UsageDashboardService {
     private final UsageAnalyticsJdbcRepository analyticsJdbcRepository;
     private final UsageRecordedLogRepository logRepository;
     private final ApiKeyMetadataRepository apiKeyMetadataRepository;
+    private final UsageApiKeyFilterConsolidationService apiKeyFilterConsolidationService;
+    private final UsageApiKeyFilterResolutionService apiKeyFilterResolutionService;
     private final UsageServiceProperties properties;
     private final Clock clock;
     private final ObjectMapper objectMapper;
@@ -82,6 +88,8 @@ public class UsageDashboardService {
             UsageAnalyticsJdbcRepository analyticsJdbcRepository,
             UsageRecordedLogRepository logRepository,
             ApiKeyMetadataRepository apiKeyMetadataRepository,
+            UsageApiKeyFilterConsolidationService apiKeyFilterConsolidationService,
+            UsageApiKeyFilterResolutionService apiKeyFilterResolutionService,
             UsageServiceProperties properties,
             Clock clock,
             ObjectMapper objectMapper
@@ -89,6 +97,8 @@ public class UsageDashboardService {
         this.analyticsJdbcRepository = analyticsJdbcRepository;
         this.logRepository = logRepository;
         this.apiKeyMetadataRepository = apiKeyMetadataRepository;
+        this.apiKeyFilterConsolidationService = apiKeyFilterConsolidationService;
+        this.apiKeyFilterResolutionService = apiKeyFilterResolutionService;
         this.properties = properties;
         this.clock = clock;
         this.objectMapper = objectMapper;
@@ -123,12 +133,12 @@ public class UsageDashboardService {
     ) {
         Range r = validateRange(from, toInclusive);
         long startedAt = System.nanoTime();
-        String key = normalizeApiKey(apiKeyId);
+        ApiKeyCredentialFilter credentialFilter = resolveUserCredentialFilter(userId, apiKeyId);
         String teamScope = teamMemberDashboardScope(dataContext, teamId);
         UsageSummaryResponse response;
-        if (key != null) {
+        if (credentialFilter.isRestricted()) {
             response = analyticsJdbcRepository.aggregateSummaryForUserFromLogs(
-                    userId, r.from(), r.toExclusive(), provider, key, dataContext, teamScope);
+                    userId, r.from(), r.toExclusive(), provider, credentialFilter, dataContext, teamScope);
         } else if (dataContext == UsageDataContext.TEAM_MEMBER_ONLY && teamScope != null) {
             response = summaryByTeamAndUser(teamScope, userId, from, toInclusive, provider);
         } else if (dataContext == UsageDataContext.TEAM_MEMBER_ONLY) {
@@ -159,16 +169,43 @@ public class UsageDashboardService {
             return summaryByTeam(teamId, from, toInclusive, provider);
         }
         Range r = validateRange(from, toInclusive);
-        return analyticsJdbcRepository.aggregateSummaryForTeamFromLogs(teamId, r.from(), r.toExclusive(), provider, apiKeyId.trim());
+        return analyticsJdbcRepository.aggregateSummaryForTeamFromLogs(
+                teamId, r.from(), r.toExclusive(), provider, resolveTeamCredentialFilter(teamId, apiKeyId));
     }
 
     @Transactional(readOnly = true)
     public UsageSummaryResponse summaryByTeamAndUser(String teamId, String userId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
+        return summaryByTeamAndUser(teamId, userId, from, toInclusive, provider, null);
+    }
+
+    @Transactional(readOnly = true)
+    public UsageSummaryResponse summaryByTeamAndUser(
+            String teamId,
+            String userId,
+            LocalDate from,
+            LocalDate toInclusive,
+            AiProvider provider,
+            String apiKeyId
+    ) {
         Range r = validateRange(from, toInclusive);
-        UsageSummaryResponse base = analyticsJdbcRepository.aggregateSummaryByTeamAndUser(
-                teamId, userId, r.from(), r.toExclusive(), provider);
-        Double avgLatencyMs = analyticsJdbcRepository.aggregateAvgLatencyMsByTeamAndUser(
-                teamId, userId, r.from(), r.toExclusive(), provider);
+        if (!restrictTeamToApiKey(apiKeyId)) {
+            UsageSummaryResponse base = analyticsJdbcRepository.aggregateSummaryByTeamAndUser(
+                    teamId, userId, r.from(), r.toExclusive(), provider);
+            Double avgLatencyMs = analyticsJdbcRepository.aggregateAvgLatencyMsByTeamAndUser(
+                    teamId, userId, r.from(), r.toExclusive(), provider);
+            return new UsageSummaryResponse(
+                    base.totalRequests(),
+                    base.totalErrors(),
+                    base.totalInputTokens(),
+                    base.totalEstimatedCost(),
+                    avgLatencyMs
+            );
+        }
+        ApiKeyCredentialFilter credentialFilter = resolveTeamCredentialFilter(teamId, apiKeyId);
+        UsageSummaryResponse base = analyticsJdbcRepository.aggregateSummaryForTeamAndUserFromLogs(
+                teamId, userId, r.from(), r.toExclusive(), provider, credentialFilter);
+        Double avgLatencyMs = analyticsJdbcRepository.aggregateAvgLatencyMsByTeamAndUserFromLogs(
+                teamId, userId, r.from(), r.toExclusive(), provider, credentialFilter);
         return new UsageSummaryResponse(
                 base.totalRequests(),
                 base.totalErrors(),
@@ -207,12 +244,12 @@ public class UsageDashboardService {
     ) {
         Range r = validateRange(from, toInclusive);
         long startedAt = System.nanoTime();
-        String key = normalizeApiKey(apiKeyId);
+        ApiKeyCredentialFilter credentialFilter = resolveUserCredentialFilter(userId, apiKeyId);
         String teamScope = teamMemberDashboardScope(dataContext, teamId);
         List<DailyUsagePoint> rows;
-        if (key != null) {
+        if (credentialFilter.isRestricted()) {
             rows = analyticsJdbcRepository.aggregateDailyForUserFromLogs(
-                    userId, r.from(), r.toExclusive(), provider, key, dataContext, teamScope);
+                    userId, r.from(), r.toExclusive(), provider, credentialFilter, dataContext, teamScope);
         } else if (dataContext == UsageDataContext.TEAM_MEMBER_ONLY && teamScope != null) {
             rows = analyticsJdbcRepository.aggregateDailyByTeamAndUser(
                     teamScope, userId, r.from(), r.toExclusive(), provider);
@@ -243,13 +280,32 @@ public class UsageDashboardService {
             return dailySeriesByTeam(teamId, from, toInclusive, provider);
         }
         Range r = validateRange(from, toInclusive);
-        return analyticsJdbcRepository.aggregateDailyForTeamFromLogs(teamId, r.from(), r.toExclusive(), provider, apiKeyId.trim());
+        return analyticsJdbcRepository.aggregateDailyForTeamFromLogs(
+                teamId, r.from(), r.toExclusive(), provider, resolveTeamCredentialFilter(teamId, apiKeyId));
     }
 
     @Transactional(readOnly = true)
     public List<DailyUsagePoint> dailySeriesByTeamAndUser(String teamId, String userId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
+        return dailySeriesByTeamAndUser(teamId, userId, from, toInclusive, provider, null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<DailyUsagePoint> dailySeriesByTeamAndUser(
+            String teamId,
+            String userId,
+            LocalDate from,
+            LocalDate toInclusive,
+            AiProvider provider,
+            String apiKeyId
+    ) {
+        if (!restrictTeamToApiKey(apiKeyId)) {
+            Range r = validateRange(from, toInclusive);
+            return analyticsJdbcRepository.aggregateDailyByTeamAndUser(
+                    teamId, userId, r.from(), r.toExclusive(), provider);
+        }
         Range r = validateRange(from, toInclusive);
-        return analyticsJdbcRepository.aggregateDailyByTeamAndUser(teamId, userId, r.from(), r.toExclusive(), provider);
+        return analyticsJdbcRepository.aggregateDailyForTeamAndUserFromLogs(
+                teamId, userId, r.from(), r.toExclusive(), provider, resolveTeamCredentialFilter(teamId, apiKeyId));
     }
 
     @Transactional(readOnly = true)
@@ -281,12 +337,12 @@ public class UsageDashboardService {
     ) {
         Range r = validateRange(from, toInclusive);
         long startedAt = System.nanoTime();
-        String key = normalizeApiKey(apiKeyId);
+        ApiKeyCredentialFilter credentialFilter = resolveUserCredentialFilter(userId, apiKeyId);
         String teamScope = teamMemberDashboardScope(dataContext, teamId);
         List<MonthlyUsagePoint> rows;
-        if (key != null) {
+        if (credentialFilter.isRestricted()) {
             rows = analyticsJdbcRepository.aggregateMonthlyForUserFromLogs(
-                    userId, r.from(), r.toExclusive(), provider, key, dataContext, teamScope);
+                    userId, r.from(), r.toExclusive(), provider, credentialFilter, dataContext, teamScope);
         } else if (dataContext == UsageDataContext.TEAM_MEMBER_ONLY && teamScope != null) {
             rows = analyticsJdbcRepository.aggregateMonthlyByTeamAndUser(
                     teamScope, userId, r.from(), r.toExclusive(), provider);
@@ -317,13 +373,32 @@ public class UsageDashboardService {
             return monthlySeriesByTeam(teamId, from, toInclusive, provider);
         }
         Range r = validateRange(from, toInclusive);
-        return analyticsJdbcRepository.aggregateMonthlyForTeamFromLogs(teamId, r.from(), r.toExclusive(), provider, apiKeyId.trim());
+        return analyticsJdbcRepository.aggregateMonthlyForTeamFromLogs(
+                teamId, r.from(), r.toExclusive(), provider, resolveTeamCredentialFilter(teamId, apiKeyId));
     }
 
     @Transactional(readOnly = true)
     public List<MonthlyUsagePoint> monthlySeriesByTeamAndUser(String teamId, String userId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
+        return monthlySeriesByTeamAndUser(teamId, userId, from, toInclusive, provider, null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<MonthlyUsagePoint> monthlySeriesByTeamAndUser(
+            String teamId,
+            String userId,
+            LocalDate from,
+            LocalDate toInclusive,
+            AiProvider provider,
+            String apiKeyId
+    ) {
+        if (!restrictTeamToApiKey(apiKeyId)) {
+            Range r = validateRange(from, toInclusive);
+            return analyticsJdbcRepository.aggregateMonthlyByTeamAndUser(
+                    teamId, userId, r.from(), r.toExclusive(), provider);
+        }
         Range r = validateRange(from, toInclusive);
-        return analyticsJdbcRepository.aggregateMonthlyByTeamAndUser(teamId, userId, r.from(), r.toExclusive(), provider);
+        return analyticsJdbcRepository.aggregateMonthlyForTeamAndUserFromLogs(
+                teamId, userId, r.from(), r.toExclusive(), provider, resolveTeamCredentialFilter(teamId, apiKeyId));
     }
 
     @Transactional(readOnly = true)
@@ -355,12 +430,12 @@ public class UsageDashboardService {
     ) {
         Range r = validateRange(from, toInclusive);
         long startedAt = System.nanoTime();
-        String key = normalizeApiKey(apiKeyId);
+        ApiKeyCredentialFilter credentialFilter = resolveUserCredentialFilter(userId, apiKeyId);
         String teamScope = teamMemberDashboardScope(dataContext, teamId);
         List<ModelUsageAggregate> rows;
-        if (key != null) {
+        if (credentialFilter.isRestricted()) {
             rows = analyticsJdbcRepository.aggregateByModelForUserFromLogs(
-                    userId, r.from(), r.toExclusive(), provider, key, dataContext, teamScope);
+                    userId, r.from(), r.toExclusive(), provider, credentialFilter, dataContext, teamScope);
         } else if (dataContext == UsageDataContext.TEAM_MEMBER_ONLY && teamScope != null) {
             rows = analyticsJdbcRepository.aggregateByModelForTeamAndUser(
                     teamScope, userId, r.from(), r.toExclusive(), provider);
@@ -391,7 +466,8 @@ public class UsageDashboardService {
             return byModelForTeam(teamId, from, toInclusive, provider);
         }
         Range r = validateRange(from, toInclusive);
-        return analyticsJdbcRepository.aggregateByModelForTeamFromLogs(teamId, r.from(), r.toExclusive(), provider, apiKeyId.trim());
+        return analyticsJdbcRepository.aggregateByModelForTeamFromLogs(
+                teamId, r.from(), r.toExclusive(), provider, resolveTeamCredentialFilter(teamId, apiKeyId));
     }
 
     @Transactional(readOnly = true)
@@ -405,13 +481,15 @@ public class UsageDashboardService {
         Range r = validateRange(from, toInclusive);
         long span = ChronoUnit.DAYS.between(from, toInclusive);
         if (span == 0) {
-            String keyFilter = restrictTeamToApiKey(apiKeyId) ? apiKeyId.trim() : "";
+            ApiKeyCredentialFilter credentialFilter = restrictTeamToApiKey(apiKeyId)
+                    ? resolveTeamCredentialFilter(teamId, apiKeyId)
+                    : ApiKeyCredentialFilter.unrestricted();
             List<HourlyUsagePoint> hourly = analyticsJdbcRepository.aggregateHourlyForKstDayForTeam(
                     teamId,
                     r.from(),
                     r.toExclusive(),
                     provider,
-                    keyFilter
+                    credentialFilter
             );
             List<UsageSeriesPoint> rows = hourly.stream()
                     .map(row -> new UsageSeriesPoint(
@@ -452,8 +530,26 @@ public class UsageDashboardService {
 
     @Transactional(readOnly = true)
     public List<ModelUsageAggregate> byModelForTeamAndUser(String teamId, String userId, LocalDate from, LocalDate toInclusive, AiProvider provider) {
+        return byModelForTeamAndUser(teamId, userId, from, toInclusive, provider, null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ModelUsageAggregate> byModelForTeamAndUser(
+            String teamId,
+            String userId,
+            LocalDate from,
+            LocalDate toInclusive,
+            AiProvider provider,
+            String apiKeyId
+    ) {
+        if (!restrictTeamToApiKey(apiKeyId)) {
+            Range r = validateRange(from, toInclusive);
+            return analyticsJdbcRepository.aggregateByModelForTeamAndUser(
+                    teamId, userId, r.from(), r.toExclusive(), provider);
+        }
         Range r = validateRange(from, toInclusive);
-        return analyticsJdbcRepository.aggregateByModelForTeamAndUser(teamId, userId, r.from(), r.toExclusive(), provider);
+        return analyticsJdbcRepository.aggregateByModelForTeamAndUserFromLogs(
+                teamId, userId, r.from(), r.toExclusive(), provider, resolveTeamCredentialFilter(teamId, apiKeyId));
     }
 
     @Transactional(readOnly = true)
@@ -493,8 +589,7 @@ public class UsageDashboardService {
     ) {
         Range r = validateRange(from, toInclusive);
         long startedAt = System.nanoTime();
-        String key = normalizeApiKey(apiKeyId);
-        String keyFilter = key != null ? key : "";
+        ApiKeyCredentialFilter credentialFilter = resolveUserCredentialFilter(userId, apiKeyId);
         String teamScope = teamMemberDashboardScope(dataContext, teamId);
         if (unit == UsageSeriesUnit.HOUR) {
             long days = ChronoUnit.DAYS.between(from, toInclusive) + 1;
@@ -503,7 +598,7 @@ public class UsageDashboardService {
             }
             List<UsageSeriesPoint> rows = analyticsJdbcRepository
                     .aggregateHourlyForKstDayUserScoped(
-                            userId, r.from(), r.toExclusive(), provider, dataContext, keyFilter, teamScope)
+                            userId, r.from(), r.toExclusive(), provider, dataContext, credentialFilter, teamScope)
                     .stream()
                     .map(row -> new UsageSeriesPoint(
                             String.format("%02d:00", row.hour()),
@@ -572,8 +667,7 @@ public class UsageDashboardService {
             String teamId
     ) {
         Range r = validateRange(from, toInclusive);
-        String key = normalizeApiKey(apiKeyId);
-        String keyFilter = key != null ? key : "";
+        ApiKeyCredentialFilter credentialFilter = resolveUserCredentialFilter(userId, apiKeyId);
         String teamScope = teamMemberDashboardScope(dataContext, teamId);
         if (unit == UsageSeriesUnit.HOUR) {
             long days = ChronoUnit.DAYS.between(from, toInclusive) + 1;
@@ -586,7 +680,7 @@ public class UsageDashboardService {
                     r.toExclusive(),
                     provider,
                     dataContext,
-                    keyFilter,
+                    credentialFilter,
                     teamScope
             );
         }
@@ -598,7 +692,7 @@ public class UsageDashboardService {
                     r.from(),
                     r.toExclusive(),
                     provider,
-                    keyFilter,
+                    credentialFilter,
                     dataContext,
                     teamScope
             );
@@ -612,7 +706,7 @@ public class UsageDashboardService {
                 r.from(),
                 r.toExclusive(),
                 provider,
-                keyFilter,
+                credentialFilter,
                 dataContext,
                 teamScope
         );
@@ -649,15 +743,14 @@ public class UsageDashboardService {
         LocalDate prevFrom = prevTo.minusDays(days - 1);
         Instant prevStart = prevFrom.atStartOfDay(DASHBOARD_ZONE).toInstant();
         Instant prevEndExclusive = prevTo.plusDays(1).atStartOfDay(DASHBOARD_ZONE).toInstant();
-        String key = normalizeApiKey(apiKeyId);
-        String keyFilter = key != null ? key : "";
+        ApiKeyCredentialFilter credentialFilter = resolveUserCredentialFilter(userId, apiKeyId);
         String teamScope = teamMemberDashboardScope(dataContext, teamId);
         Double current = analyticsJdbcRepository.aggregateAvgLatencyMsForUserFromLogs(
                 userId,
                 r.from(),
                 r.toExclusive(),
                 provider,
-                keyFilter,
+                credentialFilter,
                 dataContext,
                 teamScope
         );
@@ -666,7 +759,7 @@ public class UsageDashboardService {
                 prevStart,
                 prevEndExclusive,
                 provider,
-                keyFilter,
+                credentialFilter,
                 dataContext,
                 teamScope
         );
@@ -713,18 +806,18 @@ public class UsageDashboardService {
         Instant dayEndExclusive = todayKst.plusDays(1).atStartOfDay(DASHBOARD_ZONE).toInstant();
         Instant windowEnd = now.isBefore(dayEndExclusive) ? now : dayEndExclusive;
 
-        String key = normalizeApiKey(apiKeyId);
+        ApiKeyCredentialFilter credentialFilter = resolveUserCredentialFilter(userId, apiKeyId);
         String teamScope = teamMemberDashboardScope(dataContext, teamId);
         BigDecimal todayCost;
         BigDecimal yesterdayCost;
-        if (key != null) {
+        if (credentialFilter.isRestricted()) {
             todayCost = analyticsJdbcRepository.sumEstimatedCostForUserFromLogs(
-                    userId, dayStart, windowEnd, provider, key, dataContext, teamScope);
+                    userId, dayStart, windowEnd, provider, credentialFilter, dataContext, teamScope);
             Duration elapsed = Duration.between(dayStart, windowEnd);
             Instant yStart = dayStart.minus(1, ChronoUnit.DAYS);
             Instant yEnd = yStart.plus(elapsed);
             yesterdayCost = analyticsJdbcRepository.sumEstimatedCostForUserFromLogs(
-                    userId, yStart, yEnd, provider, key, dataContext, teamScope);
+                    userId, yStart, yEnd, provider, credentialFilter, dataContext, teamScope);
         } else if (dataContext == UsageDataContext.TEAM_MEMBER_ONLY && teamScope != null) {
             todayCost = analyticsJdbcRepository.sumEstimatedCostByTeamAndUser(
                     teamScope, userId, dayStart, windowEnd, provider);
@@ -789,7 +882,7 @@ public class UsageDashboardService {
     ) {
         Instant kstDayStart = kstDate.atStartOfDay(DASHBOARD_ZONE).toInstant();
         Instant kstDayEndExclusive = kstDate.plusDays(1).atStartOfDay(DASHBOARD_ZONE).toInstant();
-        String key = normalizeApiKey(apiKeyId);
+        ApiKeyCredentialFilter credentialFilter = resolveUserCredentialFilter(userId, apiKeyId);
         String teamScope = teamMemberDashboardScope(dataContext, teamId);
         return analyticsJdbcRepository.aggregateHourlyForKstDayUserScoped(
                 userId,
@@ -797,7 +890,7 @@ public class UsageDashboardService {
                 kstDayEndExclusive,
                 provider,
                 dataContext,
-                key != null ? key : "",
+                credentialFilter,
                 teamScope
         );
     }
@@ -850,7 +943,7 @@ public class UsageDashboardService {
         Range r = validateRange(from, toInclusive);
         int pageIndex = Math.max(0, page);
         int pageSize = Math.min(200, Math.max(1, size));
-        String keyFilter = apiKeyId != null && apiKeyId.isBlank() ? null : apiKeyId;
+        LogPageCredentialParams logKeyFilter = toLogPageCredentialParams(resolveUserCredentialFilter(userId, apiKeyId));
         String reasoningFilter = normalizeReasoningPresence(reasoningPresence);
         Pageable pageable = PageRequest.of(pageIndex, pageSize, Sort.by(Sort.Direction.DESC, "occurredAt"));
         String teamScope = teamMemberDashboardScope(dataContext, teamId);
@@ -862,7 +955,9 @@ public class UsageDashboardService {
                         r.from(),
                         r.toExclusive(),
                         provider,
-                        keyFilter,
+                        logKeyFilter.apply(),
+                        logKeyFilter.apiKeyIds(),
+                        logKeyFilter.fingerprint(),
                         requestSuccessful,
                         modelMask,
                         reasoningFilter,
@@ -874,7 +969,9 @@ public class UsageDashboardService {
                         r.from(),
                         r.toExclusive(),
                         provider,
-                        keyFilter,
+                        logKeyFilter.apply(),
+                        logKeyFilter.apiKeyIds(),
+                        logKeyFilter.fingerprint(),
                         requestSuccessful,
                         modelMask,
                         reasoningFilter,
@@ -885,7 +982,9 @@ public class UsageDashboardService {
                         r.from(),
                         r.toExclusive(),
                         provider,
-                        keyFilter,
+                        logKeyFilter.apply(),
+                        logKeyFilter.apiKeyIds(),
+                        logKeyFilter.fingerprint(),
                         requestSuccessful,
                         modelMask,
                         reasoningFilter,
@@ -926,14 +1025,16 @@ public class UsageDashboardService {
         Range r = validateRange(from, toInclusive);
         int pageIndex = Math.max(0, page);
         int pageSize = Math.min(200, Math.max(1, size));
-        String keyFilter = apiKeyId != null && apiKeyId.isBlank() ? null : apiKeyId;
+        LogPageCredentialParams logKeyFilter = toLogPageCredentialParams(resolveTeamCredentialFilter(teamId, apiKeyId));
         String reasoningFilter = normalizeReasoningPresence(reasoningPresence);
         Page<UsageRecordedLogEntity> p = logRepository.pageLogsByTeam(
                 teamId,
                 r.from(),
                 r.toExclusive(),
                 provider,
-                keyFilter,
+                logKeyFilter.apply(),
+                logKeyFilter.apiKeyIds(),
+                logKeyFilter.fingerprint(),
                 requestSuccessful,
                 modelMask,
                 reasoningFilter,
@@ -960,7 +1061,7 @@ public class UsageDashboardService {
         Range r = validateRange(from, toInclusive);
         int pageIndex = Math.max(0, page);
         int pageSize = Math.min(200, Math.max(1, size));
-        String keyFilter = apiKeyId != null && apiKeyId.isBlank() ? null : apiKeyId;
+        LogPageCredentialParams logKeyFilter = toLogPageCredentialParams(resolveTeamCredentialFilter(teamId, apiKeyId));
         String reasoningFilter = normalizeReasoningPresence(reasoningPresence);
         Page<UsageRecordedLogEntity> p = logRepository.pageLogsByTeamAndUser(
                 teamId,
@@ -968,7 +1069,9 @@ public class UsageDashboardService {
                 r.from(),
                 r.toExclusive(),
                 provider,
-                keyFilter,
+                logKeyFilter.apply(),
+                logKeyFilter.apiKeyIds(),
+                logKeyFilter.fingerprint(),
                 requestSuccessful,
                 modelMask,
                 reasoningFilter,
@@ -1024,7 +1127,11 @@ public class UsageDashboardService {
                 appendPersonalDistinctLogKeys(byApiKeyId, alt, logFrom, logTo, provider);
             }
         }
-        List<UsageLogApiKeyItemResponse> out = List.copyOf(byApiKeyId.values());
+        List<UsageLogApiKeyItemResponse> out = apiKeyFilterConsolidationService.consolidatePersonal(
+                List.copyOf(byApiKeyId.values()),
+                userId,
+                alternatePersonalSubjectUserId
+        );
         if (log.isInfoEnabled()) {
             log.info(
                     "Personal dashboard API key alias list loaded userId={} keyCount={} providerFilter={}",
@@ -1155,12 +1262,29 @@ public class UsageDashboardService {
         );
     }
 
-    private static String resolveDisplayAlias(UsageRecordedLogEntity e) {
-        if (e.getApiKeyMetadata() == null) {
-            return null;
+    private String resolveDisplayAlias(UsageRecordedLogEntity e) {
+        ApiKeyMetadataEntity metadata = e.getApiKeyMetadata();
+        String alias = metadata != null ? metadata.getAlias() : null;
+        ApiKeyStatus status = metadata != null ? metadata.getStatus() : null;
+        if (alias == null || alias.isBlank()) {
+            alias = apiKeyFilterResolutionService.resolveLatestActiveAliasForLog(
+                    e.getUserId(),
+                    e.getTeamId(),
+                    e.getApiKeyId(),
+                    e.getTeamApiKeyId(),
+                    e.getApiKeyFingerprint()
+            ).orElse(null);
+            status = ApiKeyStatus.ACTIVE;
+        } else if (status == ApiKeyStatus.DELETED) {
+            alias = apiKeyFilterResolutionService.resolveLatestActiveAliasForLog(
+                    e.getUserId(),
+                    e.getTeamId(),
+                    e.getApiKeyId(),
+                    e.getTeamApiKeyId(),
+                    e.getApiKeyFingerprint()
+            ).orElse(alias);
+            status = ApiKeyStatus.ACTIVE;
         }
-        String alias = e.getApiKeyMetadata().getAlias();
-        ApiKeyStatus status = e.getApiKeyMetadata().getStatus();
         if (alias == null || alias.isBlank()) {
             return null;
         }
@@ -1231,11 +1355,23 @@ public class UsageDashboardService {
         return apiKeyId != null && !apiKeyId.isBlank();
     }
 
-    private static String normalizeApiKey(String apiKeyId) {
-        if (apiKeyId == null || apiKeyId.isBlank()) {
-            return null;
+    private ApiKeyCredentialFilter resolveUserCredentialFilter(String userId, String apiKeyId) {
+        return apiKeyFilterResolutionService.resolvePersonal(userId, null, apiKeyId);
+    }
+
+    private ApiKeyCredentialFilter resolveTeamCredentialFilter(String teamId, String apiKeyId) {
+        return apiKeyFilterResolutionService.resolveTeam(teamId, apiKeyId);
+    }
+
+    private static LogPageCredentialParams toLogPageCredentialParams(ApiKeyCredentialFilter filter) {
+        if (filter == null || !filter.isRestricted()) {
+            return new LogPageCredentialParams(false, List.of("_"), null);
         }
-        return apiKeyId.trim();
+        List<String> ids = filter.apiKeyIds().isEmpty() ? List.of("_") : List.copyOf(filter.apiKeyIds());
+        return new LogPageCredentialParams(true, ids, filter.fingerprint());
+    }
+
+    private record LogPageCredentialParams(boolean apply, List<String> apiKeyIds, String fingerprint) {
     }
 
     public record TeamUsageSeriesBundle(UsageSeriesUnit unit, List<UsageSeriesPoint> points) {
