@@ -195,6 +195,30 @@ resource "aws_iam_role_policy" "ecr_pull" {
   })
 }
 
+resource "aws_iam_role_policy" "ec2_agent_credentials_secrets" {
+  count = length(var.agent_credentials_secret_ids) > 0 ? 1 : 0
+  name  = "${var.project_name}-agent-secrets-${var.environment_label}"
+  role  = aws_iam_role.ec2_instance.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AgentCredentialsGetSecretValue"
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret",
+        ]
+        Resource = [
+          for secret_id in var.agent_credentials_secret_ids :
+          "arn:aws:secretsmanager:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:secret:${secret_id}*"
+        ]
+      },
+    ]
+  })
+}
+
 resource "aws_iam_instance_profile" "ec2_instance" {
   name = "${var.project_name}-ec2-instance-${var.environment_label}"
   role = aws_iam_role.ec2_instance.name

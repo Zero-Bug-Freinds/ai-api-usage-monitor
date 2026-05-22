@@ -11,7 +11,7 @@ active-state rules, or logout URLs locally.
 Cross-app navigation (`console-nav.ts`):
 
 - **Build-time:** `NEXT_PUBLIC_WEB_EDGE_ORIGIN` and `NEXT_PUBLIC_IDENTITY_WEB_ORIGIN` are inlined at **Next/Docker build** (`release.yml` build-args; if `IDENTITY` is unset in GitHub Environment, Release uses `WEB_EDGE`). EC2 compose roll **does not** change an already-built image.
-- **Runtime (browser):** If the baked origin is **`localhost:8888`** but the page is on a **deployed host** (ALB·도메인), links use the **current origin** (or same-origin **relative** `/dashboard`, `/teams`). If the baked host ≠ the current host (e.g. ALB recreated), same rule applies.
+- **Runtime (browser):** On web-edge / ALB, cross-app sidebar links use **root-relative paths** (`/teams`, `/dashboard`, …) so SSR and stale `localhost:8888` build args cannot send users off-host. Absolute `NEXT_PUBLIC_WEB_EDGE_ORIGIN` is only used for **standalone local dev** (app on `:3000` etc., not `:8888`).
 - **Local:** Browser entry is **`http://localhost:8888`** (web-edge) only. `localhost:8888` is the only local port treated as a runtime edge; other localhost ports fall back to `http://localhost:8888` for cross-app hrefs. **Do not** use identity/usage **split ports (`:3000`, `:3001`)** as the browser entry for the integrated console — cookies and `@ai-usage/shell` links assume a single origin (`docs/contracts/web-split-boundary.md` §4, `docs/contracts/gateway-proxy.md` §10).
 
 See `docs/aws-github-oidc-ecr-ssm.md` (GitHub Environment `NEXT_PUBLIC_*`, ALB DNS) and `.env.deploy.example`.

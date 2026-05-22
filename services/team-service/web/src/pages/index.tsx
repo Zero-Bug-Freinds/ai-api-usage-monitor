@@ -20,11 +20,22 @@ class TeamPageErrorBoundary extends React.Component<
     return { error };
   }
 
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error("[team-web] render failed", error, info.componentStack);
+  }
+
   render() {
     if (this.state.error) {
+      const hint =
+        typeof window !== "undefined" &&
+        (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") &&
+        window.location.port !== "8888"
+          ? " 로컬 단독 포트가 아닌 http://localhost:8888/teams (web-edge)로 열어 주세요."
+          : "";
       return (
         <div className="p-6 text-sm text-destructive" role="alert">
           팀 화면을 표시하지 못했습니다. 잠시 후 새로고침하거나 web-edge(배포 URL)에서 다시 열어 주세요.
+          {hint}
         </div>
       );
     }

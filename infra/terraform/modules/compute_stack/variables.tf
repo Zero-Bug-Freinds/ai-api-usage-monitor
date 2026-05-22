@@ -104,3 +104,9 @@ variable "ec2_rabbitmq_user" {
   description = "RabbitMQ application user created on first boot (RABBITMQ_USER in .env.deploy)."
   default     = "app"
 }
+
+variable "agent_credentials_secret_ids" {
+  type        = list(string)
+  description = "Secrets Manager secret names/ids (e.g. prod/ai-agent/credentials) readable by EC2 for on-instance-compose-roll.sh AI_AGENT_* merge."
+  default     = ["prod/ai-agent/credentials"]
+}

@@ -4,6 +4,8 @@ import * as React from "react"
 import { ChevronRight, Minus, Plus, Search } from "lucide-react"
 import { Checkbox, Label } from "@ai-usage/ui"
 
+import { createRandomId } from "../../lib/random-id"
+
 type ApiResponse<T> = {
   success: boolean
   message: string
@@ -138,7 +140,7 @@ const MODAL_ERROR_MESSAGES = [
 type InviteeFieldRow = { id: string; value: string }
 
 function newInviteeRow(): InviteeFieldRow {
-  return { id: crypto.randomUUID(), value: "" }
+  return { id: createRandomId(), value: "" }
 }
 
 function teamApiPath(path: string): string {
