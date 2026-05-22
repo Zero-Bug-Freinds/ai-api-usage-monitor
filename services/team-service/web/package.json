@@ -3,25 +3,25 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "refresh:shell": "node ../../../scripts/refresh-shell-for-team-web.mjs",
+    "predev": "node -e \"require('node:fs').rmSync('.next',{recursive:true,force:true})\"",
     "dev": "next dev -p 3012",
+    "prebuild": "node ../../../scripts/refresh-shell-for-team-web.mjs",
     "build": "next build",
-    "build:standalone": "NEXT_PRIVATE_LOCAL_WEBPACK=true NEXT_DISABLE_STANDALONE=false next build",
+    "build:standalone": "next build",
     "start": "next start -p 3012",
     "lint": "eslint ."
   },
   "dependencies": {
     "@ai-usage/shell": "workspace:*",
     "@ai-usage/ui": "workspace:*",
-    "@module-federation/bridge-react-webpack-plugin": "^2.4.0",
-    "@module-federation/nextjs-mf": "^8.8.64",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.14.0",
     "next": "15.2.4",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "tailwind-merge": "^3.5.0",
-    "webpack": "^5.97.1"
+    "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",

@@ -111,7 +111,7 @@ Person(browserUser, "Browser user", "Web UI and same-origin BFF")
 System_Boundary(platform, "AI Usage Platform") {
     Container(webEdge, "web-edge", "Nginx", "단일 진입점 :8888; /api/v1*→Gateway; path 기반 web 분기")
     Container(idWeb, "Identity Web", "Next.js 15", "랜딩·인증·설정; /api/auth/* · /api/identity/* BFF")
-    Container(usWeb, "Usage Web", "Next.js 15", "대시보드; /api/usage/* BFF → Gateway; web-mfe=MF remote")
+    Container(usWeb, "Usage Web", "Next.js 15", "대시보드 /dashboard; BFF → Gateway")
     Container(billWeb, "Billing Web", "Next.js 15", "지출·비용; /api/expenditure/* BFF → Gateway /api/v1/expenditure")
     Container(ntfWeb, "Notification Web", "Next.js 15", "인앱 알림; BFF → notification-service REST")
     Container(gateway, "API Gateway", "Spring Cloud Gateway", "JWT; /api/v1/ai→/proxy; trust headers; /api/v1/expenditure→Billing")

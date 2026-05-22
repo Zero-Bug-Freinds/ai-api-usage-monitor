@@ -141,6 +141,45 @@ jobs:
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      - id: web_origins
+        name: Resolve NEXT_PUBLIC web origins (IDENTITY falls back to WEB_EDGE)
+        env:
+          FORCE_ALL: ${{ steps.flags.outputs.force_all }}
+          IDENTITY_SVC: ${{ needs.changes.outputs.identity }}
+          USAGE_SVC: ${{ needs.changes.outputs.usage }}
+          BILLING_SVC: ${{ needs.changes.outputs.billing }}
+          TEAM_SVC: ${{ needs.changes.outputs.team }}
+          AI_AGENT_SVC: ${{ needs.changes.outputs.ai_agent }}
+          NOTIFICATION_SVC: ${{ needs.changes.outputs.notification }}
+          WEB_SHARED: ${{ needs.changes.outputs.web_shared }}
+        run: |
+          set -euo pipefail
+          edge="${{ vars.NEXT_PUBLIC_WEB_EDGE_ORIGIN }}"
+          identity="${{ vars.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN }}"
+          if [ -z "$identity" ]; then
+            identity="$edge"
+          fi
+          usage="${{ vars.NEXT_PUBLIC_USAGE_WEB_ORIGIN }}"
+          if [ -z "$usage" ]; then
+            usage="$edge"
+          fi
+          will_build_web=false
+          if [[ "$FORCE_ALL" == "true" || "$WEB_SHARED" == "true" ]]; then
+            will_build_web=true
+          fi
+          for v in "$IDENTITY_SVC" "$USAGE_SVC" "$BILLING_SVC" "$TEAM_SVC" "$AI_AGENT_SVC" "$NOTIFICATION_SVC"; do
+            if [[ "$v" == "true" ]]; then
+              will_build_web=true
+            fi
+          done
+          if [[ "$will_build_web" == "true" && -z "$edge" ]]; then
+            echo "::error title=Missing NEXT_PUBLIC_WEB_EDGE_ORIGIN::Set GitHub Environment variable NEXT_PUBLIC_WEB_EDGE_ORIGIN (public ALB URL, no trailing slash). Example: http://ai-api-usage-monitor-alb-787442144.ap-northeast-2.elb.amazonaws.com — see docs/aws-github-oidc-ecr-ssm.md §10.1."
+            exit 1
+          fi
+          echo "web_edge=$edge" >> "$GITHUB_OUTPUT"
+          echo "identity=$identity" >> "$GITHUB_OUTPUT"
+          echo "usage=$usage" >> "$GITHUB_OUTPUT"
+
       - name: Compute image prefix and tags
         id: meta
         run: |
@@ -296,9 +335,9 @@ jobs:
           file: services/identity-service/web/Dockerfile
           push: true
           build-args: |
-            NEXT_PUBLIC_USAGE_WEB_ORIGIN=${{ vars.NEXT_PUBLIC_USAGE_WEB_ORIGIN }}
-            NEXT_PUBLIC_WEB_EDGE_ORIGIN=${{ vars.NEXT_PUBLIC_WEB_EDGE_ORIGIN }}
-            NEXT_PUBLIC_IDENTITY_WEB_ORIGIN=${{ vars.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN }}
+            NEXT_PUBLIC_USAGE_WEB_ORIGIN=${{ steps.web_origins.outputs.usage }}
+            NEXT_PUBLIC_WEB_EDGE_ORIGIN=${{ steps.web_origins.outputs.web_edge }}
+            NEXT_PUBLIC_IDENTITY_WEB_ORIGIN=${{ steps.web_origins.outputs.identity }}
           tags: |
             ${{ steps.meta.outputs.image_prefix }}/identity-web:${{ steps.meta.outputs.tag_sha }}
             ${{ steps.meta.outputs.image_prefix }}/identity-web:${{ steps.meta.outputs.tag_pointer }}
@@ -311,8 +350,8 @@ jobs:
           file: services/usage-service/web/Dockerfile
           push: true
           build-args: |
-            NEXT_PUBLIC_WEB_EDGE_ORIGIN=${{ vars.NEXT_PUBLIC_WEB_EDGE_ORIGIN }}
-            NEXT_PUBLIC_IDENTITY_WEB_ORIGIN=${{ vars.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN }}
+            NEXT_PUBLIC_WEB_EDGE_ORIGIN=${{ steps.web_origins.outputs.web_edge }}
+            NEXT_PUBLIC_IDENTITY_WEB_ORIGIN=${{ steps.web_origins.outputs.identity }}
             NEXT_PUBLIC_BASE_PATH=/dashboard
           tags: |
             ${{ steps.meta.outputs.image_prefix }}/usage-web:${{ steps.meta.outputs.tag_sha }}
@@ -326,8 +365,8 @@ jobs:
           file: services/billing-service/web/Dockerfile
           push: true
           build-args: |
-            NEXT_PUBLIC_WEB_EDGE_ORIGIN=${{ vars.NEXT_PUBLIC_WEB_EDGE_ORIGIN }}
-            NEXT_PUBLIC_IDENTITY_WEB_ORIGIN=${{ vars.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN }}
+            NEXT_PUBLIC_WEB_EDGE_ORIGIN=${{ steps.web_origins.outputs.web_edge }}
+            NEXT_PUBLIC_IDENTITY_WEB_ORIGIN=${{ steps.web_origins.outputs.identity }}
           tags: |
             ${{ steps.meta.outputs.image_prefix }}/billing-web:${{ steps.meta.outputs.tag_sha }}
             ${{ steps.meta.outputs.image_prefix }}/billing-web:${{ steps.meta.outputs.tag_pointer }}
@@ -340,10 +379,8 @@ jobs:
           file: services/team-service/web/Dockerfile
           push: true
           build-args: |
-            NEXT_PUBLIC_MFE_ASSET_PREFIX=/teams
-            NEXT_PUBLIC_MFE_USAGE_REMOTE_URL=${{ vars.NEXT_PUBLIC_MFE_USAGE_REMOTE_URL }}
-            NEXT_PUBLIC_WEB_EDGE_ORIGIN=${{ vars.NEXT_PUBLIC_WEB_EDGE_ORIGIN }}
-            NEXT_PUBLIC_IDENTITY_WEB_ORIGIN=${{ vars.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN }}
+            NEXT_PUBLIC_WEB_EDGE_ORIGIN=${{ steps.web_origins.outputs.web_edge }}
+            NEXT_PUBLIC_IDENTITY_WEB_ORIGIN=${{ steps.web_origins.outputs.identity }}
           tags: |
             ${{ steps.meta.outputs.image_prefix }}/team-web:${{ steps.meta.outputs.tag_sha }}
             ${{ steps.meta.outputs.image_prefix }}/team-web:${{ steps.meta.outputs.tag_pointer }}
@@ -369,8 +406,8 @@ jobs:
           file: services/agent-service/web/Dockerfile
           push: true
           build-args: |
-            NEXT_PUBLIC_WEB_EDGE_ORIGIN=${{ vars.NEXT_PUBLIC_WEB_EDGE_ORIGIN }}
-            NEXT_PUBLIC_IDENTITY_WEB_ORIGIN=${{ vars.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN }}
+            NEXT_PUBLIC_WEB_EDGE_ORIGIN=${{ steps.web_origins.outputs.web_edge }}
+            NEXT_PUBLIC_IDENTITY_WEB_ORIGIN=${{ steps.web_origins.outputs.identity }}
           tags: |
             ${{ steps.meta.outputs.image_prefix }}/agent-web:${{ steps.meta.outputs.tag_sha }}
             ${{ steps.meta.outputs.image_prefix }}/agent-web:${{ steps.meta.outputs.tag_pointer }}

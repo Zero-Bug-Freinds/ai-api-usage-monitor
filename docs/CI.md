@@ -25,7 +25,7 @@
 | **Build team-service** | Java 21 + team-service Gradle build (`team-web` 이미지 빌드는 향후 CI 확장 시 `team`·`web_shared` 필터와 함께 추가 가능) |
 | **Build notification-service** | Nest build + notification-web lint/test/build + notification-service/notification-web 이미지 빌드(`type=gha`) |
 | **Build identity-service** | Java 21 + identity-web lint/test/build + identity-web 이미지 빌드(`type=gha`) |
-| **Build web-mfe remotes** | 현재 `ci.yml`에 별도 job 없음(필요 시 paths-filter·job 추가) |
+| **Build team-web** | `release.yml`·paths-filter `team` / `web_shared`; `web-mfe` remote 빌드는 **사용하지 않음** |
 | **Build web-host** | 현재 `if: false`로 비활성(긴급 우회) |
 | **CI observability metrics** | Actions API로 job duration/결과를 수집해 요약 |
 | **CI summary** | gitleaks 성공 필수, 실행된 빌드·Compose 잡이 `failure`/`cancelled`이면 실패. 스킵된 잡은 허용 (`web` 포함) |
@@ -33,7 +33,7 @@
 ## Docker 빌드 캐시 (로컬 vs CI)
 
 - **로컬 (`docker compose build` / `up --build`)**: 루트 `docker-compose.yml`에는 **container registry 기반 `cache_from` / `cache_to`를 두지 않는다**. 즉, **팀원은 GHCR 로그인 없이도** 동일한 Compose 명령으로 개발을 시작할 수 있다. 캐시는 각 서비스 Dockerfile의 `RUN --mount=type=cache`(pnpm store, Gradle, Next `.next/cache` 등)로 처리해 반복 빌드 시간을 줄인다.
-- **CI (GitHub Actions)**: 서비스별 job에서 `docker/build-push-action@v6` + BuildKit **`type=gha` cache**를 사용한다. `scope`는 이미지 단위(`api-gateway-service`, `proxy-service`, `usage-service`, `usage-web`, `billing-service`, `billing-web`, `notification-service`, `notification-web`, `identity-web`, `team-web-mfe`)로 분리한다.
+- **CI (GitHub Actions)**: 서비스별 job에서 `docker/build-push-action@v6` + BuildKit **`type=gha` cache**를 사용한다. `scope`는 이미지 단위(`api-gateway-service`, `proxy-service`, `usage-service`, `usage-web`, `billing-service`, `billing-web`, `notification-service`, `notification-web`, `identity-web`, `team-web`)로 분리한다.
 
 - **권한 최소화(보안)**: 전역 권한은 `contents: read`, `actions: read`를 유지하고, `cache-to: type=gha`를 사용하는 서비스 빌드 잡에서만 `actions: write`를 잡 단위로 부여한다.
 
@@ -57,7 +57,7 @@
 
 - **네이밍 규칙**: 이미지 태그(`*-web:ci`)와 동일한 문자열을 `scope`로 사용한다.
   - 예: `identity-web` → `scope=identity-web`, `usage-web` → `scope=usage-web`, `billing-web` → `scope=billing-web`, `notification-web` → `scope=notification-web`
-  - MFE(remote)도 동일 규칙 적용: `team-web-mfe` → `scope=team-web-mfe`
+  - `team-web` → `scope=team-web` (`release.yml`의 `Push team-web`와 동일)
   - 현재 `ci.yml` 기준 공통 Stage A 캐시는 사용하지 않고, 서비스별 scope 중심으로 운영한다.
 - **용량 정책(무료 티어 10GB)**:
   - 기본값은 **`cache-to: type=gha,mode=min`** (폭증 방지).

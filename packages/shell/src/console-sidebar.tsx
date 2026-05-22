@@ -2,7 +2,6 @@
 
 import * as React from "react"
 import type { ReactNode } from "react"
-import Link from "next/link"
 import {
   Bell,
   ChevronLeft,
@@ -20,6 +19,7 @@ import { ConsoleInternalNavLink } from "./console-internal-nav-link"
 import type { ConsoleNavId, ConsoleProfile } from "./console-nav"
 import { CONSOLE_MAIN_NAV_ORDER, CONSOLE_NAV } from "./console-nav"
 import {
+  buildTeamSubmenuPublicHref,
   isConsoleNavActive,
   notificationUnreadCountFetchUrl,
   resolveConsoleNavLink,
@@ -107,7 +107,7 @@ export type ConsoleSidebarProps = {
   logoutRedirectPath?: string
   /**
    * When set, team submenu links use this URL shape (e.g. `/teams?viewTeamId=…&tab=…`).
-   * If omitted, legacy `/teams/{id}/{suffix}` links are used.
+   * If omitted, {@link buildTeamSubmenuPublicHref} (`/dashboard`, `/dashboard/team?…`) is used.
    */
   buildTeamSubmenuHref?: (teamId: string, suffix: (typeof TEAM_SUB_MENU)[number]["suffix"]) => string
   /** When set, expands the matching team row (e.g. `viewTeamId` query). */
@@ -149,9 +149,9 @@ export function ConsoleSidebarInner({
       setExpandedTeamId(teamExpandedTeamId)
       return
     }
-    const match = pathname.match(/^\/teams\/([^/]+)/)
-    if (match?.[1]) {
-      setExpandedTeamId((prev) => prev ?? decodeURIComponent(match[1]))
+    const legacyMatch = pathname.match(/^\/teams\/([^/]+)/)
+    if (legacyMatch?.[1]) {
+      setExpandedTeamId((prev) => prev ?? decodeURIComponent(legacyMatch[1]))
     }
   }, [pathname, teamExpandedTeamId])
 
@@ -293,15 +293,14 @@ export function ConsoleSidebarInner({
                       {TEAM_SUB_MENU.map((item) => {
                         const href = buildTeamSubmenuHref
                           ? buildTeamSubmenuHref(team.id, item.suffix)
-                          : `/teams/${encodeURIComponent(team.id)}/${item.suffix}`
+                          : buildTeamSubmenuPublicHref(team.id, item.suffix)
                         const active = teamSubmenuActive
                           ? teamSubmenuActive.teamId === team.id && teamSubmenuActive.suffix === item.suffix
                           : pathname === href || pathname.startsWith(`${href}/`)
                         return (
                           <li key={item.key}>
-                            <Link
+                            <a
                               href={href}
-                              prefetch={navigationReady}
                               tabIndex={navigationReady ? 0 : -1}
                               aria-disabled={!navigationReady}
                               onClick={(e) => {
@@ -316,7 +315,7 @@ export function ConsoleSidebarInner({
                               )}
                             >
                               {item.label}
-                            </Link>
+                            </a>
                           </li>
                         )
                       })}

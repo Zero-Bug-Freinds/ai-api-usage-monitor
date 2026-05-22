@@ -27,13 +27,13 @@ Implementation: [`TeamKeyCredentialClient`](../src/main/java/com/eevee/proxyserv
 
 ## team-service implementer checklist
 
-- [ ] Controller under `/internal/v1/team-api-keys/{keyId}/credential` (no clash with membership `GET /internal/api-keys/{provider}`)
-- [ ] Validate Bearer against `team.internal.api-token`
-- [ ] Resolve `TeamApiKeyEntity` by `keyId` + `teamId` + `provider`; reject non-active keys as 404
-- [ ] Decrypt with existing `EncryptionUtil.decryptAes256Gcm` (same as `TeamInternalApiKeyResolveService`)
-- [ ] **No** team membership check on this endpoint (trusted proxy-only caller)
-- [ ] Never log `plainKey` or full fingerprint
-- [ ] (Optional) Include registrant email in fingerprint POST lookup `userId` for usage attribution — see [`docs/ext-usage-subject-email-followups.md`](../../../docs/ext-usage-subject-email-followups.md)
+- [x] Controller under `/internal/v1/team-api-keys/{keyId}/credential` (no clash with membership `GET /internal/api-keys/{provider}`)
+- [x] Validate Bearer against `team.internal.api-token`
+- [x] Resolve `TeamApiKeyEntity` by `keyId` + `teamId` + `provider`; reject non-active keys as 404
+- [x] Decrypt with existing `EncryptionUtil.decryptAes256Gcm` (same as `TeamInternalApiKeyResolveService`)
+- [x] **No** team membership check on this endpoint (trusted proxy-only caller)
+- [x] Never log `plainKey` or full fingerprint
+- [x] Registrant email in fingerprint POST lookup `userId` — see [`docs/ext-usage-subject-email-followups.md`](../../../docs/ext-usage-subject-email-followups.md)
 
 ## Behaviour before / after team API exists
 

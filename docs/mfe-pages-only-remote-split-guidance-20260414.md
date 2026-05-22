@@ -1,5 +1,7 @@
 # Module Federation — Pages 전용 remote(`web-mfe`) 분리 가이드
 
+> **Deprecated (2026-05):** `usage-service`·`team-service`의 **`web-mfe/`** 및 web-edge **`/mfe/usage`** 는 제거되었다. 팀·사용량 UI는 각 **`services/<svc>/web/`** + **`web-edge`** (`/teams`, `/dashboard`) 만 본다. 아래는 역사·마이그레이션 참고용이다.
+
 **상태:** 팀 정본(2026-04-14 기준 구조와 동기화). 관련: [`docs/architecture.md`](architecture.md) §13.3, [`docs/contracts/web-split-boundary.md`](contracts/web-split-boundary.md) §2.6, [`docs/repository-structure.md`](repository-structure.md) §6.
 
 ---

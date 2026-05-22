@@ -36,19 +36,15 @@ COPY services/team-service/web ./services/team-service/web
 
 WORKDIR /repo/services/team-service/web
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NEXT_PRIVATE_LOCAL_WEBPACK=true
-ARG NEXT_PUBLIC_MFE_ASSET_PREFIX=/teams
-ARG NEXT_PUBLIC_MFE_USAGE_REMOTE_URL=
 ARG NEXT_PUBLIC_WEB_EDGE_ORIGIN=
 ARG NEXT_PUBLIC_IDENTITY_WEB_ORIGIN=
-ENV NEXT_PUBLIC_MFE_ASSET_PREFIX=$NEXT_PUBLIC_MFE_ASSET_PREFIX
-ENV NEXT_PUBLIC_MFE_USAGE_REMOTE_URL=$NEXT_PUBLIC_MFE_USAGE_REMOTE_URL
 ENV NEXT_PUBLIC_WEB_EDGE_ORIGIN=$NEXT_PUBLIC_WEB_EDGE_ORIGIN
 ENV NEXT_PUBLIC_IDENTITY_WEB_ORIGIN=$NEXT_PUBLIC_IDENTITY_WEB_ORIGIN
+# packages/shell 변경 시 Next·workspace 링크를 반드시 다시 잡는다(BuildKit .next/cache 영속화로 옛 shell 번들이 남는 문제 방지).
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    --mount=type=cache,target=/repo/services/team-service/web/.next/cache \
     pnpm config set store-dir /pnpm/store && \
     pnpm install --frozen-lockfile && \
+    rm -rf .next && \
     pnpm run build:standalone
 
 FROM node:22-alpine AS runner

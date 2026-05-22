@@ -2,7 +2,9 @@ package com.zerobugfreinds.identity_service.service;
 
 import com.zerobugfreinds.identity_service.domain.ExternalApiKeyProvider;
 import com.zerobugfreinds.identity_service.dto.InternalApiKeyLookupResponse;
+import com.zerobugfreinds.identity_service.dto.InternalFingerprintLookupResponse;
 import com.zerobugfreinds.identity_service.entity.ExternalApiKeyEntity;
+import com.zerobugfreinds.identity_service.entity.User;
 import com.zerobugfreinds.identity_service.exception.AmbiguousExternalApiKeyHashException;
 import com.zerobugfreinds.identity_service.exception.ExternalApiKeyNotFoundException;
 import com.zerobugfreinds.identity_service.repository.ExternalApiKeyRepository;
@@ -20,6 +22,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,6 +39,9 @@ class ExternalApiKeyLookupServiceTest {
 
 	private static final String SAMPLE_HASH =
 			"a1b2c3d4e5f60718293a4b5c6d7e8f9001122334455667788990aabbccddeeff";
+
+	private static final String SAMPLE_FINGERPRINT =
+			"b1c2d3e4f5061728394a5b6c7d8e9f00112233445566778899aabbccddeeff00";
 
 	@Mock
 	private ExternalApiKeyRepository externalApiKeyRepository;
@@ -151,13 +157,69 @@ class ExternalApiKeyLookupServiceTest {
 				.hasMessageContaining("provider");
 	}
 
+	@Test
+	void lookupByApiKeyFingerprint_singleMatch_returnsOwnerEmailAsUserId() {
+		ExternalApiKeyEntity entity = newFingerprintEntity(44L, 7L, "openai-default", false);
+		when(externalApiKeyRepository.findAllByProviderAndApiKeyFingerprint(
+				eq(ExternalApiKeyProvider.OPENAI), eq(SAMPLE_FINGERPRINT)
+		)).thenReturn(List.of(entity));
+		User owner = new User(
+				"Owner@Example.com",
+				"hash",
+				"Owner",
+				com.zerobugfreinds.identity_service.entity.Role.USER
+		);
+		ReflectionTestUtils.setField(owner, "id", 7L);
+		when(userRepository.findById(7L)).thenReturn(Optional.of(owner));
+
+		InternalFingerprintLookupResponse response =
+				externalApiKeyService.lookupByApiKeyFingerprint(ExternalApiKeyProvider.OPENAI, SAMPLE_FINGERPRINT);
+
+		assertThat(response.userId()).isEqualTo("owner@example.com");
+		assertThat(response.userId()).doesNotStartWith("u_");
+		assertThat(response.ownerType()).isEqualTo("PERSONAL");
+	}
+
+	@Test
+	void lookupByApiKeyFingerprint_ownerMissing_throwsIllegalState() {
+		ExternalApiKeyEntity entity = newFingerprintEntity(55L, 99L, "openai-default", false);
+		when(externalApiKeyRepository.findAllByProviderAndApiKeyFingerprint(
+				eq(ExternalApiKeyProvider.OPENAI), eq(SAMPLE_FINGERPRINT)
+		)).thenReturn(List.of(entity));
+		when(userRepository.findById(99L)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() ->
+				externalApiKeyService.lookupByApiKeyFingerprint(ExternalApiKeyProvider.OPENAI, SAMPLE_FINGERPRINT)
+		).isInstanceOf(IllegalStateException.class)
+				.hasMessageContaining("user not found");
+	}
+
 	private static ExternalApiKeyEntity newEntity(Long id, Long userId, String alias, boolean pendingDeletion) {
+		return newFingerprintEntity(id, userId, alias, pendingDeletion, SAMPLE_HASH);
+	}
+
+	private static ExternalApiKeyEntity newFingerprintEntity(
+			Long id,
+			Long userId,
+			String alias,
+			boolean pendingDeletion
+	) {
+		return newFingerprintEntity(id, userId, alias, pendingDeletion, SAMPLE_FINGERPRINT);
+	}
+
+	private static ExternalApiKeyEntity newFingerprintEntity(
+			Long id,
+			Long userId,
+			String alias,
+			boolean pendingDeletion,
+			String fingerprint
+	) {
 		ExternalApiKeyEntity entity = ExternalApiKeyEntity.register(
 				userId,
 				ExternalApiKeyProvider.OPENAI,
 				alias,
 				SAMPLE_HASH,
-				SAMPLE_HASH,
+				fingerprint,
 				"encrypted",
 				BigDecimal.ONE
 		);

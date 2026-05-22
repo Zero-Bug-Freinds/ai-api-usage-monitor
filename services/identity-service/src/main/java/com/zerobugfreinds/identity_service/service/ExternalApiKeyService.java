@@ -127,6 +127,7 @@ public class ExternalApiKeyService {
 				externalApiKeyRepository.findByUserIdAndProviderAndKeyHash(userId, normalizedProvider, keyHash);
 		if (existingSameHash.isPresent()) {
 			ExternalApiKeyEntity existing = existingSameHash.get();
+			verifyGlobalFingerprintUnique(apiKeyFingerprint, existing.getId());
 			if (existing.isPendingDeletion()) {
 				if (externalApiKeyRepository.existsByUserIdAndKeyAliasAndIdNot(userId, trimmedAlias, existing.getId())) {
 					throw new DuplicateExternalApiKeyAliasException("이미 사용 중인 별칭입니다");
@@ -138,7 +139,8 @@ public class ExternalApiKeyService {
 				try {
 					reactivated = externalApiKeyRepository.saveAndFlush(existing);
 				} catch (DataIntegrityViolationException ex) {
-					throw toDuplicateException(userId, normalizedProvider, trimmedAlias, keyHash, ex);
+					throw toDuplicateException(
+							userId, normalizedProvider, trimmedAlias, keyHash, apiKeyFingerprint, existing.getId(), ex);
 				}
 				log.info(
 						"[AUDIT] external_api_key_reactivated userId={} provider={} alias={} keyId={}",
@@ -164,6 +166,8 @@ public class ExternalApiKeyService {
 			throw new DuplicateExternalApiKeyAliasException("이미 사용 중인 별칭입니다");
 		}
 
+		verifyGlobalFingerprintUnique(apiKeyFingerprint, null);
+
 		String encrypted = encryptionUtil.encryptAes256Gcm(normalizedKey);
 		ExternalApiKeyEntity entity = ExternalApiKeyEntity.register(
 				userId,
@@ -178,7 +182,8 @@ public class ExternalApiKeyService {
 		try {
 			saved = externalApiKeyRepository.saveAndFlush(entity);
 		} catch (DataIntegrityViolationException ex) {
-			throw toDuplicateException(userId, normalizedProvider, trimmedAlias, keyHash, ex);
+			throw toDuplicateException(
+					userId, normalizedProvider, trimmedAlias, keyHash, apiKeyFingerprint, null, ex);
 		}
 
 		log.info(
@@ -254,6 +259,7 @@ public class ExternalApiKeyService {
 			String apiKeyFingerprint = encryptionUtil.sha256HexUtf8(normalizedKey);
 			apiKeyFingerprintRegistrationLock.runWithLock(apiKeyFingerprint, () -> {
 				verifyNoTeamScopeDuplicate(normalizedProvider, apiKeyFingerprint);
+				verifyGlobalFingerprintUnique(apiKeyFingerprint, externalKeyId);
 				Optional<ExternalApiKeyEntity> otherSameHash =
 						externalApiKeyRepository.findByUserIdAndProviderAndKeyHash(userId, normalizedProvider, keyHash);
 				if (otherSameHash.isPresent() && !otherSameHash.get().getId().equals(externalKeyId)) {
@@ -273,7 +279,15 @@ public class ExternalApiKeyService {
 		} catch (DataIntegrityViolationException ex) {
 			ExternalApiKeyProvider providerForCheck = entity.getProvider();
 			String keyHashForCheck = entity.getKeyHash();
-			throw toDuplicateException(userId, providerForCheck, trimmedAlias, keyHashForCheck, ex);
+			throw toDuplicateException(
+					userId,
+					providerForCheck,
+					trimmedAlias,
+					keyHashForCheck,
+					entity.getApiKeyFingerprint(),
+					entity.getId(),
+					ex
+			);
 		}
 
 		log.info(
@@ -375,7 +389,7 @@ public class ExternalApiKeyService {
 				? ExternalApiKeyStatus.DELETION_REQUESTED
 				: ExternalApiKeyStatus.ACTIVE;
 		return InternalFingerprintLookupResponse.personal(
-				"u_" + entity.getUserId(),
+				principalSubForUser(entity.getUserId()),
 				String.valueOf(entity.getId()),
 				entity.getKeyAlias(),
 				status.name(),
@@ -676,6 +690,8 @@ public class ExternalApiKeyService {
 			ExternalApiKeyProvider provider,
 			String alias,
 			String keyHash,
+			String apiKeyFingerprint,
+			Long excludeKeyId,
 			DataIntegrityViolationException ex
 	) {
 		if (externalApiKeyRepository.existsByUserIdAndKeyAlias(userId, alias)) {
@@ -689,7 +705,38 @@ public class ExternalApiKeyService {
 			}
 			return new DuplicateExternalApiKeyException("이미 등록된 API 키입니다");
 		}
+		if (StringUtils.hasText(apiKeyFingerprint)) {
+			try {
+				verifyGlobalFingerprintUnique(apiKeyFingerprint, excludeKeyId);
+			} catch (DuplicateExternalApiKeyException duplicate) {
+				return duplicate;
+			}
+		}
 		return ex;
+	}
+
+	/**
+	 * 평문 API 키 fingerprint 기준 전역 유일 — 사용자·provider와 무관하게 DB에 동일 시크릿 1행만 허용한다.
+	 *
+	 * @param excludeKeyId 수정·삭제 예정 복구 시 자기 행은 제외
+	 */
+	private void verifyGlobalFingerprintUnique(String apiKeyFingerprint, Long excludeKeyId) {
+		if (!StringUtils.hasText(apiKeyFingerprint)) {
+			return;
+		}
+		String normalized = apiKeyFingerprint.trim();
+		for (ExternalApiKeyEntity row : externalApiKeyRepository.findAllByApiKeyFingerprint(normalized)) {
+			if (excludeKeyId != null && excludeKeyId.equals(row.getId())) {
+				continue;
+			}
+			log.warn(
+					"[AUDIT] external_api_key_global_duplicate fingerprintPrefix={} existingKeyId={} existingUserId={}",
+					normalized.substring(0, Math.min(8, normalized.length())),
+					row.getId(),
+					row.getUserId()
+			);
+			throw new DuplicateExternalApiKeyException("이미 등록된 API 키입니다");
+		}
 	}
 
 	private void verifyNoTeamScopeDuplicate(ExternalApiKeyProvider provider, String apiKeyFingerprint) {

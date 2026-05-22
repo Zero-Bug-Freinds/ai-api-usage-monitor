@@ -1,6 +1,10 @@
 {
   "compilerOptions": {
     "baseUrl": ".",
+    "paths": {
+      "@ai-usage/shell": ["../../../packages/shell/src/index.ts"],
+      "@ai-usage/shell/pages": ["../../../packages/shell/src/pages.ts"]
+    },
     "target": "ES2017",
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": false,

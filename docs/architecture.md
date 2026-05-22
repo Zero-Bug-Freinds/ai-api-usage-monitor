@@ -501,36 +501,31 @@
 - **시각화**: §12 등이 노출하는 **집계·조회 API** 응답을 차트·테이블로 표현한다.
 - **보안**: 공급사 API Key·내부 토큰을 **브라우저 번들에 넣지 않는다**(§8). 플랫폼 JWT는 BFF·`httpOnly` 쿠키 패턴을 유지한다.
 
-### 13.3 브라우저 통합·Module Federation (`web-edge` · `web-mfe`)
+### 13.3 브라우저 통합·단일 오리진 (`web-edge`)
 
-- **`web-edge`를 통한 앱 간 연결:** `docker/web-edge/nginx.conf.template`가 브라우저 요청 경로를 **Usage·Team·Billing·Notification·Agent `web`** 으로 넘긴다. 단일 호스트·단일 오리진 UX를 유지하면서 서비스별 Next 앱을 나란히 두는 **정본 라우팅 계층**이며, Identity `web`의 `next.config.ts`는 앱 간 프록시를 담당하지 않는다.
-- **`usage-service`·`team-service`의 디렉터리 분리:** 각각 **`web/`**(App Router·BFF·운영 UI)과 **`web-mfe/`**(Pages Router·**Module Federation** remote 전용)로 나뉜다. **`web-mfe`** 는 원격 엔트리(`exposes`)만 노출하고, 호스트는 **`apps/web`(web-host)** 등에서 `remotes`로 붙인다. 상세·작업 절차는 **`docs/mfe-pages-only-remote-split-guidance-20260414.md`**.
-- **공통 UI:** 사이드바·헤더·콘솔 네비는 **`packages/shell`** · **`packages/ui`** 를 사용한다(`docs/repository-structure.md` §6).
-- **라우트 변경 시:** 새 **최상위 브라우저 접두**를 도입하거나 BFF 경로를 바꿀 때는 **`docker/web-edge/nginx.conf.template`** 와 계약 문서를 함께 갱신한다(`docs/contracts/web-split-boundary.md`, `docs/howto-add-console-sidebar-route.md`).
+- **`web-edge`를 통한 앱 간 연결:** `docker/web-edge/nginx.conf.template`가 브라우저 요청 경로를 **Identity·Usage·Team·Billing·Notification·Agent 각 `web`** 으로 넘긴다. 단일 호스트·단일 오리진 UX를 유지하면서 서비스별 Next 앱을 나란히 두는 **정본 라우팅 계층**이며, Identity `web`의 `next.config.ts`는 앱 간 프록시를 담당하지 않는다.
+- **도메인 UI·BFF:** Usage·Team·Billing·Notification·Identity는 각 **`services/<svc>/web/`** 만 운영한다. 과거 **`web-mfe/`**·web-edge **`/mfe/usage`**·**Module Federation** usage remote는 **제거**되었다(역사: [`mfe-pages-only-remote-split-guidance-20260414.md`](mfe-pages-only-remote-split-guidance-20260414.md)).
+- **팀 콘솔:** **`services/team-service/web/`**(Pages Router, `basePath=/teams`) — 브라우저 **`/teams`**, BFF **`/teams/api/*`**·**`/api/team/v1/*`**. 사이드바 서브메뉴「대시보드」는 **`/dashboard`**,「멤버 상세」는 **`/dashboard/team?…`**(Usage `web`).
+- **공통 UI:** 사이드바·헤더·콘솔 네비는 **`packages/shell`** · **`packages/ui`** (`docs/repository-structure.md` §6). 교차 앱 링크는 **`NEXT_PUBLIC_WEB_EDGE_ORIGIN`**(Release 빌드)과 브라우저 현재 origin 보정(`packages/shell/README.md`, `docs/aws-github-oidc-ecr-ssm.md` §10.1).
+- **`apps/web`(web-host):** 선택적 로컬/실험용 셸. **운영 단일 도메인 진입은 `team-web` + `web-edge`가 정본**이다.
+- **라우트 변경 시:** 새 **최상위 브라우저 접두**를 도입하거나 BFF 경로를 바꿀 때는 **`docker/web-edge/nginx.conf.template`** 와 [`docs/contracts/web-split-boundary.md`](contracts/web-split-boundary.md)를 함께 갱신한다.
 
 ```mermaid
 flowchart LR
   subgraph Browser["브라우저"]
     U["사용자"]
   end
-  subgraph Edge["선택: web-edge Nginx :8888"]
-    N["경로 prefix 분기"]
+  subgraph Edge["web-edge Nginx"]
+    N["/ · /dashboard · /teams · /billing · …"]
   end
-  subgraph Identity["Identity web\n(via edge, upstream :3000)"]
-    IW["landing/auth/settings"]
+  subgraph Identity["identity-web"]
+    IW["/ · /login · /settings"]
   end
   subgraph Domains["도메인별 Next web"]
-    UW["usage web\n/dashboard · BFF"]
-    TW["team web\nbasePath=/teams"]
-    BW["billing web"]
-    NW["notification web"]
-  end
-  subgraph MF["Module Federation"]
-    H["apps/web host"]
-    UR["usage web-mfe\nremote"]
-    TR["team web-mfe\nremote"]
-    H --> UR
-    H --> TR
+    UW["usage-web\n/dashboard"]
+    TW["team-web\n/teams"]
+    BW["billing-web"]
+    NW["notification-web"]
   end
   U --> N
   N --> IW

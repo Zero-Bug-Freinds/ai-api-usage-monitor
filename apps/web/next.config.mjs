@@ -8,7 +8,14 @@ const nextConfig = {
   basePath: "/teams",
   output: "standalone",
   outputFileTracingRoot: path.join(__dirname, "../.."),
-  transpilePackages: ["@ai-usage/ui", "@ai-usage/shell", "@ai-usage/team-workspace-cache"],
+  transpilePackages: [
+    "@ai-usage/ui",
+    "@ai-usage/shell",
+    "@ai-usage/team-workspace-cache",
+  ],
+  experimental: {
+    externalDir: true,
+  },
 };
 
 export default nextConfig;
