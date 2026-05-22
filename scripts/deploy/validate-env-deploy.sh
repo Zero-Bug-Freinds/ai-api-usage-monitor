@@ -74,6 +74,17 @@ else
   echo "OK: RABBITMQ_HOST=${rabbit_host}"
 fi
 
+notif_rabbit_url="$(env_file_value NOTIFICATION_RABBITMQ_URL)"
+if [[ -z "${notif_rabbit_url//[[:space:]]/}" ]]; then
+  echo "WARN: NOTIFICATION_RABBITMQ_URL empty — notification-service uses composed amqp:// from RABBITMQ_* in compose" >&2
+  warns=$((warns + 1))
+elif [[ "${notif_rabbit_url,,}" == *@rabbitmq:* ]] || [[ "${notif_rabbit_url,,}" == *//rabbitmq:* ]]; then
+  echo "WARN: NOTIFICATION_RABBITMQ_URL uses hostname rabbitmq — EC2 should use host.docker.internal" >&2
+  warns=$((warns + 1))
+else
+  echo "OK: NOTIFICATION_RABBITMQ_URL is set (notification Nest RABBITMQ_URL)"
+fi
+
 if [[ ${#hosts[@]} -gt 1 ]]; then
   first="${hosts[0]}"
   for h in "${hosts[@]}"; do
