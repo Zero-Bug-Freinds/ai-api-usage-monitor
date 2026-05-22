@@ -300,8 +300,8 @@ Usage는 MQ로 적재 후 HTTP 조회를 제공한다(컨트롤러: `UsageAnalyt
 |--------|-----------|
 | API Gateway | 8080 |
 | Proxy | 8081 |
-| Identity `web`(호스트 매핑, Compose) | 3000 (`IDENTITY_WEB_PORT`) |
-| Usage `web`(호스트 매핑, Compose) | 3001 (`USAGE_WEB_PORT`) |
+| Identity `web`(Compose **upstream**, 호스트 노출) | 3000 (`IDENTITY_WEB_PORT`) — **브라우저 진입점 아님** |
+| Usage `web`(Compose **upstream**, 호스트 노출) | 3001 (`USAGE_WEB_PORT`) — **브라우저 진입점 아님** |
 | Team `web` (호스트 매핑, Compose) | 3002 (`TEAM_WEB_PORT`) |
 | Billing `web`(호스트 매핑, Compose) | 3003 (`BILLING_WEB_PORT`) |
 | **team-service**(Spring, 호스트 `bootRun` 예시) | `TEAM_SERVICE_PORT` 기본 8093; `scripts/bootrun.ps1`은 **8094** 권장(Compose 호스트 매핑과 충돌 방지 — [`architecture.md`](../architecture.md) §3.3) |
@@ -310,4 +310,6 @@ Usage는 MQ로 적재 후 HTTP 조회를 제공한다(컨트롤러: `UsageAnalyt
 
 지출·비용 확정 이벤트·Gateway 라우팅·로컬 점검은 [`billing-service-overview-20260412.md`](../billing-service-overview-20260412.md) §6를 본다.
 
-엣지 뒤에서는 브라우저가 **`http://localhost:8888`** 한 오리진으로 붙고, **`/api/v1`**·**`/api/v1/*`** 가 게이트웨이로 프록시된다(로컬 Nginx는 스트리밍·장시간 응답을 위해 **`proxy_buffering off`**·긴 timeout — `docker/web-edge/nginx.conf.template`). 팀이 변경 시 본 문서·`docker/web-edge/nginx.conf.template`·`docker-compose.yml`·`application.yml`을 함께 갱신한다.
+**브라우저 진입(정본):** **`http://localhost:8888`** (`web-edge`). Identity/Usage **`:3000`/`:3001` 호스트 포트**는 Nginx upstream·단독 `pnpm dev` 용이며, 통합 콘솔·`httpOnly` 쿠키·`@ai-usage/shell` 교차 링크는 **8888 단일 오리진**을 전제한다(`docs/contracts/web-split-boundary.md` §4).
+
+엣지 뒤에서는 **`/api/v1`**·**`/api/v1/*`** 가 게이트웨이로 프록시된다(로컬 Nginx는 스트리밍·장시간 응답을 위해 **`proxy_buffering off`**·긴 timeout — `docker/web-edge/nginx.conf.template`). 운영은 ALB → 동일 인스턴스 **8888** (`alb_target_port`). 팀이 변경 시 본 문서·`docker/web-edge/nginx.conf.template`·`docker-compose.yml`·`application.yml`을 함께 갱신한다.

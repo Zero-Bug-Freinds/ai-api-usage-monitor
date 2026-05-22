@@ -213,19 +213,21 @@
 
 **유지보수:** matcher에 경로를 추가·변경하면 (1) 동일 접두사의 `app/<segment>/[[...path]]/page.tsx`(또는 합의된 라우트)를 추가하거나, (2) 의도적으로 페이지가 없다면 matcher에서 해당 패턴을 제거한다. 회귀 방지용 테스트: `services/identity-service/web/middleware.test.ts`, `services/identity-service/web/src/app/protected-routes.test.ts`.
 
-#### 6.2.1 샘플 curl (로컬, Identity BFF 호스트만)
+#### 6.2.1 샘플 curl (로컬, web-edge 경유 — 권장)
 
-아래는 **Next 개발 서버가 `http://localhost:3000`** 이고 BFF가 Identity로 프록시한다고 할 때의 예이다(`PORT`·`basePath`가 다르면 호스트를 바꾼다).
+통합 스택에서는 **브라우저·BFF·쿠키**가 **`http://localhost:8888`** (web-edge) 한 오리진을 쓴다([web-split-boundary.md §4](./web-split-boundary.md)). Identity 소유 경로는 엣지가 identity `web` upstream 으로 넘긴다.
 
 ```bash
 # 세션(쿠키 없음 → 401 예상)
-curl -sS -i "http://localhost:3000/api/auth/session"
+curl -sS -i "http://localhost:8888/api/auth/session"
 
 # 회원가입(BFF → Identity)
-curl -sS -i -X POST "http://localhost:3000/api/auth/signup" \
+curl -sS -i -X POST "http://localhost:8888/api/auth/signup" \
   -H "Content-Type: application/json" \
   -d '{"email":"user@example.com","password":"abc123!@","passwordConfirm":"abc123!@","name":"U"}'
 ```
+
+**참고:** `http://localhost:3000` 은 Compose 가 identity `web` 컨테이너를 호스트에 **직접** 노출할 때의 upstream 포트일 뿐, 통합 콘솔 진입점이 아니다. 단독 `pnpm --filter identity-web dev` 디버그 시에만 해당 호스트를 쓴다.
 
 ---
 

@@ -8,8 +8,13 @@ Shared console layout: sidebar, navigation UI, logout wiring, `ConsoleShell`, `C
 `<ConsoleShell profile="...">` or `ConsoleSidebarPages` and avoid rebuilding nav labels, icons,
 active-state rules, or logout URLs locally.
 
-Cross-app navigation uses `NEXT_PUBLIC_WEB_EDGE_ORIGIN` first, with the legacy
-`NEXT_PUBLIC_IDENTITY_WEB_ORIGIN` read only as a fallback for older env files.
+Cross-app navigation (`console-nav.ts`):
+
+- **Build-time:** `NEXT_PUBLIC_WEB_EDGE_ORIGIN` (fallback: `NEXT_PUBLIC_IDENTITY_WEB_ORIGIN`) is inlined at **Next/Docker build** (`release.yml` build-args). EC2 compose roll **does not** change an already-built image.
+- **Runtime (browser):** On **`.elb.amazonaws.com`**, if the baked origin’s host ≠ the current page host (e.g. ALB recreated), links use **`window.location.origin`** so sidebar hops stay on the live ALB.
+- **Local:** Browser entry is **`http://localhost:8888`** (web-edge) only. `localhost:8888` is the only local port treated as a runtime edge; other localhost ports fall back to `http://localhost:8888` for cross-app hrefs. **Do not** use identity/usage **split ports (`:3000`, `:3001`)** as the browser entry for the integrated console — cookies and `@ai-usage/shell` links assume a single origin (`docs/contracts/web-split-boundary.md` §4, `docs/contracts/gateway-proxy.md` §10).
+
+See `docs/aws-github-oidc-ecr-ssm.md` (GitHub Environment `NEXT_PUBLIC_*`, ALB DNS) and `.env.deploy.example`.
 
 ## In-app notification toasts (`ConsoleShell`)
 

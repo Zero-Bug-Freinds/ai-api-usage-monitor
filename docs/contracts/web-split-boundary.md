@@ -138,11 +138,29 @@ Next `basePath`는 **`/billing`**(단일 도메인·`web-edge` 라우팅과 정�
 
 ## 4. 로컬 개발·쿠키 (httpOnly `access_token`)
 
-`access_token`은 **호스트+포트(오리진)** 에 묶인다. Identity와 Usage를 **서로 다른 포트**로만 띄우면, 한쪽에서 로그인해 설정한 쿠키가 다른 포트의 Next로 전달되지 않는다.
+`access_token`은 **호스트+포트(오리진)** 에 묶인다.
 
-- **권장:** 단일 호스트·포트로 보이게 **엣지 리버스 프록시**(Nginx 등)로 경로만 나누거나, Compose 스택에서 동일 패턴으로 기동한다(`docs/architecture.md` §10.2).
-- **기본:** 모든 브라우저 공개 링크와 리다이렉트는 `web-edge` 오리진을 기준으로 둔다. 분리 포트로만 개발하면 **쿠키 공유는 동일 오리진이 아니면 되지 않는다**는 점을 유의한다.
-- **Compose로 `web` 프로필 기동 시:** 루트 **`.env`** 가 `identity-web`·`usage-web`·`api-gateway-service` 등에 전달된다. 대시보드 BFF가 게이트웨이에 붙으려면 게이트웨이 컨테이너가 살아 있어야 하며, **`GATEWAY_SHARED_SECRET`** 빈 값 주의는 [gateway-proxy.md §5.1](./gateway-proxy.md).
+### 4.1 브라우저 진입점 (정본)
+
+| 용도 | URL |
+|------|-----|
+| **통합 콘솔(권장)** | `http://localhost:8888` — `docker compose --profile web` 의 **`web-edge`** (`WEB_EDGE_PORT`, `docker/web-edge/nginx.conf.template`) |
+| Identity/Usage **컨테이너 호스트 포트** (`3000`/`3001` 등) | Compose **내부 upstream** 용. **브라우저 북마크·사이드바 교차 링크 진입점으로 쓰지 않는다.** |
+| 호스트 `pnpm --filter *-web dev` | 단독 Next 디버그용. 쿠키·`@ai-usage/shell` 교차 앱 링크는 **8888 web-edge** 와 맞지 않을 수 있음. |
+
+`packages/shell` 은 로컬에서 **`localhost:8888` 만** 런타임 edge 로 인정하고, 그 외 localhost 포트는 cross-app href fallback 으로 `http://localhost:8888` 을 쓴다.
+
+### 4.2 운영(staging/production) — ALB DNS·`NEXT_PUBLIC_*`
+
+- 브라우저는 **ALB DNS** 또는 이후 고정 도메인 **한 오리진**으로 접속한다 (`terraform output alb_dns_name`, `WEB_EDGE_HOST_PORT`/`8888`).
+- **`NEXT_PUBLIC_WEB_EDGE_ORIGIN`** 은 **Release 빌드 시** GitHub Environment 변수로 각 `*-web` 이미지에 박힌다. **ALB를 재생성하면 DNS 숫자 ID가 바뀔 수 있으므로** 변수를 새 ALB URL로 맞춘 뒤 **`usage-web`·`identity-web` 등 웹 이미지를 Release로 재빌드**해야 한다. EC2 `on-instance-compose-roll.sh` 만으로는 번들이 갱신되지 않는다.
+- `@ai-usage/shell` 은 배포 환경에서 빌드 origin 과 현재 호스트(`.elb.amazonaws.com`)가 다르면 **현재 origin** 으로 알림·지출 등 링크를 만든다(옛 ALB 북마크 방지). 상세: [`packages/shell/README.md`](../../packages/shell/README.md), [`aws-github-oidc-ecr-ssm.md`](../aws-github-oidc-ecr-ssm.md) §10.
+
+### 4.3 Compose·게이트웨이
+
+- **권장:** 단일 호스트·포트(`web-edge`)로 경로만 나눈다(`docs/architecture.md` §10.2).
+- **Compose `web` 프로필:** 루트 **`.env`** 가 `identity-web`·`usage-web`·`api-gateway-service` 등에 전달된다. **`GATEWAY_SHARED_SECRET`** 빈 값 주의: [gateway-proxy.md §5.1](./gateway-proxy.md).
+- 루트 `.env.example` 의 `NEXT_PUBLIC_*` 는 로컬 **8888** 기준 예시다.
 
 ---
 

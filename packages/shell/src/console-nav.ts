@@ -49,20 +49,63 @@ function normalizePath(path: string): string {
 const LOCAL_DEV_WEB_EDGE_ORIGIN = "http://localhost:8888"
 const TEAM_SHELL_PUBLIC_PATH = "/teams"
 
+function configuredWebEdgeOrigin(): string {
+  if (typeof process === "undefined") {
+    return ""
+  }
+  return (
+    process.env.NEXT_PUBLIC_WEB_EDGE_ORIGIN?.trim() ||
+    process.env.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN?.trim() ||
+    ""
+  ).replace(/\/+$/, "")
+}
+
 function teamShellEdgeOrigin(): string {
   if (typeof process === "undefined") {
     return LOCAL_DEV_WEB_EDGE_ORIGIN
   }
-  const configured =
-    process.env.NEXT_PUBLIC_WEB_EDGE_ORIGIN?.trim() ||
-    process.env.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN?.trim() ||
-    ""
-  return configured.replace(/\/+$/, "") || LOCAL_DEV_WEB_EDGE_ORIGIN
+  return configuredWebEdgeOrigin() || LOCAL_DEV_WEB_EDGE_ORIGIN
 }
 
 /**
- * 배포 도메인(web-edge)에서 `NEXT_PUBLIC_*` 없이 빌드된 이미지도 팀 링크가 localhost로 가지 않게 한다.
- * identity 단독 `:3000` dev는 예외 — 여전히 web-edge `:8888` 기본값을 쓴다.
+ * Sidebar / cross-app 링크용 origin.
+ * 브라우저에서 빌드 시 박힌 NEXT_PUBLIC_* ALB 호스트와 현재 호스트가 다르면(인프라 재생성 후) 현재 origin 우선.
+ */
+function effectiveWebEdgeOriginForHref(): string {
+  const configured = configuredWebEdgeOrigin()
+  if (typeof window === "undefined") {
+    return configured
+  }
+  const current = window.location.origin.replace(/\/+$/, "")
+  const host = window.location.hostname
+  if (host.includes(".elb.amazonaws.com")) {
+    if (!configured) {
+      return current
+    }
+    try {
+      if (new URL(configured).hostname !== host) {
+        return current
+      }
+    } catch {
+      return current
+    }
+  }
+  const runtimeLocal = runtimeTeamShellEdgeOrigin()
+  if (runtimeLocal && configured) {
+    try {
+      if (new URL(configured).hostname !== new URL(runtimeLocal).hostname) {
+        return runtimeLocal
+      }
+    } catch {
+      return runtimeLocal
+    }
+  }
+  return configured
+}
+
+/**
+ * 로컬은 web-edge `:8888` 단일 진입만 런타임 edge로 본다 (`docs/contracts/gateway-proxy.md`).
+ * 그 외 localhost 포트(예: 앱 단독 dev 서버)는 null → {@link LOCAL_DEV_WEB_EDGE_ORIGIN} fallback.
  */
 function runtimeTeamShellEdgeOrigin(): string | null {
   if (typeof window === "undefined") {
@@ -70,10 +113,10 @@ function runtimeTeamShellEdgeOrigin(): string | null {
   }
   const { origin, hostname, port } = window.location
   if (hostname === "localhost" || hostname === "127.0.0.1") {
-    if (port === "3000") {
-      return null
+    if (port === "8888") {
+      return origin.replace(/\/+$/, "")
     }
-    return origin.replace(/\/+$/, "")
+    return null
   }
   return origin.replace(/\/+$/, "")
 }
@@ -82,21 +125,15 @@ function runtimeTeamShellEdgeOrigin(): string | null {
  * 사이드바「팀」→ Main Shell 팀 콘솔 절대 URL.
  * `NEXT_PUBLIC_TEAM_SHELL_HREF`가 http(s)면 그대로, `/…` 상대면 {@link teamShellEdgeOrigin}에 붙인다.
  * 둘 다 없으면 `NEXT_PUBLIC_WEB_EDGE_ORIGIN`(또는 legacy identity origin)이 있으면 `/teams`를 붙이고,
- * 브라우저가 비로컬 호스트(또는 localhost:8888 등 web-edge)이면 현재 origin + `/teams`,
- * 그 외에는 로컬 web-edge 기본(`http://localhost:8888/teams`) — identity 단독 `:3000` dev에서 상대 `/teams` 이탈 방지(Task37-13).
+ * 브라우저가 비로컬 호스트(또는 localhost:8888 web-edge)이면 현재 origin + `/teams`,
+ * 그 외 로컬은 `http://localhost:8888/teams` fallback.
  */
 export function resolveTeamShellEntryHref(): string {
   const raw =
     typeof process !== "undefined" ? process.env.NEXT_PUBLIC_TEAM_SHELL_HREF?.trim() ?? "" : ""
   if (!raw) {
-    const edge = teamShellEdgeOrigin()
-    const hasConfiguredOrigin =
-      typeof process !== "undefined" &&
-      Boolean(
-        process.env.NEXT_PUBLIC_WEB_EDGE_ORIGIN?.trim() ||
-          process.env.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN?.trim()
-      )
-    if (hasConfiguredOrigin) {
+    const edge = effectiveWebEdgeOriginForHref()
+    if (edge) {
       return `${edge}${TEAM_SHELL_PUBLIC_PATH}`
     }
     const runtimeEdge = runtimeTeamShellEdgeOrigin()
@@ -132,7 +169,7 @@ function consoleCrossAppHref(profile: ConsoleProfile, publicPath: string): strin
   if (profile === "identity") {
     return path
   }
-  const origin = webEdgeOrigin()
+  const origin = effectiveWebEdgeOriginForHref()
   if (!origin) {
     return path
   }
@@ -241,11 +278,7 @@ export function usageDashboardHref(): string {
  * as a fallback for older service env files, but new code should use NEXT_PUBLIC_WEB_EDGE_ORIGIN.
  */
 export function webEdgeOrigin(): string {
-  return (
-    process.env.NEXT_PUBLIC_WEB_EDGE_ORIGIN ??
-    process.env.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN ??
-    ""
-  ).replace(/\/$/, "")
+  return configuredWebEdgeOrigin()
 }
 
 /** @deprecated Use webEdgeOrigin. */
@@ -255,7 +288,7 @@ export function identityWebOrigin(): string {
 
 export function webEdgeHref(path: string): string {
   const normalized = normalizePath(path)
-  const origin = webEdgeOrigin()
+  const origin = effectiveWebEdgeOriginForHref()
   return origin ? `${origin}${normalized}` : normalized
 }
 
@@ -279,7 +312,7 @@ export function notificationUnreadCountFetchUrl(profile: ConsoleProfile): string
   if (profile === "notification") {
     return NOTIFICATION_UNREAD_COUNT_PATH
   }
-  const origin = webEdgeOrigin()
+  const origin = effectiveWebEdgeOriginForHref()
   if (!origin) {
     return NOTIFICATION_UNREAD_COUNT_PATH
   }
