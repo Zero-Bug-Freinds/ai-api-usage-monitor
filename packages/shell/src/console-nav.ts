@@ -46,50 +46,6 @@ function normalizePath(path: string): string {
   return path
 }
 
-const LOCAL_DEV_WEB_EDGE_ORIGIN = "http://localhost:8888"
-const TEAM_SHELL_PUBLIC_PATH = "/teams"
-
-function teamShellEdgeOrigin(): string {
-  if (typeof process === "undefined") {
-    return LOCAL_DEV_WEB_EDGE_ORIGIN
-  }
-  const configured =
-    process.env.NEXT_PUBLIC_WEB_EDGE_ORIGIN?.trim() ||
-    process.env.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN?.trim() ||
-    ""
-  return configured.replace(/\/+$/, "") || LOCAL_DEV_WEB_EDGE_ORIGIN
-}
-
-/**
- * 사이드바「팀」→ Main Shell 팀 콘솔 절대 URL.
- * `NEXT_PUBLIC_TEAM_SHELL_HREF`가 http(s)면 그대로, `/…` 상대면 {@link teamShellEdgeOrigin}에 붙인다.
- * 둘 다 없으면 `NEXT_PUBLIC_WEB_EDGE_ORIGIN`(또는 legacy identity origin)이 있으면 `/teams`를 붙이고,
- * 없으면 로컬 web-edge 기본(`http://localhost:8888/teams`) — identity 단독 `:3000` dev에서 상대 `/teams` 이탈 방지(Task37-13).
- */
-export function resolveTeamShellEntryHref(): string {
-  const raw =
-    typeof process !== "undefined" ? process.env.NEXT_PUBLIC_TEAM_SHELL_HREF?.trim() ?? "" : ""
-  if (!raw) {
-    const edge = teamShellEdgeOrigin()
-    const hasConfiguredOrigin =
-      typeof process !== "undefined" &&
-      Boolean(
-        process.env.NEXT_PUBLIC_WEB_EDGE_ORIGIN?.trim() ||
-          process.env.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN?.trim()
-      )
-    if (hasConfiguredOrigin) {
-      return `${edge}${TEAM_SHELL_PUBLIC_PATH}`
-    }
-    return `${LOCAL_DEV_WEB_EDGE_ORIGIN}${TEAM_SHELL_PUBLIC_PATH}`
-  }
-  const normalized = raw.replace(/\/+$/, "")
-  if (normalized.startsWith("http://") || normalized.startsWith("https://")) {
-    return normalized
-  }
-  const path = normalizePath(normalized)
-  return `${teamShellEdgeOrigin()}${path}`
-}
-
 /**
  * Resolves a root-absolute path for `<a href>` so it is not prefixed by Next `basePath`
  * (usage `/dashboard`, billing `/billing`).
@@ -101,19 +57,10 @@ export function anchorHrefForPublicPath(publicPath: string): string {
 
 /**
  * Cross-app sidebar links: paths like `/dashboard` are routed by web-edge to other apps.
- * When this app is served on its own port (e.g. agent-web :3005), relative paths would 404 — prefix
- * {@link webEdgeOrigin} when it is set and the shell is not already on the edge origin.
+ * {@link webEdgeOrigin}이 있으면 절대 URL, 없으면 동일 호스트 상대 경로(단일 도메인·ALB 배포).
  */
-function consoleCrossAppHref(profile: ConsoleProfile, publicPath: string): string {
-  const path = anchorHrefForPublicPath(publicPath)
-  if (profile === "identity") {
-    return path
-  }
-  const origin = webEdgeOrigin()
-  if (!origin) {
-    return path
-  }
-  return `${origin}${path}`
+function consoleCrossAppHref(_profile: ConsoleProfile, publicPath: string): string {
+  return webEdgeHref(publicPath)
 }
 
 export type ConsoleNavLinkSpec =
@@ -189,19 +136,12 @@ export function resolveConsoleNavLink(profile: ConsoleProfile, id: ConsoleNavId)
   const meta = CONSOLE_NAV[id]
   const { publicPath } = meta
 
-  /**
-   * 팀 콘솔(basePath `/teams`)으로의 전환은 항상 풀 페이지 네비게이션(anchor).
-   * usage·billing·agent 등은 비서(`/agent`)와 같이 {@link consoleCrossAppHref} — 배포 오리진이 없으면
-   * 동일 호스트 상대 `/teams`(SSR에 localhost:8888 고정 방지). identity 단독 `:3000` dev는
-   * {@link resolveTeamShellEntryHref}로 web-edge 절대 URL을 쓴다(Task37-13).
-   */
+  /** 팀 콘솔(`/teams`)은 비서·지출 등과 같이 {@link consoleCrossAppHref} + anchor(풀 페이지). */
   if (id === "teams") {
     if (ownsNavItemForSpaLink(profile, id)) {
       return { kind: "next", href: spaInternalHref(profile, id) }
     }
-    const href =
-      profile === "identity" ? resolveTeamShellEntryHref() : consoleCrossAppHref(profile, publicPath)
-    return { kind: "anchor", href }
+    return { kind: "anchor", href: consoleCrossAppHref(profile, publicPath) }
   }
 
   if (!ownsNavItemForSpaLink(profile, id)) {
