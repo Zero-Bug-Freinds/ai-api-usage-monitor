@@ -14,7 +14,9 @@
 #   HEALTH_URL             — default http://127.0.0.1:8080/healthz (web-edge :8080 listener)
 #   HEALTH_RETRIES         — default 30
 #   HEALTH_INTERVAL_SEC    — default 2
-#   AWS_REGION             — for `aws ecr get-login-password` (optional if already logged in to ECR)
+#   AWS_REGION             — for `aws ecr get-login-password` and Secrets Manager (optional if already logged in to ECR)
+#   AGENT_CREDENTIALS_SECRET_ID — Secrets Manager id/name (default prod/ai-agent/credentials); JSON keys must be AI_AGENT_*
+#   AGENT_CREDENTIALS_FROM_SECRETS_MANAGER — set false to skip SM merge (default true)
 
 set -euo pipefail
 
@@ -191,6 +193,73 @@ overlay_terraform_rabbitmq_env() {
   echo "Merged Terraform RabbitMQ env from ${overlay}"
 }
 
+# Agent LLM keys live in Secrets Manager; overlay wins over .env.deploy (see docs/aws-github-oidc-ecr-ssm.md §7).
+overlay_agent_credentials_from_secrets_manager() {
+  local dst="$1"
+  local enabled="${AGENT_CREDENTIALS_FROM_SECRETS_MANAGER:-true}"
+  local secret_id="${AGENT_CREDENTIALS_SECRET_ID:-prod/ai-agent/credentials}"
+  local region="${AWS_REGION:-ap-northeast-2}"
+  case "${enabled,,}" in
+    false | 0 | no | off) return 0 ;;
+  esac
+  if ! command -v aws >/dev/null 2>&1; then
+    echo "WARN: aws CLI missing — skip agent credentials from Secrets Manager" >&2
+    return 0
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "WARN: python3 missing — skip agent credentials from Secrets Manager" >&2
+    return 0
+  fi
+  local secret_json
+  if ! secret_json="$(aws secretsmanager get-secret-value \
+    --secret-id "$secret_id" \
+    --region "$region" \
+    --query SecretString \
+    --output text 2>/dev/null)"; then
+    echo "WARN: Secrets Manager get-secret-value failed for ${secret_id} (check EC2 instance role GetSecretValue)" >&2
+    return 0
+  fi
+  local agent_lines key_count
+  agent_lines="$(printf '%s' "$secret_json" | python3 -c '
+import json, sys
+raw = sys.stdin.read().strip()
+if not raw:
+    sys.exit(1)
+data = json.loads(raw)
+if not isinstance(data, dict):
+    sys.exit(1)
+for key in sorted(data.keys()):
+    if not key.startswith("AI_AGENT_"):
+        continue
+    val = data[key]
+    if val is None:
+        continue
+    text = str(val).strip()
+    if not text:
+        continue
+    print(f"{key}={text}")
+' 2>/dev/null)" || {
+    echo "WARN: Could not parse Secrets Manager JSON for ${secret_id} (expect object with AI_AGENT_* keys)" >&2
+    return 0
+  }
+  if [[ -z "${agent_lines//[[:space:]]/}" ]]; then
+    echo "WARN: No AI_AGENT_* keys in secret ${secret_id}" >&2
+    return 0
+  fi
+  key_count="$(printf '%s\n' "$agent_lines" | grep -c '^AI_AGENT_' || true)"
+  local tmp
+  tmp="$(mktemp)"
+  if [[ -s "$dst" ]]; then
+    grep -Ev '^AI_AGENT_' "$dst" >"$tmp" || : >"$tmp"
+  else
+    : >"$tmp"
+  fi
+  printf '%s\n' "$agent_lines" >>"$tmp"
+  mv -f "$tmp" "$dst"
+  chmod 600 "$dst"
+  echo "Merged agent credentials from Secrets Manager (${secret_id}, ${key_count} keys; values not logged)"
+}
+
 write_compose_env_file() {
   local normalized_source="$1"
   local dest_path="$2"
@@ -285,6 +354,7 @@ prepare_compose_environment() {
   sanitize_env_deploy_file "$raw" "$normalized"
   rm -f "$raw"
   overlay_terraform_rabbitmq_env "$normalized"
+  overlay_agent_credentials_from_secrets_manager "$normalized"
   load_deploy_variables "$normalized"
   log_postgres_host_summary
   write_compose_env_file "$normalized" "$COMPOSE_ENV_FILE"
