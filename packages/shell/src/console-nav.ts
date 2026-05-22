@@ -104,8 +104,8 @@ function effectiveWebEdgeOriginForHref(): string {
 }
 
 /**
- * 배포 도메인(web-edge)에서 `NEXT_PUBLIC_*` 없이 빌드된 이미지도 팀 링크가 localhost로 가지 않게 한다.
- * identity 단독 `:3000` dev는 예외 — 여전히 web-edge `:8888` 기본값을 쓴다.
+ * 로컬은 web-edge `:8888` 단일 진입만 런타임 edge로 본다 (`docs/contracts/gateway-proxy.md`).
+ * 그 외 localhost 포트(예: 앱 단독 dev 서버)는 null → {@link LOCAL_DEV_WEB_EDGE_ORIGIN} fallback.
  */
 function runtimeTeamShellEdgeOrigin(): string | null {
   if (typeof window === "undefined") {
@@ -113,10 +113,10 @@ function runtimeTeamShellEdgeOrigin(): string | null {
   }
   const { origin, hostname, port } = window.location
   if (hostname === "localhost" || hostname === "127.0.0.1") {
-    if (port === "3000") {
-      return null
+    if (port === "8888") {
+      return origin.replace(/\/+$/, "")
     }
-    return origin.replace(/\/+$/, "")
+    return null
   }
   return origin.replace(/\/+$/, "")
 }
@@ -125,8 +125,8 @@ function runtimeTeamShellEdgeOrigin(): string | null {
  * 사이드바「팀」→ Main Shell 팀 콘솔 절대 URL.
  * `NEXT_PUBLIC_TEAM_SHELL_HREF`가 http(s)면 그대로, `/…` 상대면 {@link teamShellEdgeOrigin}에 붙인다.
  * 둘 다 없으면 `NEXT_PUBLIC_WEB_EDGE_ORIGIN`(또는 legacy identity origin)이 있으면 `/teams`를 붙이고,
- * 브라우저가 비로컬 호스트(또는 localhost:8888 등 web-edge)이면 현재 origin + `/teams`,
- * 그 외에는 로컬 web-edge 기본(`http://localhost:8888/teams`) — identity 단독 `:3000` dev에서 상대 `/teams` 이탈 방지(Task37-13).
+ * 브라우저가 비로컬 호스트(또는 localhost:8888 web-edge)이면 현재 origin + `/teams`,
+ * 그 외 로컬은 `http://localhost:8888/teams` fallback.
  */
 export function resolveTeamShellEntryHref(): string {
   const raw =
