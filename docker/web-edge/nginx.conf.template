@@ -246,13 +246,13 @@ http {
     }
 
     location = /teams {
-      proxy_pass http://team_web;
+      proxy_pass http://team_web/teams;
       proxy_set_header Upgrade $http_upgrade;
       proxy_set_header Connection $connection_upgrade;
     }
 
     location = /teams/ {
-      proxy_pass http://team_web;
+      proxy_pass http://team_web/teams;
       proxy_set_header Upgrade $http_upgrade;
       proxy_set_header Connection $connection_upgrade;
     }

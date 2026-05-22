@@ -213,9 +213,9 @@ export function resolveConsoleNavLink(profile: ConsoleProfile, id: ConsoleNavId)
   const { publicPath } = meta
 
   /**
-   * 팀 콘솔(web-host, basePath /teams)으로의 전환은 항상 풀 페이지 네비게이션(anchor).
+   * 팀 콘솔(web-host, basePath /teams)으로 나갈 때는 항상 풀 페이지 네비게이션(anchor).
    * 기본 진입점은 {@link resolveTeamShellEntryHref}(배포 시 `NEXT_PUBLIC_WEB_EDGE_ORIGIN` + `/teams`)로 고정해
-   * identity 등 타 오리진에서 상대 `/teams`로 잘못 이탈하는 것을 막는다(Task37-13).
+   * identity 등 다른 오리진에서 상대 `/teams`로 잘못 이탈하는 것을 막는다(Task37-13).
    */
   if (id === "teams") {
     if (ownsNavItemForSpaLink(profile, id)) {
