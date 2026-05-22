@@ -581,6 +581,10 @@ services:
       dockerfile: services/team-service/web/Dockerfile
       args:
         WEB_NODE_DEPS_IMAGE: ${WEB_NODE_DEPS_IMAGE:-web-node-deps:local}
+        NEXT_PUBLIC_WEB_EDGE_ORIGIN: ${NEXT_PUBLIC_WEB_EDGE_ORIGIN:-http://localhost:${WEB_EDGE_PORT:-8888}}
+        NEXT_PUBLIC_IDENTITY_WEB_ORIGIN: ${NEXT_PUBLIC_IDENTITY_WEB_ORIGIN:-http://localhost:${WEB_EDGE_PORT:-8888}}
+        NEXT_PUBLIC_MFE_ASSET_PREFIX: ${NEXT_PUBLIC_MFE_ASSET_PREFIX:-/teams}
+        NEXT_PUBLIC_MFE_USAGE_REMOTE_URL: ${NEXT_PUBLIC_MFE_USAGE_REMOTE_URL:-http://localhost:${WEB_EDGE_PORT:-8888}/mfe/usage}
     depends_on:
       - team-service
       - api-gateway-service

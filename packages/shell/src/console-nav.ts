@@ -190,15 +190,18 @@ export function resolveConsoleNavLink(profile: ConsoleProfile, id: ConsoleNavId)
   const { publicPath } = meta
 
   /**
-   * 팀 콘솔(web-host, basePath /teams)으로의 전환은 항상 풀 페이지 네비게이션(anchor).
-   * 기본 진입점은 {@link resolveTeamShellEntryHref}(배포 시 `NEXT_PUBLIC_WEB_EDGE_ORIGIN` + `/teams`)로 고정해
-   * identity 등 타 오리진에서 상대 `/teams`로 잘못 이탈하는 것을 막는다(Task37-13).
+   * 팀 콘솔(basePath `/teams`)으로의 전환은 항상 풀 페이지 네비게이션(anchor).
+   * usage·billing·agent 등은 비서(`/agent`)와 같이 {@link consoleCrossAppHref} — 배포 오리진이 없으면
+   * 동일 호스트 상대 `/teams`(SSR에 localhost:8888 고정 방지). identity 단독 `:3000` dev는
+   * {@link resolveTeamShellEntryHref}로 web-edge 절대 URL을 쓴다(Task37-13).
    */
   if (id === "teams") {
     if (ownsNavItemForSpaLink(profile, id)) {
       return { kind: "next", href: spaInternalHref(profile, id) }
     }
-    return { kind: "anchor", href: resolveTeamShellEntryHref() }
+    const href =
+      profile === "identity" ? resolveTeamShellEntryHref() : consoleCrossAppHref(profile, publicPath)
+    return { kind: "anchor", href }
   }
 
   if (!ownsNavItemForSpaLink(profile, id)) {
