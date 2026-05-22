@@ -9,6 +9,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class UserContextResolverTest {
 
+    /** Vitest/gitleaks-safe fixture: 64-char hex-shaped test value, not a production fingerprint. */
+    private static final String TEST_FINGERPRINT_64 = "a".repeat(64);
+
     private final UserContextResolver resolver = new UserContextResolver();
 
     @Test
@@ -61,16 +64,14 @@ class UserContextResolverTest {
     @Test
     void allowsFingerprintHeaderWithoutUserId() {
         MockServerHttpRequest request = MockServerHttpRequest.get("/proxy/openai/")
-                .header("X-Api-Key-Fingerprint", "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08")
+                .header("X-Api-Key-Fingerprint", TEST_FINGERPRINT_64)
                 .build();
         MockServerWebExchange exchange = MockServerWebExchange.from(request);
 
         StepVerifier.create(resolver.fromExchange(exchange))
                 .assertNext(ctx -> {
                     assertThat(ctx.userId()).isNull();
-                    assertThat(ctx.apiKeyFingerprint64()).isEqualTo(
-                            "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
-                    );
+                    assertThat(ctx.apiKeyFingerprint64()).isEqualTo(TEST_FINGERPRINT_64);
                 })
                 .verifyComplete();
     }
