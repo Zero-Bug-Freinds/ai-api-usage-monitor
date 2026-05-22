@@ -389,7 +389,7 @@ public class ExternalApiKeyService {
 				? ExternalApiKeyStatus.DELETION_REQUESTED
 				: ExternalApiKeyStatus.ACTIVE;
 		return InternalFingerprintLookupResponse.personal(
-				"u_" + entity.getUserId(),
+				principalSubForUser(entity.getUserId()),
 				String.valueOf(entity.getId()),
 				entity.getKeyAlias(),
 				status.name(),

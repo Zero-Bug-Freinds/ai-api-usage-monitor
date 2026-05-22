@@ -16,11 +16,21 @@ public record InternalFingerprintLookupResponse(
 ) {
     public static InternalFingerprintLookupResponse team(
             Long teamId,
+            String registrantUserId,
             String keyId,
             String alias,
             String status,
             String keySource
     ) {
-        return new InternalFingerprintLookupResponse(true, "TEAM", null, teamId, keyId, alias, status, keySource);
+        return new InternalFingerprintLookupResponse(
+                true,
+                "TEAM",
+                registrantUserId,
+                teamId,
+                keyId,
+                alias,
+                status,
+                keySource
+        );
     }
 }

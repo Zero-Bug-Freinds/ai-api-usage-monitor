@@ -198,6 +198,71 @@ proxy는 같은 해시에 대한 성공 조회 결과를 캐시하는 것이 좋
 - 평문 provider 키는 입력으로 받지 않으며 응답에도 포함하지 않는다. 네트워크를 오가는 값은 SHA-256 해시뿐이다.
 - 모호성 경고 로그에는 해시 앞 8자만 남기며 alias, owner id, 평문 키는 포함하지 않는다.
 
+## 3. Fingerprint POST lookup (`/internal/v1/api-keys/lookup`)
+
+Proxy ext 경로는 provider 평문 키의 **SHA-256(UTF-8 plain) → 64자 소문자 hex** fingerprint 로 identity-service·team-service에 **병렬 POST** 한다. 응답에 **평문 키는 포함하지 않는다**.
+
+### 요청
+
+- Method: `POST`
+- Path: `/internal/v1/api-keys/lookup`
+- Body:
+
+```json
+{
+  "fingerprint": "<64 hex>",
+  "provider": "OPENAI"
+}
+```
+
+- Header (team-service만): `Authorization: Bearer <internal-token>` — `team.internal.api-token` / `PROXY_TEAM_KEY_SERVICE_INTERNAL_TOKEN`
+- identity-service: Bearer 없음(네트워크 격리 전제, 기존 `/internal/api-keys/{provider}` 와 동일)
+
+### 응답 (200)
+
+```json
+{
+  "found": true,
+  "ownerType": "PERSONAL",
+  "userId": "owner@example.com",
+  "teamId": null,
+  "keyId": "12345",
+  "alias": "openai-default",
+  "status": "ACTIVE",
+  "keySource": "managed"
+}
+```
+
+| 필드 | 설명 |
+| --- | --- |
+| `ownerType` | `PERSONAL` (identity) 또는 `TEAM` (team-service) |
+| `userId` | **usage 귀속용 principal**: identity는 키 **소유자 이메일**(JWT `sub`와 동일, lowercase). team은 키 **등록자 이메일**(`created_by_user_id` 해석). legacy·해석 불가 시 `null`. **`u_<pk>` 형식은 사용하지 않는다.** |
+| `teamId` | 팀 소유 시 팀 PK. 개인은 `null`. |
+| `keyId` | 해당 서비스 API 키 행 PK(문자열) |
+| `status` | `ACTIVE` / `DELETION_REQUESTED` |
+| `keySource` | `managed` / `team` 등 |
+
+팀 ext relay 시 평문 키는 **별도** trusted credential API로 조회한다(아래 §4).
+
+---
+
+## 4. Team-service: trusted credential (ext 팀 relay)
+
+Proxy가 fingerprint lookup으로 `ownerType=TEAM` 을 확인한 뒤 평문 키를 가져올 때 사용한다. 정본: [`services/proxy-service/docs/team-ext-credential-api-contract.md`](../services/proxy-service/docs/team-ext-credential-api-contract.md).
+
+| 항목 | 값 |
+| --- | --- |
+| Method / Path | `GET /internal/v1/team-api-keys/{keyId}/credential` |
+| Query | `teamId`(필수), `provider`(`openai` / `anthropic` / `google`) |
+| Auth | `Authorization: Bearer` = `team.internal.api-token` |
+| 200 | `{ "plainKey": "...", "keyId": "..." }` |
+| 403 | Bearer 누락·불일치 |
+| 404 | 활성 키 없음, `teamId`·`keyId`·`provider` 불일치, 삭제 요청 키 |
+
+**팀 멤버십 검사 없음** — proxy(내부망) 전용. fingerprint POST lookup 응답에 `plainKey` 를 넣지 않는다.
+
+---
+
 ## 런타임 설정
 
 - `identity-service`

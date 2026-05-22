@@ -15,6 +15,7 @@ import org.springframework.util.StringUtils;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * SHA-256(평문 키) fingerprint 기반 팀 API 키 역조회.
@@ -25,9 +26,14 @@ public class TeamApiKeyFingerprintLookupService {
     private static final Logger log = LoggerFactory.getLogger(TeamApiKeyFingerprintLookupService.class);
 
     private final TeamApiKeyRepository teamApiKeyRepository;
+    private final IdentityUserSyncService identityUserSyncService;
 
-    public TeamApiKeyFingerprintLookupService(TeamApiKeyRepository teamApiKeyRepository) {
+    public TeamApiKeyFingerprintLookupService(
+            TeamApiKeyRepository teamApiKeyRepository,
+            IdentityUserSyncService identityUserSyncService
+    ) {
         this.teamApiKeyRepository = teamApiKeyRepository;
+        this.identityUserSyncService = identityUserSyncService;
     }
 
     @Transactional(readOnly = true)
@@ -57,13 +63,33 @@ public class TeamApiKeyFingerprintLookupService {
         TeamApiKeyStatus status = entity.isDeletionPending()
                 ? TeamApiKeyStatus.DELETION_REQUESTED
                 : TeamApiKeyStatus.ACTIVE;
+        String registrantUserId = resolveRegistrantPrincipalSub(entity.getCreatedByUserId());
         return InternalFingerprintLookupResponse.team(
                 entity.getTeamId(),
+                registrantUserId,
                 String.valueOf(entity.getId()),
                 entity.getKeyAlias(),
                 status.name(),
                 "team"
         );
+    }
+
+    private String resolveRegistrantPrincipalSub(String createdByUserId) {
+        if (!StringUtils.hasText(createdByUserId)) {
+            return null;
+        }
+        String normalized = createdByUserId.trim();
+        if (normalized.contains("@")) {
+            return normalized.toLowerCase(Locale.ROOT);
+        }
+        Set<String> candidates = identityUserSyncService.resolveMembershipLookupCandidates(normalized);
+        return candidates.stream()
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .filter(candidate -> candidate.contains("@"))
+                .map(candidate -> candidate.toLowerCase(Locale.ROOT))
+                .findFirst()
+                .orElse(null);
     }
 
     private static TeamApiKeyProvider normalizeProvider(String providerRaw) {
