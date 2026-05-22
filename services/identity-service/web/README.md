@@ -1,36 +1,25 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Identity `web` (Next.js App Router)
 
-## Getting Started
+## 브라우저 진입 (정본)
 
-First, run the development server:
+통합 콘솔·쿠키·`@ai-usage/shell` 교차 링크는 **`http://localhost:8888`** (루트 Compose **`web-edge`**) 한 오리진을 쓴다.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# 저장소 루트
+docker compose --profile web up -d
+# 브라우저: http://localhost:8888  (로그인 · /settings · /dashboard 링크 등)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`http://localhost:3000` 은 Compose 가 이 컨테이너를 호스트에 직접 노출할 때의 **upstream 포트**일 뿐, 통합 진입점이 아니다.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 호스트 단독 dev (선택)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+# 저장소 루트
+pnpm install
+pnpm --filter identity-web dev
+```
 
-## Learn More
+단독 dev 는 UI/BFF 디버그용이다. Usage·알림 등 다른 앱과 쿠키를 공유하려면 **8888 web-edge** 를 쓴다.
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+환경 변수: `.env.example`. 계약: `docs/contracts/web-identity-bff.md`, `docs/contracts/web-split-boundary.md` §4.
