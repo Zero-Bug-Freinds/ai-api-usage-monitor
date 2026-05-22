@@ -153,7 +153,7 @@ Next `basePath`는 **`/billing`**(단일 도메인·`web-edge` 라우팅과 정�
 ### 4.2 운영(staging/production) — ALB DNS·`NEXT_PUBLIC_*`
 
 - 브라우저는 **ALB DNS** 또는 이후 고정 도메인 **한 오리진**으로 접속한다 (`terraform output alb_dns_name`, `WEB_EDGE_HOST_PORT`/`8888`).
-- **`NEXT_PUBLIC_WEB_EDGE_ORIGIN`** 은 **Release 빌드 시** GitHub Environment 변수로 각 `*-web` 이미지에 박힌다. **ALB를 재생성하면 DNS 숫자 ID가 바뀔 수 있으므로** 변수를 새 ALB URL로 맞춘 뒤 **`usage-web`·`identity-web` 등 웹 이미지를 Release로 재빌드**해야 한다. EC2 `on-instance-compose-roll.sh` 만으로는 번들이 갱신되지 않는다.
+- **`NEXT_PUBLIC_WEB_EDGE_ORIGIN`** 은 **Release 빌드 시** GitHub Environment 변수로 각 `*-web` 이미지에 박힌다(필수). **`NEXT_PUBLIC_IDENTITY_WEB_ORIGIN`** 은 없으면 Release가 **`WEB_EDGE`와 동일 값**으로 빌드한다(`release.yml` `web_origins` 단계). **ALB를 재생성하면 DNS 숫자 ID가 바뀔 수 있으므로** 변수를 새 ALB URL로 맞춘 뒤 **`usage-web`·`identity-web` 등 웹 이미지를 Release로 재빌드**해야 한다. EC2 `on-instance-compose-roll.sh` 만으로는 번들이 갱신되지 않는다.
 - `@ai-usage/shell` 은 배포 환경에서 빌드 origin 과 현재 호스트(`.elb.amazonaws.com`)가 다르면 **현재 origin** 으로 알림·지출 등 링크를 만든다(옛 ALB 북마크 방지). 상세: [`packages/shell/README.md`](../../packages/shell/README.md), [`aws-github-oidc-ecr-ssm.md`](../aws-github-oidc-ecr-ssm.md) §10.
 
 ### 4.3 Compose·게이트웨이
