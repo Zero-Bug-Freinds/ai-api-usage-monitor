@@ -10,10 +10,11 @@ import {
   buildTeamNotificationCopy,
   type NotificationLocale,
 } from './team-notification-templates';
+import {
+  IN_APP_DELIVERY_CHANNEL,
+  IN_APP_DELIVERY_STATUS,
+} from '../in-app-notifications/in-app-delivery.constants';
 import { getEffectiveRecipientUserIds } from './team-recipient-user-ids';
-
-const IN_APP_CHANNEL = 'in-app';
-const DELIVERY_STATUS = 'delivered';
 
 @Injectable()
 export class TeamInAppNotificationHandlerService {
@@ -67,8 +68,8 @@ export class TeamInAppNotificationHandlerService {
           await tx.notificationDelivery.create({
             data: {
               dedupeKey,
-              channel: IN_APP_CHANNEL,
-              status: DELIVERY_STATUS,
+              channel: IN_APP_DELIVERY_CHANNEL,
+              status: IN_APP_DELIVERY_STATUS,
               payload: {
                 eventType,
                 teamId: payload.teamId,

@@ -45,10 +45,14 @@ public class TeamMemberUsageDashboardStrategy extends BaseUsageDashboardStrategy
                 teamId,
                 userId,
                 enrichment.teamName(),
-                usageDashboardService.summaryByTeamAndUser(teamId, userId, query.from(), query.to(), query.provider()),
-                usageDashboardService.dailySeriesByTeamAndUser(teamId, userId, query.from(), query.to(), query.provider()),
-                usageDashboardService.monthlySeriesByTeamAndUser(teamId, userId, query.from(), query.to(), query.provider()),
-                usageDashboardService.byModelForTeamAndUser(teamId, userId, query.from(), query.to(), query.provider()),
+                usageDashboardService.summaryByTeamAndUser(
+                        teamId, userId, query.from(), query.to(), query.provider(), query.apiKeyId()),
+                usageDashboardService.dailySeriesByTeamAndUser(
+                        teamId, userId, query.from(), query.to(), query.provider(), query.apiKeyId()),
+                usageDashboardService.monthlySeriesByTeamAndUser(
+                        teamId, userId, query.from(), query.to(), query.provider(), query.apiKeyId()),
+                usageDashboardService.byModelForTeamAndUser(
+                        teamId, userId, query.from(), query.to(), query.provider(), query.apiKeyId()),
                 java.util.List.of(),
                 null,
                 usageDashboardService.logsByTeamAndUser(

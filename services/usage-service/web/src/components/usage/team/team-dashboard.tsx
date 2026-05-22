@@ -18,8 +18,13 @@ import {
 } from "recharts"
 import { Button } from "@ai-usage/ui"
 import { formatRequestCount, formatTokenCount, formatUsd, toNumber } from "@/lib/usage/format"
-import { EMPTY_MEMBER_MODEL_USAGE_MSG } from "@/lib/usage/team-dashboard-empty"
-import { teamUsageBffBase } from "@/lib/usage/team-usage-bff-base"
+import {
+  logTeamDashboardApiKeysFetch,
+  logTeamDashboardTeamsListFetch,
+  TEAM_DASHBOARD_MESSAGES,
+  warnTeamPartialEnrichment,
+} from "@/lib/usage/messaging/dashboard-messages"
+import { teamUsageBffBase } from "@/lib/usage/api/team-usage-bff-base"
 import { DASHBOARD_API_KEY_ALL, DASHBOARD_API_KEY_NONE } from "@/lib/usage/dashboard-api-key-constants"
 import {
   DASHBOARD_PROVIDER_ALL,
@@ -29,10 +34,18 @@ import {
   teamBffRowsToUsageMenuItems,
 } from "@/lib/usage/dashboard-provider-api-keys"
 import { UsageFilterBar } from "@/components/usage/usage-filter-bar"
-import { useDashboardAggregateApiKeySync } from "@/lib/usage/use-dashboard-aggregate-api-key"
-import { useFilterStorage } from "@/lib/usage/use-filter-storage"
-
-const LAST_TEAM_STORAGE_KEY = "last_team_id"
+import { useDashboardAggregateApiKeySync } from "@/lib/usage/hooks/use-dashboard-aggregate-api-key"
+import {
+  readTeamDashboardLastTeamId,
+  writeTeamDashboardLastTeamId,
+} from "@/lib/usage/team-dashboard-last-team"
+import { useFilterStorage } from "@/lib/usage/hooks/use-filter-storage"
+import {
+  assertTeamBffResponseOk,
+  logTeamBffCatchError,
+  TeamBffMaskedHttpError,
+  usageFetchErrorMessage,
+} from "@/lib/usage/messaging/team-bff-fetch-errors"
 
 export type TeamDashboardProps = {
   viewTeamIdFromQuery?: string
@@ -76,12 +89,32 @@ type TeamSummary = { id: string; name: string; createdAt?: string }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const AnyLegend = Legend as any
 
-function usageFetchErrorMessage(status: number): string {
-  if (status === 400) return "팀/기간 필터를 확인해 주세요."
-  if (status === 401 || status === 403) return "인증이 만료되었거나 권한이 없습니다. 다시 로그인해 주세요."
-  if (status === 404) return "대시보드 페이지를 찾지 못했습니다."
-  if (status >= 500) return "서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
-  return `사용량 데이터를 불러오지 못했습니다. (HTTP ${status})`
+const TEAM_DASHBOARD_FETCH_LOG_TAG = "Team Dashboard Fetch Error"
+
+function messageFromJsonBody(body: unknown): string | null {
+  if (!body || typeof body !== "object") return null
+  const record = body as Record<string, unknown>
+  if (typeof record.message === "string" && record.message.length > 0) {
+    return record.message
+  }
+  if (typeof record.error === "string" && record.error.length > 0) {
+    return record.error
+  }
+  return null
+}
+
+function TeamPartialEnrichmentNotice({ warnings }: { warnings?: string[] }) {
+  const lastWarnedKey = React.useRef("")
+  const key = (warnings ?? []).join("|")
+  if (key !== lastWarnedKey.current) {
+    lastWarnedKey.current = key
+    warnTeamPartialEnrichment(warnings)
+  }
+  return (
+    <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900" role="note">
+      {TEAM_DASHBOARD_MESSAGES.warnings.partialEnrichment}
+    </div>
+  )
 }
 
 function buildUsageDashboardQuery(params: Record<string, string | undefined | null>): string {
@@ -105,7 +138,7 @@ function pickTeamIdFromSources(list: TeamSummary[], viewQ: string | undefined): 
   if (list.length === 0) return ""
   if (viewQ && list.some((t) => t.id === viewQ)) return viewQ
   if (typeof window !== "undefined") {
-    const saved = window.localStorage.getItem(LAST_TEAM_STORAGE_KEY)
+    const saved = readTeamDashboardLastTeamId()
     if (saved && list.some((t) => t.id === saved)) {
       return saved
     }
@@ -207,16 +240,32 @@ export default function TeamDashboard({
       const base = teamUsageBffBase()
       if (!base) {
         if (!cancelled) {
-          setTeamsErr("사용량 API 베이스 URL을 확인할 수 없습니다")
+          logTeamDashboardTeamsListFetch({
+            reason: "missing_team_bff_base",
+            originalMessage: TEAM_DASHBOARD_MESSAGES.internalLog.missingTeamBffBase,
+          })
+          setTeamsErr(TEAM_DASHBOARD_MESSAGES.errors.teamsEnv)
           setTeamsLoading(false)
         }
         return
       }
+      const teamsUrl = `${base}/teams`
       try {
-        const res = await fetch(`${base}/teams`, { credentials: "include", headers: { Accept: "application/json" } })
+        const res = await fetch(teamsUrl, { credentials: "include", headers: { Accept: "application/json" } })
         const json = (await res.json()) as { teams?: unknown }
         if (!res.ok || !Array.isArray(json.teams)) {
-          if (!cancelled) setTeamsErr("팀 목록을 불러오지 못했습니다")
+          if (!cancelled) {
+            const upstreamMessage = !res.ok
+              ? messageFromJsonBody(json) ?? res.statusText
+              : TEAM_DASHBOARD_MESSAGES.internalLog.missingTeamBffBase
+            logTeamDashboardTeamsListFetch({
+              request: teamsUrl,
+              status: res.status,
+              statusText: res.statusText,
+              upstreamMessage,
+            })
+            setTeamsErr(TEAM_DASHBOARD_MESSAGES.errors.teamsList)
+          }
           return
         }
         const list = (json.teams as unknown[])
@@ -231,8 +280,11 @@ export default function TeamDashboard({
         if (cancelled) return
         setTeams(list)
         setTeamsErr(null)
-      } catch {
-        if (!cancelled) setTeamsErr("팀 목록을 불러오지 못했습니다")
+      } catch (e) {
+        if (!cancelled) {
+          logTeamDashboardTeamsListFetch({ request: teamsUrl, error: e })
+          setTeamsErr(TEAM_DASHBOARD_MESSAGES.errors.teamsList)
+        }
       } finally {
         if (!cancelled) setTeamsLoading(false)
       }
@@ -252,7 +304,7 @@ export default function TeamDashboard({
 
   React.useEffect(() => {
     if (!selectedTeamId || typeof window === "undefined") return
-    window.localStorage.setItem(LAST_TEAM_STORAGE_KEY, selectedTeamId)
+    writeTeamDashboardLastTeamId(selectedTeamId)
   }, [selectedTeamId])
 
   React.useEffect(() => {
@@ -264,25 +316,39 @@ export default function TeamDashboard({
     setKeysLoading(true)
     const base = teamUsageBffBase()
     if (!base) {
+      logTeamDashboardApiKeysFetch({ reason: "missing_team_bff_base", teamId: selectedTeamId })
       setApiKeyRows([])
       setKeysLoading(false)
       return
     }
-    fetch(`${base}/teams/${encodeURIComponent(selectedTeamId)}/api-keys`, {
+    const apiKeysUrl = `${base}/teams/${encodeURIComponent(selectedTeamId)}/api-keys`
+    fetch(apiKeysUrl, {
       credentials: "include",
       headers: { Accept: "application/json" },
     })
       .then(async (r) => {
         const json = await r.json()
-        if (!r.ok) return []
+        if (!r.ok) {
+          logTeamDashboardApiKeysFetch({
+            request: apiKeysUrl,
+            teamId: selectedTeamId,
+            status: r.status,
+            statusText: r.statusText,
+            upstreamMessage: messageFromJsonBody(json) ?? r.statusText,
+          })
+          return []
+        }
         return parseTeamBffApiKeysPayload(json)
       })
       .then((sorted) => {
         if (cancelled) return
         setApiKeyRows(sorted)
       })
-      .catch(() => {
-        if (!cancelled) setApiKeyRows([])
+      .catch((e) => {
+        if (!cancelled) {
+          logTeamDashboardApiKeysFetch({ request: apiKeysUrl, teamId: selectedTeamId, error: e })
+          setApiKeyRows([])
+        }
       })
       .finally(() => {
         if (!cancelled) setKeysLoading(false)
@@ -316,7 +382,7 @@ export default function TeamDashboard({
     }
     const base = teamUsageBffBase()
     if (!base) {
-      setError("사용량 API 베이스 URL을 확인할 수 없습니다")
+      setError(TEAM_DASHBOARD_MESSAGES.errors.teamsEnv)
       return
     }
     let cancelled = false
@@ -332,9 +398,14 @@ export default function TeamDashboard({
           ? selectedApiKeyId
           : undefined,
     })
-    fetch(`${base}/dashboard?${q}`, { credentials: "include", headers: { Accept: "application/json" } })
+    const dashboardUrl = `${base}/dashboard?${q}`
+    fetch(dashboardUrl, { credentials: "include", headers: { Accept: "application/json" } })
       .then(async (r) => {
-        if (!r.ok) throw new Error(usageFetchErrorMessage(r.status))
+        await assertTeamBffResponseOk(r, {
+          logTag: TEAM_DASHBOARD_FETCH_LOG_TAG,
+          request: dashboardUrl,
+          maskMessage: usageFetchErrorMessage,
+        })
         return (await r.json()) as BffResponse
       })
       .then((body) => {
@@ -342,11 +413,17 @@ export default function TeamDashboard({
         setData(body)
         onSelectUser(body.memberProfiles?.[0]?.userId ?? "")
       })
-      .catch((e: Error) => {
-        if (!cancelled) {
-          setError(e.message)
-          onSelectUser("")
+      .catch((e: unknown) => {
+        if (cancelled) return
+        if (!(e instanceof TeamBffMaskedHttpError)) {
+          logTeamBffCatchError(
+            TEAM_DASHBOARD_FETCH_LOG_TAG,
+            { request: dashboardUrl, teamId: effectiveTeamId },
+            e,
+          )
         }
+        setError(e instanceof Error ? e.message : usageFetchErrorMessage(0))
+        onSelectUser("")
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -405,8 +482,9 @@ export default function TeamDashboard({
     !error &&
     (!hasMainData || apiKeyRows.length === 0)
 
-  /** 팀 목록 오류가 아니면, 팀 목록 로딩 중이거나 소속 팀이 있을 때 동일한 차트 격자를 유지한다. */
-  const showDashChartShell = !teamsErr && (teamsLoading || hasTeamMembership)
+  /** 팀 목록 오류가 아니면 차트 격자 유지(목록 로딩 중·소속 팀 있음·미소속+로딩 완료). */
+  const showDashChartShell =
+    !teamsErr && (teamsLoading || hasTeamMembership || (!teamsLoading && !hasTeamMembership))
   const showComposedChart = Boolean(
     effectiveTeamId && !teamsLoading && !keysLoading && !loading && !error,
   )
@@ -430,6 +508,12 @@ export default function TeamDashboard({
         </div>
         <Button type="button" variant="outline" size="sm" disabled={loading || teamsLoading} onClick={() => setRefresh((n) => n + 1)}>새로고침</Button>
       </header>
+      {showNoTeamBanner ? (
+        <div className="mb-6 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-950 dark:text-amber-100" role="note">
+          {TEAM_DASHBOARD_MESSAGES.banners.noTeamMembership}
+        </div>
+      ) : null}
+      {teamsErr ? <p className="mb-4 text-sm text-amber-700">{teamsErr}</p> : null}
       <div className="mb-6 flex flex-col gap-4">
         <UsageFilterBar
           idPrefix="team-dash"
@@ -460,17 +544,6 @@ export default function TeamDashboard({
         />
       </div>
 
-      {teamsErr ? <p className="mb-4 text-sm text-amber-700">{teamsErr}</p> : null}
-      {showNoTeamBanner ? (
-        <div className="mb-6 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-950 dark:text-amber-100" role="note">
-          팀에 속하게 되면 팀 대시보드 사용이 가능해집니다.
-        </div>
-      ) : null}
-      {showDashChartShell && showMainChartError ? (
-        <p className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert" aria-live="polite">
-          {error}
-        </p>
-      ) : null}
       {showDashChartShell ? (
         <div aria-busy={dashAriaBusy ? "true" : undefined}>
           <section className="mb-8 w-full min-w-0 rounded-lg border border-border p-4 shadow-sm">
@@ -481,10 +554,12 @@ export default function TeamDashboard({
               ) : null}
               {showMainChartError ? (
                 <div
-                  className="h-full min-h-0 rounded-md border border-destructive/30 bg-destructive/5"
+                  className="flex h-full min-h-0 items-center justify-center rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
                   role="alert"
                   aria-live="polite"
-                />
+                >
+                  {error}
+                </div>
               ) : null}
               {showComposedChart ? (
                 <ResponsiveContainer width="100%" height="100%">
@@ -514,7 +589,7 @@ export default function TeamDashboard({
             {showMainChartSkeleton ? <TeamDashStatsRowSkeleton /> : null}
             {showMainChartError ? <div className={TEAM_DASH_STATS_ROW_MIN} aria-hidden="true" /> : null}
             {showComposedChart && !hasMainData ? (
-              <p className="mt-3 text-center text-sm text-muted-foreground">{EMPTY_MEMBER_MODEL_USAGE_MSG}</p>
+              <p className="mt-3 text-center text-sm text-muted-foreground">{TEAM_DASHBOARD_MESSAGES.hints.noModelUsage}</p>
             ) : null}
             {showComposedChart && hasMainData ? (
               <div className="mt-3 text-xs text-muted-foreground">
@@ -523,11 +598,13 @@ export default function TeamDashboard({
             ) : null}
             {shouldShowNoDataGuide ? (
               <div className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-950 dark:text-amber-100" role="note">
-                Api key를 추가하여 AI를 호출하면 API 데이터가 쌓입니다.
+                {TEAM_DASHBOARD_MESSAGES.hints.addApiKey}
               </div>
             ) : null}
             {showMainChartSkeleton && hasTeamMembership && !effectiveTeamId && !teamsLoading ? (
-              <p className="mt-2 text-center text-xs text-muted-foreground">조회할 팀을 선택해 주세요.</p>
+              <p className="mt-2 text-center text-xs text-muted-foreground">
+                {TEAM_DASHBOARD_MESSAGES.hints.selectTeam}
+              </p>
             ) : null}
           </section>
           <div className="mb-8 flex min-w-0 flex-col gap-6">
@@ -563,7 +640,7 @@ export default function TeamDashboard({
                     </ul>
                   </div>
                   {pieData.length === 0 ? (
-                    <p className="mt-3 text-center text-sm text-muted-foreground">{EMPTY_MEMBER_MODEL_USAGE_MSG}</p>
+                    <p className="mt-3 text-center text-sm text-muted-foreground">{TEAM_DASHBOARD_MESSAGES.hints.noModelUsage}</p>
                   ) : null}
                 </>
               ) : null}
@@ -590,14 +667,14 @@ export default function TeamDashboard({
                     </ResponsiveContainer>
                   </div>
                   {barModelData.length === 0 ? (
-                    <p className="mt-3 text-center text-sm text-muted-foreground">{EMPTY_MEMBER_MODEL_USAGE_MSG}</p>
+                    <p className="mt-3 text-center text-sm text-muted-foreground">{TEAM_DASHBOARD_MESSAGES.hints.noModelUsage}</p>
                   ) : null}
                 </>
               )}
             </section>
           </div>
           {showComposedChart && data?.enrichment?.partial ? (
-            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">프로필 일부 결합 실패: {(data.enrichment.warnings ?? []).join(", ")}</div>
+            <TeamPartialEnrichmentNotice warnings={data.enrichment.warnings} />
           ) : null}
         </div>
       ) : null}

@@ -128,6 +128,36 @@ class ExtAiHmacAuthWebFilterTest {
     }
 
     @Test
+    void extRequest_withEmailExtUserId_normalizesOutboundUserId() {
+        String timestamp = String.valueOf(Instant.now().getEpochSecond());
+        String nonce = "nonce-email";
+        String rawEmail = "User@Example.COM";
+        String path = "/api/v1/ai/ext/openai/v1/chat/completions";
+        String signature = sign("POST", path, "", timestamp, nonce, rawEmail, null);
+
+        MockServerHttpRequest request = MockServerHttpRequest.post(path)
+                .header("X-Web-Edge-Auth", SHARED_SECRET)
+                .header("X-Ext-Key-Id", EXT_KEY_ID)
+                .header("X-Ext-Timestamp", timestamp)
+                .header("X-Ext-Nonce", nonce)
+                .header("X-Ext-Signature", signature)
+                .header("X-Ext-User-Id", rawEmail)
+                .build();
+        AtomicReference<String> seenUser = new AtomicReference<>();
+        AtomicReference<String> seenPlatform = new AtomicReference<>();
+
+        StepVerifier.create(filter.filter(MockServerWebExchange.from(request), ex -> {
+                    seenUser.set(ex.getRequest().getHeaders().getFirst("X-User-Id"));
+                    seenPlatform.set(ex.getRequest().getHeaders().getFirst("X-Platform-User-Id"));
+                    return Mono.empty();
+                }))
+                .verifyComplete();
+
+        assertThat(seenUser.get()).isEqualTo("user@example.com");
+        assertThat(seenPlatform.get()).isEqualTo("user@example.com");
+    }
+
+    @Test
     void extRequest_withoutExtUserId_keepsUserHeadersEmpty() {
         String timestamp = String.valueOf(Instant.now().getEpochSecond());
         String nonce = "nonce-no-user";

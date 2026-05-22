@@ -393,9 +393,6 @@ importers:
       '@prisma/client':
         specifier: ^5.22.0
         version: 5.22.0(prisma@5.22.0)
-      '@types/amqplib':
-        specifier: ^0.10.6
-        version: 0.10.8
       amqplib:
         specifier: ^0.10.4
         version: 0.10.9
@@ -421,6 +418,9 @@ importers:
       '@nestjs/schematics':
         specifier: ^10.2.3
         version: 10.2.3(chokidar@3.6.0)(typescript@5.9.3)
+      '@types/amqplib':
+        specifier: ^0.10.6
+        version: 0.10.8
       '@types/express':
         specifier: ^4.17.21
         version: 4.17.25
@@ -523,10 +523,10 @@ importers:
         version: link:../../../packages/ui
       '@module-federation/bridge-react-webpack-plugin':
         specifier: ^2.4.0
-        version: 2.4.0(node-fetch@3.3.2)
+        version: 2.4.0(node-fetch@2.7.0(encoding@0.1.13))
       '@module-federation/nextjs-mf':
         specifier: ^8.8.64
-        version: 8.8.64(@rspack/core@1.7.11(@swc/helpers@0.5.21))(next@15.2.4(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(node-fetch@3.3.2)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(styled-jsx@5.1.7(react@19.2.4))(typescript@5.9.3)(webpack@5.97.1)
+        version: 8.8.64(@rspack/core@1.7.11(@swc/helpers@0.5.21))(next@15.2.4(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(node-fetch@2.7.0(encoding@0.1.13))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(styled-jsx@5.1.7(react@19.2.4))(typescript@5.9.3)(webpack@5.97.1)
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -599,7 +599,7 @@ importers:
         version: 5.2.2(react-hook-form@7.72.1(react@19.2.4))
       '@module-federation/nextjs-mf':
         specifier: ^8.8.64
-        version: 8.8.64(@rspack/core@1.7.11(@swc/helpers@0.5.21))(next@15.2.4(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(node-fetch@2.7.0(encoding@0.1.13))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(styled-jsx@5.1.7(react@19.2.4))(typescript@5.9.3)(webpack@5.97.1)
+        version: 8.8.64(@rspack/core@1.7.11(@swc/helpers@0.5.21))(next@15.2.4(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(node-fetch@3.3.2)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(styled-jsx@5.1.7(react@19.2.4))(typescript@5.9.3)(webpack@5.97.1)
       lucide-react:
         specifier: ^1.6.0
         version: 1.7.0(react@19.2.4)
@@ -6841,9 +6841,9 @@ snapshots:
     transitivePeerDependencies:
       - node-fetch
 
-  '@module-federation/bridge-react-webpack-plugin@2.4.0(node-fetch@3.3.2)':
+  '@module-federation/bridge-react-webpack-plugin@2.4.0(node-fetch@2.7.0(encoding@0.1.13))':
     dependencies:
-      '@module-federation/sdk': 2.4.0(node-fetch@3.3.2)
+      '@module-federation/sdk': 2.4.0(node-fetch@2.7.0(encoding@0.1.13))
       '@types/semver': 7.5.8
       semver: 7.6.3
     transitivePeerDependencies:
@@ -7206,9 +7206,9 @@ snapshots:
     optionalDependencies:
       node-fetch: 3.3.2
 
-  '@module-federation/sdk@2.4.0(node-fetch@3.3.2)':
+  '@module-federation/sdk@2.4.0(node-fetch@2.7.0(encoding@0.1.13))':
     optionalDependencies:
-      node-fetch: 3.3.2
+      node-fetch: 2.7.0(encoding@0.1.13)
 
   '@module-federation/third-party-dts-extractor@2.3.2':
     dependencies:

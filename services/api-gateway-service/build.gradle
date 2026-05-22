@@ -23,6 +23,7 @@ repositories {
 }
 
 dependencies {
+    implementation project(':usage-events')
     implementation platform('org.springframework.cloud:spring-cloud-dependencies:2025.1.1')
     // Spring Cloud Gateway 5 (Oakwood): WebFlux server starter (replaces spring-cloud-starter-gateway in this BOM).
     implementation 'org.springframework.cloud:spring-cloud-starter-gateway-server-webflux'

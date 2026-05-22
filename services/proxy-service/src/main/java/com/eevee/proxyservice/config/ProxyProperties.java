@@ -15,6 +15,8 @@ public class ProxyProperties {
     private TeamKeyService teamKeyService = new TeamKeyService();
     private Rabbit rabbit = new Rabbit();
     private Gateway gateway = new Gateway();
+    private FingerprintLookup fingerprintLookup = new FingerprintLookup();
+    private UsageSubject usageSubject = new UsageSubject();
 
     public Map<String, ProviderEndpoint> getProviders() {
         return providers;
@@ -52,6 +54,43 @@ public class ProxyProperties {
         this.gateway = gateway;
     }
 
+    public FingerprintLookup getFingerprintLookup() {
+        return fingerprintLookup;
+    }
+
+    public void setFingerprintLookup(FingerprintLookup fingerprintLookup) {
+        this.fingerprintLookup = fingerprintLookup;
+    }
+
+    public UsageSubject getUsageSubject() {
+        return usageSubject;
+    }
+
+    public void setUsageSubject(UsageSubject usageSubject) {
+        this.usageSubject = usageSubject;
+    }
+
+    public static class UsageSubject {
+        private boolean enabled = true;
+        private String cacheTtl = "PT10M";
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getCacheTtl() {
+            return cacheTtl;
+        }
+
+        public void setCacheTtl(String cacheTtl) {
+            this.cacheTtl = cacheTtl;
+        }
+    }
+
     public static class ProviderEndpoint {
         private String baseUrl = "https://example.invalid";
 
@@ -71,6 +110,7 @@ public class ProxyProperties {
         private String mockKeyOpenai = "";
         private String mockKeyGoogle = "";
         private String cacheTtl = "PT5M";
+        private boolean reverseLookupMocksEnabled = false;
         private List<ReverseLookupMock> reverseLookupMocks = new ArrayList<>();
 
         public String getBaseUrl() {
@@ -127,6 +167,62 @@ public class ProxyProperties {
 
         public void setReverseLookupMocks(List<ReverseLookupMock> reverseLookupMocks) {
             this.reverseLookupMocks = reverseLookupMocks;
+        }
+
+        public boolean isReverseLookupMocksEnabled() {
+            return reverseLookupMocksEnabled;
+        }
+
+        public void setReverseLookupMocksEnabled(boolean reverseLookupMocksEnabled) {
+            this.reverseLookupMocksEnabled = reverseLookupMocksEnabled;
+        }
+    }
+
+    public static class FingerprintLookup {
+        private boolean enabled = true;
+        private String internalToken = "";
+        private String positiveTtl = "PT10M";
+        private String negativeTtl = "PT30S";
+        private int fingerprintLogPrefixLength = 8;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getInternalToken() {
+            return internalToken;
+        }
+
+        public void setInternalToken(String internalToken) {
+            this.internalToken = internalToken;
+        }
+
+        public String getPositiveTtl() {
+            return positiveTtl;
+        }
+
+        public void setPositiveTtl(String positiveTtl) {
+            this.positiveTtl = positiveTtl;
+        }
+
+        public String getNegativeTtl() {
+            return negativeTtl;
+        }
+
+        public void setNegativeTtl(String negativeTtl) {
+            this.negativeTtl = negativeTtl;
+        }
+
+        public int getFingerprintLogPrefixLength() {
+            return fingerprintLogPrefixLength;
+        }
+
+        public void setFingerprintLogPrefixLength(int fingerprintLogPrefixLength) {
+            this.fingerprintLogPrefixLength = fingerprintLogPrefixLength;
         }
     }
 
@@ -218,6 +314,7 @@ public class ProxyProperties {
         private String baseUrl = "http://localhost:8093";
         private String internalToken = "";
         private String pathTemplate = "/internal/api-keys/{provider}";
+        private String credentialPathTemplate = "/internal/v1/team-api-keys/{keyId}/credential";
 
         public String getBaseUrl() {
             return baseUrl;
@@ -241,6 +338,14 @@ public class ProxyProperties {
 
         public void setPathTemplate(String pathTemplate) {
             this.pathTemplate = pathTemplate;
+        }
+
+        public String getCredentialPathTemplate() {
+            return credentialPathTemplate;
+        }
+
+        public void setCredentialPathTemplate(String credentialPathTemplate) {
+            this.credentialPathTemplate = credentialPathTemplate;
         }
     }
 

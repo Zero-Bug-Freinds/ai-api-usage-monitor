@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.Locale;
 
 public class ExtAiHmacAuthWebFilter implements WebFilter {
 
@@ -63,7 +64,7 @@ public class ExtAiHmacAuthWebFilter implements WebFilter {
         String nonce = requiredHeader(request, HDR_EXT_NONCE);
         String bodySha256 = normalizeBodyHash(request.getHeaders().getFirst(HDR_EXT_BODY_SHA256));
         String signature = requiredHeader(request, HDR_EXT_SIGNATURE);
-        String extUserId = normalizeOptional(request.getHeaders().getFirst(HDR_EXT_USER_ID));
+        String extUserIdRaw = normalizeOptional(request.getHeaders().getFirst(HDR_EXT_USER_ID));
         String teamId = normalizeOptional(request.getHeaders().getFirst(HDR_TEAM_ID));
 
         if (!keyId.equals(gatewayProperties.getExtAi().getKeyId())) {
@@ -86,7 +87,7 @@ public class ExtAiHmacAuthWebFilter implements WebFilter {
             return Mono.error(new ResponseStatusException(HttpStatus.CONFLICT, "replayed ext nonce"));
         }
 
-        String canonical = canonicalString(request, bodySha256, timestampRaw, nonce, keyId, extUserId, teamId);
+        String canonical = canonicalString(request, bodySha256, timestampRaw, nonce, keyId, extUserIdRaw, teamId);
         String expectedSignature = hmacBase64(canonical, gatewayProperties.getExtAi().getHmacSecret());
         if (!MessageDigest.isEqual(
                 signature.getBytes(StandardCharsets.UTF_8),
@@ -95,15 +96,16 @@ public class ExtAiHmacAuthWebFilter implements WebFilter {
             return Mono.error(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid ext signature"));
         }
 
+        String extUserIdForProxy = normalizeExtUserId(extUserIdRaw);
         String scopeType = hasText(teamId) ? "TEAM" : "USER";
         ServerHttpRequest.Builder builder = request.mutate();
         builder.headers(headers -> {
             headers.remove(HDR_EXT_SIGNATURE);
             headers.remove(HDR_EXT_BODY_SHA256);
             headers.remove("Authorization");
-            if (hasText(extUserId)) {
-                headers.set(HDR_USER, extUserId);
-                headers.set(HDR_PLATFORM_USER, extUserId);
+            if (hasText(extUserIdForProxy)) {
+                headers.set(HDR_USER, extUserIdForProxy);
+                headers.set(HDR_PLATFORM_USER, extUserIdForProxy);
             } else {
                 headers.remove(HDR_USER);
                 headers.remove(HDR_PLATFORM_USER);
@@ -115,8 +117,8 @@ public class ExtAiHmacAuthWebFilter implements WebFilter {
             }
             headers.set(HDR_SCOPE_TYPE, scopeType);
             headers.set(HDR_GATEWAY_AUTH, gatewayProperties.getSharedSecret());
-            if (hasText(extUserId)) {
-                headers.set(HDR_EXT_USER_ID, extUserId);
+            if (hasText(extUserIdRaw)) {
+                headers.set(HDR_EXT_USER_ID, extUserIdRaw);
             } else {
                 headers.remove(HDR_EXT_USER_ID);
             }
@@ -163,6 +165,20 @@ public class ExtAiHmacAuthWebFilter implements WebFilter {
 
     private static String normalizeOptional(String value) {
         return hasText(value) ? value.trim() : null;
+    }
+
+    /**
+     * When {@code X-Ext-User-Id} is an email, normalize like Identity {@code principalSubForUser} (lowercase).
+     */
+    static String normalizeExtUserId(String value) {
+        if (!hasText(value)) {
+            return null;
+        }
+        String trimmed = value.trim();
+        if (trimmed.contains("@")) {
+            return trimmed.toLowerCase(Locale.ROOT);
+        }
+        return trimmed;
     }
 
     private static String normalizeBodyHash(String value) {

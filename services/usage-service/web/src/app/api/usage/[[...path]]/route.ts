@@ -1,6 +1,8 @@
-import { NextResponse } from "next/server"
-
-import { encodeUsagePathSegments, proxyUsageToGateway } from "@/lib/usage/usage-gateway-bff-proxy"
+﻿import {
+  encodeUsagePathSegments,
+  proxyUsageToGateway,
+  usageProxyJsonError,
+} from "@/lib/usage/api/usage-gateway-bff-proxy"
 
 type RouteContext = { params: Promise<{ path?: string[] }> }
 
@@ -8,7 +10,7 @@ async function proxyUsage(request: Request, context: RouteContext): Promise<Resp
   const { path: segments } = await context.params
   const pathParts = segments ?? []
   if (pathParts.length === 0) {
-    return NextResponse.json({ message: "사용량 API 경로가 필요합니다" }, { status: 404, headers: { "Cache-Control": "no-store" } })
+    return usageProxyJsonError(404)
   }
 
   const usagePath = encodeUsagePathSegments(pathParts)

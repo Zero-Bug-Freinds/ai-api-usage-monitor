@@ -1,5 +1,6 @@
 package com.eevee.proxyservice.security;
 
+import com.eevee.proxyservice.key.ApiKeyFingerprintNormalizer;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -44,38 +45,36 @@ public class UserContextResolver {
         String requestedApiKeyAlias = firstNonBlankHeader(exchange, HDR_API_KEY_ALIAS);
         String extUserId = firstNonBlankHeader(exchange, HDR_EXT_USER_ID);
         String rawApiKey = firstRawApiKey(exchange);
+        String apiKeyFingerprint64 = resolveFingerprint64(exchange, rawApiKey);
+
         if (auth != null && auth.isAuthenticated() && auth.getPrincipal() instanceof String userId) {
-            String org = exchange.getRequest().getHeaders().getFirst(HDR_ORG);
-            String team = exchange.getRequest().getHeaders().getFirst(HDR_TEAM);
-            return Mono.just(new UserContext(
+            return Mono.just(buildContext(
                     userId,
                     platformUserId,
-                    org,
-                    team,
+                    exchange,
                     correlationId,
                     requestedApiKeyId,
                     requestedApiKeyAlias,
                     extUserId,
-                    rawApiKey
+                    rawApiKey,
+                    apiKeyFingerprint64
             ));
         }
         String userId = exchange.getRequest().getHeaders().getFirst(HDR_USER);
         if (userId != null && !userId.isBlank()) {
-            String org = exchange.getRequest().getHeaders().getFirst(HDR_ORG);
-            String team = exchange.getRequest().getHeaders().getFirst(HDR_TEAM);
-            return Mono.just(new UserContext(
+            return Mono.just(buildContext(
                     userId,
                     platformUserId,
-                    org,
-                    team,
+                    exchange,
                     correlationId,
                     requestedApiKeyId,
                     requestedApiKeyAlias,
                     extUserId,
-                    rawApiKey
+                    rawApiKey,
+                    apiKeyFingerprint64
             ));
         }
-        if (rawApiKey != null) {
+        if (rawApiKey != null || apiKeyFingerprint64 != null) {
             String org = exchange.getRequest().getHeaders().getFirst(HDR_ORG);
             String team = exchange.getRequest().getHeaders().getFirst(HDR_TEAM);
             return Mono.just(new UserContext(
@@ -87,10 +86,49 @@ public class UserContextResolver {
                     requestedApiKeyId,
                     requestedApiKeyAlias,
                     extUserId,
-                    rawApiKey
+                    rawApiKey,
+                    apiKeyFingerprint64
             ));
         }
         return Mono.error(new IllegalStateException("Missing X-User-Id (from Gateway)"));
+    }
+
+    private static UserContext buildContext(
+            String userId,
+            String platformUserId,
+            ServerWebExchange exchange,
+            String correlationId,
+            String requestedApiKeyId,
+            String requestedApiKeyAlias,
+            String extUserId,
+            String rawApiKey,
+            String apiKeyFingerprint64
+    ) {
+        String org = exchange.getRequest().getHeaders().getFirst(HDR_ORG);
+        String team = exchange.getRequest().getHeaders().getFirst(HDR_TEAM);
+        return new UserContext(
+                userId,
+                platformUserId,
+                org,
+                team,
+                correlationId,
+                requestedApiKeyId,
+                requestedApiKeyAlias,
+                extUserId,
+                rawApiKey,
+                apiKeyFingerprint64
+        );
+    }
+
+    private static String resolveFingerprint64(ServerWebExchange exchange, String rawApiKey) {
+        try {
+            return ApiKeyFingerprintNormalizer.fromHeadersOrRawKey(exchange.getRequest().getHeaders(), rawApiKey);
+        } catch (IllegalArgumentException ex) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST,
+                    ex.getMessage()
+            );
+        }
     }
 
     private static String firstNonBlankHeader(ServerWebExchange exchange, String name) {

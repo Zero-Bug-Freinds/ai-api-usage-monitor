@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+﻿import { afterEach, describe, expect, it, vi } from "vitest"
+
+import { USAGE_PROXY_MESSAGE_404 } from "@/lib/usage/api/usage-gateway-bff-proxy"
 
 import { GET } from "./route"
 
@@ -72,5 +74,7 @@ describe("GET /api/usage/team/bff/[[...path]] (팀 BFF proxy)", () => {
 
     const res = await GET(req, ctx(undefined))
     expect(res.status).toBe(404)
+    const json = (await res.json()) as { message: string }
+    expect(json.message).toBe(USAGE_PROXY_MESSAGE_404)
   })
 })

@@ -1,6 +1,6 @@
 # Gateway ↔ Proxy 서비스 간 계약
 
-버전: 1.6  
+버전: 1.7  
 관련: [docs/architecture.md](../architecture.md) §4.1, §4.2, §8.2, §10.1, §10.2, 루트 [`docker-compose.yml`](../../docker-compose.yml)(`web-edge`, `docker/web-edge/nginx.conf.template`), 루트 [`.env.example`](../../.env.example), [`services/usage-service/web/.env.example`](../../services/usage-service/web/.env.example), [Web·Gateway Usage BFF](./web-gateway-bff.md)(Usage BFF 브라우저 경로·`basePath`는 [web-split-boundary.md](./web-split-boundary.md))
 
 **v1.1:** `application.yml` 라우트·`RemoveRequestHeader=Authorization`·Bearer 검증·Web `API_GATEWAY_URL` 합의를 §1.1·§3·§9에 명시(게이트웨이·Usage BFF 담당 정합).  
@@ -9,6 +9,8 @@
 **v1.4:** §5.1 Docker Compose·루트 `.env`와 `GATEWAY_SHARED_SECRET` 빈 값 주의, 로컬 기본 문자열을 게이트웨이·Proxy·usage와 정합.
 **v1.5:** `/api/v1/ai/ext/**` key-only ingress(HMAC+timestamp+nonce) 경로를 추가하고 기존 `/api/v1/ai/**` JWT 경로와 분리.
 **v1.6:** §6.1 `UsageRecordedEvent.metadataOwnerUserId` — PERSONAL `api_key_metadata` upsert 시 Identity MQ와 동일한 소유 `user_id`(플랫폼 사용자 id 문자열)를 쓰기 위한 선택 필드; Proxy는 `UserContext.keyLookupUserId()` 로 채운다.
+**v1.7:** §3.3.1 ext provider API key → gateway fingerprint 헤더; gateway `/internal/**` Bearer 보강; proxy reverse lookup 후속 작업 명시.
+**v1.8:** §5.1 `GATEWAY_INTERNAL_BEARER_TOKEN`·Compose 전달·JWT 정합·`validate-env-deploy.sh` WARN 정책.
 
 ---
 
@@ -53,7 +55,7 @@
 
 | Route ID | Predicate | Upstream URI (환경 변수) | 필터 |
 |----------|-----------|--------------------------|------|
-| `proxy-ai-ext` | `Path=/api/v1/ai/ext/**` | `GATEWAY_PROXY_URI` (기본 `http://localhost:8081`) | `RemoveRequestHeader=Authorization`, `RewritePath=/api/v1/ai/ext/(?<segment>.*), /proxy/${segment}` |
+| `proxy-ai-ext` | `Path=/api/v1/ai/ext/**` | `GATEWAY_PROXY_URI` (기본 `http://localhost:8081`) | `RemoveRequestHeader=Authorization`, `RemoveRequestHeader=X-Api-Key`, `RemoveRequestHeader=X-Goog-Api-Key`, `RemoveRequestHeader=X-Ext-Raw-Api-Key`, `RewritePath=/api/v1/ai/ext/(?<segment>.*), /proxy/${segment}` |
 | `proxy-ai` | `Path=/api/v1/ai/**` | `GATEWAY_PROXY_URI` (기본 `http://localhost:8081`) | `RemoveRequestHeader=Authorization`, `RewritePath=/api/v1/ai/(?<segment>.*), /proxy/${segment}` |
 | `usage-http` | `Path=/api/v1/usage/**` | `GATEWAY_USAGE_URI` (기본 `http://localhost:8092`) | `RemoveRequestHeader=Authorization` |
 
@@ -97,10 +99,45 @@ Canonical string:
 
 Proxy key selection priority for ext/JWT 공통:
 
-- `X-Api-Key-Id` > `X-Api-Key-Alias` > raw key reverse lookup > latest fallback lookup
+- `X-Api-Key-Id` > `X-Api-Key-Alias` > fingerprint reverse lookup > latest fallback lookup
 - `ACTIVE` 상태 키만 허용 (inactive/deleted는 `404`)
-- reverse lookup 경로는 현재 identity/team 정식 API 미지원으로, `proxy.key-service.reverse-lookup-mocks`(테스트/임시 운영)로 보완한다.
+- **Gateway(Task56):** ext 요청에서 provider raw key가 있으면 `X-Api-Key-Fingerprint`(기본) + `X-Ai-Provider` 를 Proxy로 전달하고 raw key 헤더는 제거한다. raw key가 없으면 fingerprint 헤더 없이 전달(HMAC-only ext 호출).
+- **Proxy(Task56-1):** fingerprint + provider로 identity/team `POST /internal/v1/api-keys/lookup` 병렬 조회(first-success) 후 personal 키는 `GET /internal/api-keys/{provider}` 로 plain key hydration. 팀 소유 키 plain hydration은 team-service trusted internal API 선행 필요(현재 502). 개발용 `reverse-lookup-mocks`는 `proxy.key-service.reverse-lookup-mocks-enabled=true` 일 때만.
 - 동일 raw key hash를 personal/team에 동시에 등록하는 구성은 금지한다(기동 시 예외).
+
+#### 3.3.1 Provider API key headers (ext ingress)
+
+Gateway filter: [`ExtAiApiKeyFingerprintWebFilter`](../../services/api-gateway-service/src/main/java/com/eevee/apigateway/filter/ExtAiApiKeyFingerprintWebFilter.java) — `ExtAiHmacAuthWebFilter` **이후**, `ProxyTrustHeadersWebFilter` **이전**. `gateway.ext-ai.enabled=true` 일 때만 동작.
+
+**클라이언트 → Gateway (raw key, 우선순위):**
+
+| 우선순위 | 헤더 | 비고 |
+|----------|------|------|
+| 1 | `X-Ext-Raw-Api-Key` | Proxy 상수와 동일 이름 |
+| 2 | `X-Api-Key` | OpenAI 스타일 |
+| 3 | `X-Goog-Api-Key` | Google |
+| 4 | `Authorization: Bearer <token>` | provider 키 휴리스틱(`sk-`, `AIza`, `xai-` 등)에만 해당; 플랫폼 JWT는 ext에서 보내지 않음(§3.1·web-edge에서 `Authorization` 제거) |
+
+- 평문 키는 **trim** 후 fingerprint(Identity 등록과 동일: `SHA-256(UTF-8 plain)` → **소문자 64 hex**). `key_hash`(provider+키 uniqueness)와 **다름**.
+- raw key가 **없으면** fingerprint 헤더를 넣지 않음(선택). Proxy는 키 material 없이 404 등 처리(후속 lookup).
+- 잘못된 provider path segment / 빈·과장 키 → Gateway `400`.
+
+**Gateway → Proxy (raw key 발견 시):**
+
+| 헤더 | 기본값 | 설명 |
+|------|--------|------|
+| `X-Api-Key-Fingerprint` | `gateway.ext-ai.fingerprint-header` | 64 hex SHA-256 |
+| `X-Ai-Provider` | `gateway.ext-ai.provider-header` | `OPENAI` \| `GOOGLE` \| `ANTHROPIC` (path segment에서 파생) |
+
+제거(필터 + SCG `RemoveRequestHeader` 이중 방어): `Authorization`, `X-Api-Key`, `X-Goog-Api-Key`, `X-Ext-Raw-Api-Key`, ext HMAC 검증 헤더(`X-Ext-Key-Id`, `X-Ext-Timestamp`, `X-Ext-Nonce`, `X-Ext-Signature`, `X-Ext-Body-Sha256`).
+
+**내부 lookup API (문서만 — Gateway는 호출하지 않음):**
+
+`POST /internal/v1/api-keys/lookup` — body `{ "fingerprint": "<64 hex>", "provider": "OPENAI" }` — identity-service·team-service 구현. Proxy가 병렬 호출·404/409/502 매핑·Caffeine 캐시(positive 10m / negative 30s) 적용.
+
+**인프라(보고):** identity/team/proxy의 `/internal/**` 는 LB에서 공인 인터넷 차단. Gateway `/internal/**` 는 `X-Web-Edge-Auth == gateway.shared-secret` 또는 `Authorization: Bearer <gateway.internal-auth.bearer-token>` (`InternalServiceAuthWebFilter`).
+
+**web-edge(보고):** ext location은 기본적으로 `Authorization`을 비운다. Bearer provider 키는 `X-Api-Key` / `X-Goog-Api-Key` / `X-Ext-Raw-Api-Key` 사용. ext 전용 Bearer 전달은 web-edge 후속.
 
 ---
 
@@ -151,6 +188,9 @@ Gateway는 JWT 검증에 성공한 뒤(또는 개발 모드 규칙에 따라) �
 - **usage-service** 는 게이트웨이에서 오는 내부 호출 검증에 동일한 공유 비밀을 쓴다(`usage.gateway.shared-secret` — 구현은 `services/usage-service` `application.yml`). **게이트웨이·Proxy·usage 세 곳**의 값은 운영·로컬 모두 **일치**해야 한다.
 - **로컬 전용 기본 문자열(팀 합의 샘플):** `local-dev-gateway-shared-secret-do-not-use-in-prod` — `api-gateway-service`·`proxy-service`·`usage-service` 의 `application.yml` 기본값과 동일하다. **운영**에서는 반드시 강한 값으로 **`GATEWAY_SHARED_SECRET`** 환경 변수로 덮어쓴다.
 - **Docker Compose:** 루트 `docker-compose.yml`은 `GATEWAY_SHARED_SECRET: ${GATEWAY_SHARED_SECRET:-}` 처럼 변수를 넘긴다. 루트 **`.env`에 `GATEWAY_SHARED_SECRET=` 만 두거나 변수를 빼서 Compose가 빈 문자열을 주입하면**, 컨테이너 프로세스에는 “설정됨이지만 비어 있는” 환경 변수로 들어가 **Spring이 yml 기본값을 쓰지 못하고** 게이트웨이 기동 검증(`GatewayStartupValidation`)에서 실패할 수 있다. **비어 있지 않은 값**으로 맞추거나(루트 `.env.example` 참고) 해당 키 줄을 `.env`에서 **아예 제거**한다. `docker compose`는 **`.env.example`을 자동 로드하지 않는다** — 복사해 `.env`로 쓴 뒤 기동한다.
+- **`GATEWAY_INTERNAL_BEARER_TOKEN` (`gateway.internal-auth.bearer-token`):** Task56 이후 **`gateway.dev-mode=false`** 이면 api-gateway **기동 시 필수**(32자 이상). 게이트웨이 `/internal/**` 입구용 Bearer(서비스 간 호출); **web-edge**의 `/_edge_auth`는 **`GATEWAY_SHARED_SECRET`** (`X-Web-Edge-Auth`)을 사용한다. 루트 `.env` / EC2 `.env.deploy`에 값을 두더라도 **`docker-compose.yml`·`docker-compose-prod.yml`의 `api-gateway-service.environment`에 `${GATEWAY_INTERNAL_BEARER_TOKEN:-}` 로 전달**해야 컨테이너가 읽는다.
+- **로컬 JWT 정합:** 루트 Compose는 identity에 `JWT_SECRET: ${GATEWAY_JWT_SECRET}` 를 주입한다 — 로컬은 **`GATEWAY_JWT_SECRET` 하나**로 identity·gateway 서명 키를 맞춘다. **운영(`docker-compose-prod.yml`)** 은 `JWT_SECRET`과 `GATEWAY_JWT_SECRET` **변수 이름이 둘**이므로 **동일 값**을 넣어야 한다.
+- **배포 검증:** `scripts/deploy/validate-env-deploy.sh`는 게이트웨이 env 누락·JWT 불일치를 **WARN**만 출력한다(roll 차단 없음). api-gateway **recreate 전** EC2 env를 수동 확인한다.
 
 ---
 
