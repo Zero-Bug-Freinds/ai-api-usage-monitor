@@ -23,8 +23,7 @@ See `docs/aws-github-oidc-ecr-ssm.md` (GitHub Environment `NEXT_PUBLIC_*`, ALB D
 ### Coverage (what is in / out of scope)
 
 - **In scope:** Any app that renders **`ConsoleShell`** (usage, billing, team, identity, agent shell layouts, etc.).
-- **Out of this change:** Layouts that use **`ConsoleLayoutOverride`** only and never mount `ConsoleShell`, for example:
-  - Module Federation host: `apps/web/src/components/host-shell-layout.tsx`
+- **Out of this change:** Layouts that use **`ConsoleLayoutOverride`** only and never mount `ConsoleShell`, for example optional **`apps/web`** host shell (운영 정본은 **`team-web`** + **`ConsoleShellPages`**).
 - **Follow-up for “global” parity:** Export a small client root (e.g. provider + listener bundle) from this package and mount it once in those shells; that is a separate wiring task.
 
 ### Poll URL (same-origin)

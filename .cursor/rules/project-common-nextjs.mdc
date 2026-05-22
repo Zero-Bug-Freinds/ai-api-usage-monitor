@@ -4,7 +4,6 @@ globs:
   - "frontend/**/*"
   - "apps/web/**/*"
   - "services/*/web/**/*"
-  - "services/*/web-mfe/**/*"
   - "packages/ui/**/*"
   - "packages/shell/**/*"
   - "dashboard/**/*"
@@ -26,8 +25,7 @@ Applies when editing paths matched by **`globs`** above (adjust `globs` if the t
 
 Canonical rules: **`docs/repository-structure.md`**.
 
-- Use a **single repo**; place domain-owned Next apps under **`services/<svc>/web/`**. **`apps/web/`**(`web-host`)은 **Module Federation 호스트** 등 통합 진입용으로 쓸 수 있다. 신규 BFF·App Router 페이지는 각 도메인 **`web/`** 에 둔다(`docs/contracts/web-split-boundary.md`).
-- **Module Federation remote:** `usage-service`·`team-service`만 **`services/<svc>/web-mfe/`**(Pages Router)를 둔다. Remote 엔트리·`NextFederationPlugin`은 **`web-mfe`** 에만 넣고, 동일 도메인 **`web/`** 의 화면·BFF와 컴포넌트를 공유할 때는 **`@web/*` → `../web/src/*`** 별칭으로 중복 구현을 피한다(`tsconfig.json` `paths` — 정본은 각 `web-mfe/tsconfig.json`).
+- Use a **single repo**; place domain-owned Next apps under **`services/<svc>/web/`**. **운영 단일 도메인**은 **`web-edge`** + 각 `web`(`docs/contracts/web-split-boundary.md`). **`apps/web/`** is optional; **team UI canonical path is `/teams` → `team-service/web`**. **`web-mfe/`·`/mfe/usage` MF remotes are removed** (see `docs/architecture.md` §13.3).
 - **브라우저 경로 통합:** 다른 서비스 `web`으로 프록시하는 **정본은 `docker/web-edge/nginx.conf.template`** 이다. `services/identity-service/web/next.config.ts`는 앱 간 프록시를 담당하지 않는다. 새 최상위 공개 접두를 추가할 때는 **반드시 web-edge 설정과** `docs/contracts/web-split-boundary.md`를 갱신한다.
 - **Shared UI:** **`packages/ui`** (`@ai-usage/ui`) — Shadcn/Radix 래퍼·`cn` only; **`packages/shell`** (`@ai-usage/shell`) — 콘솔 사이드바·헤더·공개 경로 네비; install from repo root **`pnpm install`** (`pnpm-workspace.yaml`). Do not put domain logic in `packages/ui` / `packages/shell`.
 - Put **`libs/`** only for thin shared code (**API contracts, types, small utilities**) — not other services’ domain logic copied into the FE tree.
@@ -40,7 +38,7 @@ Canonical rules: **`docs/repository-structure.md`**.
 
 ## Stack (summary)
 
-- **Framework:** **Next.js 15**, **React 19** (각 `package.json`·루트 워크스페이스 정본). **`web-mfe`:** Pages Router + `@module-federation/nextjs-mf`.
+- **Framework:** **Next.js 15**, **React 19** (각 `package.json`·루트 워크스페이스 정본). **team-web** uses **Pages Router** + `basePath=/teams`; other domain `web/` apps use **App Router** unless documented otherwise.
 - **UI:** Tailwind CSS, Shadcn UI, Radix UI; charts: Recharts or Chart.js.
 - **Validation:** Zod; forms often **react-hook-form** + Zod — align with whatever the repo already uses.
 - **Optional:** TanStack Query (client fetching); **next-safe-action** if the team standardizes server actions and a shared response type.

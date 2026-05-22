@@ -18,8 +18,7 @@ Gradle/Maven 등 **빌드 도구는 팀 설정을 따른다.** 본 문서는 **�
 <repo-root>/
 ├── services/              # 실행 가능한 마이크로서비스(애플리케이션) — 이름은 도메인별로 부여
 │   ├── <service-a>/       # 예: Gradle 루트 + (선택) web/ — UI·BFF가 필요한 서비스만 Next 앱
-│   │   ├── web/           # 선택: 해당 도메인의 Next.js 15(App Router, BFF Route Handler)
-│   │   └── web-mfe/       # 선택: Module Federation remote 전용(Pages Router) — 현재 usage·team에만 존재
+│   │   └── web/           # 선택: 해당 도메인의 Next.js 15(App Router 또는 Pages Router, BFF)
 │   ├── <service-b>/
 │   └── ...
 ├── libs/                  # 공유 라이브러리 모듈(범위는 §3 참고)
@@ -50,9 +49,9 @@ Gradle/Maven 등 **빌드 도구는 팀 설정을 따른다.** 본 문서는 **�
 - `services/identity-service` + `services/identity-service/web`
 - `services/usage-service` + `services/usage-service/web`
 - `services/billing-service` + `services/billing-service/web`
-- `services/team-service` + `services/team-service/web` + `services/team-service/web`
+- `services/team-service` + `services/team-service/web` (Pages Router, `basePath=/teams`)
 - `services/notification-service` + `services/notification-service/web`
-- `apps/web` (web-host)
+- `apps/web` (선택: web-host — 운영 진입은 `team-service/web` + `web-edge`)
 - `packages/ui`, `packages/shell`
 
 ---
@@ -98,14 +97,7 @@ Gradle/Maven 등 **빌드 도구는 팀 설정을 따른다.** 본 문서는 **�
 |------|----------------|--------------------------------------|-----------|
 | Identity(인증·조직·세션 BFF 등) | `services/identity-service/` | `services/identity-service/web/` | [`web-identity-bff.md`](contracts/web-identity-bff.md) |
 | Usage(대시보드·Usage BFF) | `services/usage-service/` | `services/usage-service/web/` | [`web-gateway-bff.md`](contracts/web-gateway-bff.md) |
-| Team(팀·팀원·팀 키 등) | `services/team-service/` | `services/team-service/web/` | [`web-team-bff.md`](contracts/web-team-bff.md) |
-
-**Module Federation remote(Usage·Team만):** 같은 서비스 트리 아래 **`web-mfe/`** — Pages Router·`@module-federation/nextjs-mf`로 **remote 엔트리만** 노출한다. 운영·BFF·App Router 화면은 **`web/`** 에 둔다. 호스트(`apps/web` 등)·별칭·rewrites 정본은 [`mfe-pages-only-remote-split-guidance-20260414.md`](mfe-pages-only-remote-split-guidance-20260414.md), [`web-split-boundary.md`](contracts/web-split-boundary.md) §2.6.
-
-| 영역 | MF remote (`web-mfe/`) | 비고 |
-|------|------------------------|------|
-| Usage | `services/usage-service/web-mfe/` | `web`과 컴포넌트 중복 방지 시 `@web/*` → `../web/src/*` 별칭 권장 |
-| Team | `services/team-service/web-mfe/` | 동일 |
+| Team(팀·팀원·팀 키 등) | `services/team-service/` | `services/team-service/web/` (Pages Router, `basePath=/teams`) | [`web-team-bff.md`](contracts/web-team-bff.md) |
 
 | 영역 | Gradle(Spring) | Next(App Router + Route Handler BFF) | 계약 문서 |
 |------|----------------|--------------------------------------|-----------|
@@ -116,9 +108,10 @@ Gradle/Maven 등 **빌드 도구는 팀 설정을 따른다.** 본 문서는 **�
 - **공유 프론트 자산:** 루트 **`pnpm` workspace**(`pnpm-workspace.yaml`, 루트 `package.json`, **`pnpm-lock.yaml`**)와 **`@ai-usage/ui`**(토큰·Shadcn 래퍼·`cn`), **`@ai-usage/shell`**(콘솔 네비·공개 경로 헬퍼)을 공유한다. 도메인 로직은 §3와 같이 서비스 경계 밖으로 복사하지 않는다. 콘솔 사이드바에 탭을 추가하는 절차는 [`howto-add-console-sidebar-route.md`](howto-add-console-sidebar-route.md)를 본다.
 - **빌드:** 백엔드는 각 서비스에서 **`./gradlew bootJar`**(또는 `build`). Next는 저장소 루트에서 **`pnpm install`** 후 **`pnpm run build:web`** 또는 **`pnpm --filter identity-web build`** / **`pnpm --filter usage-web build`**(standalone). Next **Docker**는 **`docker build -f services/<svc>/web/Dockerfile .`** 처럼 **build context = 저장소 루트**로 `packages/ui`·`packages/shell` 을 함께 포함한다(`README.md`, `docs/architecture.md` §10.1). **백엔드 Docker 이미지**는 `proxy-service`·`api-gateway-service` 가 호스트에서 만든 `app.jar` 를 복사하고, **identity-service**·**usage-service** 는 Dockerfile 안에서 Gradle 로 JAR 을 만든다(usage 는 `libs/usage-events` 포함을 위해 저장소 루트를 build context 로 쓴다 — `README.md`, `docker-compose.yml`, 각 `services/*/docker-compose.yml` 주석).
 
-### 6.2 `apps/web`(web-host)
+### 6.2 `apps/web`(web-host, 선택)
 
-- **도메인별 UI·BFF**는 `services/<svc>/web/`에 둔다. **`apps/web`**(`web-host`)은 **Module Federation 호스트** 등 통합 진입이 필요할 때 사용하며, remote는 `usage-service`·`team-service`의 **`web-mfe/`** 를 바란다(상세: [`mfe-pages-only-remote-split-guidance-20260414.md`](mfe-pages-only-remote-split-guidance-20260414.md)).
+- **도메인별 UI·BFF**는 `services/<svc>/web/`에 둔다. **운영 단일 도메인**에서는 **`web-edge`** 가 `/dashboard`·`/teams` 등을 각 `web`으로 프록시하며, 팀 UI 정본은 **`services/team-service/web/`**(`team-web`)이다.
+- **`apps/web`** 은 로컬·실험용 App Router 셸일 수 있다. **Module Federation·`web-mfe/`·`/mfe/usage`는 사용하지 않는다**(역사: [`mfe-pages-only-remote-split-guidance-20260414.md`](mfe-pages-only-remote-split-guidance-20260414.md)).
 - **단일 도메인:** 엣지 역프록시로 경로를 합친다. 로컬 Compose는 **`web-edge`** + `docker/web-edge/nginx.conf` — `/dashboard` → `/dashboard/`(308), **`/dashboard/`** 접두만 usage `web`, **`/api/v1/`** 접두는 API Gateway(버퍼링 끔·장시간 응답), 나머지는 identity `web`(`/dashboard2` 는 Usage가 아님). 상세: `docs/architecture.md` §10.2, `docs/contracts/web-split-boundary.md` §2.3.
 - **게이트웨이·Proxy:** [`gateway-proxy.md`](contracts/gateway-proxy.md) §1.1·§3·§9 — **게이트웨이 팀·각 `web` BFF 담당**이 `API_GATEWAY_URL` 등을 합의한다.
 - **미들웨어·보호 라우트** 정본: [`web-identity-bff.md`](contracts/web-identity-bff.md) §6.2, [`web-split-boundary.md`](contracts/web-split-boundary.md) §3.

@@ -108,7 +108,7 @@ Next `basePath`는 **`/dashboard`**(단일 도메인에서 `/_next` 충돌 방�
 | `/`, `/login`, `/signup`, `/forgot-password`, `/reset-password`, `/settings`, `/api/auth/*`, `/api/identity/*`, `/_next/*` | Identity `web` |
 | 그 외 미정의 경로 | 404 |
 
-새 **최상위 접두**를 추가해 다른 도메인 `web`으로 프록시할 때도 동일하게 **`rewrites`** 에 명시한다. 현재 `web-edge` 공개 경로에는 `/mfe/*` 프록시를 두지 않으며, 서비스 UI는 각 App Router `web/` 경로를 직접 사용한다.
+새 **최상위 접두**를 추가해 다른 도메인 `web`으로 프록시할 때는 **`docker/web-edge/nginx.conf.template`** 에 location을 추가한다. **`/mfe/*` 프록시는 사용하지 않는다**(과거 usage MF remote 제거). 서비스 UI는 **`/dashboard`·`/teams`·`/billing`·…** 처럼 각 `services/<svc>/web/` 공개 경로를 직접 사용한다(team-web은 Pages Router, `basePath=/teams`).
 
 ### 2.7 Billing `web/` (지출 대시보드·Expenditure BFF)
 
