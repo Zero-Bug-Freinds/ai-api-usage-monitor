@@ -84,7 +84,39 @@ public class ExternalApiKeySchemaInitializer {
 				where api_key_fingerprint is not null
 				"""
 		);
+		ensureGlobalFingerprintUniqueIndex();
 		log.info("external_api_keys.api_key_fingerprint column and partial unique index ensured");
+	}
+
+	private void ensureGlobalFingerprintUniqueIndex() {
+		jdbcTemplate.execute(
+				"""
+				do $$
+				begin
+				  if not exists (
+				    select 1
+				    from pg_indexes
+				    where tablename = 'external_api_keys'
+				      and indexname = 'uk_external_api_keys_fingerprint_global'
+				  ) then
+				    if exists (
+				      select 1
+				      from external_api_keys
+				      where api_key_fingerprint is not null
+				      group by api_key_fingerprint
+				      having count(*) > 1
+				    ) then
+				      raise warning 'skip uk_external_api_keys_fingerprint_global due to duplicate fingerprint rows';
+				    else
+				      create unique index uk_external_api_keys_fingerprint_global
+				        on external_api_keys (api_key_fingerprint)
+				        where api_key_fingerprint is not null;
+				    end if;
+				  end if;
+				end $$;
+				"""
+		);
+		log.info("external_api_keys global fingerprint unique index ensured");
 	}
 
 	private boolean isPostgres() {

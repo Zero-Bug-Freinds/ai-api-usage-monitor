@@ -268,7 +268,7 @@ export async function POST(request: Request) {
     const message =
       extractUpstreamErrorMessage(upstreamJson) ?? fallbackMessageForUpstreamFailure(upstream.status)
 
-    if (upstream.status === 400 || upstream.status === 401 || upstream.status === 409) {
+    if (upstream.status === 400 || upstream.status === 401 || upstream.status === 409 || upstream.status === 503) {
       return json(upstream.status, { success: false, message, data: null })
     }
 
@@ -276,7 +276,7 @@ export async function POST(request: Request) {
   }
 
   const message = fallbackMessageForUpstreamFailure(upstream.status)
-  if (upstream.status === 400 || upstream.status === 401 || upstream.status === 409) {
+  if (upstream.status === 400 || upstream.status === 401 || upstream.status === 409 || upstream.status === 503) {
     return json(upstream.status, { success: false, message, data: null })
   }
   return json(502, { success: false, message, data: null })

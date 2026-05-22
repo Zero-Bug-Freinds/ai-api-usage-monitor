@@ -336,25 +336,7 @@ function billingProviderCandidates(rawProvider: string): string[] {
   return supported
 }
 function userIdFromHeaders(request: Request): string {
-  const candidates = [
-    "x-user-id",
-    "X-User-Id",
-    "x-userid",
-    "X-Userid",
-    "x-platform-user-id",
-    "X-Platform-User-Id",
-    "x-platform-userid",
-    "X-Platform-Userid",
-  ]
-  for (const header of candidates) {
-    const value = request.headers.get(header)
-    if (value && value.trim().length > 0) {
-      return value.trim()
-    }
-  }
-  const fallbackUserId = (process.env.AI_AGENT_FALLBACK_USER_ID ?? "1").trim()
-  if (fallbackUserId.length > 0) return fallbackUserId
-  return "1"
+  return userIdFromHeadersStrict(request) ?? ""
 }
 
 function userIdFromHeadersStrict(request: Request): string | null {
@@ -423,27 +405,63 @@ function userIdentifierFromHeaders(request: Request): { userId: number | null; e
   return { userId: null, email: headerEmail }
 }
 
+type ResolvedIdentityPrincipal = {
+  numericUserId: number | null
+  /** identity 이벤트·agent 스냅샷 userId(이메일, lower-case) */
+  snapshotUserId: string | null
+  email: string | null
+}
+
+async function resolveIdentityPrincipal(
+  request: Request,
+  email: string | null,
+): Promise<ResolvedIdentityPrincipal | null> {
+  const normalizedEmail = (email ?? "").trim().toLowerCase()
+  if (!normalizedEmail.includes("@")) {
+    return null
+  }
+  for (const origin of identityServiceOriginCandidates()) {
+    try {
+      const response = await fetchWithTimeout(
+        `${origin}/internal/users/principal?q=${encodeURIComponent(normalizedEmail)}`,
+        CONTEXT_FETCH_TIMEOUT_MS,
+        { headers: buildForwardHeaders(request, normalizedEmail) },
+      )
+      if (!response.ok) continue
+      const payload = (await response.json()) as {
+        data?: { userId?: string | number | null; email?: string | null } | null
+      }
+      const data = payload.data
+      if (!data) continue
+      const rawUserId = String(data.userId ?? "").trim()
+      const parsedNumeric = Number(rawUserId)
+      const numericUserId =
+        Number.isFinite(parsedNumeric) && parsedNumeric > 0 ? parsedNumeric : null
+      const resolvedEmail = (data.email ?? normalizedEmail).trim().toLowerCase()
+      return {
+        numericUserId,
+        snapshotUserId: resolvedEmail.includes("@") ? resolvedEmail : null,
+        email: resolvedEmail.includes("@") ? resolvedEmail : null,
+      }
+    } catch {
+      // try next origin
+    }
+  }
+  return {
+    numericUserId: null,
+    snapshotUserId: normalizedEmail,
+    email: normalizedEmail,
+  }
+}
+
 function resolveCurrentUserId(
   request: Request,
-  keys: IdentitySnapshot[],
+  principal: ResolvedIdentityPrincipal | null,
 ): number | null {
-  const fromHeader = userIdAsNumber(request)
-  if (fromHeader != null) {
-    return fromHeader
+  if (principal?.numericUserId != null) {
+    return principal.numericUserId
   }
-
-  const fromKeysRaw = keys
-    .map((item) => Number(String(item.userId).trim()))
-    .find((value) => Number.isFinite(value) && value > 0)
-  if (fromKeysRaw != null) {
-    return fromKeysRaw
-  }
-  const fallbackUserId = (process.env.AI_AGENT_FALLBACK_USER_ID ?? "1").trim()
-  const parsedFallback = Number(fallbackUserId)
-  if (Number.isFinite(parsedFallback) && parsedFallback > 0) {
-    return parsedFallback
-  }
-  return 1
+  return userIdAsNumber(request)
 }
 
 function identityUserIdCandidates(
@@ -478,17 +496,14 @@ async function fetchIdentityBudgetKeys(
   request: Request,
   userId: number | null,
   email: string | null,
-  fallbackEmails: string[] = [],
 ): Promise<IdentityBudgetByKey[]> {
   const queries: string[] = []
+  const normalizedEmail = (email ?? "").trim().toLowerCase()
   if (userId != null) {
     queries.push(`/api/identity/v1/users/${userId}/budget`)
   }
-  if (email != null) {
-    queries.push(`/api/identity/v1/users/budget?email=${encodeURIComponent(email)}`)
-  }
-  for (const fallbackEmail of fallbackEmails) {
-    queries.push(`/api/identity/v1/users/budget?email=${encodeURIComponent(fallbackEmail)}`)
+  if (normalizedEmail.includes("@")) {
+    queries.push(`/api/identity/v1/users/budget?email=${encodeURIComponent(normalizedEmail)}`)
   }
   if (queries.length === 0) return []
 
@@ -496,7 +511,7 @@ async function fetchIdentityBudgetKeys(
     for (const origin of identityServiceOriginCandidates()) {
       try {
         const response = await fetchWithTimeout(`${origin}${query}`, CONTEXT_FETCH_TIMEOUT_MS, {
-          headers: buildForwardHeaders(request, email),
+          headers: buildForwardHeaders(request, normalizedEmail.includes("@") ? normalizedEmail : null),
         })
         if (!response.ok) continue
         const payload = (await response.json()) as IdentityBudgetResponse
@@ -1194,19 +1209,22 @@ export async function GET(request: Request) {
     const sessionEmail = await resolveSessionEmail(request)
     const derivedHeaderEmail = emailFromHeaders(request)
     const resolvedEmailHeader = sessionEmail ?? derivedHeaderEmail
+    const identityPrincipal = await resolveIdentityPrincipal(request, resolvedEmailHeader)
     const backendOrigin = await resolveBackendOrigin()
     const forwardedHeaders = buildForwardHeaders(request, resolvedEmailHeader)
-    const strictUserId = userIdAsNumber(request)
+    const snapshotUserId = identityPrincipal?.snapshotUserId ?? null
     const identityApiKeyPath =
-      strictUserId != null
-        ? `/api/v1/agents/identity-api-keys/${strictUserId}`
-        : "/api/v1/agents/identity-api-keys"
+      snapshotUserId != null
+        ? `/api/v1/agents/identity-api-keys/${encodeURIComponent(snapshotUserId)}`
+        : null
     const [keysInitial, billingSignals, usagePredictionSignals, dailyCumulativeTokens, snapshotTeamApiKeys] = backendOrigin
       ? await Promise.all([
-          fetchWithTimeout(`${backendOrigin}${identityApiKeyPath}`, CONTEXT_FETCH_TIMEOUT_MS, {
-            method: "GET",
-            headers: forwardedHeaders,
-          }).then(async (response) => (response.ok ? (((await response.json()) as IdentitySnapshot[]) ?? []) : [])),
+          identityApiKeyPath
+            ? fetchWithTimeout(`${backendOrigin}${identityApiKeyPath}`, CONTEXT_FETCH_TIMEOUT_MS, {
+                method: "GET",
+                headers: forwardedHeaders,
+              }).then(async (response) => (response.ok ? (((await response.json()) as IdentitySnapshot[]) ?? []) : []))
+            : Promise.resolve([]),
           fetchWithTimeout(`${backendOrigin}/api/v1/agents/billing-signals`, CONTEXT_FETCH_TIMEOUT_MS, {
             method: "GET",
             headers: forwardedHeaders,
@@ -1233,7 +1251,7 @@ export async function GET(request: Request) {
       userId: headerIdentifier.userId,
       email: resolvedEmailHeader ?? headerIdentifier.email,
     }
-    const currentUserId = resolveCurrentUserId(request, keys)
+    const currentUserId = resolveCurrentUserId(request, identityPrincipal)
     if (currentUserId != null && keys.length > 0) {
       keys = await enrichIdentitySnapshotsWithKeyHashes(request, keys, currentUserId, resolvedEmailHeader)
     }
@@ -1247,7 +1265,11 @@ export async function GET(request: Request) {
       fallbackUserId,
     ]
     const teamCatalog = await fetchTeamCatalogFromTeamService(request, teamCatalogUserIds)
-    const currentUserCandidates = identityUserIdCandidates(request, currentUserId, resolvedIdentifier.email)
+    const currentUserCandidates = identityUserIdCandidates(
+      request,
+      currentUserId,
+      identityPrincipal?.email ?? resolvedIdentifier.email,
+    )
     const keysForCurrentUser = keys.filter((key) => matchesIdentityUserId(key.userId, currentUserCandidates))
 
     const teamApiKeyByCompositeKey = new Map<string, TeamApiKeySnapshot>()
@@ -1258,13 +1280,6 @@ export async function GET(request: Request) {
       teamApiKeyByCompositeKey.set(`${item.teamId}:${item.teamApiKeyId}`, item)
     }
     const teamApiKeys = Array.from(teamApiKeyByCompositeKey.values())
-    const fallbackEmails = Array.from(
-      new Set(
-        teamApiKeys
-          .map((item) => (item.ownerUserId ?? "").trim())
-          .filter((value) => value.includes("@")),
-      ),
-    )
     const billingByKeyId = new Map<string, BillingSignal>()
     for (const item of billingSignals) {
       const id = billingSignalMapKey(item.apiKeyId)
@@ -1383,8 +1398,7 @@ export async function GET(request: Request) {
     const identityBudgetKeys = await fetchIdentityBudgetKeys(
       request,
       currentUserId,
-      resolvedIdentifier.email,
-      fallbackEmails,
+      identityPrincipal?.email ?? resolvedIdentifier.email,
     )
     const personalKeysFromIdentity = identityBudgetKeys
       .map((key) => {
