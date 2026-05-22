@@ -367,6 +367,10 @@ services:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: docker
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
       PROXY_KEY_SERVICE_BASE_URL: ${PROXY_KEY_SERVICE_BASE_URL:-http://identity-service:8080}
       PROXY_TEAM_KEY_SERVICE_BASE_URL: ${PROXY_TEAM_KEY_SERVICE_BASE_URL:-http://team-service:8093}
       # proxy.jar 수정 없이 Spring 이 기존 설정으로 읽음 — team-service 내부 토큰과 동일해야 함

@@ -63,6 +63,17 @@ for req in IDENTITY_POSTGRES_HOST USAGE_POSTGRES_HOST IMAGE_TAG; do
   fi
 done
 
+rabbit_host="$(env_file_value RABBITMQ_HOST)"
+if [[ -z "${rabbit_host//[[:space:]]/}" ]]; then
+  echo "WARN: RABBITMQ_HOST is empty — proxy-service and other publishers may default to compose hostname rabbitmq" >&2
+  warns=$((warns + 1))
+elif [[ "${rabbit_host,,}" == "rabbitmq" ]]; then
+  echo "WARN: RABBITMQ_HOST=rabbitmq is for local Compose only; EC2 deploy should use host.docker.internal" >&2
+  warns=$((warns + 1))
+else
+  echo "OK: RABBITMQ_HOST=${rabbit_host}"
+fi
+
 if [[ ${#hosts[@]} -gt 1 ]]; then
   first="${hosts[0]}"
   for h in "${hosts[@]}"; do
