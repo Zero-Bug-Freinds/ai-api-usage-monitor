@@ -340,8 +340,6 @@ jobs:
           file: services/team-service/web/Dockerfile
           push: true
           build-args: |
-            NEXT_PUBLIC_MFE_ASSET_PREFIX=/teams
-            NEXT_PUBLIC_MFE_USAGE_REMOTE_URL=${{ vars.NEXT_PUBLIC_MFE_USAGE_REMOTE_URL }}
             NEXT_PUBLIC_WEB_EDGE_ORIGIN=${{ vars.NEXT_PUBLIC_WEB_EDGE_ORIGIN }}
             NEXT_PUBLIC_IDENTITY_WEB_ORIGIN=${{ vars.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN }}
           tags: |

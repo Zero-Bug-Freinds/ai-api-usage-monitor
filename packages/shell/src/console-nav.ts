@@ -67,9 +67,14 @@ function teamShellEdgeOrigin(): string {
   return configuredWebEdgeOrigin() || LOCAL_DEV_WEB_EDGE_ORIGIN
 }
 
+function isLocalhostHostname(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1"
+}
+
 /**
  * Sidebar / cross-app 링크용 origin.
- * 브라우저에서 빌드 시 박힌 NEXT_PUBLIC_* ALB 호스트와 현재 호스트가 다르면(인프라 재생성 후) 현재 origin 우선.
+ * 이미지에 로컬 dev origin(`localhost:8888`)이 박혀 있어도 배포 URL(ALB·도메인)에서는 브라우저 현재 origin을 쓴다.
+ * identity 단독 `:3000` dev 만 예외로 configured web-edge(8888)를 유지한다.
  */
 function effectiveWebEdgeOriginForHref(): string {
   const configured = configuredWebEdgeOrigin()
@@ -77,28 +82,26 @@ function effectiveWebEdgeOriginForHref(): string {
     return configured
   }
   const current = window.location.origin.replace(/\/+$/, "")
-  const host = window.location.hostname
-  if (host.includes(".elb.amazonaws.com")) {
-    if (!configured) {
-      return current
-    }
-    try {
-      if (new URL(configured).hostname !== host) {
-        return current
-      }
-    } catch {
-      return current
-    }
+  if (!configured) {
+    return current
   }
-  const runtimeLocal = runtimeTeamShellEdgeOrigin()
-  if (runtimeLocal && configured) {
-    try {
-      if (new URL(configured).hostname !== new URL(runtimeLocal).hostname) {
-        return runtimeLocal
-      }
-    } catch {
-      return runtimeLocal
+  try {
+    const cfg = new URL(configured)
+    const cur = new URL(current)
+    const cfgIsLocal = isLocalhostHostname(cfg.hostname)
+    const curIsLocal = isLocalhostHostname(cur.hostname)
+
+    if (cfgIsLocal && !curIsLocal) {
+      return current
     }
+    if (curIsLocal && cur.port !== "8888" && cfgIsLocal) {
+      return configured
+    }
+    if (cfg.origin !== cur.origin) {
+      return current
+    }
+  } catch {
+    return current
   }
   return configured
 }
@@ -134,11 +137,20 @@ export function resolveTeamShellEntryHref(): string {
   if (!raw) {
     const edge = effectiveWebEdgeOriginForHref()
     if (edge) {
+      if (typeof window !== "undefined") {
+        const current = window.location.origin.replace(/\/+$/, "")
+        if (edge === current) {
+          return TEAM_SHELL_PUBLIC_PATH
+        }
+      }
       return `${edge}${TEAM_SHELL_PUBLIC_PATH}`
     }
     const runtimeEdge = runtimeTeamShellEdgeOrigin()
     if (runtimeEdge) {
       return `${runtimeEdge}${TEAM_SHELL_PUBLIC_PATH}`
+    }
+    if (typeof window !== "undefined") {
+      return `${window.location.origin.replace(/\/+$/, "")}${TEAM_SHELL_PUBLIC_PATH}`
     }
     return `${LOCAL_DEV_WEB_EDGE_ORIGIN}${TEAM_SHELL_PUBLIC_PATH}`
   }
@@ -147,7 +159,25 @@ export function resolveTeamShellEntryHref(): string {
     return normalized
   }
   const path = normalizePath(normalized)
-  return `${teamShellEdgeOrigin()}${path}`
+  const edge = effectiveWebEdgeOriginForHref() || teamShellEdgeOrigin()
+  return `${edge}${path}`
+}
+
+/**
+ * 팀 사이드바 서브메뉴 → Usage `web` 공개 경로(web-edge 기준).
+ * - 대시보드: `/dashboard`
+ * - 멤버 상세: `/dashboard/team?viewTeamId=…&tab=member` (`usage-service/web` team 페이지)
+ */
+export function buildTeamSubmenuPublicHref(teamId: string, suffix: string): string {
+  const dashBase = usageEntryPublicPath()
+  if (suffix === "dashboard") {
+    return webEdgeHref(dashBase)
+  }
+  if (suffix === "memberDetail") {
+    const params = new URLSearchParams({ viewTeamId: teamId, tab: "member" })
+    return webEdgeHref(`${dashBase}/team?${params.toString()}`)
+  }
+  return webEdgeHref(dashBase)
 }
 
 /**
@@ -288,8 +318,16 @@ export function identityWebOrigin(): string {
 
 export function webEdgeHref(path: string): string {
   const normalized = normalizePath(path)
+  if (typeof window === "undefined") {
+    const origin = configuredWebEdgeOrigin()
+    return origin ? `${origin}${normalized}` : normalized
+  }
   const origin = effectiveWebEdgeOriginForHref()
-  return origin ? `${origin}${normalized}` : normalized
+  const current = window.location.origin.replace(/\/+$/, "")
+  if (!origin || origin === current) {
+    return normalized
+  }
+  return `${origin}${normalized}`
 }
 
 export function resolveWebEdgeLogoutPathsFromEnv(): {

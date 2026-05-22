@@ -24,10 +24,16 @@ const TeamSidebarDynamic = dynamic(
   }
 );
 
-const TeamManagementLazy = dynamic(() => import("team/TeamManagement"), {
-  ssr: false,
-  loading: () => <p className="p-3 text-sm text-muted-foreground">Team remote loading…</p>,
-});
+const TeamManagementLazy = dynamic(
+  () =>
+    import(
+      "../../../../services/team-service/web/src/components/mf/team-management-entry"
+    ).then((m) => m.default),
+  {
+    ssr: false,
+    loading: () => <p className="p-3 text-sm text-muted-foreground">팀 화면을 불러오는 중…</p>,
+  }
+);
 
 function HostShellInner({ children, router }: { children: ReactNode; router: NextRouter }) {
   useLogoutCleanup();
@@ -38,11 +44,7 @@ function HostShellInner({ children, router }: { children: ReactNode; router: Nex
   }, []);
 
   const primarySidebar = (
-    <TeamSidebarDynamic
-      profile="team"
-      pagesRouter={router}
-      showTeamSidebarSection={false}
-    />
+    <TeamSidebarDynamic profile="team" showTeamSidebarSection={false} />
   );
 
   const mainSlot =
@@ -59,12 +61,12 @@ function HostShellInner({ children, router }: { children: ReactNode; router: Nex
       {teamChunkAllowed ? (
         <RemoteErrorBoundary
           resetKey={`${router.asPath}`}
-          fallback={<p className="p-3 text-sm text-muted-foreground">Team remote를 불러오지 못했습니다.</p>}
+          fallback={<p className="p-3 text-sm text-muted-foreground">팀 화면을 불러오지 못했습니다.</p>}
         >
           <TeamManagementLazy />
         </RemoteErrorBoundary>
       ) : (
-        <p className="p-3 text-sm text-muted-foreground">원격 모듈을 준비하는 중…</p>
+        <p className="p-3 text-sm text-muted-foreground">팀 화면을 준비하는 중…</p>
       )}
     </aside>
   );

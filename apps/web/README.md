@@ -1,6 +1,6 @@
 # web-host (`apps/web`)
 
-팀 콘솔 진입점으로 사용되는 **독립형 Next.js App Router 셸**이다.
+선택적 **Next.js App Router 셸**이다. **운영 단일 도메인 진입은 `services/team-service/web`(team-web, `/teams`)** 이며, usage/team **Module Federation·`/mfe/usage` 경로는 제거**되었다.
 
 - **도메인별 BFF·운영 UI**는 여전히 `services/<svc>/web/`(App Router)가 담당한다.
 - **경계·rewrite·엣지:** [`docs/contracts/web-split-boundary.md`](../../docs/contracts/web-split-boundary.md), [`docs/architecture.md`](../../docs/architecture.md) §13.3
