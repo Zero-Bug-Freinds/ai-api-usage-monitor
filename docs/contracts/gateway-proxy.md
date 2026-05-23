@@ -1,6 +1,6 @@
 # Gateway ↔ Proxy 서비스 간 계약
 
-버전: 1.7  
+버전: 1.8  
 관련: [docs/architecture.md](../architecture.md) §4.1, §4.2, §8.2, §10.1, §10.2, 루트 [`docker-compose.yml`](../../docker-compose.yml)(`web-edge`, `docker/web-edge/nginx.conf.template`), 루트 [`.env.example`](../../.env.example), [`services/usage-service/web/.env.example`](../../services/usage-service/web/.env.example), [Web·Gateway Usage BFF](./web-gateway-bff.md)(Usage BFF 브라우저 경로·`basePath`는 [web-split-boundary.md](./web-split-boundary.md))
 
 **v1.1:** `application.yml` 라우트·`RemoveRequestHeader=Authorization`·Bearer 검증·Web `API_GATEWAY_URL` 합의를 §1.1·§3·§9에 명시(게이트웨이·Usage BFF 담당 정합).  
@@ -164,16 +164,21 @@ Gateway는 JWT 검증에 성공한 뒤(또는 개발 모드 규칙에 따라) �
 
 ### 4.2 Usage 원장 `user_id`와 `X-User-Id`·JWT `sub` 정합 (Identity·Usage·게이트웨이)
 
-- **Usage DB·집계**의 `user_id` 문자열은 Proxy가 발행하는 `usage-recorded` 이벤트의 사용자 식별자와 같다. Proxy는 Gateway가 넘긴 **`X-User-Id`** 를 그대로 사용한다(구현: `ProxyRelayService`, `UserContext`).
-- **운영(`gateway.dev-mode=false`)** 게이트웨이는 플랫폼 JWT 검증 후 **`X-User-Id` = JWT `sub`** 를 설정한다(구현: `ProxyTrustHeadersWebFilter` JWT 경로).
+- **Usage DB·집계**의 `user_id` 문자열은 Proxy가 발행하는 `usage-recorded` 이벤트의 **`userId`** 와 같다. Proxy는 **`UserContext.usageEventUserId()`** 로 gateway **`X-User-Id`(JWT `sub` 이메일)** 를 정규화해 넣는다(구현: [`ProxyRelayService`](../../services/proxy-service/src/main/java/com/eevee/proxyservice/relay/ProxyRelayService.java), [`UserContext`](../../services/proxy-service/src/main/java/com/eevee/proxyservice/security/UserContext.java)). **숫자 PK(`keyLookupUserId`)는 원장 `userId`에 쓰지 않는다.**
+- **운영(`gateway.dev-mode=false`)** 게이트웨이는 플랫폼 JWT 검증 후 **`X-User-Id` = JWT `sub`** 를 설정한다(구현: `ProxyTrustHeadersWebFilter` JWT 경로). **`X-Platform-User-Id` = JWT `userId`(DB PK)** 를 함께 넘긴다(web-edge `X-Auth-UserId` 경로 포함).
 - **Identity 서비스** 액세스 토큰은 **`sub`에 로그인 이메일**을 넣는다(구현: `JwtTokenProvider.generateAccessToken` → `subject(user.getEmail())`). JWT에 `userId`(DB PK) 등 다른 클레임이 있어도, **게이트웨이·Usage 경로의 호출자 식별자 정본은 `sub`(이메일 문자열)** 이다.
 - **로컬 `GATEWAY_DEV_MODE=true` + Usage BFF** 는 Identity `GET /api/auth/session`의 **`email`** 로 `X-User-Id`를 보강한다(`services/usage-service/web`). 따라서 **개발 모드에서 붙는 `X-User-Id`와 운영 JWT `sub`는 동일 규칙(이메일)** 으로 맞춰져, Proxy→Usage 원장과 대시보드 조회 키가 어긋나지 않는다.
-- **회귀 테스트:** `ProxyTrustHeadersWebFilterTest`(api-gateway-service) — JWT `sub` → `X-User-Id`, 개발 모드·익명 컨텍스트 시 인바운드 `X-User-Id` 유지.
+- **회귀 테스트:** `ProxyTrustHeadersWebFilterTest`(api-gateway-service) — JWT `sub` → `X-User-Id`, 개발 모드·익명 컨텍스트 시 인바운드 `X-User-Id` 유지. proxy-service: `ProxyRelayServiceUsageEventTest`, `UserContextUsageSubjectTest`.
 
-### 4.1 Proxy의 API Key 조회와 `userId`
+### 4.3 Proxy 식별자 분리 (API Key lookup vs usage 이벤트)
 
-- Proxy는 `UserContext.userId()` **한 값만** API Key Service(또는 mock) 조회에 사용한다. 이 값은 **`X-User-Id` 헤더**(또는 게이트웨이가 JWT로부터 설정한 동일 헤더)에서 온다. 구현: [`UserContextResolver`](../../services/proxy-service/src/main/java/com/eevee/proxyservice/security/UserContextResolver.java), [`ApiKeyClient`](../../services/proxy-service/src/main/java/com/eevee/proxyservice/key/ApiKeyClient.java)(`GET /internal/api-keys/{provider}?userId=...`).
-- **`X-Platform-User-Id` 헤더를 읽거나**, JWT의 **`userId` 클레임을 별도 헤더로 Proxy에 넘겨 키 조회에 쓰는 코드는 없다.** Key Service가 숫자 PK를 요구하면 `X-User-Id`(현재는 JWT `sub` = 이메일)와의 매핑을 **Key Service·Identity·팀 정책**으로 맞추거나, 향후 게이트웨이/계약 확장 시 본 절을 개정한다.
+| Proxy 개념 | 헤더·소스 | 용도 |
+|------------|-----------|------|
+| **`userId` / `usageEventUserId()`** | `X-User-Id` (JWT `sub`, 이메일) | `UsageRecordedEvent.userId`, usage/billing/agent PERSONAL 집계·대시보드 |
+| **`platformUserId` / `keyLookupUserId()`** | `X-Platform-User-Id` (JWT `userId` PK), 없으면 `X-User-Id` | Identity/team internal `GET ...?userId=`, `UsageRecordedEvent.metadataOwnerUserId` |
+| **`usageSubjectUserId` on `ResolvedApiKey`** | fingerprint/ext 시 `UsageSubjectResolver` → 이메일 | 팀·ext 귀속 시 `enrichContext`만; managed personal JWT 경로는 **null**(PK를 승격하지 않음) |
+
+구현: [`UserContextResolver`](../../services/proxy-service/src/main/java/com/eevee/proxyservice/security/UserContextResolver.java), [`ApiKeyClient`](../../services/proxy-service/src/main/java/com/eevee/proxyservice/key/ApiKeyClient.java). Identity internal API는 `userId` 쿼리에 **이메일 또는 숫자 PK** 모두 허용([`ExternalApiKeyService.resolveInternalLookupUserId`](../../services/identity-service/src/main/java/com/zerobugfreinds/identity_service/service/ExternalApiKeyService.java)); 응답 body에는 `plainKey`·`keyId`만 있다.
 
 ---
 
@@ -224,7 +229,7 @@ Usage 소비 코드: [`UsageRecordedEventListener`](../../services/usage-service
 | `eventId` | `UUID` | null이면 생성 |
 | `occurredAt` | `Instant` | null이면 `now` |
 | `correlationId` | `String` | 선택 |
-| `userId` | `String` | 필수 식별자 |
+| `userId` | `String` | 필수; gateway `X-User-Id` / JWT `sub` (이메일, 소문자 정규화) |
 | `organizationId` | `String` | 선택 |
 | `teamId` | `String` | 선택 |
 | `apiKeyId` | `String` | 선택 |
@@ -252,9 +257,9 @@ Team API Key 요청 식별 규약:
 
 ### 6.1.4 `metadataOwnerUserId` (PERSONAL `api_key_metadata` 소유자 키)
 
-- **역할:** Usage 로그·비용 집계에 쓰는 `userId`와 별도로, Identity MQ가 채우는 **PERSONAL** 메타데이터 행의 복합 PK `(key_id, user_id, PERSONAL)` 에 들어갈 **`user_id` 후보**를 알려준다.
-- **발행:** Proxy `publishUsage` 가 [`UserContext.keyLookupUserId()`](../../services/proxy-service/src/main/java/com/eevee/proxyservice/security/UserContext.java) 로 설정한다. JWT에 플랫폼 사용자 PK 문자열이 있으면 그 값이 우선하고, 없으면 게이트웨이 `X-User-Id`(예: 이메일 `sub`)와 동일하게 둔다.
-- **소비:** usage-service `ApiKeyMetadataSyncService` 는 값이 있으면 이것으로 PERSONAL 메타 upsert를 하고, 없으면 기존처럼 `userId`만 사용한다. 원장(`usage_recorded_log.user_id`)과 대시보드 호출 주체는 계속 **`UsageRecordedEvent.userId`** 정본을 따른다(§4.2).
+- **역할:** Usage **원장** `user_id`(§4.2, 이메일)와 별도로, usage-service `api_key_metadata` PERSONAL 행 `(key_id, user_id)` 에 넣을 **보조 식별자** 후보(플랫폼 PK 또는 이메일 fallback).
+- **발행:** Proxy `publishUsage` 가 [`UserContext.keyLookupUserId()`](../../services/proxy-service/src/main/java/com/eevee/proxyservice/security/UserContext.java) (`X-Platform-User-Id` 우선)로 설정한다. **이 값을 `UsageRecordedEvent.userId`에 복사하지 않는다.**
+- **소비:** usage-service `ApiKeyMetadataSyncService` 는 값이 있으면 이것으로 PERSONAL 메타 upsert를 하고, 없으면 `userId`(이메일)를 사용한다. Identity MQ(`ExternalApiKeyStatusChangedEvent`)는 동일 테이블에 **이메일** `userId`를 쓴다 — PK·이메일 메타 행이 공존할 수 있으므로 alias join은 이메일 행을 우선한다.
 
 ### 6.1.5 Usage 서비스의 HTTP 소비 API(조회)
 

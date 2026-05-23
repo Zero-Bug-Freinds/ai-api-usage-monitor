@@ -331,7 +331,7 @@ public class ApiKeyClient {
                     resolvedAlias,
                     fingerprint(body.plainKey()),
                     teamRequest ? "team" : "managed",
-                    teamRequest ? null : keyLookupUserId,
+                    teamRequest ? null : null,
                     teamRequest ? teamId : null
             );
         } catch (WebClientResponseException e) {
@@ -575,14 +575,20 @@ public class ApiKeyClient {
             String alias,
             String keyFingerprint,
             String keySource,
-            String ownerUserId,
+            /**
+             * Usage ledger / billing subject (email when available). Never the numeric platform PK used for lookup.
+             */
+            String usageSubjectUserId,
             String ownerTeamId
     ) {
-        public String metadataOwnerUserId(String fallback) {
-            if (ownerUserId != null && !ownerUserId.isBlank()) {
-                return ownerUserId;
+        public String metadataOwnerUserId(String platformLookupUserId) {
+            if (platformLookupUserId != null && !platformLookupUserId.isBlank()) {
+                return platformLookupUserId;
             }
-            return fallback;
+            if (usageSubjectUserId != null && !usageSubjectUserId.isBlank()) {
+                return usageSubjectUserId;
+            }
+            return null;
         }
     }
 

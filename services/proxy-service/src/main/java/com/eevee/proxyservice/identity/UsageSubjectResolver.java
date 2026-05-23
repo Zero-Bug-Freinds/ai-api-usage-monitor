@@ -35,7 +35,7 @@ public class UsageSubjectResolver {
     }
 
     /**
-     * Resolves the subject stored on {@link com.eevee.proxyservice.key.ApiKeyClient.ResolvedApiKey#ownerUserId()}
+     * Resolves the subject stored on {@link com.eevee.proxyservice.key.ApiKeyClient.ResolvedApiKey#usageSubjectUserId()}
      * and {@link com.eevee.usage.events.UsageRecordedEvent#userId()}.
      */
     public String resolveForFingerprintOwner(FingerprintOwnerLookup owner, String gatewaySubjectFallback) {

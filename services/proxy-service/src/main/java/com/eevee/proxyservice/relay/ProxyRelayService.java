@@ -4,6 +4,7 @@ import com.eevee.proxyservice.key.ApiKeyClient;
 import com.eevee.proxyservice.mq.UsageEventPublisher;
 import com.eevee.proxyservice.provider.ProviderHandler;
 import com.eevee.proxyservice.provider.ProviderRegistry;
+import com.eevee.proxyservice.identity.UsageSubjectNormalizer;
 import com.eevee.proxyservice.security.UserContext;
 import com.eevee.proxyservice.security.UserContextResolver;
 import com.eevee.usage.events.AiProvider;
@@ -237,7 +238,7 @@ public class ProxyRelayService {
                 null,
                 null,
                 ctx.correlationId(),
-                ctx.userId(),
+                ctx.usageEventUserId(),
                 ctx.organizationId(),
                 ctx.teamId(),
                 resolvedApiKey.keyId(),
@@ -261,10 +262,19 @@ public class ProxyRelayService {
     }
 
     private static UserContext enrichContext(UserContext ctx, ApiKeyClient.ResolvedApiKey resolved) {
-        if (resolved.ownerUserId() == null && resolved.ownerTeamId() == null) {
+        if (resolved.usageSubjectUserId() == null && resolved.ownerTeamId() == null) {
             return ctx;
         }
-        String userId = resolved.ownerUserId() != null ? resolved.ownerUserId() : ctx.userId();
+        String gatewaySubject = ctx.usageEventUserId();
+        String resolvedSubject = resolved.usageSubjectUserId();
+        String userId = ctx.userId();
+        if (resolvedSubject != null && !resolvedSubject.isBlank()) {
+            if (UsageSubjectNormalizer.looksLikeEmail(resolvedSubject)) {
+                userId = resolvedSubject;
+            } else if (gatewaySubject == null || gatewaySubject.isBlank()) {
+                userId = resolvedSubject;
+            }
+        }
         String teamId = resolved.ownerTeamId() != null ? resolved.ownerTeamId() : ctx.teamId();
         return new UserContext(
                 userId,
