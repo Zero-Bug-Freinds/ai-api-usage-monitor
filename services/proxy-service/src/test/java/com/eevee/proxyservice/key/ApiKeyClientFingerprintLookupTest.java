@@ -88,7 +88,7 @@ class ApiKeyClientFingerprintLookupTest {
         assertThat(resolved).isNotNull();
         assertThat(resolved.plainKey()).isEqualTo("sk-test-personal");
         assertThat(resolved.keyId()).isEqualTo("99");
-        assertThat(resolved.ownerUserId()).isEqualTo("user@test.com");
+        assertThat(resolved.usageSubjectUserId()).isEqualTo("user@test.com");
     }
 
     @Test
@@ -130,7 +130,7 @@ class ApiKeyClientFingerprintLookupTest {
         assertThat(resolved.plainKey()).isEqualTo("sk-test-team");
         assertThat(resolved.keyId()).isEqualTo("77");
         assertThat(resolved.ownerTeamId()).isEqualTo("42");
-        assertThat(resolved.ownerUserId()).isEqualTo("member@team.com");
+        assertThat(resolved.usageSubjectUserId()).isEqualTo("member@team.com");
         assertThat(resolved.keySource()).isEqualTo("team");
     }
 

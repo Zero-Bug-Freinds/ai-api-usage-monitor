@@ -22,7 +22,7 @@ import static org.mockito.Mockito.when;
 class ProxyRelayServiceUsageEventTest {
 
     @Test
-    void publishUsage_usesResolvedEmailOwnerUserId() {
+    void publishUsage_usesResolvedEmailUsageSubjectUserId() {
         UsageEventPublisher publisher = mock(UsageEventPublisher.class);
         AtomicReference<UsageRecordedEvent> captured = new AtomicReference<>();
         when(publisher.publish(any())).thenAnswer(inv -> {
@@ -66,6 +66,54 @@ class ProxyRelayServiceUsageEventTest {
 
         assertThat(captured.get()).isNotNull();
         assertThat(captured.get().userId()).isEqualTo("user@test.com");
+    }
+
+    @Test
+    void publishUsage_managedJwtPath_keepsGatewayEmail_notLookupPk() {
+        UsageEventPublisher publisher = mock(UsageEventPublisher.class);
+        AtomicReference<UsageRecordedEvent> captured = new AtomicReference<>();
+        when(publisher.publish(any())).thenAnswer(inv -> {
+            captured.set(inv.getArgument(0));
+            return Mono.empty();
+        });
+
+        ProxyRelayService service = new ProxyRelayService(
+                WebClient.create(),
+                mock(ProviderRegistry.class),
+                mock(ApiKeyClient.class),
+                publisher,
+                mock(UserContextResolver.class)
+        );
+
+        UserContext ctx = new UserContext(
+                "mmin08@naver.com",
+                "3",
+                null,
+                null,
+                "corr-2",
+                "42",
+                null,
+                null,
+                null,
+                null
+        );
+        ApiKeyClient.ResolvedApiKey resolved = new ApiKeyClient.ResolvedApiKey(
+                "sk-plain",
+                "42",
+                null,
+                "alias",
+                "fp",
+                "managed",
+                null,
+                null
+        );
+
+        Mono<Void> published = invokePublishUsage(service, ctx, resolved);
+        StepVerifier.create(published).verifyComplete();
+
+        assertThat(captured.get()).isNotNull();
+        assertThat(captured.get().userId()).isEqualTo("mmin08@naver.com");
+        assertThat(captured.get().metadataOwnerUserId()).isEqualTo("3");
     }
 
     private static Mono<Void> invokePublishUsage(

@@ -27,6 +27,7 @@ class UserContextResolverTest {
                     assertThat(ctx.userId()).isEqualTo("a@b.com");
                     assertThat(ctx.platformUserId()).isEqualTo("42");
                     assertThat(ctx.keyLookupUserId()).isEqualTo("42");
+                    assertThat(ctx.usageEventUserId()).isEqualTo("a@b.com");
                 })
                 .verifyComplete();
     }

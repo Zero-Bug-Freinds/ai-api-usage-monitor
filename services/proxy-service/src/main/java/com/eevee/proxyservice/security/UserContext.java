@@ -1,5 +1,7 @@
 package com.eevee.proxyservice.security;
 
+import com.eevee.proxyservice.identity.UsageSubjectNormalizer;
+
 public record UserContext(
         String userId,
         String platformUserId,
@@ -17,6 +19,23 @@ public record UserContext(
      */
     public String keyLookupUserId() {
         return (platformUserId != null && !platformUserId.isBlank()) ? platformUserId : userId;
+    }
+
+    /**
+     * Canonical subject for {@link com.eevee.usage.events.UsageRecordedEvent#userId()} (JWT {@code sub} / gateway
+     * {@code X-User-Id}). Must not use {@link #keyLookupUserId()} numeric PK. Stable across {@code enrichContext}.
+     */
+    public String usageEventUserId() {
+        if (userId != null && !userId.isBlank()) {
+            if (UsageSubjectNormalizer.looksLikeEmail(userId)) {
+                return UsageSubjectNormalizer.normalizeEmail(userId);
+            }
+            return userId.trim();
+        }
+        if (extUserId != null && !extUserId.isBlank()) {
+            return UsageSubjectNormalizer.normalizeSubject(extUserId);
+        }
+        return null;
     }
 
     public boolean hasUserContext() {
