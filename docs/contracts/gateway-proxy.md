@@ -1,6 +1,6 @@
 # Gateway ↔ Proxy 서비스 간 계약
 
-버전: 1.8  
+버전: 1.9  
 관련: [docs/architecture.md](../architecture.md) §4.1, §4.2, §8.2, §10.1, §10.2, 루트 [`docker-compose.yml`](../../docker-compose.yml)(`web-edge`, `docker/web-edge/nginx.conf.template`), 루트 [`.env.example`](../../.env.example), [`services/usage-service/web/.env.example`](../../services/usage-service/web/.env.example), [Web·Gateway Usage BFF](./web-gateway-bff.md)(Usage BFF 브라우저 경로·`basePath`는 [web-split-boundary.md](./web-split-boundary.md))
 
 **v1.1:** `application.yml` 라우트·`RemoveRequestHeader=Authorization`·Bearer 검증·Web `API_GATEWAY_URL` 합의를 §1.1·§3·§9에 명시(게이트웨이·Usage BFF 담당 정합).  
@@ -11,6 +11,7 @@
 **v1.6:** §6.1 `UsageRecordedEvent.metadataOwnerUserId` — PERSONAL `api_key_metadata` upsert 시 Identity MQ와 동일한 소유 `user_id`(플랫폼 사용자 id 문자열)를 쓰기 위한 선택 필드; Proxy는 `UserContext.keyLookupUserId()` 로 채운다.
 **v1.7:** §3.3.1 ext provider API key → gateway fingerprint 헤더; gateway `/internal/**` Bearer 보강; proxy reverse lookup 후속 작업 명시.
 **v1.8:** §5.1 `GATEWAY_INTERNAL_BEARER_TOKEN`·Compose 전달·JWT 정합·`validate-env-deploy.sh` WARN 정책.
+**v1.9:** §4.1 Proxy AI 경로 `X-Platform-User-Id` lookup/metadata 전용 명시; managed JWT도 `UsageSubjectResolver` 경유(§4.3).
 
 ---
 
@@ -148,6 +149,7 @@ Gateway는 JWT 검증에 성공한 뒤(또는 개발 모드 규칙에 따라) �
 | 헤더 | 필수 | 설명 |
 |------|------|------|
 | `X-User-Id` | 예 | 플랫폼 사용자 식별자. **JWT 모드:** Gateway가 JWT **`sub` 클레임만** 넣는다(현재 Identity 구현에서 `sub`은 이메일). **개발 모드:** 클라이언트가 보낸 `X-User-Id`를 전달한다. |
+| `X-Platform-User-Id` | 아니오² | JWT `userId`(DB PK 문자열). **Proxy AI 경로:** Identity/team internal API lookup·`metadataOwnerUserId` 전용. Usage HTTP BFF·원장 `user_id`에는 쓰지 않는다(§4.2). |
 | `X-Org-Id` | 아니오 | 조직 ID (JWT `org_id` 등) |
 | `X-Team-Id` | 아니오 | 팀 ID (JWT `team_id` 등) |
 | `X-Correlation-Id` | 아니오 | 분산 추적 ID; 없으면 Proxy에서 생성 가능 |
@@ -155,12 +157,15 @@ Gateway는 JWT 검증에 성공한 뒤(또는 개발 모드 규칙에 따라) �
 
 ¹ **로컬 개발**에서 Proxy만 단독 실행할 때는 계약 §7에 따라 생략 가능.
 
+² 구현: [`UserContextResolver`](../../services/proxy-service/src/main/java/com/eevee/proxyservice/security/UserContextResolver.java) → [`UserContext.keyLookupUserId()`](../../services/proxy-service/src/main/java/com/eevee/proxyservice/security/UserContext.java). Usage HTTP 라우트(`usage-http`)는 이 헤더를 요구하지 않는다.
+
 클라이언트가 보낸 `Authorization`(플랫폼 JWT)은 **Gateway에서 소비**한다. Proxy·Usage로는 **§3.1 `RemoveRequestHeader=Authorization`** 으로 전달하지 않는다(이중 검증이 필요하면 별도 내부 토큰 정책으로 확장).
 
-### 4.1 Usage HTTP·API Key 조회
+### 4.1 Usage HTTP·Proxy API Key lookup
 
-- Usage(및 게이트웨이 뒤 동일 패턴의 REST)는 **`X-User-Id` 기반**으로 호출자를 식별한다. 별도 `X-Platform-User-Id` 헤더 계약은 두지 않는다.
-- **개발 모드**에서도 신뢰 헤더 필터가 붙는 경로(`/api/v1/usage/**`)는 **`X-User-Id`가 있어야** 통과한다(§1.1).
+- **Usage HTTP**(`/api/v1/usage/**`) 및 동일 패턴 REST는 **`X-User-Id`만**으로 호출자를 식별한다. Usage BFF 경로에는 **`X-Platform-User-Id` 계약을 두지 않는다.**
+- **Proxy AI**(`/proxy/**`)는 **`X-User-Id`(usage subject·이메일)** 와 **`X-Platform-User-Id`(lookup PK, 선택)** 를 함께 받을 수 있다. PK는 Identity/team `GET ...?userId=` 및 `UsageRecordedEvent.metadataOwnerUserId`에만 쓰고, **Usage 원장 `userId`에는 쓰지 않는다**(§4.2·§4.3).
+- **개발 모드**에서도 신뢰 헤더 필터가 붙는 경로(`/api/v1/usage/**`)는 **`X-User-Id`가 있어야** 통과한다(§1.1). Proxy AI 개발 호출에서 `X-Platform-User-Id`가 없으면 lookup은 `X-User-Id`(이메일)로 fallback한다.
 
 ### 4.2 Usage 원장 `user_id`와 `X-User-Id`·JWT `sub` 정합 (Identity·Usage·게이트웨이)
 
@@ -168,7 +173,7 @@ Gateway는 JWT 검증에 성공한 뒤(또는 개발 모드 규칙에 따라) �
 - **운영(`gateway.dev-mode=false`)** 게이트웨이는 플랫폼 JWT 검증 후 **`X-User-Id` = JWT `sub`** 를 설정한다(구현: `ProxyTrustHeadersWebFilter` JWT 경로). **`X-Platform-User-Id` = JWT `userId`(DB PK)** 를 함께 넘긴다(web-edge `X-Auth-UserId` 경로 포함).
 - **Identity 서비스** 액세스 토큰은 **`sub`에 로그인 이메일**을 넣는다(구현: `JwtTokenProvider.generateAccessToken` → `subject(user.getEmail())`). JWT에 `userId`(DB PK) 등 다른 클레임이 있어도, **게이트웨이·Usage 경로의 호출자 식별자 정본은 `sub`(이메일 문자열)** 이다.
 - **로컬 `GATEWAY_DEV_MODE=true` + Usage BFF** 는 Identity `GET /api/auth/session`의 **`email`** 로 `X-User-Id`를 보강한다(`services/usage-service/web`). 따라서 **개발 모드에서 붙는 `X-User-Id`와 운영 JWT `sub`는 동일 규칙(이메일)** 으로 맞춰져, Proxy→Usage 원장과 대시보드 조회 키가 어긋나지 않는다.
-- **회귀 테스트:** `ProxyTrustHeadersWebFilterTest`(api-gateway-service) — JWT `sub` → `X-User-Id`, 개발 모드·익명 컨텍스트 시 인바운드 `X-User-Id` 유지. proxy-service: `ProxyRelayServiceUsageEventTest`, `UserContextUsageSubjectTest`.
+- **회귀 테스트:** `ProxyTrustHeadersWebFilterTest`(api-gateway-service) — JWT `sub` → `X-User-Id`, 개발 모드·익명 컨텍스트 시 인바운드 `X-User-Id` 유지. proxy-service: `ProxyRelayServiceUsageEventTest`, `UserContextUsageSubjectTest`, `ApiKeyClientManagedKeyUsageSubjectTest`, `UsageSubjectResolverTest`.
 
 ### 4.3 Proxy 식별자 분리 (API Key lookup vs usage 이벤트)
 
@@ -176,7 +181,7 @@ Gateway는 JWT 검증에 성공한 뒤(또는 개발 모드 규칙에 따라) �
 |------------|-----------|------|
 | **`userId` / `usageEventUserId()`** | `X-User-Id` (JWT `sub`, 이메일) | `UsageRecordedEvent.userId`, usage/billing/agent PERSONAL 집계·대시보드 |
 | **`platformUserId` / `keyLookupUserId()`** | `X-Platform-User-Id` (JWT `userId` PK), 없으면 `X-User-Id` | Identity/team internal `GET ...?userId=`, `UsageRecordedEvent.metadataOwnerUserId` |
-| **`usageSubjectUserId` on `ResolvedApiKey`** | fingerprint/ext 시 `UsageSubjectResolver` → 이메일 | 팀·ext 귀속 시 `enrichContext`만; managed personal JWT 경로는 **null**(PK를 승격하지 않음) |
+| **`usageSubjectUserId` on `ResolvedApiKey`** | managed JWT·fingerprint/ext 모두 [`UsageSubjectResolver`](../../services/proxy-service/src/main/java/com/eevee/proxyservice/identity/UsageSubjectResolver.java) → 이메일 | `enrichContext`; **PK를 승격하지 않음**. 이벤트 `userId`는 `UserContext.usageEventUserId()`가 정본 |
 
 구현: [`UserContextResolver`](../../services/proxy-service/src/main/java/com/eevee/proxyservice/security/UserContextResolver.java), [`ApiKeyClient`](../../services/proxy-service/src/main/java/com/eevee/proxyservice/key/ApiKeyClient.java). Identity internal API는 `userId` 쿼리에 **이메일 또는 숫자 PK** 모두 허용([`ExternalApiKeyService.resolveInternalLookupUserId`](../../services/identity-service/src/main/java/com/zerobugfreinds/identity_service/service/ExternalApiKeyService.java)); 응답 body에는 `plainKey`·`keyId`만 있다.
 

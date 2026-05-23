@@ -90,7 +90,8 @@ public class ProxyRelayService {
                                 ctx.requestedApiKeyAlias(),
                                 ctx.rawApiKey(),
                                 ctx.apiKeyFingerprint64(),
-                                ctx.correlationId()
+                                ctx.correlationId(),
+                                ctx.userId()
                         )
                         .flatMap(resolvedApiKey -> forward(
                                 exchange,

@@ -34,7 +34,3 @@ sudo docker logs ai-api-usage-monitor-proxy-service-1 --since 30m 2>&1 \
 ```
 
 `Resolved API key` may still mask lookup target as numeric PK; `Usage event` / DB `user_id` must be email.
-
-## Historical rows
-
-Rows with `user_id` = numeric PK before this deploy are unchanged. Optional repair: `backfill-usage-recorded-log-user-id-email.sql`.

@@ -122,6 +122,7 @@ public class ApiKeyClient {
                 requestedAlias,
                 rawApiKey,
                 null,
+                null,
                 null
         );
     }
@@ -131,31 +132,63 @@ public class ApiKeyClient {
             String teamId,
             AiProvider provider,
             String requestedApiKeyId,
-            String requestedAlias,
+            String requestedApiKeyAlias,
             String rawApiKey,
             String apiKeyFingerprint64,
             String correlationId
     ) {
+        return resolveApiKey(
+                keyLookupUserId,
+                teamId,
+                provider,
+                requestedApiKeyId,
+                requestedApiKeyAlias,
+                rawApiKey,
+                apiKeyFingerprint64,
+                correlationId,
+                null
+        );
+    }
+
+    public Mono<ResolvedApiKey> resolveApiKey(
+            String keyLookupUserId,
+            String teamId,
+            AiProvider provider,
+            String requestedApiKeyId,
+            String requestedApiKeyAlias,
+            String rawApiKey,
+            String apiKeyFingerprint64,
+            String correlationId,
+            String gatewaySubject
+    ) {
         String normalizedTeamId = teamId == null ? "" : teamId.trim();
         String normalizedRequestedApiKeyId = normalizeSelector(requestedApiKeyId);
-        String normalizedRequestedAlias = normalizeSelector(requestedAlias);
+        String normalizedRequestedAlias = normalizeSelector(requestedApiKeyAlias);
         String normalizedRawApiKey = normalizeSelector(rawApiKey);
         String normalizedFingerprint = normalizeSelector(apiKeyFingerprint64);
         boolean hasSelector = normalizedRequestedApiKeyId != null || normalizedRequestedAlias != null;
         if (isInternalScopeLookup(hasSelector, normalizedRawApiKey, normalizedFingerprint)) {
             String requiredLookupUserId = requireLookupUserId(keyLookupUserId);
             if (hasSelector) {
-                return Mono.fromCallable(() -> loadKeyBlocking(
-                                requiredLookupUserId,
-                                normalizedTeamId,
-                                provider,
-                                normalizedRequestedApiKeyId,
-                                normalizedRequestedAlias,
-                                null
+                return Mono.fromCallable(() -> applyManagedUsageSubject(
+                                loadKeyBlocking(
+                                        requiredLookupUserId,
+                                        normalizedTeamId,
+                                        provider,
+                                        normalizedRequestedApiKeyId,
+                                        normalizedRequestedAlias,
+                                        null
+                                ),
+                                gatewaySubject,
+                                requiredLookupUserId
                         ))
                         .subscribeOn(Schedulers.boundedElastic());
             }
-            return Mono.fromCallable(() -> cache.get(requiredLookupUserId + ":" + normalizedTeamId + ":" + provider.pathSegment()))
+            return Mono.fromCallable(() -> applyManagedUsageSubject(
+                            cache.get(requiredLookupUserId + ":" + normalizedTeamId + ":" + provider.pathSegment()),
+                            gatewaySubject,
+                            requiredLookupUserId
+                    ))
                     .subscribeOn(Schedulers.boundedElastic());
         }
         String gatewaySubjectFallback = keyLookupUserId;
@@ -183,6 +216,30 @@ public class ApiKeyClient {
             );
         }
         throw new ResponseStatusException(NOT_FOUND, "존재하지 않은 API key 입니다");
+    }
+
+    private ResolvedApiKey applyManagedUsageSubject(
+            ResolvedApiKey resolved,
+            String gatewaySubject,
+            String keyLookupUserId
+    ) {
+        if (resolved == null || !"managed".equals(resolved.keySource()) || resolved.ownerTeamId() != null) {
+            return resolved;
+        }
+        String usageSubject = usageSubjectResolver.resolveForManagedGateway(gatewaySubject, keyLookupUserId);
+        if (Objects.equals(usageSubject, resolved.usageSubjectUserId())) {
+            return resolved;
+        }
+        return new ResolvedApiKey(
+                resolved.plainKey(),
+                resolved.keyId(),
+                resolved.teamApiKeyId(),
+                resolved.alias(),
+                resolved.keyFingerprint(),
+                resolved.keySource(),
+                usageSubject,
+                resolved.ownerTeamId()
+        );
     }
 
     private Mono<ResolvedApiKey> resolveByFingerprint(
