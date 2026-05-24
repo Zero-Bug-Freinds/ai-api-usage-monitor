@@ -19,8 +19,9 @@ export type AvatarConfig = {
   backgroundColor?: string
 }
 
+/** Dylan style is available from DiceBear 9.x onward (7.x returns 404). */
 const DEFAULT_STYLE = "dylan"
-const DICEBEAR_BASE = "https://api.dicebear.com/7.x"
+const DICEBEAR_BASE = "https://api.dicebear.com/9.x"
 
 /**
  * Returns a stable DiceBear SVG URL for the given seed (typically {@code userId}).
