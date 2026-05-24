@@ -26,9 +26,11 @@ const OTHERS_COLOR = "#D1D5DB"
 const MEMBER_AXIS_COMPACT_THRESHOLD = 12
 const CHART_MIN_HEIGHT_PX = 320
 /** Model-share chart Y-axis: avatar only (member name in tooltip). */
-const MEMBER_MODEL_SHARE_Y_AXIS_WIDTH_PX = 24
-const MEMBER_MODEL_SHARE_Y_AXIS_TICK_HEIGHT_PX = 20
-const MEMBER_MODEL_SHARE_AVATAR_SIZE_PX = 16
+const MEMBER_MODEL_SHARE_Y_AXIS_WIDTH_PX = 28
+const MEMBER_MODEL_SHARE_Y_AXIS_TICK_HEIGHT_PX = 24
+const MEMBER_MODEL_SHARE_AVATAR_SIZE_PX = 20
+/** Scatter chart data-point marker (tooltip avatar size unchanged). */
+const MEMBER_SCATTER_AVATAR_SIZE_PX = 32
 
 export type MemberModelAgg = {
   model: string
@@ -337,7 +339,7 @@ function ScatterTooltip({ active, payload }: TooltipContentArgs<ScatterPoint>) {
 function ScatterAvatarShape(props: { cx?: number; cy?: number; payload?: ScatterPoint }) {
   const { cx, cy, payload } = props
   if (cx == null || cy == null || !payload) return null
-  const size = 28
+  const size = MEMBER_SCATTER_AVATAR_SIZE_PX
   const half = size / 2
   return (
     <g transform={`translate(${cx - half},${cy - half})`}>
