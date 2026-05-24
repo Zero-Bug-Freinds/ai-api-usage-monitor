@@ -25,11 +25,10 @@ const OTHERS_STACK_KEY = "__OTHERS__"
 const OTHERS_COLOR = "#D1D5DB"
 const MEMBER_AXIS_COMPACT_THRESHOLD = 12
 const CHART_MIN_HEIGHT_PX = 320
-/** Matches YAxis width; foreignObject uses same width and x offset -(width + 8). */
-const MEMBER_Y_AXIS_LABEL_WIDTH_COMPACT_PX = 80
-const MEMBER_Y_AXIS_LABEL_WIDTH_DEFAULT_PX = 100
-/** Avatar 16px + gap + one text line; centered on Recharts category band midpoint. */
-const MEMBER_Y_AXIS_TICK_HEIGHT_PX = 28
+/** Model-share chart Y-axis: avatar only (member name in tooltip). */
+const MEMBER_MODEL_SHARE_Y_AXIS_WIDTH_PX = 24
+const MEMBER_MODEL_SHARE_Y_AXIS_TICK_HEIGHT_PX = 20
+const MEMBER_MODEL_SHARE_AVATAR_SIZE_PX = 16
 
 export type MemberModelAgg = {
   model: string
@@ -216,21 +215,18 @@ function ModelShareTooltip({ active, payload }: TooltipContentArgs<StackedMember
   )
 }
 
-function MemberYAxisTick(props: {
-  // Recharts tick payload may provide string/number depending on formatter pipeline.
+function ModelShareMemberYAxisTick(props: {
   x?: number | string
   y?: number | string
   payload?: { value?: string | number }
   rowsByUserId: Map<string, StackedMemberRow>
-  compact: boolean
-  labelWidth: number
 }) {
-  const { x = 0, y = 0, payload, rowsByUserId, compact, labelWidth } = props
+  const { x = 0, y = 0, payload, rowsByUserId } = props
   const userId = String(payload?.value ?? "")
-  const row = rowsByUserId.get(userId)
-  const label = row?.displayName ?? userId
-  const short = compact && label.length > 10 ? `${label.slice(0, 9)}…` : label
-  const foY = -MEMBER_Y_AXIS_TICK_HEIGHT_PX / 2
+  const label = rowsByUserId.get(userId)?.displayName ?? userId
+  const tickHeight = MEMBER_MODEL_SHARE_Y_AXIS_TICK_HEIGHT_PX
+  const labelWidth = MEMBER_MODEL_SHARE_Y_AXIS_WIDTH_PX
+  const foY = -tickHeight / 2
   const foX = -(labelWidth + 8)
   return (
     <g transform={`translate(${x},${y})`}>
@@ -238,20 +234,17 @@ function MemberYAxisTick(props: {
         x={foX}
         y={foY}
         width={labelWidth}
-        height={MEMBER_Y_AXIS_TICK_HEIGHT_PX}
+        height={tickHeight}
         className="overflow-visible"
       >
         <div
           {...({
             xmlns: "http://www.w3.org/1999/xhtml",
-            className: "flex h-full w-full items-center gap-1.5 pr-1",
-            style: { fontSize: 11, lineHeight: 1.2 },
+            className: "flex h-full w-full items-center justify-end pr-0.5",
+            title: label,
           } as HTMLAttributes<HTMLDivElement>)}
         >
-          <TeamMemberAvatar userId={userId} size={16} className="ring-0" />
-          <span className="min-w-0 flex-1 truncate text-foreground" title={label}>
-            {short}
-          </span>
+          <TeamMemberAvatar userId={userId} size={MEMBER_MODEL_SHARE_AVATAR_SIZE_PX} className="ring-0" />
         </div>
       </foreignObject>
     </g>
@@ -261,14 +254,12 @@ function MemberYAxisTick(props: {
 function MemberModelShareChart({ memberRows }: { memberRows: MemberRow[] }) {
   const { rows, stackKeys } = useMemo(() => buildModelShareChartData(memberRows), [memberRows])
   const rowsByUserId = useMemo(() => new Map(rows.map((r) => [r.userId, r])), [rows])
-  const compact = memberRows.length > MEMBER_AXIS_COMPACT_THRESHOLD
-  const yAxisLabelWidth = compact ? MEMBER_Y_AXIS_LABEL_WIDTH_COMPACT_PX : MEMBER_Y_AXIS_LABEL_WIDTH_DEFAULT_PX
 
   if (rows.length === 0) return null
 
   return (
     <section className="rounded-lg border border-border p-4 shadow-sm">
-      <h3 className="mb-3 text-base font-medium">멤버별 모델 비중 (100% 누적)</h3>
+      <h3 className="mb-3 text-base font-medium">멤버별 모델 비중</h3>
       <div className="h-[360px] min-h-[320px] w-full" style={{ minHeight: CHART_MIN_HEIGHT_PX }}>
         <ResponsiveContainer width="100%" height="100%">
           <BarChart layout="vertical" data={rows} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
@@ -277,16 +268,9 @@ function MemberModelShareChart({ memberRows }: { memberRows: MemberRow[] }) {
             <YAxis
               type="category"
               dataKey="userId"
-              width={yAxisLabelWidth}
+              width={MEMBER_MODEL_SHARE_Y_AXIS_WIDTH_PX}
               interval={0}
-              tick={(p) => (
-                <MemberYAxisTick
-                  {...p}
-                  rowsByUserId={rowsByUserId}
-                  compact={compact}
-                  labelWidth={yAxisLabelWidth}
-                />
-              )}
+              tick={(p) => <ModelShareMemberYAxisTick {...p} rowsByUserId={rowsByUserId} />}
             />
             <Tooltip content={<ModelShareTooltip />} cursor={{ fill: "transparent" }} />
             {stackKeys.map((k) => (
