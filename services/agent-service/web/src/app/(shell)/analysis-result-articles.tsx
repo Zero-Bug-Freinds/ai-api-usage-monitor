@@ -66,6 +66,15 @@ function localizeAssistantMessage(message: string): string {
     .replaceAll("HEALTHY", "양호")
 }
 
+function formatMetricValue(value: number | string | null | undefined, suffix = ""): string {
+  if (value == null) return "N/A"
+  const num = Number(value)
+  if (Number.isFinite(num)) {
+    return suffix.length > 0 ? `${num.toFixed(0)} ${suffix}` : `${num}`
+  }
+  return String(value)
+}
+
 export function AnalysisResultArticles({
   results,
   loadingTarget,
@@ -190,6 +199,33 @@ export function AnalysisResultArticles({
               ) : (
                 <p className="text-xs text-muted-foreground">추천 결과가 없습니다. 해당 키 옆의 추천을 눌러 주세요.</p>
               )}
+              {result.recommendation?.metricsContext ? (
+                <details className="rounded-md border border-dashed bg-background p-3">
+                  <summary className="cursor-pointer text-xs font-medium text-muted-foreground">세부 근거 보기</summary>
+                  <div className="mt-3 grid gap-2 text-xs text-muted-foreground md:grid-cols-2">
+                    <div className="rounded border bg-muted/30 px-2 py-1.5">
+                      <p className="font-medium text-foreground">입출력 비율</p>
+                      <p>{result.recommendation.metricsContext.inputOutputRatio || "N/A"}</p>
+                    </div>
+                    <div className="rounded border bg-muted/30 px-2 py-1.5">
+                      <p className="font-medium text-foreground">최근 평균 지연</p>
+                      <p>{formatMetricValue(result.recommendation.metricsContext.averageLatencyMs, "ms")}</p>
+                    </div>
+                    <div className="rounded border bg-muted/30 px-2 py-1.5">
+                      <p className="font-medium text-foreground">총 요청 수</p>
+                      <p>{formatMetricValue(result.recommendation.metricsContext.totalRequests)}</p>
+                    </div>
+                    <div className="rounded border bg-muted/30 px-2 py-1.5">
+                      <p className="font-medium text-foreground">총 토큰 수</p>
+                      <p>{formatMetricValue(result.recommendation.metricsContext.totalTokensUsed)}</p>
+                    </div>
+                    <div className="rounded border bg-muted/30 px-2 py-1.5 md:col-span-2">
+                      <p className="font-medium text-foreground">분석 기간</p>
+                      <p>{formatMetricValue(result.recommendation.metricsContext.analysisWindowDays, "일")}</p>
+                    </div>
+                  </div>
+                </details>
+              ) : null}
             </div>
             ) : null}
 
@@ -221,6 +257,25 @@ export function AnalysisResultArticles({
                     소진까지 남은 일수 = 하루에 얼마나 쓰는지(소모 속도, velocity)로 미래를 예측한 값
                   </p>
                   <div className="rounded-md bg-muted p-3 text-sm">{localizeAssistantMessage(result.data.assistantMessage)}</div>
+                  {result.data.riskCriteria || result.data.confidenceCriteria ? (
+                    <details className="rounded-md border border-dashed bg-background p-3">
+                      <summary className="cursor-pointer text-xs font-medium text-muted-foreground">세부 기준 보기</summary>
+                      <div className="mt-3 space-y-2 text-xs text-muted-foreground">
+                        {result.data.riskCriteria ? (
+                          <div className="rounded border bg-muted/30 px-2 py-1.5">
+                            <p className="font-medium text-foreground">판정 기준</p>
+                            <p>{result.data.riskCriteria}</p>
+                          </div>
+                        ) : null}
+                        {result.data.confidenceCriteria ? (
+                          <div className="rounded border bg-muted/30 px-2 py-1.5">
+                            <p className="font-medium text-foreground">신뢰도 기준</p>
+                            <p>{result.data.confidenceCriteria}</p>
+                          </div>
+                        ) : null}
+                      </div>
+                    </details>
+                  ) : null}
                   {result.data.anomalySummary ? (
                     <div className="rounded-md border border-orange-200 bg-orange-50 p-3 text-sm text-orange-900 dark:border-orange-900/50 dark:bg-orange-950/40 dark:text-orange-100">
                       <p>이상 탐지: {result.data.anomalySummary}</p>
