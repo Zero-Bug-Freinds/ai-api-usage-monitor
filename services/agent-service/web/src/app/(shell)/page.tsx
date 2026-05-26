@@ -351,6 +351,8 @@ export default function AgentPage() {
   const [mainResultsTab, setMainResultsTab] = useState<"current" | "history">("current")
   const [historySelectedDateKey, setHistorySelectedDateKey] = useState<string | null>(null)
   const [historySortNewestFirst, setHistorySortNewestFirst] = useState<boolean>(true)
+  const [expandedPersonalKeyId, setExpandedPersonalKeyId] = useState<number | null>(null)
+  const [expandedTeamLedgerKey, setExpandedTeamLedgerKey] = useState<string | null>(null)
   const resultsHistoryBaselineCapturedRef = useRef(false)
   const resultsHistorySigRef = useRef<string>("")
   const lastHistoryMutationRef = useRef<{ keyId: number; action: AnalysisAction } | null>(null)
@@ -483,6 +485,24 @@ export default function AgentPage() {
       return next
     })
   }, [keys, teamBoard])
+
+  useEffect(() => {
+    if (expandedPersonalKeyId == null) return
+    if (visiblePersonalKeys.some((item: AvailableKeyContext) => item.keyId === expandedPersonalKeyId)) return
+    setExpandedPersonalKeyId(null)
+  }, [expandedPersonalKeyId, visiblePersonalKeys])
+
+  useEffect(() => {
+    if (expandedTeamLedgerKey == null) return
+    if (
+      visibleSelectedTeamKeys.some(
+        (item: TeamBoardItem) => ledgerKeyTeam(item.teamId, item.teamApiKeyId) === expandedTeamLedgerKey,
+      )
+    ) {
+      return
+    }
+    setExpandedTeamLedgerKey(null)
+  }, [expandedTeamLedgerKey, visibleSelectedTeamKeys])
 
   const loadAvailableContext = async () => {
     setBootstrapError("")
@@ -674,90 +694,108 @@ export default function AgentPage() {
             <div className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700">{bootstrapError}</div>
           ) : null}
           <ul className="space-y-1 text-sm text-muted-foreground">
-            {visiblePersonalKeys.map((item: AvailableKeyContext) => (
-              <li key={item.keyId} className="rounded-md border px-2 py-1">
-                <div className="flex flex-wrap items-baseline gap-1">
-                  <span>
-                    {item.keyLabel}
-                    <span className="text-xs"> ({item.provider})</span>
-                  </span>
-                  {isCredentialDeletedStatus(item.status) ? (
-                    <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-200">
-                      삭제된 키
-                    </span>
+            {visiblePersonalKeys.map((item: AvailableKeyContext) => {
+              const isExpanded = expandedPersonalKeyId === item.keyId
+              return (
+                <li
+                  key={item.keyId}
+                  className={`rounded-md border ${isExpanded ? "border-primary/40 bg-muted/20" : "border-border"}`}
+                >
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left"
+                    aria-expanded={isExpanded}
+                    aria-controls={`personal-key-panel-${item.keyId}`}
+                    onClick={() => setExpandedPersonalKeyId((prev: number | null) => (prev === item.keyId ? null : item.keyId))}
+                  >
+                    <div className="flex min-w-0 items-center gap-1">
+                      <span className="truncate font-medium text-foreground">{item.keyLabel}</span>
+                      {isCredentialDeletedStatus(item.status) ? (
+                        <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                          삭제된 키
+                        </span>
+                      ) : null}
+                    </div>
+                    <span className="shrink-0 text-[11px] text-muted-foreground">{isExpanded ? "접기" : "보기"}</span>
+                  </button>
+                  {isExpanded ? (
+                    <div id={`personal-key-panel-${item.keyId}`} className="space-y-2 border-t border-border/60 px-2 py-2">
+                      <p className="text-[11px] text-muted-foreground">제공자: {item.provider}</p>
+                      {item.mergedKeyIds != null && item.mergedKeyIds.length > 1 ? (
+                        <p className="text-[10px] leading-snug text-muted-foreground">
+                          동일 키 해시(동일 시크릿)·또는 동일 제공자·별칭으로 병합 (키 ID: {item.mergedKeyIds.join(", ")}) — 아래
+                          누적·당월 수치는 병합 합산입니다.
+                        </p>
+                      ) : null}
+                      <AgentKeyBudgetSummary monthlyBudgetUsd={item.monthlyBudgetUsd} budgetStats={item.budgetStats} />
+                      <div className="flex flex-col gap-1 border-t border-border/60 pt-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <label className="text-[11px] text-muted-foreground" htmlFor={`billing-p-${item.keyId}`}>
+                            다음 결제일
+                          </label>
+                          <span
+                            className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                              (billingByLedgerKey[ledgerKeyPersonal(item.keyId)] ?? "").trim()
+                                ? "bg-emerald-100 text-emerald-800"
+                                : "bg-muted text-muted-foreground"
+                            }`}
+                          >
+                            {(billingByLedgerKey[ledgerKeyPersonal(item.keyId)] ?? "").trim() ? "선택됨" : "미선택"}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1">
+                          <input
+                            id={`billing-p-${item.keyId}`}
+                            type="date"
+                            title="달력에서 결제일 선택"
+                            aria-label={`${item.keyLabel} 다음 결제일 선택`}
+                            className="min-w-0 flex-1 rounded border bg-background px-1 py-0.5 text-xs"
+                            value={billingByLedgerKey[ledgerKeyPersonal(item.keyId)] ?? ""}
+                            onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                              const value = event.target.value
+                              const lk = ledgerKeyPersonal(item.keyId)
+                              setBillingByLedgerKey((prev: Record<string, string>) => ({ ...prev, [lk]: value }))
+                              writeBillingToStorage(storagePathPersonalKey(item.keyId), value)
+                            }}
+                          />
+                          {(billingByLedgerKey[ledgerKeyPersonal(item.keyId)] ?? "").trim() ? (
+                            <button
+                              type="button"
+                              className="shrink-0 text-[11px] text-muted-foreground underline"
+                              onClick={() => {
+                                const lk = ledgerKeyPersonal(item.keyId)
+                                setBillingByLedgerKey((prev: Record<string, string>) => ({ ...prev, [lk]: "" }))
+                                writeBillingToStorage(storagePathPersonalKey(item.keyId), "")
+                              }}
+                            >
+                              지우기
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        <button
+                          type="button"
+                          className="rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground disabled:opacity-60"
+                          disabled={isAnyLoading}
+                          onClick={() => void runAnalysisForKey("PERSONAL", item, "ANALYSIS")}
+                        >
+                          {isRowLoading("PERSONAL", item.keyId, "ANALYSIS") ? "분석 중..." : "분석"}
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium disabled:opacity-60"
+                          disabled={isAnyLoading}
+                          onClick={() => void runAnalysisForKey("PERSONAL", item, "RECOMMENDATION")}
+                        >
+                          {isRowLoading("PERSONAL", item.keyId, "RECOMMENDATION") ? "추천 중..." : "추천"}
+                        </button>
+                      </div>
+                    </div>
                   ) : null}
-                </div>
-                {item.mergedKeyIds != null && item.mergedKeyIds.length > 1 ? (
-                  <p className="mt-0.5 text-[10px] leading-snug text-muted-foreground">
-                    동일 키 해시(동일 시크릿)·또는 동일 제공자·별칭으로 병합 (키 ID: {item.mergedKeyIds.join(", ")}) — 아래 누적·당월 수치는 병합 합산입니다.
-                  </p>
-                ) : null}
-                <AgentKeyBudgetSummary monthlyBudgetUsd={item.monthlyBudgetUsd} budgetStats={item.budgetStats} />
-                <div className="mt-1 flex flex-col gap-1 border-t border-border/60 pt-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <label className="text-[11px] text-muted-foreground" htmlFor={`billing-p-${item.keyId}`}>
-                      다음 결제일
-                    </label>
-                    <span
-                      className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                        (billingByLedgerKey[ledgerKeyPersonal(item.keyId)] ?? "").trim()
-                          ? "bg-emerald-100 text-emerald-800"
-                          : "bg-muted text-muted-foreground"
-                      }`}
-                    >
-                      {(billingByLedgerKey[ledgerKeyPersonal(item.keyId)] ?? "").trim() ? "선택됨" : "미선택"}
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-1">
-                    <input
-                      id={`billing-p-${item.keyId}`}
-                      type="date"
-                      title="달력에서 결제일 선택"
-                      aria-label={`${item.keyLabel} 다음 결제일 선택`}
-                      className="min-w-0 flex-1 rounded border bg-background px-1 py-0.5 text-xs"
-                      value={billingByLedgerKey[ledgerKeyPersonal(item.keyId)] ?? ""}
-                      onChange={(event: ChangeEvent<HTMLInputElement>) => {
-                        const value = event.target.value
-                        const lk = ledgerKeyPersonal(item.keyId)
-                        setBillingByLedgerKey((prev: Record<string, string>) => ({ ...prev, [lk]: value }))
-                        writeBillingToStorage(storagePathPersonalKey(item.keyId), value)
-                      }}
-                    />
-                    {(billingByLedgerKey[ledgerKeyPersonal(item.keyId)] ?? "").trim() ? (
-                      <button
-                        type="button"
-                        className="shrink-0 text-[11px] text-muted-foreground underline"
-                        onClick={() => {
-                          const lk = ledgerKeyPersonal(item.keyId)
-                          setBillingByLedgerKey((prev: Record<string, string>) => ({ ...prev, [lk]: "" }))
-                          writeBillingToStorage(storagePathPersonalKey(item.keyId), "")
-                        }}
-                      >
-                        지우기
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-1">
-                  <button
-                    type="button"
-                    className="rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground disabled:opacity-60"
-                    disabled={isAnyLoading}
-                    onClick={() => void runAnalysisForKey("PERSONAL", item, "ANALYSIS")}
-                  >
-                    {isRowLoading("PERSONAL", item.keyId, "ANALYSIS") ? "분석 중..." : "분석"}
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium disabled:opacity-60"
-                    disabled={isAnyLoading}
-                    onClick={() => void runAnalysisForKey("PERSONAL", item, "RECOMMENDATION")}
-                  >
-                    {isRowLoading("PERSONAL", item.keyId, "RECOMMENDATION") ? "추천 중..." : "추천"}
-                  </button>
-                </div>
-              </li>
-            ))}
+                </li>
+              )
+            })}
             {visiblePersonalKeys.length === 0 ? (
               <li className="rounded-md border border-dashed px-2 py-1 text-xs">
                 {keys.length === 0
@@ -801,97 +839,120 @@ export default function AgentPage() {
           </select>
           {showTeamList ? (
             <ul className="space-y-1 text-sm text-muted-foreground">
-              {visibleSelectedTeamKeys.map((item: TeamBoardItem) => (
-                <li key={`${item.teamId}-${item.teamApiKeyId}`} className="rounded-md border px-2 py-1">
-                  <div className="flex flex-wrap items-baseline gap-1">
-                    <span>{item.alias}</span>
-                    {isCredentialDeletedStatus(item.status) ? (
-                      <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-200">
-                        삭제된 키
-                      </span>
-                    ) : null}
-                  </div>
-                  {item.mergedTeamApiKeyIds != null && item.mergedTeamApiKeyIds.length > 1 ? (
-                    <p className="mt-0.5 text-[10px] leading-snug text-muted-foreground">
-                      동일 키 해시(동일 시크릿)·또는 동일 팀·제공자·별칭으로 병합 (팀 키 ID: {item.mergedTeamApiKeyIds.join(", ")}) — 아래 수치는 병합 합산입니다.
-                    </p>
-                  ) : null}
-                  <AgentKeyBudgetSummary
-                    monthlyBudgetUsd={item.monthlyBudgetUsd ?? 0}
-                    budgetStats={item.budgetStats}
-                  />
-                  <div className="mt-1 flex flex-col gap-1 border-t border-border/60 pt-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <label
-                        className="text-[11px] text-muted-foreground"
-                        htmlFor={`billing-t-${item.teamId}-${item.teamApiKeyId}`}
-                      >
-                        다음 결제일
-                      </label>
-                      <span
-                        className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                          (billingByLedgerKey[ledgerKeyTeam(item.teamId, item.teamApiKeyId)] ?? "").trim()
-                            ? "bg-emerald-100 text-emerald-800"
-                            : "bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        {(billingByLedgerKey[ledgerKeyTeam(item.teamId, item.teamApiKeyId)] ?? "").trim()
-                          ? "선택됨"
-                          : "미선택"}
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-1">
-                      <input
-                        id={`billing-t-${item.teamId}-${item.teamApiKeyId}`}
-                        type="date"
-                        title="달력에서 결제일 선택"
-                        aria-label={`${item.alias} 다음 결제일 선택`}
-                        className="min-w-0 flex-1 rounded border bg-background px-1 py-0.5 text-xs"
-                        value={billingByLedgerKey[ledgerKeyTeam(item.teamId, item.teamApiKeyId)] ?? ""}
-                        onChange={(event: ChangeEvent<HTMLInputElement>) => {
-                          const value = event.target.value
-                          const lk = ledgerKeyTeam(item.teamId, item.teamApiKeyId)
-                          setBillingByLedgerKey((prev: Record<string, string>) => ({ ...prev, [lk]: value }))
-                          writeBillingToStorage(storagePathTeamKey(item.teamId, item.teamApiKeyId), value)
-                        }}
-                      />
-                      {(billingByLedgerKey[ledgerKeyTeam(item.teamId, item.teamApiKeyId)] ?? "").trim() ? (
-                        <button
-                          type="button"
-                          className="shrink-0 text-[11px] text-muted-foreground underline"
-                          onClick={() => {
-                            const lk = ledgerKeyTeam(item.teamId, item.teamApiKeyId)
-                            setBillingByLedgerKey((prev: Record<string, string>) => ({ ...prev, [lk]: "" }))
-                            writeBillingToStorage(storagePathTeamKey(item.teamId, item.teamApiKeyId), "")
-                          }}
-                        >
-                          지우기
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-1">
+              {visibleSelectedTeamKeys.map((item: TeamBoardItem) => {
+                const teamLedgerKey = ledgerKeyTeam(item.teamId, item.teamApiKeyId)
+                const isExpanded = expandedTeamLedgerKey === teamLedgerKey
+                return (
+                  <li
+                    key={`${item.teamId}-${item.teamApiKeyId}`}
+                    className={`rounded-md border ${isExpanded ? "border-primary/40 bg-muted/20" : "border-border"}`}
+                  >
                     <button
                       type="button"
-                      className="rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground disabled:opacity-60"
-                      disabled={isAnyLoading}
-                      onClick={() => void runAnalysisForKey("TEAM", teamBoardItemToAvailableKeyContext(item), "ANALYSIS")}
-                    >
-                      {isRowLoading("TEAM", item.teamApiKeyId, "ANALYSIS") ? "분석 중..." : "분석"}
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium disabled:opacity-60"
-                      disabled={isAnyLoading}
+                      className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left"
+                      aria-expanded={isExpanded}
+                      aria-controls={`team-key-panel-${item.teamId}-${item.teamApiKeyId}`}
                       onClick={() =>
-                        void runAnalysisForKey("TEAM", teamBoardItemToAvailableKeyContext(item), "RECOMMENDATION")
+                        setExpandedTeamLedgerKey((prev: string | null) => (prev === teamLedgerKey ? null : teamLedgerKey))
                       }
                     >
-                      {isRowLoading("TEAM", item.teamApiKeyId, "RECOMMENDATION") ? "추천 중..." : "추천"}
+                      <div className="flex min-w-0 items-center gap-1">
+                        <span className="truncate font-medium text-foreground">{item.alias}</span>
+                        {isCredentialDeletedStatus(item.status) ? (
+                          <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                            삭제된 키
+                          </span>
+                        ) : null}
+                      </div>
+                      <span className="shrink-0 text-[11px] text-muted-foreground">{isExpanded ? "접기" : "보기"}</span>
                     </button>
-                  </div>
-                </li>
-              ))}
+                    {isExpanded ? (
+                      <div
+                        id={`team-key-panel-${item.teamId}-${item.teamApiKeyId}`}
+                        className="space-y-2 border-t border-border/60 px-2 py-2"
+                      >
+                        <p className="text-[11px] text-muted-foreground">제공자: {item.provider}</p>
+                        {item.mergedTeamApiKeyIds != null && item.mergedTeamApiKeyIds.length > 1 ? (
+                          <p className="text-[10px] leading-snug text-muted-foreground">
+                            동일 키 해시(동일 시크릿)·또는 동일 팀·제공자·별칭으로 병합 (팀 키 ID: {item.mergedTeamApiKeyIds.join(", ")})
+                            — 아래 수치는 병합 합산입니다.
+                          </p>
+                        ) : null}
+                        <AgentKeyBudgetSummary
+                          monthlyBudgetUsd={item.monthlyBudgetUsd ?? 0}
+                          budgetStats={item.budgetStats}
+                        />
+                        <div className="flex flex-col gap-1 border-t border-border/60 pt-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <label
+                              className="text-[11px] text-muted-foreground"
+                              htmlFor={`billing-t-${item.teamId}-${item.teamApiKeyId}`}
+                            >
+                              다음 결제일
+                            </label>
+                            <span
+                              className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                                (billingByLedgerKey[teamLedgerKey] ?? "").trim()
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : "bg-muted text-muted-foreground"
+                              }`}
+                            >
+                              {(billingByLedgerKey[teamLedgerKey] ?? "").trim() ? "선택됨" : "미선택"}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1">
+                            <input
+                              id={`billing-t-${item.teamId}-${item.teamApiKeyId}`}
+                              type="date"
+                              title="달력에서 결제일 선택"
+                              aria-label={`${item.alias} 다음 결제일 선택`}
+                              className="min-w-0 flex-1 rounded border bg-background px-1 py-0.5 text-xs"
+                              value={billingByLedgerKey[teamLedgerKey] ?? ""}
+                              onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                                const value = event.target.value
+                                setBillingByLedgerKey((prev: Record<string, string>) => ({ ...prev, [teamLedgerKey]: value }))
+                                writeBillingToStorage(storagePathTeamKey(item.teamId, item.teamApiKeyId), value)
+                              }}
+                            />
+                            {(billingByLedgerKey[teamLedgerKey] ?? "").trim() ? (
+                              <button
+                                type="button"
+                                className="shrink-0 text-[11px] text-muted-foreground underline"
+                                onClick={() => {
+                                  setBillingByLedgerKey((prev: Record<string, string>) => ({ ...prev, [teamLedgerKey]: "" }))
+                                  writeBillingToStorage(storagePathTeamKey(item.teamId, item.teamApiKeyId), "")
+                                }}
+                              >
+                                지우기
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          <button
+                            type="button"
+                            className="rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground disabled:opacity-60"
+                            disabled={isAnyLoading}
+                            onClick={() => void runAnalysisForKey("TEAM", teamBoardItemToAvailableKeyContext(item), "ANALYSIS")}
+                          >
+                            {isRowLoading("TEAM", item.teamApiKeyId, "ANALYSIS") ? "분석 중..." : "분석"}
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium disabled:opacity-60"
+                            disabled={isAnyLoading}
+                            onClick={() =>
+                              void runAnalysisForKey("TEAM", teamBoardItemToAvailableKeyContext(item), "RECOMMENDATION")
+                            }
+                          >
+                            {isRowLoading("TEAM", item.teamApiKeyId, "RECOMMENDATION") ? "추천 중..." : "추천"}
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </li>
+                )
+              })}
               {selectedTeamId != null && visibleSelectedTeamKeys.length === 0 ? (
                 <li className="rounded-md border border-dashed px-2 py-1 text-xs">
                   {selectedTeamKeys.length === 0
