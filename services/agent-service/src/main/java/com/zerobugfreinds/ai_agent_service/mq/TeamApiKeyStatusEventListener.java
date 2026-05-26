@@ -71,6 +71,12 @@ public class TeamApiKeyStatusEventListener {
 			String status = asText(root, "status");
 			Boolean retainLogs = asBoolean(root, "retainLogs");
 
+			if ("DELETED".equals(status) && Boolean.FALSE.equals(retainLogs)) {
+				snapshotService.delete(teamId, teamApiKeyId);
+				apiKeyUsageDataCleanupService.purgeByApiKeyId(String.valueOf(teamApiKeyId));
+				return;
+			}
+
 			snapshotService.upsert(
 					new TeamApiKeySnapshotService.TeamApiKeySnapshot(
 							teamId,
@@ -86,9 +92,6 @@ public class TeamApiKeyStatusEventListener {
 							occurredAt
 					)
 			);
-			if ("DELETED".equals(status) && Boolean.FALSE.equals(retainLogs)) {
-				apiKeyUsageDataCleanupService.purgeUsageProjectionsExcludingBillingSignals(String.valueOf(teamApiKeyId));
-			}
 		} catch (Exception ex) {
 			log.error("Failed to handle team API key status event", ex);
 			throw new IllegalStateException("team api key status event handling failed", ex);

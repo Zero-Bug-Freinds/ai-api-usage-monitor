@@ -64,7 +64,12 @@ public class IdentityExternalApiKeyEventListener {
 					&& IdentityExternalApiKeyEventTypes.EXTERNAL_API_KEY_DELETED.equals(root.get(EVENT_TYPE_FIELD).asText())) {
 				eventDebugService.record(IdentityExternalApiKeyEventTypes.EXTERNAL_API_KEY_DELETED, headers, json);
 				ExternalApiKeyDeletedEvent deleted = parseDeletedEvent(root);
-				snapshotService.applyDeleted(deleted);
+				if (deleted.retainLogs()) {
+					snapshotService.applyDeleted(deleted);
+				} else {
+					snapshotService.delete(deleted);
+					apiKeyUsageDataCleanupService.purgeByApiKeyId(String.valueOf(deleted.apiKeyId()));
+				}
 				return;
 			}
 
