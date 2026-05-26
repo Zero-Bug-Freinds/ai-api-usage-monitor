@@ -133,7 +133,6 @@ function AgentKeyBudgetSummary({
 }
 
 const MANUAL_BILLING_STORAGE_PREFIX = "agent.manualBillingCycleEnd."
-const ANALYSIS_RESULTS_STORAGE_KEY = "agent.analysisResults.v1"
 
 function storagePathPersonalKey(keyId: number): string {
   return `${MANUAL_BILLING_STORAGE_PREFIX}personal.${keyId}`
@@ -168,32 +167,6 @@ function writeBillingToStorage(path: string, isoDate: string): void {
     } else {
       window.localStorage.setItem(path, isoDate.trim())
     }
-  } catch {
-    // ignore quota / private mode
-  }
-}
-
-function readAnalysisResultsFromStorage(): AnalysisResult[] {
-  if (typeof window === "undefined") return []
-  try {
-    const raw = window.localStorage.getItem(ANALYSIS_RESULTS_STORAGE_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw) as AnalysisResult[]
-    if (!Array.isArray(parsed)) return []
-    return parsed
-  } catch {
-    return []
-  }
-}
-
-function writeAnalysisResultsToStorage(results: AnalysisResult[]): void {
-  if (typeof window === "undefined") return
-  try {
-    if (results.length === 0) {
-      window.localStorage.removeItem(ANALYSIS_RESULTS_STORAGE_KEY)
-      return
-    }
-    window.localStorage.setItem(ANALYSIS_RESULTS_STORAGE_KEY, JSON.stringify(results))
   } catch {
     // ignore quota / private mode
   }
@@ -286,23 +259,6 @@ function createAnalysisHistorySnapshot(
     dateKey: toLocalDateKey(savedAt),
     results: rows,
   }
-}
-
-function mergeAnalysisResults(prev: AnalysisResult[], nextResult: AnalysisResult): AnalysisResult[] {
-  const previous = prev.find((item: AnalysisResult) => item.keyId === nextResult.keyId)
-  if (!previous) {
-    return [...prev, nextResult]
-  }
-  const merged: AnalysisResult = {
-    ...previous,
-    ...nextResult,
-    data: nextResult.error ? nextResult.data : (nextResult.data ?? previous.data),
-    recommendation: nextResult.recommendationError
-      ? nextResult.recommendation
-      : (nextResult.recommendation ?? previous.recommendation),
-    forecastGaps: nextResult.error ? nextResult.forecastGaps : (nextResult.forecastGaps ?? previous.forecastGaps),
-  }
-  return prev.map((item: AnalysisResult) => (item.keyId === nextResult.keyId ? merged : item))
 }
 
 function resolveForecastInputs(
@@ -468,7 +424,6 @@ export default function AgentPage() {
   }, [historyByDate, historySelectedDateKey, historySortNewestFirst])
 
   useEffect(() => {
-    setResults(readAnalysisResultsFromStorage())
     setAnalysisHistory(readAnalysisHistoryFromStorage())
     setResultsHydrated(true)
   }, [])
@@ -476,11 +431,6 @@ export default function AgentPage() {
   useEffect(() => {
     void loadAvailableContext()
   }, [])
-
-  useEffect(() => {
-    if (!resultsHydrated) return
-    writeAnalysisResultsToStorage(results)
-  }, [results, resultsHydrated])
 
   useEffect(() => {
     if (!resultsHydrated) return
@@ -615,6 +565,7 @@ export default function AgentPage() {
         : selectedTeamLabel
 
     setLoadingTarget({ scope, keyId: targetKey.keyId, action })
+    setResults([])
     try {
       const nextResults =
         action === "ANALYSIS"
@@ -643,9 +594,10 @@ export default function AgentPage() {
       const nextResult = nextResults[0]
       if (nextResult) {
         lastHistoryMutationRef.current = { keyId: targetKey.keyId, action }
-        setResults((prev: AnalysisResult[]) => mergeAnalysisResults(prev, nextResult))
+        setResults(nextResults)
       } else {
         lastHistoryMutationRef.current = null
+        setResults([])
       }
     } finally {
       setLoadingTarget(null)
