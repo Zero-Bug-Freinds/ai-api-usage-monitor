@@ -943,53 +943,54 @@ public class UsageDashboardService {
         Range r = validateRange(from, toInclusive);
         int pageIndex = Math.max(0, page);
         int pageSize = Math.min(200, Math.max(1, size));
-        LogPageCredentialParams logKeyFilter = toLogPageCredentialParams(resolveUserCredentialFilter(userId, apiKeyId));
         String reasoningFilter = normalizeReasoningPresence(reasoningPresence);
         Pageable pageable = PageRequest.of(pageIndex, pageSize, Sort.by(Sort.Direction.DESC, "occurredAt"));
         String teamScope = teamMemberDashboardScope(dataContext, teamId);
+
+        if (dataContext == UsageDataContext.TEAM_MEMBER_ONLY && teamScope != null) {
+            return logsByTeam(
+                    teamScope,
+                    from,
+                    toInclusive,
+                    provider,
+                    apiKeyId,
+                    requestSuccessful,
+                    modelMask,
+                    reasoningPresence,
+                    page,
+                    size
+            );
+        }
+
+        LogPageCredentialParams logKeyFilter = toLogPageCredentialParams(resolveUserCredentialFilter(userId, apiKeyId));
         Page<UsageRecordedLogEntity> p =
-                dataContext == UsageDataContext.TEAM_MEMBER_ONLY && teamScope != null
-                ? logRepository.pageLogsByTeamAndUser(
-                        teamScope,
-                        userId,
-                        r.from(),
-                        r.toExclusive(),
-                        provider,
-                        logKeyFilter.apply(),
-                        logKeyFilter.apiKeyIds(),
-                        logKeyFilter.fingerprint(),
-                        requestSuccessful,
-                        modelMask,
-                        reasoningFilter,
-                        pageable
-                )
-                : dataContext == UsageDataContext.TEAM_MEMBER_ONLY
-                ? logRepository.pageLogsTeamMember(
-                        userId,
-                        r.from(),
-                        r.toExclusive(),
-                        provider,
-                        logKeyFilter.apply(),
-                        logKeyFilter.apiKeyIds(),
-                        logKeyFilter.fingerprint(),
-                        requestSuccessful,
-                        modelMask,
-                        reasoningFilter,
-                        pageable
-                )
-                : logRepository.pageLogsPersonal(
-                        userId,
-                        r.from(),
-                        r.toExclusive(),
-                        provider,
-                        logKeyFilter.apply(),
-                        logKeyFilter.apiKeyIds(),
-                        logKeyFilter.fingerprint(),
-                        requestSuccessful,
-                        modelMask,
-                        reasoningFilter,
-                        pageable
-                );
+                dataContext == UsageDataContext.TEAM_MEMBER_ONLY
+                        ? logRepository.pageLogsTeamMember(
+                                userId,
+                                r.from(),
+                                r.toExclusive(),
+                                provider,
+                                logKeyFilter.apply(),
+                                logKeyFilter.apiKeyIds(),
+                                logKeyFilter.fingerprint(),
+                                requestSuccessful,
+                                modelMask,
+                                reasoningFilter,
+                                pageable
+                        )
+                        : logRepository.pageLogsPersonal(
+                                userId,
+                                r.from(),
+                                r.toExclusive(),
+                                provider,
+                                logKeyFilter.apply(),
+                                logKeyFilter.apiKeyIds(),
+                                logKeyFilter.fingerprint(),
+                                requestSuccessful,
+                                modelMask,
+                                reasoningFilter,
+                                pageable
+                        );
         List<UsageLogEntryResponse> content = p.getContent().stream().map(this::toLogDto).toList();
         log.debug("dashboard.logs totalMs={} page={} size={} rows={} range={}~{} provider={}",
                 (System.nanoTime() - startedAt) / 1_000_000,
