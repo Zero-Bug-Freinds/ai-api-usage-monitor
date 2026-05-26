@@ -227,7 +227,7 @@ curl -sS -i -X POST "http://localhost:8888/api/auth/signup" \
   -d '{"email":"user@example.com","password":"abc123!@","passwordConfirm":"abc123!@","name":"U"}'
 ```
 
-**참고:** `http://localhost:3000` 은 Compose 가 identity `web` 컨테이너를 호스트에 **직접** 노출할 때의 upstream 포트일 뿐, 통합 콘솔 진입점이 아니다. 단독 `pnpm --filter identity-web dev` 디버그 시에만 해당 호스트를 쓴다.
+**참고:** Identity `web` 호스트 노출 포트(`IDENTITY_WEB_PORT`, 기본 3000)는 Compose 가 identity `web` 컨테이너를 호스트에 **직접** 노출할 때의 upstream 포트일 뿐, 통합 콘솔 진입점이 아니다. 단독 `pnpm --filter identity-web dev` 디버그 시에만 해당 호스트를 쓴다.
 
 ---
 

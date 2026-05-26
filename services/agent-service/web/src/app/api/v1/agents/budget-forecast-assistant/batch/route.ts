@@ -17,7 +17,7 @@ function backendOriginCandidates(): string[] {
 function identityWebOriginCandidates(): string[] {
   const configured = (process.env.IDENTITY_WEB_INTERNAL_ORIGIN ?? "").trim().replace(/\/$/, "")
   const publicOrigin = (process.env.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN ?? "").trim().replace(/\/$/, "")
-  const defaults = ["http://identity-web:3000", "http://host.docker.internal:3000", "http://localhost:3000"]
+  const defaults = ["http://identity-web:3000", "http://web-edge:8888", "http://host.docker.internal:3000", "http://localhost:8888"]
   return Array.from(new Set([configured, publicOrigin, ...defaults].filter((value) => value.length > 0)))
 }
 
