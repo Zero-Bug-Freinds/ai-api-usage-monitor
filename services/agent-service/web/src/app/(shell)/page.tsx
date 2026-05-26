@@ -721,12 +721,6 @@ export default function AgentPage() {
                   {isExpanded ? (
                     <div id={`personal-key-panel-${item.keyId}`} className="space-y-2 border-t border-border/60 px-2 py-2">
                       <p className="text-[11px] text-muted-foreground">제공자: {item.provider}</p>
-                      {item.mergedKeyIds != null && item.mergedKeyIds.length > 1 ? (
-                        <p className="text-[10px] leading-snug text-muted-foreground">
-                          동일 키 해시(동일 시크릿)·또는 동일 제공자·별칭으로 병합 (키 ID: {item.mergedKeyIds.join(", ")}) — 아래
-                          누적·당월 수치는 병합 합산입니다.
-                        </p>
-                      ) : null}
                       <AgentKeyBudgetSummary monthlyBudgetUsd={item.monthlyBudgetUsd} budgetStats={item.budgetStats} />
                       <div className="flex flex-col gap-1 border-t border-border/60 pt-1">
                         <div className="flex items-center justify-between gap-2">
@@ -872,12 +866,6 @@ export default function AgentPage() {
                         className="space-y-2 border-t border-border/60 px-2 py-2"
                       >
                         <p className="text-[11px] text-muted-foreground">제공자: {item.provider}</p>
-                        {item.mergedTeamApiKeyIds != null && item.mergedTeamApiKeyIds.length > 1 ? (
-                          <p className="text-[10px] leading-snug text-muted-foreground">
-                            동일 키 해시(동일 시크릿)·또는 동일 팀·제공자·별칭으로 병합 (팀 키 ID: {item.mergedTeamApiKeyIds.join(", ")})
-                            — 아래 수치는 병합 합산입니다.
-                          </p>
-                        ) : null}
                         <AgentKeyBudgetSummary
                           monthlyBudgetUsd={item.monthlyBudgetUsd ?? 0}
                           budgetStats={item.budgetStats}
@@ -972,16 +960,6 @@ export default function AgentPage() {
           )}
         </div>
 
-        <div className="rounded-md border border-dashed bg-muted/30 px-2 py-1.5 text-xs text-muted-foreground">
-          <p>각 키의 분석·추천은 해당 키의 데이터만 AI 요청에 포함합니다.</p>
-          <p className="mt-1 text-[11px] leading-snug">
-            <span className="font-medium">누적 지출(최근 400일)</span>은 billing `summary(from,to)`를 활용한 최근 400일 합입니다.{" "}
-            <span className="font-medium">당월 지출·진행률·잔여</span>는{" "}
-            <span className="font-medium">월 1일~오늘</span>과 동일한 방식으로, 요약·스냅샷을 합친 값입니다.
-            과금 서비스가 오래되면 누적 API가 없을 수 있으니 배포를 맞추고, 숫자가 비면{" "}
-            <span className="font-medium">목록 새로고침</span>을 눌러 보세요.
-          </p>
-        </div>
         {modelCatalog ? (
           <div className="rounded-md border border-dashed bg-muted/30 p-2 text-xs text-muted-foreground">
             <p className="leading-snug">

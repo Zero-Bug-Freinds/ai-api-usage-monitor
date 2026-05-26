@@ -17,15 +17,6 @@ type AnalysisResultArticlesProps = {
   sections?: Array<"budget" | "recommendation">
 }
 
-function parseInputOutputRatio(value: string | null | undefined): { input: number; output: number } | null {
-  if (!value) return null
-  const [inputRaw, outputRaw] = value.split(":")
-  const input = Number(inputRaw)
-  const output = Number(outputRaw)
-  if (!Number.isFinite(input) || !Number.isFinite(output) || input < 0 || output < 0) return null
-  return { input, output }
-}
-
 function estimateSavingsUsd(
   estimatedSavingsPct: number | string,
   recommendedMonthlyCostUsd: number | string,
@@ -38,50 +29,6 @@ function estimateSavingsUsd(
   const estimatedSavingsUsd = estimatedCurrent - recommended
   if (!Number.isFinite(estimatedSavingsUsd) || estimatedSavingsUsd < 0) return null
   return estimatedSavingsUsd
-}
-
-function latencyStatus(latencyMs: number): { label: string; className: string; progress: number } {
-  if (latencyMs <= 600) {
-    return { label: "빠름", className: "bg-emerald-100 text-emerald-700", progress: 25 }
-  }
-  if (latencyMs <= 1200) {
-    return { label: "보통", className: "bg-amber-100 text-amber-700", progress: 55 }
-  }
-  if (latencyMs <= 2000) {
-    return { label: "지연", className: "bg-orange-100 text-orange-700", progress: 78 }
-  }
-  return { label: "높은 지연", className: "bg-red-100 text-red-700", progress: 92 }
-}
-
-function latencyStatusNullable(latencyMs: number | null | undefined): { label: string; className: string; progress: number } {
-  if (latencyMs == null || !Number.isFinite(latencyMs) || latencyMs < 0) {
-    return { label: "지표 없음", className: "bg-muted text-muted-foreground", progress: 0 }
-  }
-  return latencyStatus(latencyMs)
-}
-
-function ratioDominance(ratio: { input: number; output: number } | null): {
-  label: string
-  className: string
-  inputPct: number
-  outputPct: number
-} {
-  if (!ratio) {
-    return { label: "지표 없음", className: "bg-muted text-muted-foreground", inputPct: 0, outputPct: 0 }
-  }
-  const total = ratio.input + ratio.output
-  if (total <= 0) {
-    return { label: "지표 없음", className: "bg-muted text-muted-foreground", inputPct: 0, outputPct: 0 }
-  }
-  const inputPct = (ratio.input / total) * 100
-  const outputPct = 100 - inputPct
-  if (inputPct >= 80) {
-    return { label: "입력 중심", className: "bg-blue-100 text-blue-700", inputPct, outputPct }
-  }
-  if (outputPct >= 80) {
-    return { label: "출력 중심", className: "bg-violet-100 text-violet-700", inputPct, outputPct }
-  }
-  return { label: "균형형", className: "bg-slate-100 text-slate-700", inputPct, outputPct }
 }
 
 function formatBillingMetric(value: number | null | undefined): string {
@@ -220,58 +167,6 @@ export function AnalysisResultArticles({
                 </div>
               ) : null}
 
-              {result.recommendation?.metricsContext ? (
-                <div className="space-y-2 rounded-md border border-dashed bg-muted/30 p-2">
-                  <p className="text-xs font-medium text-muted-foreground">추천 근거 지표</p>
-                  <div className="grid gap-2 md:grid-cols-2">
-                    {(() => {
-                      const ratio = parseInputOutputRatio(result.recommendation?.metricsContext?.inputOutputRatio)
-                      const dominance = ratioDominance(ratio)
-                      return (
-                        <div className="space-y-1 rounded border bg-background px-2 py-1.5">
-                          <div className="flex items-center justify-between">
-                            <p className="text-xs font-medium">입출력 비율</p>
-                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${dominance.className}`}>
-                              {dominance.label}
-                            </span>
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            {result.recommendation?.metricsContext?.inputOutputRatio ?? "N/A"}
-                          </p>
-                          <div className="h-1.5 w-full overflow-hidden rounded bg-muted">
-                            <div className="h-full bg-blue-500" style={{ width: `${dominance.inputPct}%` }} />
-                          </div>
-                          <p className="text-[10px] text-muted-foreground">
-                            input {dominance.inputPct.toFixed(0)}% / output {dominance.outputPct.toFixed(0)}%
-                          </p>
-                        </div>
-                      )
-                    })()}
-                    {(() => {
-                      const rawLatency = result.recommendation?.metricsContext?.averageLatencyMs
-                      const latency = rawLatency == null ? null : Number(rawLatency)
-                      const latencyMeta = latencyStatusNullable(latency)
-                      return (
-                        <div className="space-y-1 rounded border bg-background px-2 py-1.5">
-                          <div className="flex items-center justify-between">
-                            <p className="text-xs font-medium">최근 평균 지연</p>
-                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${latencyMeta.className}`}>
-                              {latencyMeta.label}
-                            </span>
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            {latency == null || !Number.isFinite(latency) ? "N/A" : `${latency.toFixed(0)} ms`}
-                          </p>
-                          <div className="h-1.5 w-full overflow-hidden rounded bg-muted">
-                            <div className="h-full bg-amber-500" style={{ width: `${latencyMeta.progress}%` }} />
-                          </div>
-                        </div>
-                      )
-                    })()}
-                  </div>
-                </div>
-              ) : null}
-
               {result.recommendation?.recommendationDetails?.candidates != null &&
               result.recommendation.recommendationDetails.candidates.length > 0 ? (
                 <div className="rounded-md border bg-background p-3">
@@ -325,13 +220,6 @@ export function AnalysisResultArticles({
                   <p className="text-xs text-muted-foreground">
                     소진까지 남은 일수 = 하루에 얼마나 쓰는지(소모 속도, velocity)로 미래를 예측한 값
                   </p>
-                  {result.data.riskCriteria || result.data.confidenceCriteria ? (
-                    <div className="rounded-md border border-dashed bg-muted/40 p-3 text-xs text-muted-foreground">
-                      {result.data.riskCriteria ? <p>판정 기준: {result.data.riskCriteria}</p> : null}
-                      {result.data.confidenceCriteria ? <p>신뢰도 기준: {result.data.confidenceCriteria}</p> : null}
-                    </div>
-                  ) : null}
-
                   <div className="rounded-md bg-muted p-3 text-sm">{localizeAssistantMessage(result.data.assistantMessage)}</div>
                   {result.data.anomalySummary ? (
                     <div className="rounded-md border border-orange-200 bg-orange-50 p-3 text-sm text-orange-900 dark:border-orange-900/50 dark:bg-orange-950/40 dark:text-orange-100">
