@@ -32,6 +32,8 @@ public record UsageLogEntryResponse(
         boolean requestSuccessful,
         Integer upstreamStatusCode,
         /** Raw provider_token_details JSON from DB (snake_case keys); null when absent or unparseable. */
-        Map<String, Object> providerTokenDetails
+        Map<String, Object> providerTokenDetails,
+        /** Actor user id for the log row (team log table shows local part before @ when email-like). */
+        String memberUserId
 ) {
 }

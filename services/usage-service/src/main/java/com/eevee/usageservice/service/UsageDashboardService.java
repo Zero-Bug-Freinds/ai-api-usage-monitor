@@ -1262,7 +1262,8 @@ public class UsageDashboardService {
                 e.getStreaming(),
                 e.isRequestSuccessful(),
                 e.getUpstreamStatusCode(),
-                jsonNodeToProviderTokenDetailsMap(details)
+                jsonNodeToProviderTokenDetailsMap(details),
+                e.getUserId()
         );
     }
 

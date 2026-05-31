@@ -517,5 +517,6 @@ class UsageDashboardServiceTest {
         assertThat(row.providerTokenDetails()).containsEntry("prompt_cached_tokens", 5);
         assertThat(row.providerTokenDetails()).containsEntry("completion_reasoning_tokens", 11);
         assertThat(row.providerTokenDetails()).containsKey("completion_accepted_prediction_tokens");
+        assertThat(row.memberUserId()).isEqualTo("user-1");
     }
 }
