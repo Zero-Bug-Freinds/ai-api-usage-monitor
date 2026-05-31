@@ -65,6 +65,7 @@ import { useDashboardAggregateApiKeySync } from "@/lib/usage/hooks/use-dashboard
 import { DashboardRequestShareRow } from "@/components/usage/dashboard-request-share-row"
 import { UsageFilterBar } from "@/components/usage/usage-filter-bar"
 import { useFilterStorage } from "@/lib/usage/hooks/use-filter-storage"
+import { labelForProviderCode } from "@/lib/usage/provider-chart"
 import {
   LATENCY_BAND_FILL,
   LATENCY_ERROR_RATE_LINE,
