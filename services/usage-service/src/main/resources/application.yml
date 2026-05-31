@@ -91,3 +91,14 @@ usage:
   gateway:
     # 운영에서는 반드시 환경 변수로 덮어쓴다. 비어 있으면 로컬 기본값(게이트웨이·프록시와 동일).
     shared-secret: ${GATEWAY_SHARED_SECRET:local-dev-gateway-shared-secret-do-not-use-in-prod}
+
+# identity -> usage 회원 탈퇴 이벤트 소비 / ACK 발행
+identity:
+  account-deletion-event:
+    exchange: ${IDENTITY_ACCOUNT_DELETION_EVENT_EXCHANGE:identity.events}
+    routing-key: ${IDENTITY_ACCOUNT_DELETION_EVENT_ROUTING_KEY:identity.user.account-deletion-requested}
+    usage:
+      queue: ${IDENTITY_ACCOUNT_DELETION_EVENT_USAGE_QUEUE:usage.account-deletion.requested.queue}
+  account-deletion-ack:
+    exchange: ${IDENTITY_ACCOUNT_DELETION_ACK_EXCHANGE:identity.events}
+    routing-key: ${IDENTITY_ACCOUNT_DELETION_ACK_ROUTING_KEY:identity.user.account-deletion-ack}

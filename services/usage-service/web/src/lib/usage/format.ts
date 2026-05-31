@@ -59,3 +59,21 @@ export function formatTokenCount(n: number): string {
 export function formatRequestCount(n: number): string {
   return `${n.toLocaleString("en-US")} requests`
 }
+
+const LOG_TABLE_COST_FLOOR = 0.001
+
+/**
+ * Usage log table cost cell (no currency symbol).
+ * Errors show 0; values below 0.001 show "< 0.001"; otherwise up to 4 decimal places.
+ */
+export function formatUsageLogTableCost(
+  amount: number | string | null | undefined,
+  requestSuccessful: boolean
+): string {
+  if (!requestSuccessful) return "0"
+  const n = toNumber(amount)
+  if (!Number.isFinite(n) || n <= 0) return "0"
+  if (n < LOG_TABLE_COST_FLOOR) return "< 0.001"
+  const rounded = Math.round(n * 10_000) / 10_000
+  return rounded.toFixed(4)
+}

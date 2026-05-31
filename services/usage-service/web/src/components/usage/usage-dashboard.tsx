@@ -13,8 +13,6 @@ import {
   LabelList,
   Legend,
   Line,
-  Pie,
-  PieChart,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -64,24 +62,24 @@ import {
   type TeamBffApiKeyRow,
 } from "@/lib/usage/dashboard-provider-api-keys"
 import { useDashboardAggregateApiKeySync } from "@/lib/usage/hooks/use-dashboard-aggregate-api-key"
+import { DashboardRequestShareRow } from "@/components/usage/dashboard-request-share-row"
 import { UsageFilterBar } from "@/components/usage/usage-filter-bar"
 import { useFilterStorage } from "@/lib/usage/hooks/use-filter-storage"
+import { labelForProviderCode } from "@/lib/usage/provider-chart"
+import {
+  LATENCY_BAND_FILL,
+  LATENCY_ERROR_RATE_LINE,
+  LATENCY_LEGEND_LABEL_FILL,
+  LATENCY_MAIN_LINE,
+  LATENCY_MS_THRESHOLD,
+  LATENCY_P95_LINE,
+  LATENCY_P99_LINE,
+  LATENCY_SUCCESS_RATE_LINE,
+  LATENCY_THRESHOLD_LINE,
+} from "@/lib/usage/latency-chart-colors"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const AnyLegend = Legend as any
-
-/** 공급사별 기본 색 — 모든 차트에서 동일 키에 동일 색 */
-const PROVIDER_COLOR: Record<string, string> = {
-  GOOGLE: "#F97316",
-  OPENAI: "#2563eb",
-  ANTHROPIC: "#c2410c",
-}
-
-const PROVIDER_LABEL: Record<string, string> = {
-  GOOGLE: "Gemini (Google)",
-  OPENAI: "OpenAI",
-  ANTHROPIC: "Anthropic",
-}
 
 const MONTHLY_LOOKBACK_DAYS = 365
 const MAX_RANGE_DAYS = 366
@@ -232,10 +230,6 @@ function colorForModel(model: string, provider: string): string {
   const picked = list[idx] ?? "#94a3b8"
   MODEL_COLOR_CACHE.set(key, picked)
   return picked
-}
-
-function labelForProviderCode(code: string): string {
-  return PROVIDER_LABEL[code] ?? code
 }
 
 const HEX_6 = /^#?([0-9a-fA-F]{6})$/
@@ -411,10 +405,6 @@ function RequestVolumeTooltip({ active, label, payload }: RequestVolumeTooltipPr
   )
 }
 
-const LATENCY_MS_THRESHOLD = 2000
-const LATENCY_MAIN_LINE = "rgba(91, 33, 182, 0.85)"
-const LATENCY_BAND_FILL = "rgba(139, 92, 246, 0.09)"
-
 /**
  * Recharts `dataKey` / axis field names. Prefer `dataKey={USAGE_CHART_DATA_KEYS.x}` over
  * braced `dataKey={…}` with these constants so secret scanners (e.g. Gitleaks `generic-api-key`)
@@ -484,49 +474,6 @@ function LatencyStabilityTooltip({ active, label, payload }: LatencyStabilityToo
       <p className="text-muted-foreground">
         토큰당 지연: {row.latencyPerTokenMs != null ? `${row.latencyPerTokenMs.toFixed(4)} ms/토큰` : "—"}
       </p>
-    </div>
-  )
-}
-
-type DonutTooltipPayload = {
-  name?: string
-  value?: number
-  payload?: { fullName?: string; value?: number; percent?: number; provider?: string }
-}
-
-type SimpleDonutTooltipProps = {
-  active?: boolean
-  payload?: readonly unknown[]
-}
-
-function ModelDonutTooltip({ active, payload }: SimpleDonutTooltipProps) {
-  if (!active || !payload?.length) return null
-  const first = payload[0] as DonutTooltipPayload
-  const raw = first.payload
-  if (!raw) return null
-  const name = raw.fullName ?? first.name ?? "-"
-  const pct = raw.percent ?? 0
-  return (
-    <div className="rounded-md border border-border bg-card px-3 py-2 text-xs shadow-md">
-      <p className="font-medium text-foreground">{name}</p>
-      <p className="mt-1 text-muted-foreground tabular-nums">전체 대비 비중: {(pct * 100).toFixed(1)}%</p>
-    </div>
-  )
-}
-
-function ProviderDonutTooltip({ active, payload }: SimpleDonutTooltipProps) {
-  if (!active || !payload?.length) return null
-  const first = payload[0] as DonutTooltipPayload
-  const raw = first.payload
-  if (!raw) return null
-  const name = first.name ?? raw.provider ?? "-"
-  const count = raw.value ?? first.value ?? 0
-  const pct = raw.percent ?? 0
-  return (
-    <div className="rounded-md border border-border bg-card px-3 py-2 text-xs shadow-md">
-      <p className="font-medium text-foreground">{name}</p>
-      <p className="mt-1 text-muted-foreground">총 요청 수: {formatRequestCount(count)}</p>
-      <p className="text-muted-foreground tabular-nums">전체 대비 비중: {(pct * 100).toFixed(1)}%</p>
     </div>
   )
 }
@@ -1061,65 +1008,6 @@ export function UsageDashboard() {
     [monthly]
   )
 
-  const pieData = React.useMemo(() => {
-    const totalReq = byModel.reduce((s, m) => s + m.requestCount, 0)
-    if (totalReq <= 0) return []
-    return byModel
-      .filter((m) => m.requestCount > 0)
-      .map((m) => ({
-        name: truncateModelLabel(m.model),
-        fullName: m.model,
-        provider: m.provider,
-        value: m.requestCount,
-        percent: m.requestCount / totalReq,
-      }))
-  }, [byModel])
-
-  const providerPieData = React.useMemo(() => {
-    const totalReq = byModel.reduce((s, m) => s + m.requestCount, 0)
-    if (totalReq <= 0) return []
-    const acc = new Map<string, number>()
-    for (const m of byModel) {
-      if (m.requestCount <= 0) continue
-      acc.set(m.provider, (acc.get(m.provider) ?? 0) + m.requestCount)
-    }
-    const total = [...acc.values()].reduce((s, v) => s + v, 0)
-    return [...acc.entries()].map(([provider, value]) => ({
-      name: labelForProviderCode(provider),
-      provider,
-      value,
-      percent: total > 0 ? value / total : 0,
-    }))
-  }, [byModel])
-
-  const modelPieChartData = React.useMemo(
-    () =>
-      pieData.length > 0
-        ? pieData
-        : [{ name: "—", fullName: "—", provider: "GOOGLE", value: 1, percent: 1 }],
-    [pieData]
-  )
-  const isModelPiePlaceholder = pieData.length === 0
-
-  const providerPieChartData = React.useMemo(
-    () =>
-      providerPieData.length > 0
-        ? providerPieData
-        : [{ name: "—", provider: "GOOGLE", value: 1, percent: 1 }],
-    [providerPieData]
-  )
-  const isProviderPiePlaceholder = providerPieData.length === 0
-
-  const providerPieLegendPayload = React.useMemo(
-    () =>
-      providerPieData.map((entry) => ({
-        value: entry.name,
-        type: "square" as const,
-        color: PROVIDER_COLOR[entry.provider] ?? "#737373",
-      })),
-    [providerPieData]
-  )
-
   const modelBarRows = React.useMemo((): ModelRequestRow[] => {
     const sorted = [...byModel]
       .filter((m) => m.requestCount > 0)
@@ -1611,11 +1499,17 @@ export function UsageDashboard() {
                     label={{ value: "비율 (%)", angle: 90, position: "insideRight", offset: 2 }}
                   />
                   <Tooltip content={LatencyStabilityTooltip} cursor={{ stroke: "transparent", fill: "transparent" }} />
-                  <AnyLegend onClick={latencyLegendClick} wrapperStyle={{ cursor: "pointer" }} />
+                  <AnyLegend
+                    onClick={latencyLegendClick}
+                    wrapperStyle={{ cursor: "pointer" }}
+                    formatter={(value: string) => (
+                      <span style={{ color: LATENCY_LEGEND_LABEL_FILL }}>{value}</span>
+                    )}
+                  />
                   <ReferenceLine
                     yAxisId="lat"
                     y={LATENCY_MS_THRESHOLD}
-                    stroke="#ef4444"
+                    stroke={LATENCY_THRESHOLD_LINE}
                     strokeDasharray="4 4"
                     strokeWidth={1}
                   />
@@ -1656,7 +1550,7 @@ export function UsageDashboard() {
                     type="monotone"
                     dataKey={USAGE_CHART_DATA_KEYS.p95LatencyMs}
                     name="P95 지연"
-                    stroke="#818cf8"
+                    stroke={LATENCY_P95_LINE}
                     strokeWidth={1.5}
                     strokeDasharray="8 5"
                     strokeLinecap="round"
@@ -1669,7 +1563,7 @@ export function UsageDashboard() {
                     type="monotone"
                     dataKey={USAGE_CHART_DATA_KEYS.p99LatencyMs}
                     name="P99 지연"
-                    stroke="#93c5fd"
+                    stroke={LATENCY_P99_LINE}
                     strokeWidth={1.25}
                     strokeDasharray="2 6"
                     strokeLinecap="round"
@@ -1682,7 +1576,7 @@ export function UsageDashboard() {
                     type="monotone"
                     dataKey={USAGE_CHART_DATA_KEYS.successRate}
                     name="성공률"
-                    stroke="#10b981"
+                    stroke={LATENCY_SUCCESS_RATE_LINE}
                     strokeWidth={1}
                     dot={false}
                     hide={!!latencyLegendHidden.successRate}
@@ -1692,7 +1586,7 @@ export function UsageDashboard() {
                     type="monotone"
                     dataKey={USAGE_CHART_DATA_KEYS.errorRate}
                     name="오류율"
-                    stroke="#f43f5e"
+                    stroke={LATENCY_ERROR_RATE_LINE}
                     strokeWidth={1}
                     dot={false}
                     hide={!!latencyLegendHidden.errorRate}
@@ -1700,119 +1594,16 @@ export function UsageDashboard() {
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
-            <p className="mt-2 text-center text-[11px] text-muted-foreground">
+            <p className="mt-2 text-center text-[11px] font-medium text-[#525252]">
               빨간 점선은 {formatLatencyMsHuman(LATENCY_MS_THRESHOLD)} 임계치입니다. 범례를 클릭하면 시리즈를 끄거나 켤 수 있습니다.
             </p>
           </section>
 
-          <div className="mb-8 grid gap-5 lg:grid-cols-3 lg:gap-6">
-            <section className="rounded-lg border border-border p-4 shadow-sm lg:col-span-2">
-              <h2 className="mb-4 text-lg font-medium">모델별 요청 비중</h2>
-              <div className="flex min-h-[320px] items-stretch gap-4">
-                <div className="flex h-[320px] w-[320px] shrink-0 items-center justify-center rounded-md border border-border/70 bg-card/30 p-2">
-                  <div className="h-[280px] w-[280px] shrink-0">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={modelPieChartData}
-                          dataKey={USAGE_CHART_DATA_KEYS.value}
-                          nameKey="name"
-                          cx="50%"
-                          cy="50%"
-                          innerRadius="52%"
-                          outerRadius="80%"
-                          paddingAngle={2}
-                          isAnimationActive={!isModelPiePlaceholder}
-                          label={isModelPiePlaceholder ? false : ({ index }) => String((index ?? 0) + 1)}
-                        >
-                          {modelPieChartData.map((entry, i) => (
-                            <Cell
-                              key={`m-${entry.fullName}-${i}`}
-                              fill={
-                                isModelPiePlaceholder
-                                  ? "var(--border)"
-                                  : colorForModel(entry.fullName, entry.provider)
-                              }
-                              fillOpacity={isModelPiePlaceholder ? 0.35 : 1}
-                              style={{ cursor: "default" }}
-                            />
-                          ))}
-                        </Pie>
-                        <Tooltip content={ModelDonutTooltip} cursor={false} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-                <div className="flex-1 max-h-[320px] overflow-y-auto p-1">
-                  {isModelPiePlaceholder ? (
-                    <p className="text-sm text-muted-foreground">{PERSONAL_DASHBOARD_MESSAGES.empty.chartAggregated}</p>
-                  ) : (
-                    <div className="space-y-1.5">
-                      {pieData.map((entry, i) => (
-                        <div
-                          key={`legend-model-${entry.fullName}-${i}`}
-                          className="flex items-center gap-2 rounded px-1 py-1 text-sm"
-                          title={entry.fullName}
-                        >
-                          <span className="w-5 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
-                            {i + 1}.
-                          </span>
-                          <span
-                            className="h-2.5 w-2.5 shrink-0 rounded-sm"
-                            style={{ backgroundColor: colorForModel(entry.fullName, entry.provider) }}
-                          />
-                          <span className="min-w-0 flex-1 truncate">{entry.fullName}</span>
-                          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                            {(entry.percent * 100).toFixed(1)}%
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </section>
-
-            <section className="rounded-lg border border-border p-4 shadow-sm lg:col-span-1">
-              <h2 className="mb-4 text-lg font-medium">공급사별 요청 비중</h2>
-              <div className="h-[320px] min-h-[320px] w-full min-w-0">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={providerPieChartData}
-                      dataKey={USAGE_CHART_DATA_KEYS.value}
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      innerRadius="52%"
-                      outerRadius="80%"
-                      paddingAngle={2}
-                      isAnimationActive={!isProviderPiePlaceholder}
-                      label={false}
-                    >
-                      {providerPieChartData.map((entry, i) => (
-                        <Cell
-                          key={`p-${entry.provider}-${i}`}
-                          fill={
-                            isProviderPiePlaceholder
-                              ? "var(--border)"
-                              : PROVIDER_COLOR[entry.provider] ?? "#737373"
-                          }
-                          fillOpacity={isProviderPiePlaceholder ? 0.35 : 1}
-                          style={{ cursor: "default" }}
-                        />
-                      ))}
-                    </Pie>
-                    <Tooltip content={ProviderDonutTooltip} cursor={false} />
-                    {!isProviderPiePlaceholder ? <AnyLegend payload={providerPieLegendPayload} /> : null}
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              {isProviderPiePlaceholder ? (
-                <p className="mt-2 text-center text-sm text-muted-foreground">{PERSONAL_DASHBOARD_MESSAGES.empty.chartAggregated}</p>
-              ) : null}
-            </section>
-          </div>
+          <DashboardRequestShareRow
+            byModel={byModel}
+            emptyHint={PERSONAL_DASHBOARD_MESSAGES.empty.chartAggregated}
+            emptyAggregatedLabel={PERSONAL_DASHBOARD_MESSAGES.empty.chartAggregated}
+          />
 
           <div className="mb-8">
             <section className="rounded-lg border border-border p-4 shadow-sm">

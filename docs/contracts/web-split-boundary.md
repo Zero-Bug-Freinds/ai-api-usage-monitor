@@ -49,7 +49,7 @@ Next `basePath`는 **`/dashboard`**(단일 도메인에서 `/_next` 충돌 방�
 | 경로 접두 | 설명 |
 |-----------|------|
 | `/dashboard` | 대시보드 홈(UI) |
-| `/dashboard/*` | 사용량 대시보드 하위 경로(UI, 미들웨어 보호) |
+| `/dashboard/*` | 사용량 대시보드 하위 경로(UI, 미들웨어 보호). 성능·안정성 차트 색: `usage-service/web/src/lib/usage/latency-chart-colors.ts` |
 | `/dashboard/api/usage/*` | Usage BFF → API Gateway `/api/v1/usage/...` |
 
 대시보드 사이드바(`services/*/web/src/components/dashboard/dashboard-sidebar.tsx`)에는 제품 랜딩으로 가는 별도 「랜딩」 항목을 두지 않는다. Identity `web`으로 돌아갈 **`홈으로`** 링크만 유지한다.
@@ -116,7 +116,7 @@ Next `basePath`는 **`/billing`**(단일 도메인·`web-edge` 라우팅과 정�
 
 | 경로 접두 | 설명 |
 |-----------|------|
-| `/billing` | 지출 대시보드 UI(개인·팀 모드; 팀 모드 상단 **새로고침**으로 팀 목록·현재 기간 집계를 한 번에 갱신 가능) |
+| `/billing` | 지출 대시보드 UI(개인·팀 모드; 팀 모드 상단 **새로고침**으로 팀 목록·현재 기간 집계를 한 번에 갱신 가능). Recharts 막대 색 정본: `billing-service/web/src/lib/expenditure/chart-colors.ts` |
 | `/billing/*` | 지출 하위 경로(UI) |
 | `/billing/api/expenditure/*` | Expenditure BFF → API Gateway `/api/v1/expenditure/...` |
 | `/billing/api/expenditure/team/month-rollup` | **전용** `POST` 라우트: `teamId`·`userIds` 검증 후 서버에서 **`GET …/api/team/v1/teams/{teamId}/members`**(팀 멤버)로 교차 검증하고, 허용된 `userIds`만 게이트웨이 `POST /api/v1/expenditure/team/month-rollup`으로 전달한다. 서버가 팀 API를 부를 때의 베이스 오리진은 환경 변수 **`BILLING_TEAM_BFF_BASE_URL`**(선택) 및 `docker-compose.yml`의 `billing-web` 기본값으로 맞춘다. 상세·상태 코드는 [`billing-service-overview-20260412.md`](../billing-service-overview-20260412.md) §4.10. |

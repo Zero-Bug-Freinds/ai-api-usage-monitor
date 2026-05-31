@@ -87,6 +87,32 @@ class UsageSubjectResolverTest {
                 .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode().value()).isEqualTo(502));
     }
 
+    @Test
+    void managedGateway_prefersGatewayEmailOverLookupPk() {
+        IdentityUsageSubjectClient client = mock(IdentityUsageSubjectClient.class);
+        UsageSubjectResolver resolver = resolver(client, true);
+
+        assertThat(resolver.resolveForManagedGateway("User@Example.com", "3")).isEqualTo("user@example.com");
+    }
+
+    @Test
+    void managedGateway_pkOnly_resolvesViaIdentity() {
+        IdentityUsageSubjectClient client = mock(IdentityUsageSubjectClient.class);
+        when(client.resolveEmailFromOpaqueOwner("3")).thenReturn(Optional.of("owner@example.com"));
+
+        UsageSubjectResolver resolver = resolver(client, true);
+
+        assertThat(resolver.resolveForManagedGateway(null, "3")).isEqualTo("owner@example.com");
+    }
+
+    @Test
+    void managedGateway_emailOnlyKeyLookup_normalizesEmail() {
+        IdentityUsageSubjectClient client = mock(IdentityUsageSubjectClient.class);
+        UsageSubjectResolver resolver = resolver(client, true);
+
+        assertThat(resolver.resolveForManagedGateway(null, "Dev@Local.com")).isEqualTo("dev@local.com");
+    }
+
     private static UsageSubjectResolver resolver(IdentityUsageSubjectClient client, boolean enabled) {
         ProxyProperties props = new ProxyProperties();
         props.getUsageSubject().setEnabled(enabled);

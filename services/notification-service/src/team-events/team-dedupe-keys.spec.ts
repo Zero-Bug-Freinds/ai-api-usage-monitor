@@ -40,4 +40,76 @@ describe('buildInAppDedupeKey', () => {
     expect(key).toContain('7');
     expect(key).toContain('joiner');
   });
+
+  const apiKeyUpdatedBase = {
+    eventType: 'TEAM_API_KEY_UPDATED',
+    teamId: '3',
+    teamName: 'Acme',
+    actorUserId: 'actor-1',
+    recipientUserIds: ['user-a'],
+    apiKeyId: 99,
+    provider: 'OPENAI',
+    alias: 'prod-key',
+  } as TeamDomainEventPayload;
+
+  it('scopes TEAM_API_KEY_UPDATED by occurredAt so repeated updates get distinct keys', () => {
+    const first = buildInAppDedupeKey(
+      'TEAM_API_KEY_UPDATED',
+      { ...apiKeyUpdatedBase, occurredAt: '2026-05-31T04:00:00.000Z' } as TeamDomainEventPayload,
+      'user-a',
+    );
+    const second = buildInAppDedupeKey(
+      'TEAM_API_KEY_UPDATED',
+      { ...apiKeyUpdatedBase, occurredAt: '2026-05-31T04:01:00.000Z' } as TeamDomainEventPayload,
+      'user-a',
+    );
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+    expect(first).not.toEqual(second);
+    expect(first).toContain('2026-05-31T04:00:00.000Z');
+    expect(second).toContain('2026-05-31T04:01:00.000Z');
+  });
+
+  it('dedupes TEAM_API_KEY_UPDATED when occurredAt is identical (MQ retry)', () => {
+    const payload = {
+      ...apiKeyUpdatedBase,
+      occurredAt: '2026-05-31T04:00:00.000Z',
+    } as TeamDomainEventPayload;
+    const a = buildInAppDedupeKey('TEAM_API_KEY_UPDATED', payload, 'user-a');
+    const b = buildInAppDedupeKey('TEAM_API_KEY_UPDATED', payload, 'user-a');
+    expect(a).toBe(b);
+  });
+
+  it('returns null for TEAM_API_KEY_UPDATED without valid occurredAt', () => {
+    expect(
+      buildInAppDedupeKey(
+        'TEAM_API_KEY_UPDATED',
+        { ...apiKeyUpdatedBase, occurredAt: 'not-a-date' } as TeamDomainEventPayload,
+        'user-a',
+      ),
+    ).toBeNull();
+    expect(
+      buildInAppDedupeKey(
+        'TEAM_API_KEY_UPDATED',
+        { ...apiKeyUpdatedBase, occurredAt: undefined } as TeamDomainEventPayload,
+        'user-a',
+      ),
+    ).toBeNull();
+  });
+
+  it('keeps TEAM_API_KEY_REGISTERED dedupe per key without occurredAt', () => {
+    const payload = {
+      ...apiKeyUpdatedBase,
+      eventType: 'TEAM_API_KEY_REGISTERED',
+      occurredAt: '2026-05-31T04:00:00.000Z',
+    } as TeamDomainEventPayload;
+    const first = buildInAppDedupeKey('TEAM_API_KEY_REGISTERED', payload, 'user-a');
+    const second = buildInAppDedupeKey(
+      'TEAM_API_KEY_REGISTERED',
+      { ...payload, occurredAt: '2026-05-31T05:00:00.000Z' } as TeamDomainEventPayload,
+      'user-a',
+    );
+    expect(first).toBe(second);
+    expect(first).not.toContain('2026-05-31');
+  });
 });

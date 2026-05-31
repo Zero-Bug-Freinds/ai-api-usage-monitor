@@ -73,6 +73,7 @@
 ### 4.4 웹(BFF)
 
 - `billing-service/web`은 지출 대시보드 UI 및 BFF 패턴으로 Gateway의 billing API를 호출하는 구성을 따른다(세부는 해당 `web` 디렉터리 및 팀 문서 참고).
+- **지출 차트 색(프론트만):** Recharts 막대 색은 `services/billing-service/web/src/lib/expenditure/chart-colors.ts` 상수로 관리한다(일별 `#3182F6`, 월별 `#0D9488`, 팀 키별 `#1D4ED8`). `expenditure-dashboard.tsx`가 이를 사용하며, **`:root` 전역 design token·`billing-service/src` 집계 API는 변경하지 않는다.**
 - **팀 모드 새로고침**: 지출 화면에서 **개인** 모드의 「새로고침」과 대등하게, **팀** 모드에서도 상단 「새로고침」으로 **내 팀 목록 갱신 + 현재 선택 팀·기간 집계**를 한 번에 다시 불러온다(기존 「팀 목록 새로고침」「집계」 버튼과 병행 가능).
 - **제품 범위(로드맵 대비)**: 개인·팀 모드 지출 UX(예산 게이지, 일별/인당 차트, 비결제 시뮬레이션 고지)는 구현·검증 대상에 포함한다. **조직 단위 집계 UI**는 동일 로드맵에서 범위 밖(취소)으로 두었다.
 

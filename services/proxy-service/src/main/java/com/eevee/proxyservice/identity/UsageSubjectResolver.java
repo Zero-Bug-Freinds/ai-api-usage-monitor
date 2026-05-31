@@ -35,7 +35,32 @@ public class UsageSubjectResolver {
     }
 
     /**
-     * Resolves the subject stored on {@link com.eevee.proxyservice.key.ApiKeyClient.ResolvedApiKey#ownerUserId()}
+     * Resolves usage subject for managed JWT / internal key lookup (same email rules as fingerprint personal).
+     *
+     * @param gatewaySubject   gateway {@code X-User-Id} (JWT {@code sub}, email when present)
+     * @param keyLookupUserId  {@link com.eevee.proxyservice.security.UserContext#keyLookupUserId()} for identity lookup
+     */
+    public String resolveForManagedGateway(String gatewaySubject, String keyLookupUserId) {
+        String normalizedGateway = UsageSubjectNormalizer.normalizeSubject(gatewaySubject);
+        if (normalizedGateway != null && UsageSubjectNormalizer.looksLikeEmail(normalizedGateway)) {
+            return UsageSubjectNormalizer.normalizeEmail(normalizedGateway);
+        }
+        if (!enabled) {
+            String normalizedLookup = UsageSubjectNormalizer.normalizeSubject(keyLookupUserId);
+            if (normalizedLookup != null && UsageSubjectNormalizer.looksLikeEmail(normalizedLookup)) {
+                return UsageSubjectNormalizer.normalizeEmail(normalizedLookup);
+            }
+            return firstPresent(normalizedLookup, normalizedGateway);
+        }
+        String opaqueId = keyLookupUserId;
+        if (opaqueId == null || opaqueId.isBlank()) {
+            opaqueId = gatewaySubject;
+        }
+        return resolvePersonalFingerprintOwner(opaqueId, gatewaySubject);
+    }
+
+    /**
+     * Resolves the subject stored on {@link com.eevee.proxyservice.key.ApiKeyClient.ResolvedApiKey#usageSubjectUserId()}
      * and {@link com.eevee.usage.events.UsageRecordedEvent#userId()}.
      */
     public String resolveForFingerprintOwner(FingerprintOwnerLookup owner, String gatewaySubjectFallback) {

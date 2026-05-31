@@ -61,7 +61,7 @@
 
 - **사용 로그 테이블:** API가 주는 `occurredAt`(ISO-8601)은 브라우저에서 **`Asia/Seoul`(KST)** 기준으로 포맷해 표시한다(`services/usage-service/web/src/lib/usage/format-occurred-at-kst.ts` 등). 헤더 문구는 이에 맞춘다.
 - **집계·요약 카드:** 일자·“오늘” 등 대시보드 집계는 **KST 기준 일자**로 해석/표시하며, 로그 행 시각과 동일한 KST 기준을 사용한다.
-- **차트 색상:** 대시보드 차트 팔레트는 **무채색 계열**로 통일해 UI 톤과 맞춘다(`usage-dashboard.tsx`의 `CHART_COLORS`, 그리드 스트로크 등).
+- **차트 색상(표현 계층만):** 요청량·모델 비중 등 대부분 차트는 `usage-dashboard.tsx`의 `CHART_COLORS`·`PROVIDER_COLOR` 등 **무채색·공급사 고정색**을 쓴다. **「응답 성능 및 안정성」** `ComposedChart`는 `services/usage-service/web/src/lib/usage/latency-chart-colors.ts`에 **지연(indigo/violet)·안정성(green/rose)** 팔레트를 두고, 범례 라벨·하단 안내는 라이트 배경 대비를 맞춘다. API·집계 필드는 변경하지 않는다.
 
 #### 3.1.2 응답 성능 및 안정성 차트(개인·팀별 나의)
 

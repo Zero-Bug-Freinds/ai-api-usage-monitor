@@ -3,6 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
+import {
+  EXPENDITURE_DAILY_BAR_FILL,
+  EXPENDITURE_MONTHLY_BAR_FILL,
+  EXPENDITURE_TEAM_KEY_BAR_FILL,
+} from "@/lib/expenditure/chart-colors";
 import { currentMonthRangeKst, currentMonthStartKst, rangeLastDays } from "@/lib/expenditure/dates";
 import { formatUsd, formatUsdTooltip } from "@/lib/expenditure/money";
 import type {
@@ -809,7 +814,7 @@ export function ExpenditureDashboard() {
                       <XAxis dataKey="key" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={56} />
                       <YAxis tick={{ fontSize: 11 }} width={56} />
                       <Tooltip formatter={formatUsdTooltip} />
-                      <Bar dataKey="usd" fill="var(--color-chart-3)" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="usd" fill={EXPENDITURE_TEAM_KEY_BAR_FILL} radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -1061,7 +1066,7 @@ export function ExpenditureDashboard() {
                     <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} width={56} />
                     <Tooltip formatter={formatUsdTooltip} />
-                    <Bar dataKey="usd" fill="var(--color-chart-1)" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="usd" fill={EXPENDITURE_DAILY_BAR_FILL} radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -1078,7 +1083,7 @@ export function ExpenditureDashboard() {
                     <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} width={56} />
                     <Tooltip formatter={formatUsdTooltip} />
-                    <Bar dataKey="usd" fill="var(--color-chart-2)" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="usd" fill={EXPENDITURE_MONTHLY_BAR_FILL} radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>

@@ -88,6 +88,17 @@ billing:
       queue: ${BILLING_RABBIT_TEAM_DOMAIN_IN_QUEUE:billing-service.team.api-key.domain.queue}
   gateway:
     shared-secret: ${GATEWAY_SHARED_SECRET:local-dev-gateway-shared-secret-do-not-use-in-prod}
+
+# identity -> billing 회원 탈퇴 이벤트 소비 / ACK 발행
+identity:
+  account-deletion-event:
+    exchange: ${IDENTITY_ACCOUNT_DELETION_EVENT_EXCHANGE:identity.events}
+    routing-key: ${IDENTITY_ACCOUNT_DELETION_EVENT_ROUTING_KEY:identity.user.account-deletion-requested}
+    billing:
+      queue: ${IDENTITY_ACCOUNT_DELETION_EVENT_BILLING_QUEUE:billing.account-deletion.requested.queue}
+  account-deletion-ack:
+    exchange: ${IDENTITY_ACCOUNT_DELETION_ACK_EXCHANGE:identity.events}
+    routing-key: ${IDENTITY_ACCOUNT_DELETION_ACK_ROUTING_KEY:identity.user.account-deletion-ack}
   identity:
     enabled: ${BILLING_IDENTITY_ENABLED:false}
     base-url: ${BILLING_IDENTITY_BASE_URL:}

@@ -3,8 +3,17 @@ import type { TeamEventType } from './team-event-types';
 
 const IN_APP_CHANNEL_SCOPE = 'in-app';
 
+function occurredAtKeyPart(payload: TeamDomainEventPayload): string | null {
+  const raw = payload.occurredAt;
+  if (raw == null) return null;
+  const d = raw instanceof Date ? raw : new Date(String(raw));
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
 /**
  * Stable, retry-safe dedupe keys per recipient. Must stay aligned with team-service payloads.
+ * TEAM_API_KEY_UPDATED is per publish (occurredAt); MQ redelivery of the same message still dedupes.
  */
 export function buildInAppDedupeKey(
   eventType: TeamEventType,
@@ -38,8 +47,13 @@ export function buildInAppDedupeKey(
     }
     case 'TEAM_DELETED':
       return `${IN_APP_CHANNEL_SCOPE}:team:${eventType}:${teamId}:${recipientUserId}`;
+    case 'TEAM_API_KEY_UPDATED': {
+      const keyId = payload.apiKeyId;
+      const at = occurredAtKeyPart(payload);
+      if (keyId === undefined || keyId === null || !at) return null;
+      return `${IN_APP_CHANNEL_SCOPE}:team:${eventType}:${teamId}:${String(keyId)}:${recipientUserId}:${at}`;
+    }
     case 'TEAM_API_KEY_REGISTERED':
-    case 'TEAM_API_KEY_UPDATED':
     case 'TEAM_API_KEY_DELETED':
     case 'TEAM_API_KEY_DELETION_SCHEDULED':
     case 'TEAM_API_KEY_DELETION_CANCELLED': {

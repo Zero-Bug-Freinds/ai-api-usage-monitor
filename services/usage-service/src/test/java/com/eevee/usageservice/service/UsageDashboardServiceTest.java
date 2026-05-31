@@ -7,6 +7,7 @@ import com.eevee.usageservice.api.dto.UsageSeriesUnit;
 import com.eevee.usageservice.config.UsageServiceProperties;
 import com.eevee.usageservice.domain.ApiKeyMetadataEntity;
 import com.eevee.usageservice.domain.ApiKeyStatus;
+import com.eevee.usageservice.domain.UsageRecordedLogEntity;
 import com.eevee.usageservice.repository.ApiKeyMetadataRepository;
 import com.eevee.usageservice.repository.UsageRecordedLogRepository;
 import com.eevee.usageservice.repository.analytics.UsageAnalyticsJdbcRepository;
@@ -19,17 +20,22 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
@@ -369,5 +375,148 @@ class UsageDashboardServiceTest {
                 any(ApiKeyCredentialFilter.class)
         );
         verify(analyticsJdbcRepository, never()).aggregateByModelForTeamAndUser(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void logs_teamMemberOnly_withTeamId_queriesTeamTotalLogs() {
+        LocalDate from = LocalDate.of(2025, 6, 1);
+        LocalDate to = LocalDate.of(2025, 6, 5);
+
+        when(apiKeyFilterResolutionService.resolveTeam("team-1", "key-77"))
+                .thenReturn(ApiKeyCredentialFilter.forCredential(List.of("key-77"), null));
+        when(logRepository.pageLogsByTeam(
+                eq("team-1"),
+                any(),
+                any(),
+                isNull(),
+                eq(true),
+                eq(List.of("key-77")),
+                isNull(),
+                isNull(),
+                isNull(),
+                isNull(),
+                any()
+        )).thenReturn(new PageImpl<>(List.of()));
+
+        service.logs(
+                "u1",
+                from,
+                to,
+                null,
+                "key-77",
+                null,
+                null,
+                null,
+                0,
+                20,
+                UsageDataContext.TEAM_MEMBER_ONLY,
+                "team-1"
+        );
+
+        verify(logRepository).pageLogsByTeam(
+                eq("team-1"),
+                any(),
+                any(),
+                isNull(),
+                eq(true),
+                eq(List.of("key-77")),
+                isNull(),
+                isNull(),
+                isNull(),
+                isNull(),
+                any()
+        );
+        verify(logRepository, never()).pageLogsByTeamAndUser(
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                anyBoolean(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any()
+        );
+    }
+
+    @Test
+    void logs_mapsProviderTokenDetailsJsonToDto() {
+        LocalDate from = LocalDate.of(2025, 6, 1);
+        LocalDate to = LocalDate.of(2025, 6, 5);
+        UUID eventId = UUID.randomUUID();
+        String detailsJson =
+                "{\"prompt_cached_tokens\":5,\"completion_reasoning_tokens\":11,\"completion_accepted_prediction_tokens\":0}";
+        UsageRecordedLogEntity entity = new UsageRecordedLogEntity(
+                eventId,
+                Instant.parse("2025-06-03T10:00:00Z"),
+                "corr-1",
+                "user-1",
+                null,
+                null,
+                "key-1",
+                null,
+                "fp",
+                "managed",
+                AiProvider.OPENAI,
+                "gpt-4o",
+                100L,
+                50L,
+                150L,
+                11L,
+                detailsJson,
+                BigDecimal.ZERO,
+                "/proxy/openai/v1/chat/completions",
+                "api.openai.com",
+                null,
+                false,
+                true,
+                200,
+                Instant.now()
+        );
+
+        when(apiKeyFilterResolutionService.resolvePersonal(eq("user-1"), isNull(), isNull()))
+                .thenReturn(ApiKeyCredentialFilter.unrestricted());
+        when(logRepository.pageLogsPersonal(
+                eq("user-1"),
+                any(),
+                any(),
+                isNull(),
+                eq(false),
+                any(),
+                isNull(),
+                isNull(),
+                isNull(),
+                isNull(),
+                any()
+        )).thenReturn(new PageImpl<>(List.of(entity)));
+
+        var response = service.logs(
+                "user-1",
+                from,
+                to,
+                null,
+                null,
+                null,
+                null,
+                null,
+                0,
+                20,
+                UsageDataContext.PERSONAL,
+                null
+        );
+
+        assertThat(response.content()).hasSize(1);
+        var row = response.content().getFirst();
+        assertThat(row.promptCachedTokens()).isEqualTo(5L);
+        assertThat(row.completionReasoningTokens()).isEqualTo(11L);
+        assertThat(row.completionAcceptedPredictionTokens()).isEqualTo(0L);
+        assertThat(row.providerTokenDetails()).isNotNull();
+        assertThat(row.providerTokenDetails()).containsEntry("prompt_cached_tokens", 5);
+        assertThat(row.providerTokenDetails()).containsEntry("completion_reasoning_tokens", 11);
+        assertThat(row.providerTokenDetails()).containsKey("completion_accepted_prediction_tokens");
+        assertThat(row.memberUserId()).isEqualTo("user-1");
     }
 }

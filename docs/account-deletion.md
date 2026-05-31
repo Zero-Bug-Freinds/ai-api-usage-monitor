@@ -74,7 +74,13 @@ sequenceDiagram
 
 `AccountDeletionPendingEntity.allAcknowledged()`는 **`ack_billing` · `ack_usage` · `ack_team` 세 값이 모두 true**여야 `account_deletion_pending` 행을 삭제한다. **`users` 행은 탈퇴 API 성공 직후 이미 삭제**되어 재가입·로그인 실패 UX는 미가입자와 동일하다.
 
-- **billing** · **usage** · **team** ACK: ✅ 구현됨 (로컬 E2E로 pending 플래그·최종 삭제 확인 권장)
+| ACK | 소비자 | 상태 |
+|-----|--------|------|
+| `ack_team` | team-service | ✅ |
+| `ack_billing` | billing-service | ✅ |
+| `ack_usage` | usage-service | ✅ |
+
+세 소비자가 RabbitMQ에 연결되어 있고 purge·ACK가 정상 처리되면 `account_deletion_pending` 행이 제거된다. 로컬 E2E로 pending 플래그·최종 삭제 확인을 권장한다. **남은 갭:** pending stuck 운영(§7.1 #7), notification·agent 병행 정리(§7.5·§7.6).
 
 ---
 
@@ -161,8 +167,8 @@ sequenceDiagram
 | Exchange | Routing key | 큐 (예) | 역할 |
 |----------|-------------|---------|------|
 | `identity.events` | `identity.user.account-deletion-requested` | `team.account-deletion.requested.queue` | team 소비 |
-| `identity.events` | 동일 | `billing.account-deletion.requested.queue` | billing 소비 (예정) |
-| `identity.events` | 동일 | `usage.account-deletion.requested.queue` | usage 소비 (예정) |
+| `identity.events` | 동일 | `billing.account-deletion.requested.queue` | billing 소비 |
+| `identity.events` | 동일 | `usage.account-deletion.requested.queue` | usage 소비 |
 | `identity.events` | `identity.user.account-deletion-ack` | `identity.account-deletion.ack.queue` | identity ACK 수집 |
 
 Exchange: topic, durable. 큐·바인딩은 각 서비스 `@Configuration`에서 declare.
@@ -210,15 +216,21 @@ Exchange: topic, durable. 큐·바인딩은 각 서비스 `@Configuration`에서
 
 ### 5.4 공통 소비자 구현 체크리스트
 
-각 billing · usage · team (및 선택적 notification · agent)에 적용:
+**ACK 필수 소비자 (billing · usage · team)** — 아래 항목 공통:
 
-- [ ] 전용 큐 + `identity.events` 바인딩
-- [ ] `@RabbitListener` + `UserAccountDeletionRequestedEvent` 역직렬화
-- [ ] 실패 시 `AmqpRejectAndDontRequeueException` (team 패턴)
-- [ ] **멱등** purge 서비스
-- [ ] 트랜잭션 커밋 후 ACK 발행
-- [ ] `userEmail` + `String.valueOf(identityUserId)` **lookup 후보** (서비스별 convention 반영)
-- [ ] 단위 테스트 (+ 가능하면 통합 테스트)
+- [x] 전용 큐 + `identity.events` 바인딩
+- [x] `@RabbitListener` + `UserAccountDeletionRequestedEvent` 역직렬화
+- [x] 실패 시 `AmqpRejectAndDontRequeueException` (team 패턴)
+- [x] **멱등** purge 서비스
+- [x] purge `@Transactional` 완료 후 ACK 발행 (team과 동일: cleanup 반환 직후 publish)
+- [x] `userEmail` + `String.valueOf(identityUserId)` **lookup 후보** (billing·usage; team은 `userEmail`만)
+- [x] 단위 테스트 (billing·usage·team)
+
+**선택 소비자 (notification · agent)** — §7.5·§7.6, ACK 불필요:
+
+- [ ] 전용 큐 + 바인딩
+- [ ] 멱등 purge
+- [ ] (선택) 단위·통합 테스트
 
 ### 5.5 환경 변수·설정 키
 
@@ -231,7 +243,7 @@ identity.account-deletion-ack.queue=identity.account-deletion.ack.queue
 identity.account-deletion-ack.routing-key=identity.user.account-deletion-ack
 ```
 
-**team-service** (참고 — billing/usage도 동일 패턴):
+**team-service** (`application.properties`):
 
 ```properties
 identity.account-deletion-event.exchange=identity.events
@@ -241,6 +253,36 @@ identity.account-deletion-ack.exchange=identity.events
 identity.account-deletion-ack.routing-key=identity.user.account-deletion-ack
 ```
 
+**billing-service** (`application.yml`):
+
+```yaml
+identity:
+  account-deletion-event:
+    exchange: identity.events
+    routing-key: identity.user.account-deletion-requested
+    billing:
+      queue: billing.account-deletion.requested.queue
+  account-deletion-ack:
+    exchange: identity.events
+    routing-key: identity.user.account-deletion-ack
+```
+
+**usage-service** (`application.yml`):
+
+```yaml
+identity:
+  account-deletion-event:
+    exchange: identity.events
+    routing-key: identity.user.account-deletion-requested
+    usage:
+      queue: usage.account-deletion.requested.queue
+  account-deletion-ack:
+    exchange: identity.events
+    routing-key: identity.user.account-deletion-ack
+```
+
+환경 변수 오버라이드: `IDENTITY_ACCOUNT_DELETION_EVENT_*`, `IDENTITY_ACCOUNT_DELETION_ACK_*` (team·billing·usage 공통 접두).
+
 ---
 
 ## 6. 구현 상태 (2026-05-31)
@@ -249,8 +291,8 @@ identity.account-deletion-ack.routing-key=identity.user.account-deletion-ack
 |--------|----------|-------|-----|-----------------|
 | identity-service | 발행·ACK 수집 | ✅ (ACK 후) | — | 오케스트레이터 |
 | team-service | ✅ | ✅ (OWNER 팀 삭제·MEMBER 제거) | ✅ `team` | **필수** |
-| billing-service | ✅ | ✅ | ✅ `billing` | **필수** |
-| usage-service | ✅ | ✅ | ✅ `usage` | **필수** |
+| billing-service | ✅ | ✅ (개인 집계 전체) | ✅ `billing` | **필수** |
+| usage-service | ✅ | ✅ (개인 scope) | ✅ `usage` | **필수** |
 | notification-service | ❌ | ❌ | — | 비필수 |
 | agent-service | ✅ | ✅ | — (게이트 밖) | 비필수 |
 | identity-service/web | BFF ✅ | — | — | UI ❌ |
@@ -328,29 +370,39 @@ identity.account-deletion-ack.routing-key=identity.user.account-deletion-ack
 
 **역할:** **개인(Identity) 키** billing 집계 전체 purge → ACK `source=billing`
 
-| # | 작업 |
-|---|------|
-| 1 | `IdentityAccountDeletionRabbitConfig` + 큐 `billing.account-deletion.requested.queue` |
-| 2 | `UserAccountDeletionRequestedListener` |
-| 3 | `UserAccountDeletionCleanupService` (사용자 단위 purge) |
-| 4 | `UserAccountDeletionAckPublisher` |
-| 5 | 테스트 |
+| # | 작업 | 상태 |
+|---|------|------|
+| 1 | `IdentityAccountDeletionRabbitConfig` + 큐 `billing.account-deletion.requested.queue` | ✅ |
+| 2 | `UserAccountDeletionRequestedListener` | ✅ |
+| 3 | `UserAccountDeletionCleanupService` (사용자 단위 purge) | ✅ |
+| 4 | `UserAccountDeletionAckPublisher` | ✅ |
+| 5 | 단위 테스트 | ✅ |
 
 **purge 대상 (개인 `user_id` — 전 키·전 기간)**
 
-| 테이블 | 비고 |
-|--------|------|
-| `daily_expenditure_agg` | |
-| `monthly_expenditure_agg` | |
-| `billing_user_api_key_seen` | |
+| 테이블 | 비고 | 상태 |
+|--------|------|------|
+| `daily_expenditure_agg` | `BillingAggregationJdbc.deleteAllPersonalAggregatesForUser` | ✅ |
+| `monthly_expenditure_agg` | 동일 | ✅ |
+| `billing_user_api_key_seen` | 동일 | ✅ |
 
 **제외 (팀 소유 데이터)**
 
 - `team_api_key_daily_expenditure_agg`, `team_api_key_monthly_expenditure_agg`, `billing_team_api_key` 등
 
-**매칭:** `lower(trim(user_id))` + 이메일·숫자 ID lookup 후보
+**매칭:** `lower(trim(user_id))` + lookup 후보 `userEmail`, `String.valueOf(identityUserId)`
 
-**재사용:** `PersonalExternalApiKeyExpenditurePurgeService` / `BillingAggregationJdbc.deletePersonalAggregatesForExternalApiKey` → **사용자 단위**로 일반화
+**키 단위 purge (참고):** `PersonalExternalApiKeyExpenditurePurgeService` / `deletePersonalAggregatesForExternalApiKey` — Identity **단일 키 삭제** 이벤트용. 계정 탈퇴는 `deleteAllPersonalAggregatesForUser`로 사용자 전체 삭제.
+
+**주요 코드**
+
+| 클래스 | 경로 |
+|--------|------|
+| `IdentityAccountDeletionRabbitConfig` | `services/billing-service/.../config/` |
+| `UserAccountDeletionRequestedListener` | `services/billing-service/.../mq/` |
+| `UserAccountDeletionCleanupService` | `services/billing-service/.../service/` |
+| `UserAccountDeletionAckPublisher` | `services/billing-service/.../service/` |
+| `BillingAggregationJdbc.deleteAllPersonalAggregatesForUser` | `services/billing-service/.../service/BillingAggregationJdbc.java` |
 
 ---
 
@@ -358,32 +410,45 @@ identity.account-deletion-ack.routing-key=identity.user.account-deletion-ack
 
 **역할:** **개인 scope** usage 데이터 purge → ACK `source=usage`
 
-| # | 작업 |
-|---|------|
-| 1 | RabbitMQ config + 큐 `usage.account-deletion.requested.queue` |
-| 2 | Listener + cleanup service + ACK publisher |
-| 3 | 테스트 |
+| # | 작업 | 상태 |
+|---|------|------|
+| 1 | `IdentityAccountDeletionRabbitConfig` + 큐 `usage.account-deletion.requested.queue` | ✅ |
+| 2 | Listener + cleanup + ACK publisher | ✅ |
+| 3 | 단위 테스트 | ✅ |
 
-**purge 대상 (개인 — 기본)**
+**purge 대상 (개인 scope — `team_id` null 또는 빈 문자열)**
 
-| 테이블 / 영역 | 비고 |
-|---------------|------|
-| `usage_recorded_log` | `user_id` |
-| `api_key_metadata` | `key_scope=PERSONAL` |
-| `daily_usage_summary` | |
-| `daily_cumulative_token_by_scope` | rollup·멱등 테이블 포함 |
+| 테이블 / 영역 | 비고 | 상태 |
+|---------------|------|------|
+| `usage_recorded_log` | 개인 트래픽만 | ✅ |
+| `api_key_metadata` | `key_scope=PERSONAL` | ✅ |
+| `daily_usage_summary` | 개인 rollup | ✅ |
+| `daily_cumulative_token_by_scope` | 개인 rollup | ✅ |
 
-**팀 맥락 (`team_id` 있음) — 제품 결정 필요**
+**적용한 제품 결정 (2026-05-31 구현 기준)**
 
-| 옵션 | 설명 |
+| 주제 | 결정 |
 |------|------|
-| A | team 멤버십만 제거, usage 로그 **유지** (팀 감사) |
-| B | 해당 `user_id` 행 **삭제/익명화** |
-| C | OWNER/팀 정책과 연동, 탈퇴 전 팀 처리 **강제** |
+| 팀 맥락 usage (`team_id` 있음) | **옵션 A** — 행 **유지** (team-service가 멤버십 제거, usage는 팀 감사 로그 보존) |
+| 계정 탈퇴 시 로그 | **즉시 삭제** (`retainLogs` 유예 없음, 개인 scope만) |
 
-**로그 보존:** external API key 삭제의 `retainLogs`와 동일하게 계정 탈퇴 시 **즉시 삭제 vs 유예** 기본값 결정.
+`processed_summary_event` · `processed_daily_cumulative_token_event`는 `event_id` 기준 멱등 테이블로, purge 후 고아 행이 남을 수 있으나 ACK 게이트·개인정보 제거 목적에는 영향 없음(추후 정리 작업 가능).
 
-**재사용:** `ApiKeyMetadataSyncService` (`EXTERNAL_API_KEY_DELETED`) — 계정 전체 purge는 **별도 서비스** 필요.
+**미결 (§8)**
+
+- 팀 맥락 **삭제/익명화**(옵션 B)·OWNER 선행 처리(옵션 C)는 미적용.
+
+**키 단위 purge (참고):** `ApiKeyMetadataSyncService.handleExternalApiKeyDeleted` — Identity **단일 키 삭제**용. 계정 탈퇴는 `UsageAccountDeletionJdbc` / `UserAccountDeletionCleanupService`.
+
+**주요 코드**
+
+| 클래스 | 경로 |
+|--------|------|
+| `IdentityAccountDeletionRabbitConfig` | `services/usage-service/.../config/` |
+| `UserAccountDeletionRequestedListener` | `services/usage-service/.../mq/` |
+| `UserAccountDeletionCleanupService` | `services/usage-service/.../service/` |
+| `UserAccountDeletionAckPublisher` | `services/usage-service/.../service/` |
+| `UsageAccountDeletionJdbc` | `services/usage-service/.../repository/` |
 
 ---
 
@@ -433,7 +498,17 @@ Identity 최종 삭제를 **막지 않음**. 개인정보·UX를 위해 **병행
 
 ---
 
-## 8. 제품·정책 결정 (구현 전 합의)
+## 8. 제품·정책 결정
+
+### 8.1 확정·적용됨 (코드 반영)
+
+| # | 주제 | 결정 |
+|---|------|------|
+| 2a | **팀 맥락 usage 로그** | **유지** (옵션 A) — `UsageAccountDeletionJdbc`가 `team_id` 있는 행은 삭제하지 않음 |
+| 2b | **팀 맥락 billing 로그** | **유지** — 팀 API 키 집계 테이블은 purge 대상 아님(§7.3) |
+| 3 | **usage 개인 로그 (계정 탈퇴)** | **즉시 삭제** — `retainLogs` 유예 없음 |
+
+### 8.2 미결 (추가 합의·구현 필요)
 
 | # | 주제 | 선택지 |
 |---|------|--------|
@@ -447,8 +522,8 @@ Identity 최종 삭제를 **막지 않음**. 개인정보·UX를 위해 **병행
 
 ## 9. 구현 우선순위
 
-1. **billing-service** — listener + 사용자 단위 purge + ACK
-2. **usage-service** — listener + 개인 purge + ACK (§8 정책 확정)
+1. ~~**billing-service** — listener + 사용자 단위 purge + ACK~~ ✅
+2. ~~**usage-service** — listener + 개인 purge + ACK (§8 정책 확정)~~ ✅
 3. ~~**identity-service/web** — 설정 UI~~ ✅
 4. **team-service** — `identity_user_sync`, OWNER 정책
 5. **notification-service**, **agent-service** — 프로젝션 정리 (병행)
@@ -466,7 +541,11 @@ Identity 최종 삭제를 **막지 않음**. 개인정보·UX를 위해 **병행
 | Identity MQ | `services/identity-service/src/main/java/.../mq/UserAccountDeletion*.java` |
 | Team consumer | `services/team-service/src/main/java/.../mq/UserAccountDeletionRequestedListener.java` |
 | Team cleanup | `services/team-service/.../service/UserAccountDeletionCleanupService.java` |
+| Billing consumer | `services/billing-service/.../mq/UserAccountDeletionRequestedListener.java` |
+| Billing cleanup / JDBC | `services/billing-service/.../service/UserAccountDeletionCleanupService.java`, `BillingAggregationJdbc.java` |
 | Billing 키 purge (참고) | `services/billing-service/.../PersonalExternalApiKeyExpenditurePurgeService.java` |
+| Usage consumer | `services/usage-service/.../mq/UserAccountDeletionRequestedListener.java` |
+| Usage cleanup / JDBC | `services/usage-service/.../service/UserAccountDeletionCleanupService.java`, `UsageAccountDeletionJdbc.java` |
 | Usage 키 purge (참고) | `services/usage-service/.../ApiKeyMetadataSyncService.java` |
 | Web BFF | `services/identity-service/web/src/app/api/auth/delete-account/route.ts` |
 | BFF 계약 | `docs/contracts/web-identity-bff.md` |
@@ -477,5 +556,6 @@ Identity 최종 삭제를 **막지 않음**. 개인정보·UX를 위해 **병행
 
 | 버전 | 날짜 | 내용 |
 |------|------|------|
+| 1.1 | 2026-05-31 | billing·usage ACK 소비자 구현 반영 — §2.2·§6·§7.3·§7.4·§8·§9·§10·§5.5 갱신 |
 | 1.0 | 2026-05-31 | 초판 — 설계·API·이벤트·서비스별 요구·구현 상태·정책·우선순위 통합 |
 | 1.1 | 2026-05-31 | billing/usage ACK 구현 반영; team OWNER 팀 삭제·MEMBER 제거; agent 프로젝션 purge |
