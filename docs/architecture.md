@@ -315,8 +315,11 @@
   - consume queue(팀 API 키): 기본 **`notification.billing.team.events`** — `BILLING_TEAM_EVENTS_*`
 - Notification (Identity 외부 API 키)
   - consume queue(기본): **`notification.identity.external-api-key.queue`** — `IDENTITY_EXTERNAL_API_KEY_EVENTS_*` ([`services/notification-service/README.md`](../services/notification-service/README.md))
-- Team/Identity 계정 삭제 이벤트
-  - queue 예: `team.account-deletion.requested.queue`, `identity.account-deletion.ack.queue`
+- Team/Identity 계정 삭제 이벤트 ([`docs/account-deletion.md`](account-deletion.md))
+  - publish: `identity.events` / `identity.user.account-deletion-requested` (Identity)
+  - consume: `team.account-deletion.requested.queue`, `billing.account-deletion.requested.queue`, `usage.account-deletion.requested.queue`
+  - publish ACK: `identity.events` / `identity.user.account-deletion-ack` (`source`: `billing` \| `usage` \| `team`)
+  - consume ACK: `identity.account-deletion.ack.queue` (Identity)
 - Team 도메인(팀 생성·초대·API 키 등)
   - publish: **Team Service** — exchange **`team.events`**, routing key **`team-member-added`**
   - consume: **notification-service** — queue **`notification.team.events`**(기본; `TEAM_EVENTS_QUEUE_NAME`로 변경 가능), 바인딩은 배포/Compose에서 `team.events`와 합의. 로컬 루트 `docker-compose.yml`의 `notification-service`는 `rabbitmq`에 의존하고 `RABBITMQ_URL`·소비자 플래그 등을 주입한다.
