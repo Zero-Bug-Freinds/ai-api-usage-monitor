@@ -13,6 +13,7 @@ export function TeamMemberAvatar({ userId, size = 24, className = "", avatarConf
   const src = generateAvatarUrl(userId, avatarConfig)
   const dim = `${size}px`
   return (
+    // eslint-disable-next-line @next/next/no-img-element -- DiceBear SVG; dynamic size, no next/image remote config
     <img
       src={src}
       alt=""
