@@ -1,6 +1,6 @@
 # Web(Next.js) ↔ Notification Service — Notification BFF 계약
 
-버전: 1.3  
+버전: 1.4  
 관련: [web-split-boundary.md](./web-split-boundary.md), [web-identity-bff.md](./web-identity-bff.md)(세션), [`docker/web-edge/nginx.conf.template`](../../docker/web-edge/nginx.conf.template), [architecture.md](../architecture.md) §4.9·§6·§10.2·§13, [web-team-bff.md](./web-team-bff.md) §6.2(팀 도메인 이벤트 스키마), [notification-service-gateway-integration-guide.md](../notification-service-gateway-integration-guide.md) §2(게이트웨이 신뢰 헤더)
 
 **소스 트리:** Notification `web`(UI+BFF)의 **정본**은 `services/notification-service/web/` 이다. Notification 백엔드(Nest+Prisma)는 `services/notification-service/` 이다.
@@ -84,7 +84,8 @@ Notification `web`은 Next `basePath=/notifications`를 사용한다.
 
 - `in-app-notifications` 목록 API의 각 아이템에는 `meta`가 포함될 수 있다(없으면 `null` 또는 누락).
 - UI는 `type`별로 `meta`를 해석해 추가 UI/액션을 렌더링할 수 있다.
-- **목록 표시 정책(Notification `web`):** 기본은 **읽지 않은 알림만** 목록에 포함한다. 사용자가 **읽음 알림 포함**을 켜면 `readAt`이 있는 행도 같은 API 응답을 필터링해 보여준다(서버 계약은 동일·클라이언트 필터).
+- **목록 표시 정책(Notification `web`):** 기본은 **읽지 않은 알림만** 목록에 포함한다. 사용자가 **읽음 알림 포함**을 켜면 `readAt`이 있는 행도 같은 API 응답을 필터링해 보여준다(서버 계약은 동일·클라이언트 필터). 읽지 않은 행에는 **`새 알림`** 배지를 표시한다.
+- **인앱 문구 locale:** `title`/`body`는 RabbitMQ 소비 시 handler locale(기본 **`ko`**, env로 `en` 가능)로 생성·DB 저장된다. UI는 저장된 문자열을 그대로 렌더링한다. env·fallback 정본: [`services/notification-service/README.md`](../../services/notification-service/README.md) §「인앱 알림 locale」.
 
 #### 4.4.1 Team 초대 알림 (`type = team:TEAM_INVITE_CREATED`)
 

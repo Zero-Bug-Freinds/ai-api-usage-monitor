@@ -19,7 +19,7 @@ public final class OfficialProviderModelPriceCatalog {
     /**
      * Calendar date when the numbers below were checked against the official pages (YYYY-MM-DD).
      */
-    public static final String DOCUMENTED_AS_OF = "2026-05-09";
+    public static final String DOCUMENTED_AS_OF = "2026-05-30";
 
     /** Google AI Gemini API pricing (Korean page). */
     public static final String REFERENCE_URL_GOOGLE_GEMINI = "https://ai.google.dev/gemini-api/docs/pricing?hl=ko";
@@ -105,6 +105,51 @@ public final class OfficialProviderModelPriceCatalog {
                         DEFAULT_VALID_FROM,
                         REFERENCE_URL_GOOGLE_GEMINI,
                         "Gemini 2.0 Flash (legacy), Paid tier Standard, input/output USD per 1M tokens (see official Gemini pricing page)"
+                ),
+                new CatalogRow(
+                        AiProvider.GOOGLE,
+                        "gemini-2.0-flash-lite",
+                        new BigDecimal("0.10"),
+                        new BigDecimal("0.40"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_GOOGLE_GEMINI,
+                        "Gemini 2.0 Flash-Lite (legacy), Paid tier Standard, input/output USD per 1M tokens (see official Gemini pricing page)"
+                ),
+                new CatalogRow(
+                        AiProvider.GOOGLE,
+                        "gemini-3-flash",
+                        new BigDecimal("0.50"),
+                        new BigDecimal("3.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_GOOGLE_GEMINI,
+                        "Gemini 3 Flash, Paid tier Standard, input/output USD per 1M tokens (see official Gemini pricing page)"
+                ),
+                new CatalogRow(
+                        AiProvider.GOOGLE,
+                        "gemini-3-pro",
+                        new BigDecimal("2.00"),
+                        new BigDecimal("12.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_GOOGLE_GEMINI,
+                        "Gemini 3 Pro, Paid tier Standard, input/output USD per 1M tokens (see official Gemini pricing page)"
+                ),
+                new CatalogRow(
+                        AiProvider.GOOGLE,
+                        "gemini-3.1-flash-lite",
+                        new BigDecimal("0.25"),
+                        new BigDecimal("1.50"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_GOOGLE_GEMINI,
+                        "Gemini 3.1 Flash-Lite, Paid tier Standard, input/output USD per 1M tokens (see official Gemini pricing page)"
+                ),
+                new CatalogRow(
+                        AiProvider.GOOGLE,
+                        "gemini-3.5-flash",
+                        new BigDecimal("1.50"),
+                        new BigDecimal("9.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_GOOGLE_GEMINI,
+                        "Gemini 3.5 Flash, Paid tier Standard, input/output USD per 1M tokens (see official Gemini pricing page)"
                 ),
                 new CatalogRow(
                         AiProvider.OPENAI,
@@ -486,6 +531,15 @@ public final class OfficialProviderModelPriceCatalog {
                 ),
                 new CatalogRow(
                         AiProvider.ANTHROPIC,
+                        "claude-opus-4-8",
+                        new BigDecimal("5.00"),
+                        new BigDecimal("25.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_ANTHROPIC,
+                        "Claude Opus 4.8 — Base input $5/MTok, Output $25/MTok (Anthropic pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.ANTHROPIC,
                         "claude-opus-4-7",
                         new BigDecimal("5.00"),
                         new BigDecimal("25.00"),
@@ -504,6 +558,15 @@ public final class OfficialProviderModelPriceCatalog {
                 ),
                 new CatalogRow(
                         AiProvider.ANTHROPIC,
+                        "claude-opus-4-5",
+                        new BigDecimal("5.00"),
+                        new BigDecimal("25.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_ANTHROPIC,
+                        "Claude Opus 4.5 (alias) — Base input $5/MTok, Output $25/MTok (Anthropic pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.ANTHROPIC,
                         "claude-opus-4-5-20251101",
                         new BigDecimal("5.00"),
                         new BigDecimal("25.00"),
@@ -519,6 +582,24 @@ public final class OfficialProviderModelPriceCatalog {
                         DEFAULT_VALID_FROM,
                         REFERENCE_URL_ANTHROPIC,
                         "Claude Opus 4.1 (dated id) — Base input $15/MTok, Output $75/MTok (Anthropic pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.ANTHROPIC,
+                        "claude-opus-4-0",
+                        new BigDecimal("15.00"),
+                        new BigDecimal("75.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_ANTHROPIC,
+                        "Claude Opus 4.0 (alias) — Base input $15/MTok, Output $75/MTok (Anthropic pricing table)"
+                ),
+                new CatalogRow(
+                        AiProvider.ANTHROPIC,
+                        "claude-opus-4-20250514",
+                        new BigDecimal("15.00"),
+                        new BigDecimal("75.00"),
+                        DEFAULT_VALID_FROM,
+                        REFERENCE_URL_ANTHROPIC,
+                        "Claude Opus 4 (dated id) — Base input $15/MTok, Output $75/MTok (Anthropic pricing table)"
                 ),
                 new CatalogRow(
                         AiProvider.ANTHROPIC,
