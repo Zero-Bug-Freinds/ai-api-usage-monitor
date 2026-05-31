@@ -25,7 +25,10 @@ export const PERSONAL_DASHBOARD_MESSAGES = {
   },
   latency: {
     noData: "선택 구간에 지연(latency) 데이터가 없거나 부족합니다.",
-    noCompare: "이전 동일 길이 구간의 평균 지연과 비교할 수 없습니다.",
+    p95Explain:
+      "전체 요청 중 가장 빠른 95%의 요청이 완료되기까지 걸린 시간 (상위 5%의 느린 유저가 겪은 지연)",
+    p99Explain:
+      "전체 요청 중 가장 빠른 99%의 요청이 완료되기까지 걸린 시간 (상위 1%의 극단적으로 느린 유저가 겪은 지연)",
   },
   errors: {
     validation: {
@@ -122,13 +125,13 @@ export function latencyInsightBannerText(
   insight: LatencyInsightResponse | null,
   comparePhrase: string,
   formatLatencyMs: (ms: number | null | undefined) => string,
-): string {
+): string | null {
   const latency = PERSONAL_DASHBOARD_MESSAGES.latency
   if (!insight || insight.currentAvgLatencyMs == null) {
     return latency.noData
   }
   if (insight.previousAvgLatencyMs == null) {
-    return latency.noCompare
+    return null
   }
   const cp = insight.changePercent
   const currentFormatted = formatLatencyMs(insight.currentAvgLatencyMs)

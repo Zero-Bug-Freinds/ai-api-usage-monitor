@@ -24,12 +24,12 @@ class UserAccountDeletionRequestedListenerTest {
 				new UserAccountDeletionRequestedListener(objectMapper, cleanupService, ackPublisher);
 		UserAccountDeletionRequestedEvent event = UserAccountDeletionRequestedEvent.of(11L, "member@test.com");
 		String body = objectMapper.writeValueAsString(event);
-		when(cleanupService.cleanupByUserId("member@test.com"))
-				.thenReturn(new UserAccountDeletionCleanupService.CleanupResult(1L, 2L));
+		when(cleanupService.cleanup(event))
+				.thenReturn(new UserAccountDeletionCleanupService.CleanupResult(0, 0, 1, 2, 1, 0));
 
 		listener.onMessage(body);
 
-		verify(cleanupService).cleanupByUserId("member@test.com");
+		verify(cleanupService).cleanup(event);
 		verify(ackPublisher).publish(event);
 	}
 

@@ -39,7 +39,7 @@ permissions:
   id-token: write
 
 env:
-  AWS_DEPLOY_ROLE_ARN: arn:aws:iam::010545334370:role/DeployRole
+  AWS_DEPLOY_ROLE_ARN: arn:aws:iam::839621079201:role/DeployRole
 
 jobs:
   roll-instances:

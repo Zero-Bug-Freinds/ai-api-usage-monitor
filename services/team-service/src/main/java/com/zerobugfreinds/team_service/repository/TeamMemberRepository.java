@@ -1,5 +1,6 @@
 package com.zerobugfreinds.team_service.repository;
 
+import com.zerobugfreinds.team_service.domain.TeamMemberRole;
 import com.zerobugfreinds.team_service.entity.TeamMemberEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -11,6 +12,9 @@ import java.util.Optional;
 public interface TeamMemberRepository extends JpaRepository<TeamMemberEntity, Long> {
 	List<TeamMemberEntity> findAllByUserId(String userId);
 	List<TeamMemberEntity> findAllByUserIdIn(List<String> userIds);
+
+	List<TeamMemberEntity> findAllByUserIdInAndRole(List<String> userIds, TeamMemberRole role);
+
 	List<TeamMemberEntity> findAllByTeamId(Long teamId);
 	@Query("select distinct teamMember.userId from TeamMemberEntity teamMember")
 	List<String> findDistinctUserIds();

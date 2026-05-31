@@ -33,12 +33,17 @@ public class UserAccountDeletionRequestedListener {
 	public void onMessage(String body) {
 		try {
 			UserAccountDeletionRequestedEvent event = objectMapper.readValue(body, UserAccountDeletionRequestedEvent.class);
-			UserAccountDeletionCleanupService.CleanupResult result = cleanupService.cleanupByUserId(event.userEmail());
+			UserAccountDeletionCleanupService.CleanupResult result = cleanupService.cleanup(event);
 			log.info(
-					"Handled UserAccountDeletionRequestedEvent userEmail={} deletedMemberships={} deletedInvitations={}",
+					"Handled UserAccountDeletionRequestedEvent identityUserId={} userEmail={} deletedTeams={} deletedTeamApiKeys={} removedMemberMemberships={} deletedInvitations={} deletedMembershipRows={} deletedIdentityUserSyncRows={}",
+					event.identityUserId(),
 					event.userEmail(),
-					result.deletedMemberships(),
-					result.deletedInvitations()
+					result.deletedTeams(),
+					result.deletedTeamApiKeys(),
+					result.removedMemberMemberships(),
+					result.deletedInvitations(),
+					result.deletedMembershipRows(),
+					result.deletedIdentityUserSyncRows()
 			);
 			ackPublisher.publish(event);
 		} catch (Exception e) {

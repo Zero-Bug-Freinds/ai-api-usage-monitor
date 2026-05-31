@@ -56,7 +56,7 @@ describe("latencyInsightBannerText", () => {
         "전일 동기 대비",
         fmt,
       ),
-    ).toBe(PERSONAL_DASHBOARD_MESSAGES.latency.noCompare)
+    ).toBeNull()
   })
 })
 

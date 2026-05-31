@@ -500,6 +500,40 @@ public class TeamService {
 		if (teamApiKeyRepository.existsByTeamId(teamId)) {
 			throw new TeamDeletionBlockedException("팀 API 키를 모두 삭제한 뒤 팀을 삭제할 수 있습니다");
 		}
+		deleteTeamInternal(actorUserId, team, teamId);
+	}
+
+	/**
+	 * 회원 탈퇴 시 팀장(OWNER)이 소유한 팀을 삭제한다. 호출 전 팀 API 키는 이미 제거되어 있어야 한다.
+	 */
+	@Transactional
+	public void deleteTeamForAccountDeletion(String actorUserId, Long teamId) {
+		TeamEntity team = teamRepository.findById(teamId)
+				.orElseThrow(() -> new TeamNotFoundException("팀을 찾을 수 없습니다"));
+		deleteTeamInternal(actorUserId, team, teamId);
+	}
+
+	/**
+	 * 회원 탈퇴 시 팀원(MEMBER) 멤버십만 제거한다. OWNER 팀은 {@link #deleteTeamForAccountDeletion}으로 처리한다.
+	 */
+	@Transactional
+	public void removeMemberForAccountDeletion(String memberUserId, Long teamId) {
+		if (!StringUtils.hasText(memberUserId)) {
+			throw new IllegalArgumentException("userId는 필수입니다");
+		}
+		String normalized = memberUserId.trim();
+		TeamEntity team = teamRepository.findById(teamId)
+				.orElseThrow(() -> new TeamNotFoundException("팀을 찾을 수 없습니다"));
+		TeamMemberEntity membership = teamMemberRepository.findByTeamIdAndUserId(teamId, normalized)
+				.orElse(null);
+		if (membership == null || membership.getRole() == TeamMemberRole.OWNER) {
+			return;
+		}
+		teamMemberRepository.delete(membership);
+		publish(TeamMemberRemovedEvent.of(normalized, normalized, teamId, team.getName(), Instant.now()));
+	}
+
+	private void deleteTeamInternal(String actorUserId, TeamEntity team, Long teamId) {
 		List<String> memberSnapshot = teamMemberRepository.findAllByTeamId(teamId).stream()
 				.map(TeamMemberEntity::getUserId)
 				.filter(StringUtils::hasText)

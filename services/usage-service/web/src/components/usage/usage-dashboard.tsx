@@ -1210,6 +1210,13 @@ export function UsageDashboard() {
   const todayKst = formatKstIsoDate()
   const periodPrefix = kpiPeriodPrefix(rangeFrom, rangeTo, todayKst)
   const compareCostLabel = costCompareLabel(rangeFrom, rangeTo, todayKst)
+  const latencyInsightBanner = latencyInsightBannerText(
+    latencyInsight,
+    compareCostLabel,
+    formatLatencyMsHuman,
+  )
+  const showLatencyP95P99Hints =
+    latencyInsight?.currentAvgLatencyMs != null && latencyInsight.previousAvgLatencyMs == null
 
   const rangeCost = kpiSummary ? toNumber(kpiSummary.totalEstimatedCost) : 0
   /** 오늘 선택 시 카드 금액은 intraday KPI와 동일 기준(전일 동시창 비교와 일치). */
@@ -1460,9 +1467,17 @@ export function UsageDashboard() {
 
           <section className="mb-8 rounded-lg border border-border p-4 shadow-sm">
             <h2 className="mb-3 text-lg font-medium">응답 성능 및 안정성</h2>
-            <div className="mb-4 rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm leading-relaxed text-foreground">
-              {latencyInsightBannerText(latencyInsight, compareCostLabel, formatLatencyMsHuman)}
-            </div>
+            {latencyInsightBanner != null ? (
+              <div className="mb-4 rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm leading-relaxed text-foreground">
+                {latencyInsightBanner}
+              </div>
+            ) : null}
+            {showLatencyP95P99Hints ? (
+              <div className="mb-4 space-y-1 text-xs text-muted-foreground">
+                <p>P95 지연: {PERSONAL_DASHBOARD_MESSAGES.latency.p95Explain}</p>
+                <p>P99 지연: {PERSONAL_DASHBOARD_MESSAGES.latency.p99Explain}</p>
+              </div>
+            ) : null}
             <div className="h-[400px] min-h-[400px] w-full min-w-0">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={latencyChartRows}>
@@ -1536,8 +1551,9 @@ export function UsageDashboard() {
                     dataKey={USAGE_CHART_DATA_KEYS.p95LatencyMs}
                     name="P95 지연"
                     stroke={LATENCY_P95_LINE}
-                    strokeWidth={1.25}
-                    strokeDasharray="4 3"
+                    strokeWidth={1.5}
+                    strokeDasharray="8 5"
+                    strokeLinecap="round"
                     dot={false}
                     connectNulls
                     hide={!!latencyLegendHidden.p95LatencyMs}
@@ -1549,7 +1565,8 @@ export function UsageDashboard() {
                     name="P99 지연"
                     stroke={LATENCY_P99_LINE}
                     strokeWidth={1.25}
-                    strokeDasharray="2 2"
+                    strokeDasharray="2 6"
+                    strokeLinecap="round"
                     dot={false}
                     connectNulls
                     hide={!!latencyLegendHidden.p99LatencyMs}

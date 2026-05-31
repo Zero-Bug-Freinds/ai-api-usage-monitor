@@ -8,6 +8,11 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 
 import { Button, Input, Label } from "@ai-usage/ui"
+import {
+  consumeAccountDeletedNotice,
+  DEFAULT_ACCOUNT_DELETED_MESSAGE,
+  storeAccountDeletedNotice,
+} from "@/lib/auth/account-deleted-notice"
 import { apiFetch } from "@/lib/api/client-fetch"
 import { navigateAfterLogin } from "@/lib/auth/cross-app-navigation"
 import { getSafeNextPath } from "@/lib/auth/safe-next-path"
@@ -31,6 +36,7 @@ export function LoginForm() {
   const searchParams = useSearchParams()
   const [state, setState] = React.useState<FormState>({ status: "idle" })
   const [showPassword, setShowPassword] = React.useState(false)
+  const [accountDeletedNotice, setAccountDeletedNotice] = React.useState<string | null>(null)
 
   const form = useForm<LoginRequestInput>({
     resolver: zodResolver(loginRequestSchema),
@@ -76,12 +82,39 @@ export function LoginForm() {
 
   const isSubmitting = state.status === "submitting"
 
+  React.useEffect(() => {
+    if (searchParams.get("deleted") === "1") {
+      const raw = searchParams.get("message")
+      let message = DEFAULT_ACCOUNT_DELETED_MESSAGE
+      if (raw) {
+        try {
+          message = decodeURIComponent(raw)
+        } catch {
+          message = raw
+        }
+      }
+      storeAccountDeletedNotice(message)
+      router.replace("/login")
+      return
+    }
+    const stored = consumeAccountDeletedNotice()
+    if (stored) {
+      setAccountDeletedNotice(stored)
+    }
+  }, [router, searchParams])
+
   return (
     <div className="w-full max-w-md rounded-xl border bg-card p-6 shadow-sm">
       <div className="space-y-1">
         <h1 className="text-xl font-semibold tracking-tight">로그인</h1>
         <p className="text-sm text-muted-foreground">이메일과 비밀번호로 로그인합니다.</p>
       </div>
+
+      {accountDeletedNotice ? (
+        <div className="mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-400">
+          {accountDeletedNotice}
+        </div>
+      ) : null}
 
       <form className="mt-6 space-y-4" onSubmit={form.handleSubmit(onSubmit)} noValidate>
         <div className="space-y-2">

@@ -10,7 +10,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * 회원 탈퇴: 비밀번호 검증 후 대기 행을 두고 삭제 요청 이벤트를 보낸다.
- * billing·usage·team 이 ACK 를 보낸 뒤 {@link AccountDeletionCoordinationService}가 identity 로컬을 정리한다.
+ * 연동 서비스 ACK 후 {@link AccountDeletionCoordinationService}가 pending 행만 정리한다.
  */
 @Service
 public class AccountDeletionService {
@@ -18,22 +18,29 @@ public class AccountDeletionService {
 	private final UserRepository userRepository;
 	private final PasswordEncoder passwordEncoder;
 	private final AccountDeletionCoordinationService accountDeletionCoordinationService;
+	private final IdentityAccountLocalDeletionService identityAccountLocalDeletionService;
 	private final UserAccountDeletionEventPublisher userAccountDeletionEventPublisher;
+	private final RefreshTokenRevocationService refreshTokenRevocationService;
 
 	public AccountDeletionService(
 			UserRepository userRepository,
 			PasswordEncoder passwordEncoder,
 			AccountDeletionCoordinationService accountDeletionCoordinationService,
-			UserAccountDeletionEventPublisher userAccountDeletionEventPublisher
+			IdentityAccountLocalDeletionService identityAccountLocalDeletionService,
+			UserAccountDeletionEventPublisher userAccountDeletionEventPublisher,
+			RefreshTokenRevocationService refreshTokenRevocationService
 	) {
 		this.userRepository = userRepository;
 		this.passwordEncoder = passwordEncoder;
 		this.accountDeletionCoordinationService = accountDeletionCoordinationService;
+		this.identityAccountLocalDeletionService = identityAccountLocalDeletionService;
 		this.userAccountDeletionEventPublisher = userAccountDeletionEventPublisher;
+		this.refreshTokenRevocationService = refreshTokenRevocationService;
 	}
 
 	/**
-	 * 비밀번호 검증 → 탈퇴 대기 등록 → 삭제 요청 이벤트 발행 (로컬 사용자 행은 ACK 후 삭제).
+	 * 비밀번호 검증 → pending 등록 → 세션 무효화 → 연동 정리 이벤트 발행 → identity 사용자 행 즉시 삭제.
+	 * 재로그인·재가입은 미가입자와 동일하게 동작한다(동일 이메일 재가입 가능). pending 은 ACK 용도만 남긴다.
 	 */
 	public void deleteAuthenticatedAccount(Long userId, String rawPassword) {
 		if (userId == null) {
@@ -48,9 +55,14 @@ public class AccountDeletionService {
 			throw new InvalidCredentialsException("Invalid password");
 		}
 
+		Long identityUserId = user.getId();
+		String userEmail = user.getEmail();
+
 		accountDeletionCoordinationService.registerDeletionRequested(user);
+		refreshTokenRevocationService.revokeAllForAccountDeletion(identityUserId);
 		userAccountDeletionEventPublisher.publish(
-				UserAccountDeletionRequestedEvent.of(user.getId(), user.getEmail())
+				UserAccountDeletionRequestedEvent.of(identityUserId, userEmail)
 		);
+		identityAccountLocalDeletionService.purgeUserIdentityImmediately(identityUserId);
 	}
 }

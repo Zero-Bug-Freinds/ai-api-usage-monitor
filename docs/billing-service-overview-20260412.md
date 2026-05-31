@@ -119,7 +119,7 @@
 
 **기간 제한**: `from`~`to` 포함 일수가 `billing.analytics.max-range-days`(기본 400)를 넘으면 `IllegalArgumentException` → HTTP 400.
 
-**예산 연동**: `billing.identity.enabled=true`이고 `base-url`·`budget-path-template`이 유효할 때만 `IdentityBudgetClient`가 GET으로 JSON을 읽는다. Identity 응답은 `monthlyBudgetUsd`(합계)와 `monthlyBudgetsByKey`(키별 목록)를 포함할 수 있으며, 현재 billing은 하위 호환을 위해 루트 `monthlyBudgetUsd`를 요약에 반영한다. **예산 임계 AMQP**는 `monthlyBudgetsByKey`에서만 키·프로바이더별 금액을 취한다(`docs/billing-identity-budget.md` 참고). 404·비활성·오류 시 예산 필드는 null에 가깝게 동작(클라이언트는 empty optional).
+**예산 연동**: `billing.identity.enabled=true`이고 `base-url`·`budget-path-template`이 유효할 때만 `IdentityBudgetClient`가 GET으로 JSON을 읽는다. 설정 키는 **`billing.identity.*`** (`application.yml`의 `billing:` 블록; env `BILLING_IDENTITY_*`). Compose 로컬 기본 `BILLING_IDENTITY_ENABLED=true`, 호스트 bootRun 기본 `false`. `budget-path-template` env 미설정 시 `/api/identity/v1/users/budget?email={userId}` (`docs/billing-identity-budget.md`). Identity 응답은 `monthlyBudgetUsd`(합계)와 `monthlyBudgetsByKey`(키별 목록)를 포함할 수 있으며, 현재 billing은 하위 호환을 위해 루트 `monthlyBudgetUsd`를 요약에 반영한다. **예산 임계 AMQP**는 `monthlyBudgetsByKey`에서만 키·프로바이더별 금액을 취한다(`docs/billing-identity-budget.md` 참고). HTTP 미호출·실패·404 → API `monthlyBudgetUsd` **`null`**; 연동 성공·예산 없음 → **`0`**.
 `budget-path-template`에 `{userId}`가 들어가고 이메일을 쿼리에 넣는 구성(예: `...?email={userId}`)에서도 깨지지 않도록 billing은 URL-safe 인코딩으로 URI를 구성한다.
 
 ### 4.8 스케줄러 (`MonthlyExpenditureFinalizeScheduler`)
@@ -313,16 +313,16 @@ X-Gateway-Auth: local-dev-gateway-shared-secret-do-not-use-in-prod
 
 | 항목 | 내용 |
 |------|------|
-| **설정** | `billing.identity.enabled`, `billing.identity.base-url`, `billing.identity.budget-path-template` (`application.yml` / env). |
+| **설정** | `billing.identity.enabled`, `billing.identity.base-url`, `billing.identity.budget-path-template` — **`billing:`** 블록 아래 (`application.yml` / env `BILLING_IDENTITY_*`). Compose 로컬 기본 enabled `true`. |
 | **호출** | `IdentityBudgetClient`가 `RestClient`로 GET; 경로에 `{userId}` 치환을 지원. Identity 응답은 `monthlyBudgetUsd`(합계)와 `monthlyBudgetsByKey`(키별 예산) 확장을 포함할 수 있다. **지출 요약 API** 등에서는 루트 `monthlyBudgetUsd`를 주로 반영하고, **예산 임계 AMQP**는 `fetchMonthlyBudgetUsdForKey(userId, provider, apiKeyId)`로 `monthlyBudgetsByKey`에서 **해당 외부 키 ID·프로바이더** 행만 매칭한다(`apiKeyId`는 숫자 문자열로 파싱 가능해야 함; billing `AiProvider.GOOGLE`은 Identity JSON의 **`GOOGLE`** 행과 매칭하고, 레거시 **`GEMINI`** 행도 호환한다). |
-| **실패 시** | 404 및 기타 오류는 **예산 없음**으로 취급(지출 합계 API는 계속 동작). |
-| **용도** | `GET /expenditure/summary` 응답에 **예산 vs 지출** 표시를 풍부히 하기 위한 선택적 연동이다. |
+| **실패 시** | HTTP 미호출·오류·404 → **`monthlyBudgetUsd: null`**. 연동 OK·예산 미설정 → **`0`**. 지출 합계 API는 계속 동작. |
+| **용도** | `GET /expenditure/summary`·`monthly-budget-status` 응답에 **예산 vs 지출** 표시. Billing web(`/billing`)은 `null`/`0`/`>0`별 안내 문구 분리(`docs/billing-identity-budget.md` §Billing 지출 UI). |
 
 ### 7.5 `billing-service/web` (Next.js)
 
 | 항목 | 내용 |
 |------|------|
-| **역할** | 브라우저 → **BFF** → API Gateway → billing Spring. 쿠키의 액세스 토큰을 Gateway로 넘긴다. |
+| **역할** | 브라우저 → **BFF** → API Gateway → billing Spring. 쿠키의 액세스 토큰을 Gateway로 넘긴다. 지출 화면은 Identity 예산 `monthlyBudgetUsd`가 **`null`**(연동 없음/실패) vs **`0`**(미설정) vs **`>0`**(진행률 표시)을 구분한다. |
 | **개발 모드** | `GATEWAY_DEV_MODE` 시 Gateway 대신 **직접 `X-User-Id`**를 붙이기 위해 Identity 세션 API를 호출한다. |
 
 ### 7.6 공유 라이브러리 `libs/usage-events`

@@ -1,6 +1,6 @@
 # Web(Next.js) ↔ Identity 인증 BFF 계약
 
-버전: 1.27  
+버전: 1.28  
 관련: [docs/architecture.md](../architecture.md) §1.3, §3.3, §10.2, §13, [Identity 인증 API 계약](../identity-auth-api-contract.md), [회원 탈퇴](../account-deletion.md), [Web·Gateway Usage BFF](./web-gateway-bff.md)(Usage BFF·`basePath` 호출 맵), [Web·Team BFF](./web-team-bff.md), [저장소 구조](../repository-structure.md) §6, [웹 경계](./web-split-boundary.md)(§2.4 로컬 `web-edge` Nginx)
 
 **소스 트리:** BFF·화면의 **정본**은 `services/identity-service/web/` 이다. **공용 UI(Shadcn 래퍼·`cn`)** 는 루트 pnpm workspace **`@ai-usage/ui`**(`packages/ui`)를 참조한다([web-split-boundary.md §1.1](./web-split-boundary.md)). Identity vs Usage 라우트·미들웨어 매처는 [web-split-boundary.md](./web-split-boundary.md) §2·§3.
@@ -124,6 +124,15 @@
 3. BFF → Identity: `POST {IDENTITY_SERVICE_URL}/api/auth/reset-password`
 4. **성공 시** 비밀번호가 갱신되며, 웹은 안내 후 **`/login`** 으로 이동할 수 있다. 토큰이 잘못되었거나 만료된 경우 Identity는 `400`과 안내 메시지를 반환할 수 있다.
 
+### 2.9 `POST /api/auth/delete-account` 동작
+
+1. 브라우저 → BFF: `POST /api/auth/delete-account`, JSON `{ "password": "…" }` (설정 화면 `account-settings-view`)
+2. BFF: 본문 `password` 검증. 프론트는 `delete-account.schema` Zod로 추가 검증.
+3. **`access_token` 쿠키가 없으면** `401`.
+4. BFF → Gateway: `POST {GATEWAY_URL|WEB_GATEWAY_URL}/api/identity/auth/delete-account`, `Authorization: Bearer {access_token}`.
+5. **성공 시** Identity `200` + `success=true` + `회원 탈퇴가 완료되었습니다…` 메시지. BFF는 **`access_token` 쿠키 삭제** 후 동일 본문을 `200`으로 전달. 프론트는 **`/login?deleted=1&message=…`** 로 이동. 이후 동일 이메일 **로그인은 미가입자와 동일한 실패**, **재가입(회원가입)은 즉시 가능**(identity `users` 행 즉시 삭제).
+6. 오케스트레이션·팀 OWNER 정책: [account-deletion.md](../account-deletion.md).
+
 ---
 
 ## 3. 회원가입 계약 (정합성)
@@ -182,7 +191,7 @@
 - `access_token` **httpOnly 쿠키**가 없으면 BFF는 Identity를 호출하지 않고 `401`을 반환한다.
 - 경로는 **`v1`으로 시작하는 세그먼트만** 허용한다(예: 브라우저 `GET /api/identity/v1/me/profile` → 업스트림 `GET /api/v1/me/profile`). **`/api/auth/*`** 는 §2의 전용 BFF 라우트를 쓴다.
 - 응답 본문·상태 코드는 업스트림을 그대로 전달한다(캐시는 `Cache-Control: no-store`).
-- 웹 **설정** 화면의 계정 요약은 `GET /api/auth/session`(§2)을 사용한다. 팀 도메인은 `team-service`로 분리되어 [web-team-bff.md](./web-team-bff.md)를 따른다. **`/teams`** 에서 팀 API를 호출할 때는 `web-edge`가 `/api/team/v1/*`를 Team BFF로 라우팅한다.
+- 웹 **설정** 화면(`account-settings-view`)의 계정 요약은 `GET /api/auth/session`(§2)을 사용한다. **회원 탈퇴**는 `POST /api/auth/delete-account`(§2.9)를 사용한다. 팀 도메인은 `team-service`로 분리되어 [web-team-bff.md](./web-team-bff.md)를 따른다. **`/teams`** 에서 팀 API를 호출할 때는 `web-edge`가 `/api/team/v1/*`를 Team BFF로 라우팅한다.
 
 ---
 

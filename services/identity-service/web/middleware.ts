@@ -6,15 +6,12 @@ import { NextResponse } from "next/server"
  * 쿠키가 없으면 로그인 페이지로 이동한다.
  */
 export function middleware(request: NextRequest) {
-  const token = request.cookies.get("access_token")?.value
-  const isLoggedIn = request.cookies.get("is_logged_in")?.value === "true"
-  if (token || isLoggedIn) {
+  const token = request.cookies.get("access_token")?.value?.trim()
+  if (token) {
     return NextResponse.next()
   }
 
-  const loginUrl = new URL("/login", request.url)
-  loginUrl.searchParams.set("next", request.nextUrl.pathname)
-  return NextResponse.redirect(loginUrl)
+  return NextResponse.redirect(new URL("/login", request.url))
 }
 
 export const config = {

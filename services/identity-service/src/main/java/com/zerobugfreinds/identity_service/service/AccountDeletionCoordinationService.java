@@ -74,7 +74,7 @@ public class AccountDeletionCoordinationService {
 		}
 		pendingRepository.save(pending);
 		if (pending.allAcknowledged()) {
-			identityAccountLocalDeletionService.deleteAllDataForUser(pending.getUserId());
+			identityAccountLocalDeletionService.finalizePendingAfterAllAcks(pending.getUserId());
 		}
 	}
 }
