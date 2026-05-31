@@ -224,6 +224,40 @@ class UsageRecordedServiceTest {
     }
 
     @Test
+    void google_completionReasoningTokens_persistedInProviderTokenDetailsJson() {
+        UUID eventId = UUID.randomUUID();
+        UsageRecordedEvent event = new UsageRecordedEvent(
+                eventId,
+                Instant.parse("2025-01-01T00:00:00Z"),
+                "corr-1",
+                "user-1",
+                null,
+                null,
+                "key-1",
+                null,
+                "deadbeef00112233",
+                "managed",
+                AiProvider.GOOGLE,
+                "gemini-2.5-flash",
+                new TokenUsage("gemini-2.5-flash", 10L, 20L, 50L, null, null, 42L, null, null, null),
+                BigDecimal.ZERO,
+                "/proxy/google/v1beta/models/gemini-2.5-flash:generateContent",
+                "generativelanguage.googleapis.com",
+                false,
+                true,
+                200
+        );
+        when(repository.existsByEventId(eventId)).thenReturn(false);
+
+        usageRecordedService.persist(event);
+
+        ArgumentCaptor<UsageRecordedLogEntity> captor = ArgumentCaptor.forClass(UsageRecordedLogEntity.class);
+        verify(repository).save(captor.capture());
+        assertThat(captor.getValue().getProviderTokenDetails()).contains("completion_reasoning_tokens");
+        assertThat(captor.getValue().getProviderTokenDetails()).contains("42");
+    }
+
+    @Test
     void google_reasoningTokens_withoutExplicitReasoning_isNull() {
         UUID eventId = UUID.randomUUID();
         UsageRecordedEvent event = new UsageRecordedEvent(

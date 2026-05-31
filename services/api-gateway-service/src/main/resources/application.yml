@@ -104,6 +104,6 @@ gateway:
 
 logging:
   level:
-    org.springframework.security: DEBUG
+    org.springframework.security: DEBUGdf
     org.springframework.security.web.server: TRACE
     org.springframework.security.web.server.util.matcher: TRACE

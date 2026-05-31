@@ -5,12 +5,9 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   ComposedChart,
   Legend,
   Line,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -46,6 +43,7 @@ import {
   TeamBffMaskedHttpError,
   usageFetchErrorMessage,
 } from "@/lib/usage/messaging/team-bff-fetch-errors"
+import { DashboardRequestShareRow } from "@/components/usage/dashboard-request-share-row"
 
 export type TeamDashboardProps = {
   viewTeamIdFromQuery?: string
@@ -86,10 +84,9 @@ type BffResponse = {
 
 type TeamSummary = { id: string; name: string; createdAt?: string }
 
+const TEAM_DASHBOARD_FETCH_LOG_TAG = "Team Dashboard Fetch Error"
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const AnyLegend = Legend as any
-
-const TEAM_DASHBOARD_FETCH_LOG_TAG = "Team Dashboard Fetch Error"
 
 function messageFromJsonBody(body: unknown): string | null {
   if (!body || typeof body !== "object") return null
@@ -162,20 +159,8 @@ function stabilityRateDomain(rows: MainRow[]): [number, number] {
   return [0, hi]
 }
 
-function hashToUint(str: string): number {
-  let h = 2166136261
-  for (let i = 0; i < str.length; i++) {
-    h ^= str.charCodeAt(i)
-    h = Math.imul(h, 16777619)
-  }
-  return h >>> 0
-}
-
-const MODEL_PALETTE = ["#9a3412", "#c2410c", "#ea580c", "#F97316", "#fb923c", "#fdba74", "#64748b"]
-
 /** 로딩·성공 동일 레이아웃용 (기존 성공 상태 높이에 맞춤). */
 const TEAM_DASH_MAIN_CHART_H = "h-[380px] min-h-[380px]"
-const TEAM_DASH_PIE_WRAP_MIN = "min-h-[300px]"
 const TEAM_DASH_BAR_CHART_H = "h-[300px] min-h-[300px]"
 const TEAM_DASH_STATS_ROW_MIN = "min-h-[2.75rem]"
 
@@ -197,11 +182,6 @@ function TeamDashStatsRowSkeleton() {
       <div className="h-4 w-32 animate-pulse rounded bg-muted/50" />
     </div>
   )
-}
-
-function colorForModel(model: string, provider: string): string {
-  const idx = hashToUint(`${provider}::${model}`) % MODEL_PALETTE.length
-  return MODEL_PALETTE[idx] ?? "#94a3b8"
 }
 
 function truncateModelLabel(model: string, max = 36): string {
@@ -454,14 +434,6 @@ export default function TeamDashboard({
   const rangeCost = toNumber(summary?.totalEstimatedCost)
   const rangeSuccess = rangeRequests > 0 ? Math.max(0, rangeRequests - rangeErrors) : 0
   const successRatePercent = rangeRequests > 0 ? (100 * rangeSuccess) / rangeRequests : 0
-  const pieData = React.useMemo(() => {
-    const models = data?.byModel ?? []
-    const totalReq = models.reduce((s, m) => s + m.requestCount, 0)
-    if (totalReq <= 0) return []
-    return models
-      .filter((m) => m.requestCount > 0)
-      .map((m) => ({ name: truncateModelLabel(m.model), fullName: m.model, provider: m.provider, value: m.requestCount, percent: m.requestCount / totalReq }))
-  }, [data?.byModel])
   const barModelData = React.useMemo(
     () =>
       [...(data?.byModel ?? [])]
@@ -608,43 +580,12 @@ export default function TeamDashboard({
             ) : null}
           </section>
           <div className="mb-8 flex min-w-0 flex-col gap-6">
-            <section className="min-w-0 rounded-lg border border-border p-4 shadow-sm">
-              <h2 className="mb-4 text-lg font-medium">모델별 요청 비중</h2>
-              {showSecondarySkeleton ? (
-                <div className={`flex ${TEAM_DASH_PIE_WRAP_MIN} flex-col items-center gap-4 sm:flex-row`}>
-                  <TeamDashBlockSkeleton className="h-[260px] w-full max-w-[260px] shrink-0 rounded-full" />
-                  <div className="flex w-full max-h-[220px] flex-1 flex-col gap-2 overflow-hidden">
-                    {[0, 1, 2, 3, 4].map((i) => (
-                      <div key={i} className="h-3 w-full animate-pulse rounded bg-muted/45" aria-hidden="true" />
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-              {!showSecondarySkeleton ? (
-                <>
-                  <div className={`flex ${TEAM_DASH_PIE_WRAP_MIN} flex-col items-center gap-4 sm:flex-row`}>
-                    <div className="h-[260px] w-full max-w-[260px] shrink-0">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie data={pieData.length > 0 ? pieData : [{ name: "—", value: 1, fullName: "__empty__", provider: "GOOGLE", percent: 1 }]} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius="52%" outerRadius="78%" paddingAngle={2}>
-                            {(pieData.length > 0 ? pieData : [{ name: "—", fullName: "__empty__", provider: "GOOGLE", value: 1 }]).map((entry, i) => (
-                              <Cell key={`cell-${entry.fullName}-${i}`} fill={pieData.length === 0 ? "var(--border)" : colorForModel(entry.fullName ?? "", entry.provider ?? "")} fillOpacity={pieData.length === 0 ? 0.35 : 1} />
-                            ))}
-                          </Pie>
-                          <Tooltip formatter={(value) => formatRequestCount(Number(value ?? 0))} cursor={false} />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <ul className="max-h-[220px] w-full flex-1 space-y-1 overflow-auto text-xs">
-                      {pieData.length === 0 ? <li className="text-muted-foreground">—</li> : pieData.map((p) => <li key={p.fullName} className="flex justify-between gap-2"><span className="truncate text-muted-foreground">{p.name}</span><span className="tabular-nums">{(p.percent * 100).toFixed(1)}%</span></li>)}
-                    </ul>
-                  </div>
-                  {pieData.length === 0 ? (
-                    <p className="mt-3 text-center text-sm text-muted-foreground">{TEAM_DASHBOARD_MESSAGES.hints.noModelUsage}</p>
-                  ) : null}
-                </>
-              ) : null}
-            </section>
+            <DashboardRequestShareRow
+              byModel={data?.byModel ?? []}
+              loading={showSecondarySkeleton}
+              emptyHint={TEAM_DASHBOARD_MESSAGES.hints.noModelUsage}
+              emptyAggregatedLabel={TEAM_DASHBOARD_MESSAGES.hints.noModelUsage}
+            />
             <section className="min-w-0 rounded-lg border border-border p-4 shadow-sm">
               <h2 className="mb-4 text-lg font-medium">모델별 요청 수 (상위)</h2>
               {showSecondarySkeleton ? (

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { CircleHelp, ChevronDown, ChevronRight, Filter, Loader2, RotateCcw, X } from "lucide-react"
+import { ChevronDown, ChevronRight, Filter, Loader2, RotateCcw, X } from "lucide-react"
 
 import {
   Button,
@@ -12,12 +12,13 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
 } from "@ai-usage/ui"
+import { OpenAiTokenDetailsSection } from "@/components/usage/open-ai-token-details-section"
+import { ProviderTokenDetailsCommonSection } from "@/components/usage/provider-token-details-common-section"
+import { UsageLogTokenSummaryRow } from "@/components/usage/usage-log-token-summary-row"
 import { UsageFilterBar } from "@/components/usage/usage-filter-bar"
+import { formatUsageLogTableCost } from "@/lib/usage/format"
+import { formatTeamMemberLocalId } from "@/lib/usage/format-team-member-label"
 import { buildUsageQuery, fetchUsageJson } from "@/lib/usage/api/fetch-usage"
 import { DASHBOARD_API_KEY_ALL, DASHBOARD_API_KEY_NONE } from "@/lib/usage/dashboard-api-key-constants"
 import {
@@ -43,6 +44,10 @@ import {
   type UsageLogDataTab,
 } from "@/lib/usage/hooks/usage-log-tab-storage"
 import {
+  hasValidProviderTokenDetails,
+  openAiDedicatedDetailsSum,
+} from "@/lib/usage/log-provider-token-details"
+import {
   USAGELOG_MESSAGES,
   logUsageLogFetchError,
   logUsageLogPersonalApiKeysFetch,
@@ -58,43 +63,6 @@ const LOG_SUCCESS_ALL = "__all__"
 function logProviderToTeamDashboardFilter(provider: string): string {
   if (provider === LOG_PROVIDER_ALL) return DASHBOARD_PROVIDER_ALL
   return provider
-}
-
-function toLongOrZero(v: number | null | undefined): number {
-  return typeof v === "number" && Number.isFinite(v) ? v : 0
-}
-
-function openAiDetailsSum(row: UsageLogEntryResponse): number {
-  return (
-    toLongOrZero(row.promptCachedTokens) +
-    toLongOrZero(row.promptAudioTokens) +
-    toLongOrZero(row.completionReasoningTokens) +
-    toLongOrZero(row.completionAudioTokens) +
-    toLongOrZero(row.completionAcceptedPredictionTokens) +
-    toLongOrZero(row.completionRejectedPredictionTokens)
-  )
-}
-
-function reasoningTokensTooltipContent() {
-  return (
-    <div className="space-y-1">
-      <p className="font-medium text-foreground">추론 토큰 산출</p>
-      <p>
-        Google / OpenAI: 모델이 직접 응답 전문에 포함하여 제공한 실제 추론 수치입니다.
-      </p>
-      <p>Anthropic: 현재 사용 기록이 없어 추론 토큰 상세값이 없는 경우가 있습니다.</p>
-      <p>공통: 모델의 사고 과정(Reasoning) 및 시스템 처리 비용을 포함합니다.</p>
-    </div>
-  )
-}
-
-function outputTokensTooltipContent() {
-  return (
-    <div className="space-y-1">
-      <p className="font-medium text-foreground">출력 토큰 산출</p>
-      <p>출력 토큰에서는 추론 토큰을 제외한 순수 응답량만 표시합니다.</p>
-    </div>
-  )
 }
 
 export function UsageLogPanel() {
@@ -115,7 +83,7 @@ export function UsageLogPanel() {
   const [personalApiKeyOptions, setPersonalApiKeyOptions] = React.useState<UsageLogApiKeyItemResponse[]>([])
   const [modelDraft, setModelDraft] = React.useState("")
   const [logRefresh, setLogRefresh] = React.useState(0)
-  const [openAiDetailsRow, setOpenAiDetailsRow] = React.useState<UsageLogEntryResponse | null>(null)
+  const [selectedLogRow, setSelectedLogRow] = React.useState<UsageLogEntryResponse | null>(null)
   const [showAdvancedFilters, setShowAdvancedFilters] = React.useState(false)
 
   const appliedModelMask = modelDraft.trim()
@@ -131,15 +99,15 @@ export function UsageLogPanel() {
   }, [])
 
   React.useEffect(() => {
-    if (!openAiDetailsRow) return
+    if (!selectedLogRow) return
     const prev = document.body.style.overflow
     document.body.style.overflow = "hidden"
     return () => {
       document.body.style.overflow = prev
     }
-  }, [openAiDetailsRow])
+  }, [selectedLogRow])
 
-  const closeOpenAiDetails = React.useCallback(() => setOpenAiDetailsRow(null), [])
+  const closeDetailPanel = React.useCallback(() => setSelectedLogRow(null), [])
 
   const providerParam =
     logProvider !== LOG_PROVIDER_ALL ? (logProvider as UsageProviderFilter) : undefined
@@ -477,28 +445,7 @@ export function UsageLogPanel() {
       >
         <div className="flex flex-wrap gap-4">
           <div className="space-y-2 sm:w-40">
-            <div className="flex items-center gap-1">
-              <Label htmlFor="log-reasoning" className="mb-0">
-                추론 토큰
-              </Label>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      id="log-reasoning-help"
-                      className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-muted-foreground/40 text-[10px] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                      aria-label="추론 토큰 설명"
-                    >
-                      <CircleHelp className="h-3 w-3" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" align="start">
-                    {reasoningTokensTooltipContent()}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
+            <Label htmlFor="log-reasoning">추론 토큰</Label>
             <Select
               value={reasoningFilter}
               onValueChange={(v) => {
@@ -601,94 +548,47 @@ export function UsageLogPanel() {
       ) : (
         <>
           <div className="overflow-x-auto rounded-md border border-border">
-            <table className="w-full min-w-[980px] table-auto text-left text-sm [&_th]:px-2.5 [&_td]:px-2.5">
+            <table className="w-full min-w-[760px] table-auto text-left text-sm [&_th]:px-2.5 [&_td]:px-2.5">
               <thead className="border-b border-border bg-muted/40">
                 <tr>
                   <th className="py-2 font-medium whitespace-nowrap">시각 (KST)</th>
+                  {logDataTab === "team" ? (
+                    <th className="py-2 font-medium whitespace-nowrap">팀원</th>
+                  ) : null}
                   <th className="py-2 font-medium whitespace-nowrap">공급자</th>
                   <th className="py-2 font-medium">별칭</th>
                   <th className="py-2 font-medium">모델</th>
-                  <th className="py-2 font-medium whitespace-nowrap">입력 토큰</th>
-                  <th className="py-2 font-medium whitespace-nowrap">
-                    <span className="inline-flex items-center gap-1">
-                      추론 토큰
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-muted-foreground/40 text-[10px] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                              aria-label="추론 토큰 설명"
-                            >
-                              <CircleHelp className="h-3 w-3" />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" align="start">
-                            {reasoningTokensTooltipContent()}
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </span>
-                  </th>
-                  <th className="py-2 font-medium whitespace-nowrap">
-                    <span className="inline-flex items-center gap-1">
-                      출력 토큰
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-muted-foreground/40 text-[10px] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                              aria-label="출력 토큰 설명"
-                            >
-                              <CircleHelp className="h-3 w-3" />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" align="start">
-                            {outputTokensTooltipContent()}
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </span>
-                  </th>
                   <th className="py-2 font-medium whitespace-nowrap">합계</th>
+                  <th className="py-2 font-medium whitespace-nowrap">비용</th>
                   <th className="py-2 font-medium text-right whitespace-nowrap">상세</th>
                 </tr>
               </thead>
               <tbody>
-                {logs.content.map((row: UsageLogEntryResponse) => {
-                  const isOpenAi = row.provider === "OPENAI"
-                  const hasOpenAiDetails = isOpenAi && openAiDetailsSum(row) > 0
-                  const ert = row.estimatedReasoningTokens
-                  const reasoningDisplay = !row.requestSuccessful
-                    ? "-"
-                    : typeof ert === "number" && Number.isFinite(ert)
-                      ? String(ert)
-                      : "0"
-                  return (
-                    <tr
-                      key={row.eventId}
-                      className={[
-                        "border-b border-border last:border-0",
-                        isOpenAi && hasOpenAiDetails ? "cursor-pointer hover:bg-muted/40" : "",
-                      ].join(" ")}
-                      onClick={() => {
-                        if (!hasOpenAiDetails) return
-                        setOpenAiDetailsRow(row)
-                      }}
-                      role={isOpenAi && hasOpenAiDetails ? "button" : undefined}
-                      tabIndex={isOpenAi && hasOpenAiDetails ? 0 : -1}
-                      onKeyDown={(e) => {
-                        if (!hasOpenAiDetails) return
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault()
-                          setOpenAiDetailsRow(row)
-                        }
-                      }}
-                    >
+                {logs.content.map((row: UsageLogEntryResponse) => (
+                  <tr
+                    key={row.eventId}
+                    className="cursor-pointer border-b border-border last:border-0 hover:bg-muted/40"
+                    onClick={() => setSelectedLogRow(row)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault()
+                        setSelectedLogRow(row)
+                      }
+                    }}
+                  >
                     <td className="py-2 font-mono text-xs whitespace-nowrap">
                       {formatOccurredAtKst(row.occurredAt)}
                     </td>
+                    {logDataTab === "team" ? (
+                      <td
+                        className="py-2 max-w-[120px] truncate whitespace-nowrap"
+                        title={row.memberUserId ?? undefined}
+                      >
+                        {formatTeamMemberLocalId(row.memberUserId)}
+                      </td>
+                    ) : null}
                     <td className="py-2 whitespace-nowrap">{row.provider}</td>
                     <td className="py-2 max-w-[180px] truncate" title={row.apiKeyAlias ?? undefined}>
                       {row.apiKeyAlias ?? "—"}
@@ -696,20 +596,15 @@ export function UsageLogPanel() {
                     <td className="py-2 max-w-[220px] truncate font-mono text-xs" title={row.model}>
                       {row.model}
                     </td>
-                    <td className="py-2 tabular-nums whitespace-nowrap">{row.promptTokens ?? "—"}</td>
-                    <td className="py-2 tabular-nums whitespace-nowrap">{reasoningDisplay}</td>
-                    <td className="py-2 tabular-nums whitespace-nowrap">{row.completionTokens ?? "—"}</td>
                     <td className="py-2 tabular-nums whitespace-nowrap">{row.totalTokens ?? "—"}</td>
+                    <td className="py-2 tabular-nums whitespace-nowrap">
+                      {formatUsageLogTableCost(row.estimatedCost, row.requestSuccessful)}
+                    </td>
                     <td className="py-2 text-right text-muted-foreground">
-                      {isOpenAi && hasOpenAiDetails ? (
-                        <ChevronRight className="inline-block h-4 w-4" aria-label="상세보기" />
-                      ) : (
-                        <span className="inline-block h-4 w-4" aria-hidden="true" />
-                      )}
+                      <ChevronRight className="inline-block h-4 w-4" aria-label="상세보기" />
                     </td>
                   </tr>
-                  )
-                })}
+                ))}
               </tbody>
             </table>
           </div>
@@ -743,105 +638,39 @@ export function UsageLogPanel() {
         </>
       )}
 
-      {openAiDetailsRow ? (
+      {selectedLogRow ? (
         <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/40" onClick={closeOpenAiDetails} />
+          <div className="absolute inset-0 bg-black/40" onClick={closeDetailPanel} />
 
           <aside
             className="absolute right-0 top-0 h-full w-full max-w-md overflow-y-auto border-l border-border bg-card shadow-xl"
-            aria-label="OpenAI 상세 로그 패널"
+            aria-label={`${selectedLogRow.provider} 상세 로그 패널`}
           >
             <div className="p-4">
               <div className="flex items-start justify-between gap-3 border-b border-border pb-3">
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold">OpenAI 상세 토큰</p>
+                  <p className="text-sm font-semibold">{selectedLogRow.provider} 상세값</p>
                   <p className="mt-1 truncate text-xs text-muted-foreground">
-                    {openAiDetailsRow.provider} / {openAiDetailsRow.model}
+                    {selectedLogRow.provider} / {selectedLogRow.model}
                   </p>
                 </div>
-                <Button type="button" variant="outline" size="sm" onClick={closeOpenAiDetails}>
+                <Button type="button" variant="outline" size="sm" onClick={closeDetailPanel}>
                   닫기
                 </Button>
               </div>
 
-              {(() => {
-                const cached = toLongOrZero(openAiDetailsRow.promptCachedTokens)
-                const promptAudio = toLongOrZero(openAiDetailsRow.promptAudioTokens)
-                const reasoning = toLongOrZero(openAiDetailsRow.completionReasoningTokens)
-                const completionAudio = toLongOrZero(openAiDetailsRow.completionAudioTokens)
-                const accepted = toLongOrZero(openAiDetailsRow.completionAcceptedPredictionTokens)
-                const rejected = toLongOrZero(openAiDetailsRow.completionRejectedPredictionTokens)
+              <UsageLogTokenSummaryRow row={selectedLogRow} />
 
-                const bothPredZero = accepted === 0 && rejected === 0
-                const predSum = accepted + rejected
+              {selectedLogRow.provider === "OPENAI" && openAiDedicatedDetailsSum(selectedLogRow) > 0 ? (
+                <OpenAiTokenDetailsSection row={selectedLogRow} />
+              ) : null}
 
-                return (
-                  <div className="mt-4 space-y-5">
-                    <section className="space-y-3">
-                      <h3 className="text-sm font-semibold">Prompt Details</h3>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <div className="rounded-md border border-border/70 p-3">
-                          <p className="text-xs text-muted-foreground">Cached Tokens</p>
-                          <p className="mt-1 tabular-nums text-sm font-semibold">{cached.toLocaleString("en-US")}</p>
-                        </div>
-                        <div className="rounded-md border border-border/70 p-3">
-                          <p className="text-xs text-muted-foreground">Audio Tokens</p>
-                          <p className="mt-1 tabular-nums text-sm font-semibold">{promptAudio.toLocaleString("en-US")}</p>
-                        </div>
-                      </div>
-                    </section>
-
-                    <section className="space-y-3">
-                      <h3 className="text-sm font-semibold">Completion Details</h3>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <div className="rounded-md border border-border/70 p-3">
-                          <p className="text-xs text-muted-foreground">Reasoning Tokens</p>
-                          <p className="mt-1 tabular-nums text-sm font-semibold">{reasoning.toLocaleString("en-US")}</p>
-                        </div>
-                        <div className="rounded-md border border-border/70 p-3">
-                          <p className="text-xs text-muted-foreground">Audio Tokens</p>
-                          <p className="mt-1 tabular-nums text-sm font-semibold">{completionAudio.toLocaleString("en-US")}</p>
-                        </div>
-                      </div>
-
-                      <div className="rounded-md border border-border/70 p-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-xs text-muted-foreground">Prediction Tokens</p>
-                            <p className="mt-1 text-sm font-semibold tabular-nums">
-                              Accepted {accepted.toLocaleString("en-US")} / Rejected {rejected.toLocaleString("en-US")}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="mt-3">
-                          {bothPredZero ? (
-                            <p className="text-xs text-muted-foreground">두 값 모두 0</p>
-                          ) : (
-                            <>
-                              <div className="flex h-2 overflow-hidden rounded bg-muted/30" aria-label="Accepted/Rejected prediction mini graph">
-                                <div
-                                  className="h-full bg-emerald-500"
-                                  style={{ flexGrow: accepted }}
-                                  aria-hidden="true"
-                                />
-                                <div
-                                  className="h-full bg-rose-500"
-                                  style={{ flexGrow: rejected }}
-                                  aria-hidden="true"
-                                />
-                              </div>
-                              <p className="mt-2 text-[11px] text-muted-foreground tabular-nums">
-                                Accepted {Math.round((accepted / predSum) * 100)}% · Rejected {Math.round((rejected / predSum) * 100)}%
-                              </p>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </section>
-                  </div>
-                )
-              })()}
+              {hasValidProviderTokenDetails(selectedLogRow.providerTokenDetails) ? (
+                <ProviderTokenDetailsCommonSection
+                  providerTokenDetails={selectedLogRow.providerTokenDetails!}
+                  excludeOpenAiDedicatedKeys={selectedLogRow.provider === "OPENAI"}
+                />
+              ) : null}
             </div>
           </aside>
         </div>
