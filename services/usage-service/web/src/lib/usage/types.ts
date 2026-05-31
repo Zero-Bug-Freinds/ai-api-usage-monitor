@@ -110,6 +110,7 @@ export type UsageLogEntryResponse = {
   streaming: boolean | null
   requestSuccessful: boolean
   upstreamStatusCode: number | null
+  providerTokenDetails?: Record<string, unknown> | null
 }
 
 export type PagedLogsResponse = {
