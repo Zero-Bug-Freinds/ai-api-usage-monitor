@@ -30,6 +30,74 @@ const PROVIDERS: { value: AiProviderCode; label: string }[] = [
 
 const MAX_RANGE_DAYS = 400;
 
+type BudgetState = "unavailable" | "unset" | "ok";
+
+type BudgetUi = {
+  totalCostUsd: number;
+  monthlyBudgetUsd: number | null;
+  remainingUsd: number | null;
+  pct: number | null;
+  budgetState: BudgetState;
+};
+
+function resolveBudgetUi(total: number, budget: number | null | undefined): BudgetUi {
+  if (budget == null) {
+    return {
+      totalCostUsd: total,
+      monthlyBudgetUsd: null,
+      remainingUsd: null,
+      pct: null,
+      budgetState: "unavailable",
+    };
+  }
+  if (budget <= 0) {
+    return {
+      totalCostUsd: total,
+      monthlyBudgetUsd: 0,
+      remainingUsd: null,
+      pct: null,
+      budgetState: "unset",
+    };
+  }
+  const remaining = Math.max(0, budget - total);
+  const pct = Math.min(100, (total / budget) * 100);
+  return {
+    totalCostUsd: total,
+    monthlyBudgetUsd: budget,
+    remainingUsd: remaining,
+    pct,
+    budgetState: "ok",
+  };
+}
+
+function budgetUnavailableMessage(): string {
+  return "예산 조회 불가 — billing Identity 연동(`BILLING_IDENTITY_*`) 확인";
+}
+
+function budgetUnsetMessage(): string {
+  return "월 예산 미설정 — Identity 계정 설정에서 키별 예산 입력";
+}
+
+function budgetLinkageLabel(monthlyBudgetUsd: number | null | undefined): string {
+  if (monthlyBudgetUsd == null) {
+    return "연동 없음 — BILLING_IDENTITY_* 확인";
+  }
+  if (monthlyBudgetUsd <= 0) {
+    return "연동됨 (예산 미설정)";
+  }
+  return "표시됨";
+}
+
+function budgetStatusMessage(budgetState: BudgetState): string {
+  if (budgetState === "unavailable") {
+    return budgetUnavailableMessage();
+  }
+  if (budgetState === "unset") {
+    return budgetUnsetMessage();
+  }
+  return "";
+}
+
 function expenditureApiPath(path: string): string {
   const base = (process.env.NEXT_PUBLIC_BASE_PATH ?? "").replace(/\/$/, "");
   const normalized = path.startsWith("/") ? path : `/${path}`;
@@ -392,26 +460,14 @@ export function ExpenditureDashboard() {
 
   const budgetUi = useMemo(() => {
     const total = monthlyBudget?.totalCostUsd ?? null;
-    const budget = monthlyBudget?.monthlyBudgetUsd ?? null;
     if (total == null) return null;
-    if (budget == null || budget <= 0) {
-      return { totalCostUsd: total, monthlyBudgetUsd: null as number | null, remainingUsd: null as number | null, pct: null as number | null };
-    }
-    const remaining = Math.max(0, budget - total);
-    const pct = Math.min(100, (total / budget) * 100);
-    return { totalCostUsd: total, monthlyBudgetUsd: budget, remainingUsd: remaining, pct };
+    return resolveBudgetUi(total, monthlyBudget?.monthlyBudgetUsd);
   }, [monthlyBudget]);
 
   const keyBudgetUi = useMemo(() => {
     const total = summary?.totalCostUsd ?? null;
-    const budget = summary?.monthlyBudgetUsd ?? null;
     if (total == null) return null;
-    if (budget == null || budget <= 0) {
-      return { totalCostUsd: total, monthlyBudgetUsd: null as number | null, remainingUsd: null as number | null, pct: null as number | null };
-    }
-    const remaining = Math.max(0, budget - total);
-    const pct = Math.min(100, (total / budget) * 100);
-    return { totalCostUsd: total, monthlyBudgetUsd: budget, remainingUsd: remaining, pct };
+    return resolveBudgetUi(total, summary?.monthlyBudgetUsd);
   }, [summary]);
 
   const dailyChart = useMemo(
@@ -490,11 +546,7 @@ export function ExpenditureDashboard() {
           <span className="opacity-60">•</span>
           <span>
             예산 연동:{" "}
-            {monthlyBudget?.monthlyBudgetUsd != null
-              ? "표시됨"
-              : monthlyBudget
-                ? "미표시 (Identity 연동 꺼짐/미설정/예산 없음 가능)"
-                : "—"}
+            {monthlyBudget ? budgetLinkageLabel(monthlyBudget.monthlyBudgetUsd) : "—"}
           </span>
         </div>
       </header>
@@ -504,15 +556,13 @@ export function ExpenditureDashboard() {
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div className="space-y-1">
               <h2 className="text-sm font-medium text-muted-foreground">월 예산 대비 (전체)</h2>
-              {budgetUi.monthlyBudgetUsd != null ? (
+              {budgetUi.budgetState === "ok" ? (
                 <p className="text-xs text-muted-foreground">
-                  이번 달 지출 {formatUsd(budgetUi.totalCostUsd)} / 월 예산 {formatUsd(budgetUi.monthlyBudgetUsd)} (잔여{" "}
+                  이번 달 지출 {formatUsd(budgetUi.totalCostUsd)} / 월 예산 {formatUsd(budgetUi.monthlyBudgetUsd ?? 0)} (잔여{" "}
                   {formatUsd(budgetUi.remainingUsd ?? 0)})
                 </p>
               ) : (
-                <p className="text-xs text-muted-foreground">
-                  월 예산: identity HTTP 연동이 없거나 미설정이면 표시되지 않습니다.
-                </p>
+                <p className="text-xs text-muted-foreground">{budgetStatusMessage(budgetUi.budgetState)}</p>
               )}
             </div>
             {budgetUi.pct != null ? (
@@ -942,14 +992,16 @@ export function ExpenditureDashboard() {
                   <p className="text-xs text-muted-foreground">총 지출 (USD)</p>
                   <p className="text-2xl font-semibold tabular-nums">{formatUsd(summary.totalCostUsd)}</p>
                 </div>
-                {summary.monthlyBudgetUsd != null ? (
+                {summary.monthlyBudgetUsd != null && summary.monthlyBudgetUsd > 0 ? (
                   <div>
                     <p className="text-xs text-muted-foreground">월 예산 (identity 연동 시)</p>
                     <p className="text-lg font-medium tabular-nums">{formatUsd(summary.monthlyBudgetUsd)}</p>
                   </div>
                 ) : (
                   <p className="text-xs text-muted-foreground">
-                    월 예산: identity HTTP 계약이 없거나 미설정이면 표시되지 않습니다.
+                    {summary.monthlyBudgetUsd == null
+                      ? budgetUnavailableMessage()
+                      : budgetUnsetMessage()}
                   </p>
                 )}
               </div>
@@ -961,15 +1013,13 @@ export function ExpenditureDashboard() {
               <div className="flex flex-wrap items-end justify-between gap-4">
                 <div className="space-y-1">
                   <h2 className="text-sm font-medium text-muted-foreground">월 예산 대비 (선택한 키)</h2>
-                  {keyBudgetUi.monthlyBudgetUsd != null ? (
+                  {keyBudgetUi.budgetState === "ok" ? (
                     <p className="text-xs text-muted-foreground">
-                      이번 달 지출 {formatUsd(keyBudgetUi.totalCostUsd)} / 월 예산 {formatUsd(keyBudgetUi.monthlyBudgetUsd)} (잔여{" "}
+                      이번 달 지출 {formatUsd(keyBudgetUi.totalCostUsd)} / 월 예산 {formatUsd(keyBudgetUi.monthlyBudgetUsd ?? 0)} (잔여{" "}
                       {formatUsd(keyBudgetUi.remainingUsd ?? 0)})
                     </p>
                   ) : (
-                    <p className="text-xs text-muted-foreground">
-                      월 예산: identity HTTP 연동이 없거나 미설정이면 표시되지 않습니다.
-                    </p>
+                    <p className="text-xs text-muted-foreground">{budgetStatusMessage(keyBudgetUi.budgetState)}</p>
                   )}
                 </div>
                 {keyBudgetUi.pct != null ? (
