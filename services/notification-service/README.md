@@ -29,6 +29,8 @@ notification-service는 선택적으로 **팀 도메인 이벤트**(`TEAM_CREATE
 
 환경 변수 전체는 `services/notification-service/.env.example`을 본다.
 
+**인앱 멱등(`NotificationDelivery.dedupeKey`):** `TEAM_API_KEY_REGISTERED`·`DELETED`·`DELETION_*` 등은 팀·키·수신자당 1회이다. **`TEAM_API_KEY_UPDATED`만** team-service 발행 시각 **`occurredAt`(ISO instant)** 을 dedupe 키에 포함해 별칭·예산 등 **수정마다** 인앱 1건을 만든다(동일 MQ 메시지 재전송은 동일 `occurredAt`으로 중복 방지). 배포 이전에 스킵된 변경은 backfill하지 않는다.
+
 ## 인앱 알림 locale (기본 한국어)
 
 인앱 `title`/`body`는 **생성 시점**에 handler가 선택한 locale로 템플릿 렌더링 후 DB에 저장된다. UI는 저장된 문자열을 그대로 표시한다(런타임 i18n 없음).
