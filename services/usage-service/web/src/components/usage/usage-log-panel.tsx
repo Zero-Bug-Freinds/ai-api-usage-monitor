@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { CircleHelp, ChevronDown, ChevronRight, Filter, Loader2, RotateCcw, X } from "lucide-react"
+import { ChevronDown, ChevronRight, Filter, Loader2, RotateCcw, X } from "lucide-react"
 
 import {
   Button,
@@ -12,10 +12,6 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
 } from "@ai-usage/ui"
 import { OpenAiTokenDetailsSection } from "@/components/usage/open-ai-token-details-section"
 import { ProviderTokenDetailsCommonSection } from "@/components/usage/provider-token-details-common-section"
@@ -449,28 +445,7 @@ export function UsageLogPanel() {
       >
         <div className="flex flex-wrap gap-4">
           <div className="space-y-2 sm:w-40">
-            <div className="flex items-center gap-1">
-              <Label htmlFor="log-reasoning" className="mb-0">
-                추론 토큰
-              </Label>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      id="log-reasoning-help"
-                      className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-muted-foreground/40 text-[10px] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                      aria-label="추론 토큰 설명"
-                    >
-                      <CircleHelp className="h-3 w-3" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" align="start">
-                    {reasoningTokensTooltipContent()}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
+            <Label htmlFor="log-reasoning">추론 토큰</Label>
             <Select
               value={reasoningFilter}
               onValueChange={(v) => {
