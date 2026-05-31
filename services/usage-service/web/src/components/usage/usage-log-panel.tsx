@@ -19,7 +19,10 @@ import {
 } from "@ai-usage/ui"
 import { OpenAiTokenDetailsSection } from "@/components/usage/open-ai-token-details-section"
 import { ProviderTokenDetailsCommonSection } from "@/components/usage/provider-token-details-common-section"
+import { UsageLogTokenSummaryRow } from "@/components/usage/usage-log-token-summary-row"
 import { UsageFilterBar } from "@/components/usage/usage-filter-bar"
+import { formatUsageLogTableCost } from "@/lib/usage/format"
+import { formatTeamMemberLocalId } from "@/lib/usage/format-team-member-label"
 import { buildUsageQuery, fetchUsageJson } from "@/lib/usage/api/fetch-usage"
 import { DASHBOARD_API_KEY_ALL, DASHBOARD_API_KEY_NONE } from "@/lib/usage/dashboard-api-key-constants"
 import {
@@ -64,28 +67,6 @@ const LOG_SUCCESS_ALL = "__all__"
 function logProviderToTeamDashboardFilter(provider: string): string {
   if (provider === LOG_PROVIDER_ALL) return DASHBOARD_PROVIDER_ALL
   return provider
-}
-
-function reasoningTokensTooltipContent() {
-  return (
-    <div className="space-y-1">
-      <p className="font-medium text-foreground">추론 토큰 산출</p>
-      <p>
-        Google / OpenAI: 모델이 직접 응답 전문에 포함하여 제공한 실제 추론 수치입니다.
-      </p>
-      <p>Anthropic: 현재 사용 기록이 없어 추론 토큰 상세값이 없는 경우가 있습니다.</p>
-      <p>공통: 모델의 사고 과정(Reasoning) 및 시스템 처리 비용을 포함합니다.</p>
-    </div>
-  )
-}
-
-function outputTokensTooltipContent() {
-  return (
-    <div className="space-y-1">
-      <p className="font-medium text-foreground">출력 토큰 산출</p>
-      <p>출력 토큰에서는 추론 토큰을 제외한 순수 응답량만 표시합니다.</p>
-    </div>
-  )
 }
 
 export function UsageLogPanel() {
@@ -592,93 +573,47 @@ export function UsageLogPanel() {
       ) : (
         <>
           <div className="overflow-x-auto rounded-md border border-border">
-            <table className="w-full min-w-[980px] table-auto text-left text-sm [&_th]:px-2.5 [&_td]:px-2.5">
+            <table className="w-full min-w-[760px] table-auto text-left text-sm [&_th]:px-2.5 [&_td]:px-2.5">
               <thead className="border-b border-border bg-muted/40">
                 <tr>
                   <th className="py-2 font-medium whitespace-nowrap">시각 (KST)</th>
+                  {logDataTab === "team" ? (
+                    <th className="py-2 font-medium whitespace-nowrap">팀원</th>
+                  ) : null}
                   <th className="py-2 font-medium whitespace-nowrap">공급자</th>
                   <th className="py-2 font-medium">별칭</th>
                   <th className="py-2 font-medium">모델</th>
-                  <th className="py-2 font-medium whitespace-nowrap">입력 토큰</th>
-                  <th className="py-2 font-medium whitespace-nowrap">
-                    <span className="inline-flex items-center gap-1">
-                      추론 토큰
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-muted-foreground/40 text-[10px] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                              aria-label="추론 토큰 설명"
-                            >
-                              <CircleHelp className="h-3 w-3" />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" align="start">
-                            {reasoningTokensTooltipContent()}
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </span>
-                  </th>
-                  <th className="py-2 font-medium whitespace-nowrap">
-                    <span className="inline-flex items-center gap-1">
-                      출력 토큰
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-muted-foreground/40 text-[10px] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                              aria-label="출력 토큰 설명"
-                            >
-                              <CircleHelp className="h-3 w-3" />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" align="start">
-                            {outputTokensTooltipContent()}
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </span>
-                  </th>
                   <th className="py-2 font-medium whitespace-nowrap">합계</th>
+                  <th className="py-2 font-medium whitespace-nowrap">비용</th>
                   <th className="py-2 font-medium text-right whitespace-nowrap">상세</th>
                 </tr>
               </thead>
               <tbody>
-                {logs.content.map((row: UsageLogEntryResponse) => {
-                  const hasDetailPanel = hasValidProviderTokenDetails(row.providerTokenDetails)
-                  const ert = row.estimatedReasoningTokens
-                  const reasoningDisplay = !row.requestSuccessful
-                    ? "-"
-                    : typeof ert === "number" && Number.isFinite(ert)
-                      ? String(ert)
-                      : "0"
-                  return (
-                    <tr
-                      key={row.eventId}
-                      className={[
-                        "border-b border-border last:border-0",
-                        hasDetailPanel ? "cursor-pointer hover:bg-muted/40" : "",
-                      ].join(" ")}
-                      onClick={() => {
-                        if (!hasDetailPanel) return
+                {logs.content.map((row: UsageLogEntryResponse) => (
+                  <tr
+                    key={row.eventId}
+                    className="cursor-pointer border-b border-border last:border-0 hover:bg-muted/40"
+                    onClick={() => setSelectedLogRow(row)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault()
                         setSelectedLogRow(row)
-                      }}
-                      role={hasDetailPanel ? "button" : undefined}
-                      tabIndex={hasDetailPanel ? 0 : -1}
-                      onKeyDown={(e) => {
-                        if (!hasDetailPanel) return
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault()
-                          setSelectedLogRow(row)
-                        }
-                      }}
-                    >
+                      }
+                    }}
+                  >
                     <td className="py-2 font-mono text-xs whitespace-nowrap">
                       {formatOccurredAtKst(row.occurredAt)}
                     </td>
+                    {logDataTab === "team" ? (
+                      <td
+                        className="py-2 max-w-[120px] truncate whitespace-nowrap"
+                        title={row.memberUserId ?? undefined}
+                      >
+                        {formatTeamMemberLocalId(row.memberUserId)}
+                      </td>
+                    ) : null}
                     <td className="py-2 whitespace-nowrap">{row.provider}</td>
                     <td className="py-2 max-w-[180px] truncate" title={row.apiKeyAlias ?? undefined}>
                       {row.apiKeyAlias ?? "—"}
@@ -686,20 +621,15 @@ export function UsageLogPanel() {
                     <td className="py-2 max-w-[220px] truncate font-mono text-xs" title={row.model}>
                       {row.model}
                     </td>
-                    <td className="py-2 tabular-nums whitespace-nowrap">{row.promptTokens ?? "—"}</td>
-                    <td className="py-2 tabular-nums whitespace-nowrap">{reasoningDisplay}</td>
-                    <td className="py-2 tabular-nums whitespace-nowrap">{row.completionTokens ?? "—"}</td>
                     <td className="py-2 tabular-nums whitespace-nowrap">{row.totalTokens ?? "—"}</td>
+                    <td className="py-2 tabular-nums whitespace-nowrap">
+                      {formatUsageLogTableCost(row.estimatedCost, row.requestSuccessful)}
+                    </td>
                     <td className="py-2 text-right text-muted-foreground">
-                      {hasDetailPanel ? (
-                        <ChevronRight className="inline-block h-4 w-4" aria-label="상세보기" />
-                      ) : (
-                        <span className="inline-block h-4 w-4" aria-hidden="true" />
-                      )}
+                      <ChevronRight className="inline-block h-4 w-4" aria-label="상세보기" />
                     </td>
                   </tr>
-                  )
-                })}
+                ))}
               </tbody>
             </table>
           </div>
@@ -753,6 +683,8 @@ export function UsageLogPanel() {
                   닫기
                 </Button>
               </div>
+
+              <UsageLogTokenSummaryRow row={selectedLogRow} />
 
               {selectedLogRow.provider === "OPENAI" && openAiDedicatedDetailsSum(selectedLogRow) > 0 ? (
                 <OpenAiTokenDetailsSection row={selectedLogRow} />
