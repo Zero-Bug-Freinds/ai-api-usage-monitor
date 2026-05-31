@@ -1,7 +1,7 @@
 # Web(Next.js) ↔ Identity 인증 BFF 계약
 
 버전: 1.27  
-관련: [docs/architecture.md](../architecture.md) §1.3, §3.3, §10.2, §13, [Identity 인증 API 계약](../identity-auth-api-contract.md), [Web·Gateway Usage BFF](./web-gateway-bff.md)(Usage BFF·`basePath` 호출 맵), [Web·Team BFF](./web-team-bff.md), [저장소 구조](../repository-structure.md) §6, [웹 경계](./web-split-boundary.md)(§2.4 로컬 `web-edge` Nginx)
+관련: [docs/architecture.md](../architecture.md) §1.3, §3.3, §10.2, §13, [Identity 인증 API 계약](../identity-auth-api-contract.md), [회원 탈퇴](../account-deletion.md), [Web·Gateway Usage BFF](./web-gateway-bff.md)(Usage BFF·`basePath` 호출 맵), [Web·Team BFF](./web-team-bff.md), [저장소 구조](../repository-structure.md) §6, [웹 경계](./web-split-boundary.md)(§2.4 로컬 `web-edge` Nginx)
 
 **소스 트리:** BFF·화면의 **정본**은 `services/identity-service/web/` 이다. **공용 UI(Shadcn 래퍼·`cn`)** 는 루트 pnpm workspace **`@ai-usage/ui`**(`packages/ui`)를 참조한다([web-split-boundary.md §1.1](./web-split-boundary.md)). Identity vs Usage 라우트·미들웨어 매처는 [web-split-boundary.md](./web-split-boundary.md) §2·§3.
 
@@ -227,7 +227,7 @@ curl -sS -i -X POST "http://localhost:8888/api/auth/signup" \
   -d '{"email":"user@example.com","password":"abc123!@","passwordConfirm":"abc123!@","name":"U"}'
 ```
 
-**참고:** `http://localhost:3000` 은 Compose 가 identity `web` 컨테이너를 호스트에 **직접** 노출할 때의 upstream 포트일 뿐, 통합 콘솔 진입점이 아니다. 단독 `pnpm --filter identity-web dev` 디버그 시에만 해당 호스트를 쓴다.
+**참고:** Identity `web` 호스트 노출 포트(`IDENTITY_WEB_PORT`, 기본 3000)는 Compose 가 identity `web` 컨테이너를 호스트에 **직접** 노출할 때의 upstream 포트일 뿐, 통합 콘솔 진입점이 아니다. 단독 `pnpm --filter identity-web dev` 디버그 시에만 해당 호스트를 쓴다.
 
 ---
 

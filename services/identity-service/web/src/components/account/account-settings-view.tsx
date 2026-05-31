@@ -2,11 +2,13 @@
 
 import * as React from "react"
 import { Eye, EyeOff } from "lucide-react"
-import { Checkbox, Label } from "@ai-usage/ui"
+import { Button, Checkbox, Input, Label } from "@ai-usage/ui"
 
 import { apiFetch } from "@/lib/api/client-fetch"
+import { changePasswordSchema } from "@/lib/api/identity/password-change.schema"
 import type {
   ApiResponse,
+  ChangePasswordRequest,
   ExternalKeyListResponseData,
   ExternalKeyProvider,
   ExternalKeySummary,
@@ -127,9 +129,17 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
     retainLogs: boolean
   } | null>(null)
 
-  const [deletePassword, _setDeletePassword] = React.useState("")
-  const [_deleteLoading, setDeleteLoading] = React.useState(false)
-  const [_deleteError, setDeleteError] = React.useState<string | null>(null)
+  const [currentPassword, setCurrentPassword] = React.useState("")
+  const [newPassword, setNewPassword] = React.useState("")
+  const [newPasswordConfirm, setNewPasswordConfirm] = React.useState("")
+  const [showCurrentPassword, setShowCurrentPassword] = React.useState(false)
+  const [showNewPassword, setShowNewPassword] = React.useState(false)
+  const [showNewPasswordConfirm, setShowNewPasswordConfirm] = React.useState(false)
+  const [changePasswordLoading, setChangePasswordLoading] = React.useState(false)
+  const [changePasswordMessage, setChangePasswordMessage] = React.useState<{
+    kind: "success" | "error"
+    text: string
+  } | null>(null)
 
   const loadExternalKeys = React.useCallback(async (signal?: AbortSignal) => {
     setKeysLoading(true)
@@ -401,39 +411,53 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
     }
   }
 
-  async function _onDeleteAccount() {
-    setDeleteError(null)
-    if (!deletePassword.trim()) {
-      setDeleteError("Password is required")
+  async function onChangePasswordSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    if (changePasswordLoading) return
+
+    const payload: ChangePasswordRequest = {
+      currentPassword,
+      newPassword,
+      newPasswordConfirm,
+    }
+    const parsed = changePasswordSchema.safeParse(payload)
+    if (!parsed.success) {
+      setChangePasswordMessage({
+        kind: "error",
+        text: parsed.error.issues[0]?.message ?? "입력값이 올바르지 않습니다",
+      })
       return
     }
-    const ok = window.confirm("Delete your account permanently? This cannot be undone.")
-    if (!ok) {
-      return
-    }
-    setDeleteLoading(true)
+
+    setChangePasswordLoading(true)
+    setChangePasswordMessage(null)
     try {
-      const { response, json } = await apiFetch<unknown>(
-        "/api/auth/delete-account",
+      const { response, json } = await apiFetch<null>(
+        "/api/auth/change-password",
         {
           method: "POST",
           credentials: "include",
           cache: "no-store",
           headers: { "Content-Type": "application/json", Accept: "application/json" },
-          body: JSON.stringify({ password: deletePassword }),
+          body: JSON.stringify(parsed.data),
         },
         { authRequired: true }
       )
-      const apiResponse = asApiResponse(json)
-      if (response.ok && apiResponse?.success) {
-        window.location.assign("/login")
+      if (response.ok && json?.success) {
+        setCurrentPassword("")
+        setNewPassword("")
+        setNewPasswordConfirm("")
+        setChangePasswordMessage({ kind: "success", text: json.message || "비밀번호가 변경되었습니다" })
         return
       }
-      setDeleteError(apiResponse?.message ?? "Account deletion failed")
+      setChangePasswordMessage({
+        kind: "error",
+        text: json?.message ?? "비밀번호 변경에 실패했습니다",
+      })
     } catch {
-      setDeleteError("Account deletion failed")
+      setChangePasswordMessage({ kind: "error", text: "비밀번호 변경에 실패했습니다" })
     } finally {
-      setDeleteLoading(false)
+      setChangePasswordLoading(false)
     }
   }
 
@@ -578,6 +602,105 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
           </dl>
         ) : null}
       </section>
+
+      {session ? (
+        <section className="max-w-lg space-y-3 rounded-lg border border-border bg-card p-5 shadow-sm">
+          <div className="space-y-1">
+            <h2 className="text-sm font-semibold tracking-tight">비밀번호 변경</h2>
+            <p className="text-sm text-muted-foreground">
+              현재 비밀번호를 확인한 뒤 새 비밀번호로 변경합니다. 회원가입과 동일한 비밀번호 규칙이 적용됩니다.
+            </p>
+          </div>
+
+          <form className="space-y-3" onSubmit={onChangePasswordSubmit} noValidate>
+            <div className="grid gap-1.5">
+              <Label htmlFor="current-password">현재 비밀번호</Label>
+              <div className="flex gap-1">
+                <Input
+                  id="current-password"
+                  className="min-w-0 flex-1"
+                  type={showCurrentPassword ? "text" : "password"}
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  autoComplete="current-password"
+                  disabled={changePasswordLoading}
+                />
+                <button
+                  type="button"
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-input bg-background text-muted-foreground hover:bg-muted disabled:opacity-50"
+                  aria-label={showCurrentPassword ? "현재 비밀번호 숨기기" : "현재 비밀번호 보기"}
+                  disabled={changePasswordLoading}
+                  onClick={() => setShowCurrentPassword((v) => !v)}
+                >
+                  {showCurrentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div className="grid gap-1.5">
+              <Label htmlFor="new-password">새 비밀번호</Label>
+              <div className="flex gap-1">
+                <Input
+                  id="new-password"
+                  className="min-w-0 flex-1"
+                  type={showNewPassword ? "text" : "password"}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  autoComplete="new-password"
+                  disabled={changePasswordLoading}
+                />
+                <button
+                  type="button"
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-input bg-background text-muted-foreground hover:bg-muted disabled:opacity-50"
+                  aria-label={showNewPassword ? "새 비밀번호 숨기기" : "새 비밀번호 보기"}
+                  disabled={changePasswordLoading}
+                  onClick={() => setShowNewPassword((v) => !v)}
+                >
+                  {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div className="grid gap-1.5">
+              <Label htmlFor="new-password-confirm">새 비밀번호 확인</Label>
+              <div className="flex gap-1">
+                <Input
+                  id="new-password-confirm"
+                  className="min-w-0 flex-1"
+                  type={showNewPasswordConfirm ? "text" : "password"}
+                  value={newPasswordConfirm}
+                  onChange={(e) => setNewPasswordConfirm(e.target.value)}
+                  autoComplete="new-password"
+                  disabled={changePasswordLoading}
+                />
+                <button
+                  type="button"
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-input bg-background text-muted-foreground hover:bg-muted disabled:opacity-50"
+                  aria-label={showNewPasswordConfirm ? "새 비밀번호 확인 숨기기" : "새 비밀번호 확인 보기"}
+                  disabled={changePasswordLoading}
+                  onClick={() => setShowNewPasswordConfirm((v) => !v)}
+                >
+                  {showNewPasswordConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            {changePasswordMessage ? (
+              <p
+                className={
+                  changePasswordMessage.kind === "success" ? "text-sm text-emerald-600" : "text-sm text-destructive"
+                }
+              >
+                {changePasswordMessage.text}
+              </p>
+            ) : null}
+
+            <Button type="submit" disabled={changePasswordLoading}>
+              {changePasswordLoading ? "변경 중…" : "비밀번호 변경"}
+            </Button>
+          </form>
+        </section>
+      ) : null}
 
       {session ? (
         <section className="max-w-lg space-y-3 rounded-lg border border-border bg-card p-5 shadow-sm">

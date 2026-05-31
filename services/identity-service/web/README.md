@@ -10,7 +10,7 @@ docker compose --profile web up -d
 # 브라우저: http://localhost:8888  (로그인 · /settings · /dashboard 링크 등)
 ```
 
-`http://localhost:3000` 은 Compose 가 이 컨테이너를 호스트에 직접 노출할 때의 **upstream 포트**일 뿐, 통합 진입점이 아니다.
+Identity `web` 호스트 노출 포트(`IDENTITY_WEB_PORT`, 기본 3000)는 Compose **upstream 포트**일 뿐, 통합 진입점이 아니다.
 
 ## 호스트 단독 dev (선택)
 

@@ -18,6 +18,7 @@ import org.springframework.amqp.core.MessageBuilder;
 import java.nio.charset.StandardCharsets;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -70,7 +71,7 @@ class IdentityExternalApiKeyEventListenerTest {
 	}
 
 	@Test
-	void deletedEvent_withRetainLogsFalse_stillDoesNotPurgeCostData() {
+	void deletedEvent_withRetainLogsFalse_purgesDataAndDeletesSnapshot() {
 		String payload = """
 				{
 				  "eventType": "EXTERNAL_API_KEY_DELETED",
@@ -89,8 +90,9 @@ class IdentityExternalApiKeyEventListenerTest {
 		listener.onMessage(message);
 
 		ArgumentCaptor<ExternalApiKeyDeletedEvent> captor = ArgumentCaptor.forClass(ExternalApiKeyDeletedEvent.class);
-		verify(snapshotService).applyDeleted(captor.capture());
-		verify(apiKeyUsageDataCleanupService, never()).purgeByApiKeyId("102");
+		verify(snapshotService).delete(captor.capture());
+		verify(snapshotService, never()).applyDeleted(any());
+		verify(apiKeyUsageDataCleanupService).purgeByApiKeyId("102");
 		assertThat(captor.getValue().retainLogs()).isFalse();
 	}
 }

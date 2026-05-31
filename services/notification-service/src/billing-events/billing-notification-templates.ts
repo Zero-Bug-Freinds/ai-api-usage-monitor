@@ -15,14 +15,21 @@ export function buildBillingBudgetThresholdCopy(
   locale: 'ko' | 'en',
 ): BillingNotificationCopy {
   const thresholdPct = Math.round(params.payload.thresholdPct * 100);
-  const total = formatUsd(params.payload.monthlyTotalUsd);
-  const budget = formatUsd(params.payload.monthlyBudgetUsd);
+  const total = formatUsd(params.payload.monthlyTotalUsd, locale);
+  const budget = formatUsd(params.payload.monthlyBudgetUsd, locale);
   const alias = params.apiKeyAlias?.trim();
-  const keyLabel = alias
-    ? `API 키(${alias})`
-    : params.apiKeyId?.trim()
-      ? `API 키(${params.apiKeyId.trim()})`
-      : 'API 키';
+  const keyLabel =
+    locale === 'ko'
+      ? alias
+        ? `API 키(${alias})`
+        : params.apiKeyId?.trim()
+          ? `API 키(${params.apiKeyId.trim()})`
+          : 'API 키'
+      : alias
+        ? `API key (${alias})`
+        : params.apiKeyId?.trim()
+          ? `API key (${params.apiKeyId.trim()})`
+          : 'API key';
 
   if (locale === 'ko') {
     return {
@@ -48,9 +55,10 @@ export function buildBillingTeamApiKeyBudgetThresholdCopy(params: {
   };
 }
 
-function formatUsd(value: number): string {
+function formatUsd(value: number, locale: 'ko' | 'en'): string {
+  const intlLocale = locale === 'ko' ? 'ko-KR' : 'en-US';
   try {
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat(intlLocale, {
       style: 'currency',
       currency: 'USD',
       maximumFractionDigits: 2,

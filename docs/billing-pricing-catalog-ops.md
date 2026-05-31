@@ -2,6 +2,25 @@
 
 비용은 [`ExpenditureCostCalculator`](../services/billing-service/src/main/java/com/eevee/billingservice/service/ExpenditureCostCalculator.java)가 `provider_model_price` 행을 조회해 USD로 계산한다. 초기 행은 [`ProviderModelPriceSeed`](../services/billing-service/src/main/java/com/eevee/billingservice/config/ProviderModelPriceSeed.java)와 [`OfficialProviderModelPriceCatalog`](../services/billing-service/src/main/java/com/eevee/billingservice/pricing/OfficialProviderModelPriceCatalog.java)에서 채운다.
 
+## 카탈로그 스냅샷 (2026-05-30)
+
+- **as-of**: `OfficialProviderModelPriceCatalog.DOCUMENTED_AS_OF = "2026-05-30"`
+- **범위**: OpenAI·Anthropic·Google 공식 API pricing 페이지의 **Standard / Base tier** chat·reasoning 모델 중 **input/output USD per 1M tokens** 가 있는 항목(약 **70**행). Batch/Flex/Priority 전용·per-image·Realtime 전용·조건부 단가(캐시·200K+·오디오)는 **대표 단가 1쌍**으로 근사(Option A).
+- **공급사별 참고 URL**: 카탈로그 클래스의 `REFERENCE_URL_*` 상수(OpenAI platform docs, Anthropic pricing, Google Gemini pricing).
+
+### Flyway 시드 마이그레이션
+
+기존 DB에도 누락 row를 idempotent INSERT 하는 SQL은 `services/billing-service/src/main/resources/db/migration/` 에 둔다.
+
+| 파일 | 내용 |
+|------|------|
+| `V20260509152300__openai_provider_model_price_standard_seed_20260509.sql` | OpenAI Standard tier (2026-05-09) |
+| `V20260509160000__anthropic_provider_model_price_base_seed_20260509.sql` | Anthropic Base tier (2026-05-09) |
+| `V20260530120000__google_provider_model_price_seed_20260530.sql` | **Google Gemini** Paid Standard (첫 Google SQL 시드) |
+| `V20260530120100__provider_model_price_gap_seed_20260530.sql` | Anthropic 갭(`claude-opus-4-8` 등 alias·dated id) + `claude-3-5-sonnet-20241022` |
+
+2026-05-30 갭 보강 예: `gemini-3.5-flash`, `gemini-3.1-flash-lite`, `gemini-3-flash`, `gemini-3-pro`, `gemini-2.0-flash-lite`, `claude-opus-4-8`, `claude-opus-4-5`, `claude-opus-4-0`, `claude-opus-4-20250514`.
+
 ## Seed 동작(로컬/개발)과 운영 주의
 
 `ProviderModelPriceSeed`는 기본적으로 **`provider_model_price`가 완전히 비어 있을 때만** 카탈로그 행을 삽입한다.

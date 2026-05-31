@@ -2,12 +2,15 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { IdentityExternalApiKeyInAppHandlerService } from './identity-external-api-key-in-app-handler.service';
 
-function makeHandler(prisma: {
-  $transaction: ReturnType<typeof vi.fn>;
-}): IdentityExternalApiKeyInAppHandlerService {
+function makeHandler(
+  prisma: { $transaction: ReturnType<typeof vi.fn> },
+  locale?: string,
+): IdentityExternalApiKeyInAppHandlerService {
   const config = {
     get: vi.fn((key: string, def?: string) => {
-      if (key === 'IDENTITY_EXTERNAL_API_KEY_EVENTS_DEFAULT_LOCALE') return 'en';
+      if (key === 'IDENTITY_EXTERNAL_API_KEY_EVENTS_DEFAULT_LOCALE') {
+        return locale ?? def;
+      }
       return def;
     }),
   } as unknown as import('@nestjs/config').ConfigService;
@@ -41,6 +44,7 @@ describe('IdentityExternalApiKeyInAppHandlerService', () => {
 
   it('creates delivery + in-app on deleted', async () => {
     const creates: string[] = [];
+    const inAppPayloads: Array<{ title: string }> = [];
     const prisma = {
       $transaction: vi.fn(async (fn: (tx: unknown) => Promise<void>) => {
         const tx = {
@@ -50,15 +54,16 @@ describe('IdentityExternalApiKeyInAppHandlerService', () => {
             }),
           },
           inAppNotification: {
-            create: vi.fn(async () => {
+            create: vi.fn(async (args: { data: { title: string } }) => {
               creates.push('in-app');
+              inAppPayloads.push(args.data);
             }),
           },
         };
         await fn(tx);
       }),
     };
-    const handler = makeHandler(prisma);
+    const handler = makeHandler(prisma, 'en');
     const r = await handler.handleDeleted({
       eventType: 'EXTERNAL_API_KEY_DELETED',
       userId: 'owner@example.com',
@@ -71,6 +76,35 @@ describe('IdentityExternalApiKeyInAppHandlerService', () => {
     expect(r.created).toBe(true);
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(creates).toEqual(['delivery', 'in-app']);
+    expect(inAppPayloads[0]?.title).toBe('External API key removed');
+  });
+
+  it('uses Korean copy when locale env is unset (default ko)', async () => {
+    const inAppPayloads: Array<{ title: string }> = [];
+    const prisma = {
+      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<void>) => {
+        const tx = {
+          notificationDelivery: { create: vi.fn(async () => undefined) },
+          inAppNotification: {
+            create: vi.fn(async (args: { data: { title: string } }) => {
+              inAppPayloads.push(args.data);
+            }),
+          },
+        };
+        await fn(tx);
+      }),
+    };
+    const handler = makeHandler(prisma);
+    await handler.handleDeleted({
+      eventType: 'EXTERNAL_API_KEY_DELETED',
+      userId: 'owner@example.com',
+      apiKeyId: 3,
+      occurredAt: '2026-01-01T00:00:00.000Z',
+      retainLogs: true,
+      provider: 'openai',
+      alias: 'Work',
+    });
+    expect(inAppPayloads[0]?.title).toBe('외부 API 키 삭제됨');
   });
 
   it('returns created false on dedupe unique violation', async () => {

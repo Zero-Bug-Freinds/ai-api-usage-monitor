@@ -46,6 +46,13 @@ public class TeamApiKeySnapshotService {
 		snapshotRepository.save(entity);
 	}
 
+	public void delete(Long teamId, Long teamApiKeyId) {
+		if (teamId == null || teamApiKeyId == null) {
+			return;
+		}
+		snapshotRepository.deleteByTeamIdAndTeamApiKeyId(teamId, teamApiKeyId);
+	}
+
 	public List<TeamApiKeySnapshot> findByTeamId(Long teamId) {
 		return snapshotRepository.findByTeamIdOrderByUpdatedAtDesc(teamId).stream()
 				.map(this::toSnapshot)

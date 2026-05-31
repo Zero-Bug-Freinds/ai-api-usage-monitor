@@ -34,7 +34,7 @@ export class IdentityExternalApiKeyInAppHandlerService {
   ) {}
 
   private getLocale(): IdentityExternalApiKeyNotificationLocale {
-    const raw = this.config.get<string>('IDENTITY_EXTERNAL_API_KEY_EVENTS_DEFAULT_LOCALE', 'en');
+    const raw = this.config.get<string>('IDENTITY_EXTERNAL_API_KEY_EVENTS_DEFAULT_LOCALE', 'ko');
     return raw === 'ko' ? 'ko' : 'en';
   }
 

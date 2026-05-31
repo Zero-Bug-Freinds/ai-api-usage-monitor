@@ -27,7 +27,7 @@ export class TeamInAppNotificationHandlerService {
   ) {}
 
   private getLocale(): NotificationLocale {
-    const raw = this.config.get<string>('TEAM_EVENTS_DEFAULT_LOCALE', 'en');
+    const raw = this.config.get<string>('TEAM_EVENTS_DEFAULT_LOCALE', 'ko');
     return raw === 'ko' ? 'ko' : 'en';
   }
 

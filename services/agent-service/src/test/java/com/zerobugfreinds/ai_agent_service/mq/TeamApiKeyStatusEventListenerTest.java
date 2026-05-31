@@ -7,7 +7,6 @@ import com.zerobugfreinds.ai_agent_service.service.TeamApiKeySnapshotService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.amqp.core.Message;
@@ -15,7 +14,6 @@ import org.springframework.amqp.core.MessageBuilder;
 
 import java.nio.charset.StandardCharsets;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -43,7 +41,7 @@ class TeamApiKeyStatusEventListenerTest {
 	}
 
 	@Test
-	void deletedWithoutRetainLogs_purgesUsageProjectionsButRetainsBillingSignals() throws Exception {
+	void deletedWithoutRetainLogs_purgesAllUsageProjectionsAndDeletesSnapshot() throws Exception {
 		String json =
 				"{\"eventType\":\"TEAM_API_KEY_STATUS_CHANGED\",\"teamId\":1,\"teamApiKeyId\":42,\"status\":\"DELETED\","
 						+ "\"retainLogs\":false,\"occurredAt\":\"2026-05-01T12:00:00Z\",\"alias\":\"a\",\"provider\":\"OPENAI\"}";
@@ -51,12 +49,10 @@ class TeamApiKeyStatusEventListenerTest {
 
 		listener.onMessage(message);
 
-		verify(apiKeyUsageDataCleanupService).purgeUsageProjectionsExcludingBillingSignals("42");
-		verify(apiKeyUsageDataCleanupService, never()).purgeByApiKeyId(any());
-		ArgumentCaptor<TeamApiKeySnapshotService.TeamApiKeySnapshot> captor =
-				ArgumentCaptor.forClass(TeamApiKeySnapshotService.TeamApiKeySnapshot.class);
-		verify(snapshotService).upsert(captor.capture());
-		assertThat(captor.getValue().teamApiKeyId()).isEqualTo(42L);
+		verify(apiKeyUsageDataCleanupService).purgeByApiKeyId("42");
+		verify(apiKeyUsageDataCleanupService, never()).purgeUsageProjectionsExcludingBillingSignals(any());
+		verify(snapshotService).delete(1L, 42L);
+		verify(snapshotService, never()).upsert(any());
 	}
 
 	@Test
