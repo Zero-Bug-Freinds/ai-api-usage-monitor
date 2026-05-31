@@ -88,6 +88,14 @@ billing:
       queue: ${BILLING_RABBIT_TEAM_DOMAIN_IN_QUEUE:billing-service.team.api-key.domain.queue}
   gateway:
     shared-secret: ${GATEWAY_SHARED_SECRET:local-dev-gateway-shared-secret-do-not-use-in-prod}
+  identity:
+    enabled: ${BILLING_IDENTITY_ENABLED:false}
+    base-url: ${BILLING_IDENTITY_BASE_URL:}
+    budget-path-template: ${BILLING_IDENTITY_BUDGET_PATH:/api/identity/v1/users/budget?email={userId}}
+  pricing:
+    # 기본(false): provider_model_price 테이블이 "완전히 비어있을 때만" seed 수행
+    # 옵션(true): 테이블이 비어있지 않아도 카탈로그에 없는 row만 추가 삽입(idempotent)
+    seed-missing: ${BILLING_PRICING_SEED_MISSING:false}
 
 # identity -> billing 회원 탈퇴 이벤트 소비 / ACK 발행
 identity:
@@ -99,11 +107,3 @@ identity:
   account-deletion-ack:
     exchange: ${IDENTITY_ACCOUNT_DELETION_ACK_EXCHANGE:identity.events}
     routing-key: ${IDENTITY_ACCOUNT_DELETION_ACK_ROUTING_KEY:identity.user.account-deletion-ack}
-  identity:
-    enabled: ${BILLING_IDENTITY_ENABLED:false}
-    base-url: ${BILLING_IDENTITY_BASE_URL:}
-    budget-path-template: ${BILLING_IDENTITY_BUDGET_PATH:/api/identity/v1/users/budget?email={userId}}
-  pricing:
-    # 기본(false): provider_model_price 테이블이 "완전히 비어있을 때만" seed 수행
-    # 옵션(true): 테이블이 비어있지 않아도 카탈로그에 없는 row만 추가 삽입(idempotent)
-    seed-missing: ${BILLING_PRICING_SEED_MISSING:false}
