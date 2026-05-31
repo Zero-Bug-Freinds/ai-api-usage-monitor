@@ -872,7 +872,7 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
             disabled={deleteAccountLoading}
             onClick={openAccountDeletionModal}
           >
-            회원 탈퇴…
+            회원 탈퇴
           </Button>
         </section>
       ) : null}
