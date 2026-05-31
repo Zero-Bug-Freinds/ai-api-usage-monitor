@@ -8,7 +8,7 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 
 /**
- * 탈퇴 요청 후 다른 서비스 ACK 를 모을 때까지 identity 사용자 행을 유지한다.
+ * 연동 서비스(billing·usage·team) ACK 를 모을 때까지 유지한다. identity {@code users} 행은 탈퇴 직후 이미 삭제된다.
  */
 @Entity
 @Table(name = "account_deletion_pending")

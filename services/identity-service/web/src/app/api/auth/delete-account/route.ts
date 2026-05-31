@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server"
 import { cookies } from "next/headers"
+import { ACCESS_TOKEN_COOKIE, clearAuthCookies } from "@/lib/auth/bff-auth-cookies"
 import type { ApiResponse } from "@/lib/api/identity/types"
-
-const ACCESS_TOKEN_COOKIE = "access_token"
 
 function noStoreHeaders() {
   return { "Cache-Control": "no-store" }
@@ -39,36 +38,6 @@ async function resolveAccessToken(request: Request): Promise<string | null> {
   const tokenFromStore = cookieStore.get(ACCESS_TOKEN_COOKIE)?.value
   if (tokenFromStore && tokenFromStore.length > 0) return tokenFromStore
   return getCookieValue(request.headers.get("cookie"), ACCESS_TOKEN_COOKIE)
-}
-
-function isSecureCookie(request: Request): boolean {
-  const configured = process.env.IDENTITY_WEB_SECURE_COOKIE?.trim().toLowerCase()
-  if (configured === "true") return true
-  if (configured === "false") return false
-
-  const forwardedProto = request.headers.get("x-forwarded-proto")
-  if (forwardedProto) {
-    return forwardedProto.split(",")[0]?.trim().toLowerCase() === "https"
-  }
-
-  try {
-    return new URL(request.url).protocol === "https:"
-  } catch {
-    return process.env.NODE_ENV === "production"
-  }
-}
-
-function clearAccessTokenCookie(request: Request, res: NextResponse) {
-  res.cookies.set({
-    name: ACCESS_TOKEN_COOKIE,
-    value: "",
-    httpOnly: true,
-    secure: isSecureCookie(request),
-    sameSite: "lax",
-    path: "/",
-    maxAge: 0,
-    expires: new Date(0),
-  })
 }
 
 export async function POST(request: Request) {
@@ -129,7 +98,7 @@ export async function POST(request: Request) {
   const body = upstreamJson as ApiResponse<null> | null
   if (upstream.ok && body?.success) {
     const res = json(200, body)
-    clearAccessTokenCookie(request, res)
+    clearAuthCookies(request, res)
     return res
   }
 

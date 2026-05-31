@@ -1,6 +1,6 @@
 # 회원 탈퇴 — 설계·계약·서비스별 요구사항
 
-버전: 1.0 (2026-05-31)  
+버전: 1.1 (2026-05-31)  
 **정본:** 본 문서 하나에 흐름·API·이벤트·구현 상태·서비스별 작업·정책 결정을 모두 둔다.
 
 관련: [`architecture.md`](architecture.md) §6, [`msa-database-and-service-integration.md`](msa-database-and-service-integration.md) §3·§6.4, [`contracts/web-identity-bff.md`](contracts/web-identity-bff.md), [`libs/identity-events`](../libs/identity-events)
@@ -41,7 +41,8 @@ sequenceDiagram
     ID->>ID: 비밀번호 검증
     ID->>ID: account_deletion_pending 등록 (ACK 초기화)
     ID->>MQ: identity.user.account-deletion-requested
-    ID-->>Browser: 202 Accepted (users 행은 아직 유지)
+    ID->>ID: users·reset token·external API key 즉시 삭제
+    ID-->>Browser: 200 OK (BFF access_token 쿠키 삭제)
 
     par 각 소비자 — 로컬 DB purge (병렬)
         MQ->>Bill: UserAccountDeletionRequestedEvent
@@ -57,25 +58,23 @@ sequenceDiagram
 
     MQ->>ID: identity.account-deletion.ack.queue
     ID->>ID: ack_billing ∧ ack_usage ∧ ack_team
-    ID->>ID: users·reset token·external API key·pending 삭제
-    BFF->>BFF: access_token 쿠키 삭제 (요청 수락 시)
+    ID->>ID: account_deletion_pending 행 삭제 (ACK 완료)
 ```
 
 ### 2.1 단계 요약
 
 | 단계 | 주체 | 동작 |
 |------|------|------|
-| 1 | 사용자 | 설정(또는 API)에서 비밀번호 확인 후 탈퇴 요청 |
-| 2 | identity-service | 비밀번호 검증 → `account_deletion_pending` 저장 → **삭제 요청 이벤트 발행** |
+| 1 | 사용자 | 설정(또는 API)에서 비밀번호 확인 후 탈퇴(즉시 로그아웃) |
+| 2 | identity-service | 비밀번호 검증 → `account_deletion_pending` 저장 → 이벤트 발행 → **`users`·개인 키·재설정 토큰 즉시 삭제** |
 | 3 | billing · usage · team | 각자 로컬 DB purge → **ACK 발행** |
-| 4 | identity-service | **세 ACK 모두** 수신 시 Identity 로컬 최종 삭제 |
+| 4 | identity-service | **세 ACK 모두** 수신 시 `account_deletion_pending` 행만 제거 |
 
-### 2.2 현재 차단점 (2026-05-31)
+### 2.2 완료 조건 (2026-05-31)
 
-`AccountDeletionPendingEntity.allAcknowledged()`는 **`ack_billing` · `ack_usage` · `ack_team` 세 값이 모두 true**여야 `users` 행을 삭제한다.
+`AccountDeletionPendingEntity.allAcknowledged()`는 **`ack_billing` · `ack_usage` · `ack_team` 세 값이 모두 true**여야 `account_deletion_pending` 행을 삭제한다. **`users` 행은 탈퇴 API 성공 직후 이미 삭제**되어 재가입·로그인 실패 UX는 미가입자와 동일하다.
 
-- **team** ACK: ✅ 구현됨
-- **billing** · **usage** ACK: ❌ 미구현 → 탈퇴 요청은 접수되지만 **계정은 pending 상태로 남음**
+- **billing** · **usage** · **team** ACK: ✅ 구현됨 (로컬 E2E로 pending 플래그·최종 삭제 확인 권장)
 
 ---
 
@@ -89,7 +88,7 @@ sequenceDiagram
 | Path | `/api/auth/delete-account` |
 | 인증 | Bearer JWT (로그인 필수) |
 | Request body | `{ "password": "..." }` (`DeleteAccountRequest`) |
-| 성공 | **202 Accepted** — `"회원 탈퇴 요청이 접수되었습니다. 연동 서비스 삭제 확인 후 계정이 제거됩니다."` |
+| 성공 | **200 OK** — `"회원 탈퇴가 완료되었습니다. 계정에 다시 로그인할 수 없습니다."` (`users` 즉시 삭제; pending 은 ACK 용도만 유지) |
 | 실패 | 401 (미인증·비밀번호 불일치), 400 (validation) |
 
 **참고 코드:** `AuthController.deleteAccount`, `AccountDeletionService`
@@ -101,7 +100,7 @@ sequenceDiagram
 | 브라우저 경로 | `POST /api/auth/delete-account` |
 | Upstream | `{GATEWAY_URL\|WEB_GATEWAY_URL}/api/identity/auth/delete-account` |
 | 성공 시 | `access_token` httpOnly 쿠키 삭제 |
-| 상태 | BFF ✅ / **설정 UI ❌** |
+| 상태 | BFF ✅ / **설정 UI ✅** (`account-settings-view`) |
 
 계약: [`contracts/web-identity-bff.md`](contracts/web-identity-bff.md) §2
 
@@ -133,16 +132,21 @@ sequenceDiagram
 - 동일 사용자 **재탈퇴 요청** 시 ACK 플래그를 **초기화**하고 다시 대기한다 (`registerDeletionRequested`).
 - DDL: 현재 `spring.jpa.hibernate.ddl-auto=update` — Flyway 마이그레이션 권장.
 
-### 4.2 Identity 최종 로컬 삭제 (`IdentityAccountLocalDeletionService`)
+### 4.2 Identity 로컬 삭제 (`IdentityAccountLocalDeletionService`)
 
-세 ACK 수집 후 삭제 대상:
+**탈퇴 API 성공 직후** (`purgeUserIdentityImmediately`):
 
 | 데이터 | 설명 |
 |--------|------|
-| `account_deletion_pending` | pending 행 |
 | `users` | 사용자 계정 |
 | `password_reset_token` | 비밀번호 재설정 토큰 |
 | `external_api_key` | 개인 외부 API 키 |
+
+**세 ACK 수집 후** (`finalizePendingAfterAllAcks`):
+
+| 데이터 | 설명 |
+|--------|------|
+| `account_deletion_pending` | ACK 코디네이션 행만 제거 |
 
 **참고 코드:** `AccountDeletionCoordinationService`, `IdentityAccountLocalDeletionService`
 
@@ -244,11 +248,11 @@ identity.account-deletion-ack.routing-key=identity.user.account-deletion-ack
 | 서비스 | Listener | Purge | ACK | Identity 게이트 |
 |--------|----------|-------|-----|-----------------|
 | identity-service | 발행·ACK 수집 | ✅ (ACK 후) | — | 오케스트레이터 |
-| team-service | ✅ | ✅ (1차) | ✅ `team` | **필수** |
-| billing-service | ❌ | ❌ | ❌ | **필수** |
-| usage-service | ❌ | ❌ | ❌ | **필수** |
+| team-service | ✅ | ✅ (OWNER 팀 삭제·MEMBER 제거) | ✅ `team` | **필수** |
+| billing-service | ✅ | ✅ | ✅ `billing` | **필수** |
+| usage-service | ✅ | ✅ | ✅ `usage` | **필수** |
 | notification-service | ❌ | ❌ | — | 비필수 |
-| agent-service | ❌ | ❌ | — | 비필수 |
+| agent-service | ✅ | ✅ | — (게이트 밖) | 비필수 |
 | identity-service/web | BFF ✅ | — | — | UI ❌ |
 | api-gateway | — | — | — | 프록시 ✅ |
 | proxy-service | — | — | — | 해당 없음 |
@@ -286,21 +290,28 @@ identity.account-deletion-ack.routing-key=identity.user.account-deletion-ack
 
 ### 7.2 team-service — ACK 필수
 
-**역할:** 탈퇴 사용자 팀 **멤버십·초대** 정리 → ACK `source=team`
+**역할:** 탈퇴 사용자 팀 데이터 정리 → ACK `source=team`
+
+**제품 규칙 (구현됨, 2026-05-31)**
+
+| 역할 | 동작 |
+|------|------|
+| **팀장(OWNER)** | 본인이 OWNER인 팀: 팀 API 키 **즉시 삭제**(grace 0) → `TEAM_DELETED` 등 기존 팀 삭제 플로우로 **팀 전체 삭제** |
+| **팀원(MEMBER)** | 타인 팀에서 **멤버십만 제거** (`TEAM_MEMBER_REMOVED` 발행). 팀·팀 API 키는 유지 |
 
 | 데이터 | purge | 상태 |
 |--------|-------|------|
-| `team_members` | `user_id` 일치 행 | ✅ |
-| `team_invitations` | `invitee_id` 또는 `inviter_id` | ✅ |
+| OWNER 팀 | 팀 API 키 + `teams` / `team_members` / `team_invitations` | ✅ |
+| MEMBER 멤버십 | `team_members` 행 제거 | ✅ |
+| `team_invitations` | `invitee_id` / `inviter_id` | ✅ |
+| `identity_user_sync` | lookup 후보 id·email 행 삭제 | ✅ |
 
-**userId 매칭:** 리스너는 `event.userEmail()`로 cleanup. team DB `user_id`는 **이메일 문자열** convention.
+**userId 매칭:** `UserAccountDeletionRequestedEvent`의 `userEmail`·`identityUserId` + `IdentityUserSyncService.resolveMembershipLookupCandidates`.
 
-| # | 추가 요구 | 상태 |
+| # | 추가·선택 | 상태 |
 |---|-----------|------|
-| 1 | `identity_user_sync` 행 삭제/비활성 | ❌ |
-| 2 | 본인 **OWNER** 팀 정책 (삭제/이전/탈퇴 차단) | ❌ (제품 결정) |
-| 3 | 본인 등록 **팀 API 키** — OWNER 정책 연동 | ❌ |
-| 4 | `TEAM_MEMBER_REMOVED` 등 도메인 이벤트 정합 | ❌ |
+| 1 | OWNER가 아닌 `createdBy`만 있는 팀 | 미적용 — **OWNER 역할** 기준 |
+| 2 | 팀 API 키 삭제 예약(유예) 없이 즉시 삭제 | ✅ (탈퇴 전용) |
 
 **주요 코드**
 
@@ -313,7 +324,7 @@ identity.account-deletion-ack.routing-key=identity.user.account-deletion-ack
 
 ---
 
-### 7.3 billing-service — ACK 필수 (미구현)
+### 7.3 billing-service — ACK 필수
 
 **역할:** **개인(Identity) 키** billing 집계 전체 purge → ACK `source=billing`
 
@@ -343,7 +354,7 @@ identity.account-deletion-ack.routing-key=identity.user.account-deletion-ack
 
 ---
 
-### 7.4 usage-service — ACK 필수 (미구현)
+### 7.4 usage-service — ACK 필수
 
 **역할:** **개인 scope** usage 데이터 purge → ACK `source=usage`
 
@@ -390,22 +401,22 @@ Identity 최종 삭제를 **막지 않음**. 개인정보·UX를 위해 **병행
 
 ---
 
-### 7.6 agent-service — 권장 (ACK 게이트 밖)
+### 7.6 agent-service — 권장 (ACK 게이트 밖, 구현됨)
 
-사용자별 **프로젝션·스냅샷** 정리.
+큐 `agent.account-deletion.requested.queue` — `UserAccountDeletionRequestedListener` (ACK 없음).
 
-| 테이블 | purge 기준 |
-|--------|------------|
-| `identity_api_key_projection` | `userId` |
-| `billing_signal_projection` | `userId` |
-| `daily_cumulative_token_projection` | `userId` (+ `teamId`) |
-| `usage_prediction_signal_projection` | `userId` |
-| `usage_recorded_token_rollup` | user 연관 |
-| `budget_forecast_projection` | scope |
-| `recommendation_projection` | `scopeId` = user |
-| `team_api_key_projection` | 팀 데이터 — 제품 결정 |
+| 테이블 | purge 기준 | 상태 |
+|--------|------------|------|
+| `identity_api_key_projection` | `user_id` | ✅ |
+| `billing_signal_projection` | `user_id` | ✅ |
+| `daily_cumulative_token_projection` | `user_id` | ✅ |
+| `usage_prediction_signal_projection` | `user_id` | ✅ |
+| `usage_recorded_token_rollup` | `scope_type=PERSONAL`, `scope_id` | ✅ |
+| `budget_forecast_projection` | `scope_type=PERSONAL`, `scope_id` | ✅ |
+| `recommendation_projection` | `scope_type=PERSONAL`, `scope_id` | ✅ |
+| `team_api_key_projection` | `owner_user_id` (탈퇴 팀장 등록 키 스냅샷) | ✅ |
 
-**userId 후보:** 이메일 + 숫자 ID (BFF `identityUserIdCandidates` 패턴). ACK **불필요**.
+**userId 후보:** 이메일 + `String.valueOf(identityUserId)`. Identity 최종 삭제 **게이트에 미포함**.
 
 ---
 
@@ -426,9 +437,9 @@ Identity 최종 삭제를 **막지 않음**. 개인정보·UX를 위해 **병행
 
 | # | 주제 | 선택지 |
 |---|------|--------|
-| 1 | **팀 OWNER 탈퇴** | 탈퇴 차단 / 팀 삭제 / 소유권 이전 |
-| 2 | **팀 맥락 usage·billing 로그** | 유지 / 삭제 / 익명화 |
-| 3 | **usage retainLogs (계정 탈퇴)** | 즉시 삭제 / 유예(일수) |
+| 1 | **팀 OWNER 탈퇴** | ✅ **팀 삭제**(팀 API 키 즉시 삭제 후) — team-service |
+| 2 | **팀 맥락 usage·billing 로그** | ✅ **유지** (usage 옵션 A) |
+| 3 | **usage retainLogs (계정 탈퇴)** | ✅ **즉시 삭제** |
 | 4 | **notification·agent** | Identity ACK 3개에 포함 vs 비동기만 |
 | 5 | **pending stuck** | 재발행 주기 / 운영 알림 / 수동 복구 |
 
@@ -438,10 +449,10 @@ Identity 최종 삭제를 **막지 않음**. 개인정보·UX를 위해 **병행
 
 1. **billing-service** — listener + 사용자 단위 purge + ACK
 2. **usage-service** — listener + 개인 purge + ACK (§8 정책 확정)
-3. **identity-service/web** — 설정 UI
+3. ~~**identity-service/web** — 설정 UI~~ ✅
 4. **team-service** — `identity_user_sync`, OWNER 정책
 5. **notification-service**, **agent-service** — 프로젝션 정리 (병행)
-6. **문서·운영** — `identity-auth-api-contract.md`, Flyway, pending stuck
+6. **문서·운영** — ~~`identity-auth-api-contract.md`~~ ✅, Flyway, pending stuck
 
 ---
 
@@ -467,3 +478,4 @@ Identity 최종 삭제를 **막지 않음**. 개인정보·UX를 위해 **병행
 | 버전 | 날짜 | 내용 |
 |------|------|------|
 | 1.0 | 2026-05-31 | 초판 — 설계·API·이벤트·서비스별 요구·구현 상태·정책·우선순위 통합 |
+| 1.1 | 2026-05-31 | billing/usage ACK 구현 반영; team OWNER 팀 삭제·MEMBER 제거; agent 프로젝션 purge |

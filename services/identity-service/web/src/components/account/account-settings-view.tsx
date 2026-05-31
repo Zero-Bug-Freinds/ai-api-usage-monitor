@@ -1,10 +1,16 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
 import { Eye, EyeOff } from "lucide-react"
 import { Button, Checkbox, Input, Label } from "@ai-usage/ui"
 
+import {
+  DEFAULT_ACCOUNT_DELETED_MESSAGE,
+  storeAccountDeletedNotice,
+} from "@/lib/auth/account-deleted-notice"
 import { apiFetch } from "@/lib/api/client-fetch"
+import { deleteAccountSchema } from "@/lib/api/identity/delete-account.schema"
 import { changePasswordSchema } from "@/lib/api/identity/password-change.schema"
 import type {
   ApiResponse,
@@ -137,6 +143,16 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
   const [showNewPasswordConfirm, setShowNewPasswordConfirm] = React.useState(false)
   const [changePasswordLoading, setChangePasswordLoading] = React.useState(false)
   const [changePasswordMessage, setChangePasswordMessage] = React.useState<{
+    kind: "success" | "error"
+    text: string
+  } | null>(null)
+
+  const router = useRouter()
+  const [accountDeletionModalOpen, setAccountDeletionModalOpen] = React.useState(false)
+  const [deleteAccountPassword, setDeleteAccountPassword] = React.useState("")
+  const [showDeleteAccountPassword, setShowDeleteAccountPassword] = React.useState(false)
+  const [deleteAccountLoading, setDeleteAccountLoading] = React.useState(false)
+  const [deleteAccountMessage, setDeleteAccountMessage] = React.useState<{
     kind: "success" | "error"
     text: string
   } | null>(null)
@@ -461,6 +477,67 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
     }
   }
 
+  function openAccountDeletionModal() {
+    setDeleteAccountMessage(null)
+    setDeleteAccountPassword("")
+    setShowDeleteAccountPassword(false)
+    setAccountDeletionModalOpen(true)
+  }
+
+  function closeAccountDeletionModal() {
+    if (deleteAccountLoading) return
+    setAccountDeletionModalOpen(false)
+    setDeleteAccountPassword("")
+    setShowDeleteAccountPassword(false)
+    setDeleteAccountMessage(null)
+  }
+
+  async function confirmDeleteAccount() {
+    if (deleteAccountLoading) return
+
+    const parsed = deleteAccountSchema.safeParse({ password: deleteAccountPassword })
+    if (!parsed.success) {
+      setDeleteAccountMessage({
+        kind: "error",
+        text: parsed.error.issues[0]?.message ?? "비밀번호를 입력해주세요",
+      })
+      return
+    }
+
+    setDeleteAccountLoading(true)
+    setDeleteAccountMessage(null)
+    try {
+      const { response, json } = await apiFetch<null>(
+        "/api/auth/delete-account",
+        {
+          method: "POST",
+          credentials: "include",
+          cache: "no-store",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify(parsed.data),
+        },
+        { authRequired: true }
+      )
+      if (response.ok && json?.success) {
+        setAccountDeletionModalOpen(false)
+        storeAccountDeletedNotice(json.message ?? DEFAULT_ACCOUNT_DELETED_MESSAGE)
+        router.replace("/login")
+        return
+      }
+      setDeleteAccountMessage({
+        kind: "error",
+        text: json?.message ?? "회원 탈퇴에 실패했습니다. 비밀번호를 확인해 주세요.",
+      })
+    } catch {
+      setDeleteAccountMessage({
+        kind: "error",
+        text: "회원 탈퇴 요청에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+      })
+    } finally {
+      setDeleteAccountLoading(false)
+    }
+  }
+
   const deletionModalParsed = externalKeyDeletionModal
     ? parseDeletionGraceInput(externalKeyDeletionModal.graceDaysInput)
     : null
@@ -564,6 +641,84 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
                   : deletionModalParsed?.valid && deletionModalParsed.immediate
                     ? "즉시 삭제"
                     : "삭제 예약"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {accountDeletionModalOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeAccountDeletionModal()
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="account-delete-title"
+            className="w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-lg"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <h3 id="account-delete-title" className="text-sm font-semibold tracking-tight text-destructive">
+              회원 탈퇴
+            </h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              탈퇴하면 즉시 로그아웃되며, 같은 이메일로 다시 가입할 수 있습니다. 팀장인 경우 본인이 만든 팀과 팀 API
+              키도 함께 삭제됩니다.
+            </p>
+            <p className="mt-2 text-xs font-medium text-destructive">
+              이 작업은 되돌릴 수 없습니다. 진행하려면 현재 비밀번호를 입력하세요.
+            </p>
+            <div className="mt-4 grid gap-1.5">
+              <Label htmlFor="delete-account-password">현재 비밀번호</Label>
+              <div className="flex gap-1">
+                <Input
+                  id="delete-account-password"
+                  className="min-w-0 flex-1"
+                  type={showDeleteAccountPassword ? "text" : "password"}
+                  value={deleteAccountPassword}
+                  onChange={(e) => setDeleteAccountPassword(e.target.value)}
+                  autoComplete="current-password"
+                  disabled={deleteAccountLoading}
+                />
+                <button
+                  type="button"
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-input bg-background text-muted-foreground hover:bg-muted disabled:opacity-50"
+                  aria-label={showDeleteAccountPassword ? "비밀번호 숨기기" : "비밀번호 보기"}
+                  disabled={deleteAccountLoading}
+                  onClick={() => setShowDeleteAccountPassword((v) => !v)}
+                >
+                  {showDeleteAccountPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+            {deleteAccountMessage ? (
+              <p
+                className={
+                  deleteAccountMessage.kind === "success" ? "mt-3 text-sm text-emerald-600" : "mt-3 text-sm text-destructive"
+                }
+              >
+                {deleteAccountMessage.text}
+              </p>
+            ) : null}
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-md border border-border bg-background px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
+                disabled={deleteAccountLoading}
+                onClick={closeAccountDeletionModal}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                className="rounded-md bg-destructive px-3 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
+                disabled={deleteAccountLoading}
+                onClick={() => void confirmDeleteAccount()}
+              >
+                {deleteAccountLoading ? "처리 중…" : "탈퇴하기"}
               </button>
             </div>
           </div>
@@ -699,6 +854,26 @@ export function AccountSettingsView({ pathSegments }: { pathSegments?: string[] 
               {changePasswordLoading ? "변경 중…" : "비밀번호 변경"}
             </Button>
           </form>
+        </section>
+      ) : null}
+
+      {session ? (
+        <section className="max-w-lg space-y-3 rounded-lg border border-destructive/30 bg-card p-5 shadow-sm">
+          <div className="space-y-1">
+            <h2 className="text-sm font-semibold tracking-tight text-destructive">회원 탈퇴</h2>
+            <p className="text-sm text-muted-foreground">
+              계정과 개인 데이터를 삭제합니다. 팀에 소속된 경우 팀원은 팀에서만 제외되고, 팀장은 본인이 만든 팀
+              전체가 삭제됩니다.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={deleteAccountLoading}
+            onClick={openAccountDeletionModal}
+          >
+            회원 탈퇴…
+          </Button>
         </section>
       ) : null}
 

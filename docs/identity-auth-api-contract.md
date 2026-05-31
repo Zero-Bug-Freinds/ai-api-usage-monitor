@@ -1,6 +1,6 @@
 # Identity 인증 API 계약 (백엔드)
 
-버전: 1.11  
+버전: 1.12  
 관련: [architecture.md](./architecture.md) §1.3, [contracts/web-identity-bff.md](./contracts/web-identity-bff.md), [contracts/web-team-bff.md](./contracts/web-team-bff.md) §5.2
 
 ---
@@ -44,6 +44,7 @@
 | `PUT`  | `/api/auth/external-keys/{id}` | 필요  | 외부 AI API 키 수정 (`alias`, `monthlyBudgetUsd` 필수, `externalKey`는 선택) |
 | `DELETE` | `/api/auth/external-keys/{id}` | 필요  | 외부 AI API 키 삭제 예약/즉시 삭제(선택 쿼리 `gracePeriodDays`, `retainLogs`; 기본 7일·범위 0~365일, `0`은 즉시 삭제) |
 | `POST` | `/api/auth/external-keys/{id}/deletion-cancel` | 필요  | 외부 AI API 키 삭제 예약 취소 |
+| `POST` | `/api/auth/delete-account` | 필요 | 회원 탈퇴(비밀번호 확인, 즉시 로그아웃·재로그인 차단) |
 | `POST` | `/api/auth/logout`  | 불필요 | 로그아웃 신호 응답(BFF 쿠키 삭제 유도) |
 
 레거시 호환: 과거 `GEMINI` 값으로 저장된 항목이 있더라도 외부 API 응답의 canonical provider 표기는 `GOOGLE`로 유지한다.
@@ -73,6 +74,33 @@
 ### 캐시 정책
 
 - 두 엔드포인트 응답에 `Cache-Control: no-store`를 적용한다.
+
+---
+
+## 3.2 회원 탈퇴 (`POST /api/auth/delete-account`)
+
+전체 오케스트레이션·연동 서비스 ACK·데이터 범위는 [account-deletion.md](./account-deletion.md)를 따른다.
+
+### 요청 본문
+
+```json
+{ "password": "<현재 비밀번호>" }
+```
+
+- 비밀번호가 비어 있거나 누락되면 `400`과 안내 메시지를 반환한다.
+- BFF(`services/identity-service/web`)는 동일 본문을 Gateway `POST /api/identity/auth/delete-account`로 프록시한다([web-identity-bff.md §2.9](./contracts/web-identity-bff.md)).
+
+### 동작
+
+- 인증된 사용자만 호출할 수 있다. 비밀번호가 일치하지 않으면 `400`(또는 구현에 따른 `401`)과 `success=false`를 반환한다.
+- 성공 시 Identity는 `account_deletion_pending`를 기록하고 리프레시 토큰을 삭제한 뒤 이벤트를 발행하고 **`users`·개인 API 키·비밀번호 재설정 토큰을 즉시 삭제**한다. **동일 이메일 재가입·로그인 실패 메시지는 미가입자와 동일**하다.
+- HTTP 상태는 **`200 OK`**. 본문 `message` 예: `회원 탈퇴가 완료되었습니다. 계정에 다시 로그인할 수 없습니다.`
+- BFF는 업스트림 `200` + `success=true`일 때 **`access_token` httpOnly 쿠키를 삭제**한다.
+- `account_deletion_pending`는 **연동 서비스 ACK 수집용**이며 사용자에게 노출하지 않는다. ACK 완료 후 pending 행만 제거한다.
+
+### 캐시 정책
+
+- 응답에 `Cache-Control: no-store`를 적용한다.
 
 ---
 

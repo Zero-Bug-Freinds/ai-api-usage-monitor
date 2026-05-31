@@ -150,7 +150,8 @@ public class AuthController {
 	}
 
 	/**
-	 * 삭제 요청 이벤트 발행까지 완료하면 응답한다. identity 사용자 행 제거는 연동 서비스 ACK 후 비동기로 진행된다.
+	 * 비밀번호 확인 후 identity 사용자 행을 즉시 삭제하고 연동 서비스 정리 이벤트를 발행한다.
+	 * {@code account_deletion_pending} 는 billing·usage·team ACK 수집 후에만 제거된다.
 	 */
 	@PostMapping("/delete-account")
 	public ResponseEntity<ApiResponse<Void>> deleteAccount(
@@ -159,11 +160,10 @@ public class AuthController {
 	) {
 		User user = userService.findByAuthenticatedPrincipal(authentication.getName());
 		accountDeletionService.deleteAuthenticatedAccount(user.getId(), request.password());
-		return ResponseEntity.status(HttpStatus.ACCEPTED)
+		return ResponseEntity.ok()
 				.cacheControl(CacheControl.noStore().mustRevalidate())
 				.body(ApiResponse.ok(
-						"\uC68D\uC6D0 \uC0CC\uD1F4 \uC694\uCCAD\uC774 \uC811\uC218\uB418\uC5C8\uC2B5\uB2C8\uB2E4. "
-								+ "\uC5F0\uB3D9 \uC11C\uBE44\uC2A4 \uC0AD\uC81C \uD655\uC778 \uD6C4 \uACC4\uC815\uC774 \uC81C\uAC70\uB429\uB2C8\uB2E4.",
+						"회원 탈퇴가 완료되었습니다. 계정에 다시 로그인할 수 없습니다.",
 						null
 				));
 	}

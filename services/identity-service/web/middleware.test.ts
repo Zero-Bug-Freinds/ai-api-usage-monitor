@@ -16,13 +16,18 @@ describe("middleware (auth-required gate)", () => {
     expect(res.status).toBe(200)
   })
 
-  it("redirects to /login with next= when cookie is missing", () => {
+  it("redirects to plain /login when cookie is missing", () => {
     const res = middleware(makeRequest("/settings/profile"))
     expect(res.status).toBe(307)
     const location = res.headers.get("location") ?? ""
-    expect(location).toMatch(/\/login/)
-    expect(location).toContain("next=")
-    expect(location).toContain(encodeURIComponent("/settings/profile"))
+    expect(location).toMatch(/\/login$/)
+    expect(location).not.toContain("next=")
+  })
+
+  it("redirects when only is_logged_in is set (access_token required)", () => {
+    const res = middleware(makeRequest("/settings", "is_logged_in=true"))
+    expect(res.status).toBe(307)
+    expect(res.headers.get("location")).toMatch(/\/login/)
   })
 
   it("redirects when access_token is empty (malformed cookie edge)", () => {

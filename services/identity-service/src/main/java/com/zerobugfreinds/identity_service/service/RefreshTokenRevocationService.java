@@ -32,4 +32,10 @@ public class RefreshTokenRevocationService {
                 occurredAt
         );
     }
+
+    @Transactional
+    public void revokeAllForAccountDeletion(Long userId) {
+        refreshTokenRepository.deleteAllByUserId(userId);
+        log.info("Revoked refresh tokens due to account deletion userId={}", userId);
+    }
 }
