@@ -43,7 +43,6 @@ import {
   TeamBffMaskedHttpError,
   usageFetchErrorMessage,
 } from "@/lib/usage/messaging/team-bff-fetch-errors"
-import { colorForModel } from "@/lib/usage/model-colors"
 import { DashboardRequestShareRow } from "@/components/usage/dashboard-request-share-row"
 
 export type TeamDashboardProps = {
