@@ -63,6 +63,11 @@ public class PasswordResetMailService {
 		message.setTo(toEmail);
 		message.setSubject(subject);
 		message.setText(body);
-		mailSender.send(message);
+		try {
+			mailSender.send(message);
+		} catch (RuntimeException ex) {
+			// SMTP 오류로 forgot-password 전체가 500이 되지 않도록 한다. 링크는 로그로 남긴다.
+			log.error("[password-reset] SMTP 발송 실패: email={} resetLink={}", toEmail, link, ex);
+		}
 	}
 }

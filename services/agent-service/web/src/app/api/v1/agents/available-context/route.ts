@@ -177,7 +177,7 @@ function backendOriginCandidates(): string[] {
 function identityWebOriginCandidates(): string[] {
   const configured = (process.env.IDENTITY_WEB_INTERNAL_ORIGIN ?? "").trim().replace(/\/$/, "")
   const publicOrigin = (process.env.NEXT_PUBLIC_IDENTITY_WEB_ORIGIN ?? "").trim().replace(/\/$/, "")
-  const defaults = ["http://identity-web:3000", "http://host.docker.internal:3000", "http://localhost:3000"]
+  const defaults = ["http://identity-web:3000", "http://web-edge:8888", "http://host.docker.internal:3000", "http://localhost:8888"]
   return Array.from(new Set([configured, publicOrigin, ...defaults].filter((value) => value.length > 0)))
 }
 
@@ -1272,14 +1272,27 @@ export async function GET(request: Request) {
     )
     const keysForCurrentUser = keys.filter((key) => matchesIdentityUserId(key.userId, currentUserCandidates))
 
-    const teamApiKeyByCompositeKey = new Map<string, TeamApiKeySnapshot>()
+    const snapshotTeamApiKeyByCompositeKey = new Map<string, TeamApiKeySnapshot>()
     for (const item of snapshotTeamApiKeys) {
-      teamApiKeyByCompositeKey.set(`${item.teamId}:${item.teamApiKeyId}`, item)
+      snapshotTeamApiKeyByCompositeKey.set(`${item.teamId}:${item.teamApiKeyId}`, item)
     }
-    for (const item of teamCatalog.keys) {
-      teamApiKeyByCompositeKey.set(`${item.teamId}:${item.teamApiKeyId}`, item)
-    }
-    const teamApiKeys = Array.from(teamApiKeyByCompositeKey.values())
+    const teamApiKeys = teamCatalog.keys.map((item) => {
+      const snapshot = snapshotTeamApiKeyByCompositeKey.get(`${item.teamId}:${item.teamApiKeyId}`)
+      if (!snapshot) {
+        return item
+      }
+      return {
+        ...item,
+        teamName: snapshot.teamName ?? item.teamName,
+        ownerUserId: snapshot.ownerUserId ?? item.ownerUserId,
+        visibility: snapshot.visibility ?? item.visibility,
+        alias: (item.alias ?? "").trim() || (snapshot.alias ?? "").trim(),
+        provider: (item.provider ?? "").trim() || snapshot.provider,
+        status: snapshot.status ?? item.status,
+        monthlyBudgetUsd: toNumber(item.monthlyBudgetUsd, toNumber(snapshot.monthlyBudgetUsd, 0)),
+        keyHash: snapshot.keyHash ?? item.keyHash ?? null,
+      }
+    })
     const billingByKeyId = new Map<string, BillingSignal>()
     for (const item of billingSignals) {
       const id = billingSignalMapKey(item.apiKeyId)
@@ -1447,20 +1460,20 @@ export async function GET(request: Request) {
         }
       })
       .filter((item): item is NonNullable<typeof item> => item != null)
+    const personalSnapshotById = new Map<number, (typeof personalKeysFromSnapshot)[number]>()
+    for (const key of personalKeysFromSnapshot) {
+      personalSnapshotById.set(key.keyId, key)
+    }
     const personalKeysById = new Map<number, (typeof personalKeysFromSnapshot)[number]>()
     for (const key of personalKeysFromIdentity) {
-      personalKeysById.set(key.keyId, key)
-    }
-    for (const key of personalKeysFromSnapshot) {
-      const current = personalKeysById.get(key.keyId)
-      if (!current) {
+      const snapshot = personalSnapshotById.get(key.keyId)
+      if (!snapshot) {
         personalKeysById.set(key.keyId, key)
         continue
       }
-      const snapshotBudget = toNumber(current.monthlyBudgetUsd, 0)
       const merged = spendAndBudgetForKey(
         billingByKeyId.get(String(key.keyId)),
-        snapshotBudget,
+        toNumber(key.monthlyBudgetUsd, 0),
         billingSummaryByKey.get(key.keyId),
       )
       const mergedBudgetStats = buildBudgetStats(
@@ -1469,10 +1482,11 @@ export async function GET(request: Request) {
         lifetimeSpendForKey(key.keyId, lifetimeSpendByKey, billingByKeyId.get(String(key.keyId))),
       )
       personalKeysById.set(key.keyId, {
-        ...current,
         ...key,
-        alias: (key.alias ?? "").trim() || (current.alias ?? "").trim(),
-        provider: key.provider?.trim() ? key.provider : current.provider,
+        alias: (key.alias ?? "").trim() || (snapshot.alias ?? "").trim(),
+        provider: key.provider?.trim() ? key.provider : snapshot.provider,
+        status: snapshot.status ?? key.status,
+        keyHash: snapshot.keyHash ?? key.keyHash ?? null,
         monthlyBudgetUsd: merged.monthlyBudgetUsd,
         budgetStats: mergedBudgetStats,
         providerStats: {

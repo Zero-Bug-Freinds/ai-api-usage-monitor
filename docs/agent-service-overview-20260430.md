@@ -131,10 +131,10 @@
   - `analysis-history-day-panel.tsx` — 과거 기록 탭에서 **선택한 날짜**에 해당하는 스냅샷 목록을 세로로 나열한다(내부에서 정렬하지 않고 부모가 넘긴 순서를 그대로 사용).
   - `agent-result-shared.ts` — `AnalysisResult`, `AnalysisHistorySnapshot` 등 프론트 공유 타입.
 
-- **현재 결과 / 과거 기록 탭:** 우측 본문 상단 탭으로 전환. **현재 결과**는 `agent.analysisResults.v1`에 저장된 `AnalysisResult[]`를 그대로 카드로 표시한다. **과거 기록**은 날짜 목록(좌) + 선택일 상세(우) 그리드이며, 동일 날짜에 스냅샷이 여러 번 있으면 세로로 모두 표시한다.
+- **현재 결과 / 과거 기록 탭:** 우측 본문 상단 탭으로 전환. **현재 결과**는 브라우저 메모리의 `AnalysisResult[]`를 카드로 표시하며, 버튼을 새로 누를 때마다 이전 현재 결과를 비우고 **방금 실행한 요청 결과만** 보여준다. **과거 기록**은 날짜 목록(좌) + 선택일 상세(우) 그리드이며, 동일 날짜에 스냅샷이 여러 번 있으면 세로로 모두 표시한다.
 
-- **`localStorage` — 분석·추천 영속 (브라우저 한정)**
-  - `agent.analysisResults.v1` — 현재 탭에 쓰는 키별 결과 배열. **서로 다른 `keyId`는 한 배열에 공존**하며, 동일 키는 `mergeAnalysisResults`로 병합한다(예산 `data`·추천 `recommendation` 등은 기존 오류 병합 규칙 유지).
+- **`localStorage` — 분석 히스토리 영속 (브라우저 한정)**
+  - 현재 결과는 영속 저장하지 않는다. 새로고침하면 비워지고, 같은 세션 안에서도 새 요청을 시작할 때 직전 현재 결과를 먼저 비운다.
   - `agent.analysisHistory.v1` — 과거 기록용 스냅샷 배열(최대 **80**건). `results` JSON 시그니처가 바뀔 때마다 스냅샷 1건을 append한다(첫 로드 직후 한 번은 기준선만 잡고 append하지 않음).
   - **스냅샷과 마지막 액션:** 사용자가 `분석` 또는 `추천`을 눌러 `results`가 갱신될 때, 직전 액션의 `(keyId, action)`을 스냅샷 생성에 넘긴다. 스냅샷 복제본에서 **그 키 한정**으로 이번 액션과 무관한 축을 제거한다 — **`RECOMMENDATION`이면** 해당 키의 `data`/`error`/`forecastGaps`를 넣지 않아(이전 예산이 남아)「추천만 돌렸는데 예산이 같이 보임」을 방지하고, **`ANALYSIS`이면** 해당 키의 `recommendation`/`recommendationError`를 넣지 않는다. **다른 키** 행은 당시 `results` 그대로 복사한다.
 
@@ -143,6 +143,8 @@
 - **삭제된 키 숨기기:** Identity/팀 스냅샷 상태가 `DELETED` 또는 `DELETION_REQUESTED`인 키를 개인·팀 목록에서 숨길 수 있다. 토글은 **개인 API 키** 블록에서 제목·안내 문구 **아래** 행에 두며, **목록 새로고침**과 같은 줄 우측 정렬이다.
 
 - **개인 API 키 블록 레이아웃:** `개인 API 키` 제목을 블록 최상단에 두고, 그 아래 결제일 안내 문구, 그 다음 행에 삭제 키 토글 + 새로고침 버튼, 이어서 키 목록 순이다.
+
+- **키 목록 펼침 UI:** 개인 키와 팀 키 목록은 기본적으로 **별칭(alias) + 삭제 여부**만 보이는 요약 행으로 표시한다. 사용자가 행을 누르면 해당 키의 제공자, 예산 요약, 다음 결제일, 분석/추천 버튼이 펼쳐지고, 같은 목록 안에서는 마지막으로 연 항목 하나만 열린다.
 
 - **과거 기록 본문 스크롤:** 과거 기록 영역에 별도 `max-height`·`overflow-y` 스크롤을 두지 않는다. 긴 내용은 **페이지 전체** 스크롤로 본다.
 
@@ -281,12 +283,12 @@
 - **agent-web:** 키별 `분석`/`추천` 재실행 후 `error`·`recommendationError`가 있을 때 **이전 성공 페이로드를 병합하지 않도록** `page.tsx` 병합 규칙을 수정했다.
 - **루트 `.env.example`:** LLM 1순위/2순위 안내와 DeepSeek·Gemini·타임아웃·배치 병렬도 선택 변수를 정리했다.
 - **예산 `daysUntilRunOut`:** 모델 출력과 무관하게 **`predictedRunOutDate`와 서버 로컬 오늘 날짜로만 계산**한다. 과거에는 모델의 `daysUntilRunOut`가 날짜와 1일 이내로 맞지 않으면 전체 파싱을 실패시켰고, 일치 시 모델 숫자를 그대로 썼다.
-- **키 삭제 로그 정책 반영:** `retainLogs=false`인 키 삭제 이벤트(Identity `EXTERNAL_API_KEY_DELETED`, Team `TEAM_API_KEY_STATUS_CHANGED=DELETED`) 수신 시 agent의 키 기준 프로젝션(`billing_signal_projection`, `usage_recorded_token_rollup`, `daily_cumulative_token_projection`, `recommendation_projection`)을 함께 정리한다. `retainLogs=true`면 기존 지출/사용 기록을 유지한다.
+- **키 삭제 로그 정책 반영:** `retainLogs=false`인 키 삭제 이벤트(Identity `EXTERNAL_API_KEY_DELETED`, Team `TEAM_API_KEY_STATUS_CHANGED=DELETED`) 수신 시 agent는 해당 키의 스냅샷 row를 남기지 않고, 키 기준 프로젝션(`billing_signal_projection`, `usage_recorded_token_rollup`, `daily_cumulative_token_projection`, `recommendation_projection`)도 함께 삭제한다. `retainLogs=true`면 삭제 상태 스냅샷을 유지하고 기존 지출/사용 기록도 보존한다.
 
 ## 12. 최근 반영 사항 (2026-05-13)
 
 - **agent-web 메인 셸:** `page.tsx` 기준으로 우측 **현재 결과 / 과거 기록** 탭, 좌측 **삭제된 키 숨기기**·**목록 새로고침** 배치(개인 API 키 블록), 과거 기록 **최신순·오래된순** 정렬 토글을 추가했다. 상세는 위 **§4.1** 참고.
 - **브라우저 저장소:** `agent.analysisHistory.v1`(과거 스냅샷, 최대 80건) 및 스냅샷 시 **마지막 분석/추천 액션**에 따른 키별 필드 제거 규칙을 도입했다. 기존에 쌓인 히스토리는 구 스키마 그대로일 수 있어, 동작을 맞추려면 새로 분석/추천을 실행하거나 해당 키를 비우고 다시 쌓는다.
-- **다중 키 결과 병합:** `mergeAnalysisResults`로 동일 `keyId`만 갱신·타 키는 유지하도록 수정했다(이전에는 단일 키만 남는 병합 버그가 있었다).
+- **현재 결과 단일화:** 현재 결과는 다중 키·누적 병합 대신, 사용자가 마지막으로 누른 분석/추천 요청의 결과만 유지하도록 바꿨다. 이전 현재 결과는 새 요청 시작 시 비우고, 과거 기록만 계속 누적한다.
 - **모듈 분리:** `analysis-result-articles.tsx`, `analysis-history-day-panel.tsx`, `agent-result-shared.ts`(`AnalysisHistorySnapshot` 등)로 UI·타입을 나눴다.
 - **과거 기록 본문:** `AnalysisResultArticles`의 `sections`로 예산·추천을 구역 나눠 **현재 결과 탭과 동일한 상세**를 표시한다. 패널 내부 전용 스크롤은 제거했다.

@@ -29,6 +29,21 @@ notification-service는 선택적으로 **팀 도메인 이벤트**(`TEAM_CREATE
 
 환경 변수 전체는 `services/notification-service/.env.example`을 본다.
 
+## 인앱 알림 locale (기본 한국어)
+
+인앱 `title`/`body`는 **생성 시점**에 handler가 선택한 locale로 템플릿 렌더링 후 DB에 저장된다. UI는 저장된 문자열을 그대로 표시한다(런타임 i18n 없음).
+
+| 소비 경로 | 환경 변수 | 코드 fallback | 비고 |
+|-----------|-----------|---------------|------|
+| 팀 도메인 이벤트 | `TEAM_EVENTS_DEFAULT_LOCALE` | `ko` | `en` \| `ko` |
+| Identity 외부 API 키 | `IDENTITY_EXTERNAL_API_KEY_EVENTS_DEFAULT_LOCALE` | `ko` | `en` \| `ko` |
+| 개인·Identity 예산 임계 | `BILLING_EVENTS_DEFAULT_LOCALE` | `ko` | `en` \| `ko` |
+| 팀 API 키 예산 임계 | (없음) | — | **한국어 고정** (`buildBillingTeamApiKeyBudgetThresholdCopy`) |
+
+- env를 설정하지 않아도 **코드 fallback이 `ko`** 이므로 로컬·Compose에서 별도 locale 변수 없이 한국어 알림이 생성된다.
+- `en`으로 바꾸려면 위 환경 변수를 `en`으로 설정한다.
+- **기존에 영어로 저장된 행은 backfill하지 않는다.** Notification `web` UI는 한국어 중심이며, 읽지 않은 알림 배지는 **`새 알림`** 으로 표시한다.
+
 **제품 규칙:** `TEAM_INVITATION_ACCEPTED`는 초대한 사람에게, `TEAM_MEMBER_JOINED`는 **참여한 사용자(`receiverId`)에게만** 인앱을 생성한다. 초대자는 수락 알림만 받고, 동일 흐름에서 `TEAM_MEMBER_JOINED`로 중복 행이 생기지 않는다.
 
 ### 팀 초대 인앱 정리(void)

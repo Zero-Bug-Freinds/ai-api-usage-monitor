@@ -130,8 +130,9 @@
 ### 4.9 초기 단가 시드 (`ProviderModelPriceSeed` / `OfficialProviderModelPriceCatalog`)
 
 - 애플리케이션 기동 시 `provider_model_price` **행 수가 0**일 때만 카탈로그 행을 INSERT.
-- 금액·모델 ID·공식 URL·as-of는 카탈로그 클래스 및 `private-docs` 설계 문서에 정의된 스냅샷을 따른다(런타임 크롤링 없음).
-- 로컬/개발에서 기존 DB를 재사용하는 경우, `billing.pricing.seed-missing=true`(또는 `BILLING_PRICING_SEED_MISSING=true`)로 “카탈로그에 있는데 DB에 없는 row만” 보강 삽입할 수 있다.
+- 금액·모델 ID·공식 URL·as-of는 [`OfficialProviderModelPriceCatalog`](../services/billing-service/src/main/java/com/eevee/billingservice/pricing/OfficialProviderModelPriceCatalog.java)에 정의된 스냅샷을 따른다(런타임 크롤링 없음). **현재 as-of: `2026-05-30`**, OpenAI·Anthropic·Google Standard/Base chat·reasoning 모델 약 **70**행.
+- **Flyway**: 기존 DB에 누락 row를 보강하는 idempotent INSERT는 `services/billing-service/src/main/resources/db/migration/` 의 `V20260509*`(OpenAI·Anthropic), `V20260530120000__google_*`, `V20260530120100__provider_model_price_gap_*` 를 본다. 운영 배포 시 Flyway 적용으로 `provider_model_price`에 Google·갭 모델이 들어간다.
+- 로컬/개발에서 기존 DB를 재사용하는 경우, `billing.pricing.seed-missing=true`(또는 `BILLING_PRICING_SEED_MISSING=true`)로 “카탈로그에 있는데 DB에 없는 row만” 보강 삽입할 수 있다. 상세·alias 규칙: [`docs/billing-pricing-catalog-ops.md`](billing-pricing-catalog-ops.md).
 
 ### 4.10 Next.js BFF (`services/billing-service/web`)
 

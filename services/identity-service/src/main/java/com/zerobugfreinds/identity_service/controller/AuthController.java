@@ -1,6 +1,7 @@
 package com.zerobugfreinds.identity_service.controller;
 
 import com.zerobugfreinds.identity_service.common.ApiResponse;
+import com.zerobugfreinds.identity_service.dto.ChangePasswordRequest;
 import com.zerobugfreinds.identity_service.dto.DeleteAccountRequest;
 import com.zerobugfreinds.identity_service.dto.ForgotPasswordRequest;
 import com.zerobugfreinds.identity_service.dto.LoginRequest;
@@ -15,6 +16,7 @@ import com.zerobugfreinds.identity_service.dto.UpdateProfileRequest;
 import com.zerobugfreinds.identity_service.exception.AuthContractViolationException;
 import com.zerobugfreinds.identity_service.entity.User;
 import com.zerobugfreinds.identity_service.service.AccountDeletionService;
+import com.zerobugfreinds.identity_service.service.AccountSecurityService;
 import com.zerobugfreinds.identity_service.service.PasswordResetService;
 import com.zerobugfreinds.identity_service.service.UserService;
 import jakarta.validation.Valid;
@@ -40,15 +42,18 @@ public class AuthController {
 
 	private final UserService userService;
 	private final PasswordResetService passwordResetService;
+	private final AccountSecurityService accountSecurityService;
 	private final AccountDeletionService accountDeletionService;
 
 	public AuthController(
 			UserService userService,
 			PasswordResetService passwordResetService,
+			AccountSecurityService accountSecurityService,
 			AccountDeletionService accountDeletionService
 	) {
 		this.userService = userService;
 		this.passwordResetService = passwordResetService;
+		this.accountSecurityService = accountSecurityService;
 		this.accountDeletionService = accountDeletionService;
 	}
 
@@ -84,6 +89,18 @@ public class AuthController {
 		return ResponseEntity.ok()
 				.cacheControl(CacheControl.noStore().mustRevalidate())
 				.body(ApiResponse.ok("Login successful", body));
+	}
+
+	@PostMapping("/change-password")
+	public ResponseEntity<ApiResponse<Void>> changePassword(
+			Authentication authentication,
+			@Valid @RequestBody ChangePasswordRequest request
+	) {
+		User user = userService.findByAuthenticatedPrincipal(authentication.getName());
+		accountSecurityService.changePassword(user.getId(), request);
+		return ResponseEntity.ok()
+				.cacheControl(CacheControl.noStore().mustRevalidate())
+				.body(ApiResponse.ok("비밀번호가 변경되었습니다", null));
 	}
 
 	@PutMapping("/profile")

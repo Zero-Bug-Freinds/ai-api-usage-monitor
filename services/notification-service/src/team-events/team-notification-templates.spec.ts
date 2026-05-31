@@ -26,6 +26,29 @@ describe('buildTeamNotificationCopy', () => {
     expect(copy.body).toContain('Acme');
   });
 
+  it('renders TEAM_INVITE_CREATED in Korean', () => {
+    const payload = {
+      eventType: 'TEAM_INVITE_CREATED',
+      teamId: '1',
+      teamName: 'Acme',
+      actorUserId: 'inviter',
+      occurredAt: '2026-01-01T00:00:00.000Z',
+      recipientUserIds: ['invitee'],
+      invitationId: 'inv-1',
+      receiverId: 'invitee',
+      inviterId: 'inviter',
+    } as TeamDomainEventPayload;
+
+    const copy = buildTeamNotificationCopy(
+      'TEAM_INVITE_CREATED',
+      payload,
+      'invitee',
+      'ko',
+    );
+    expect(copy.title).toBe('팀 초대');
+    expect(copy.body).toContain('Acme');
+  });
+
   it('renders TEAM_MEMBER_JOINED in Korean', () => {
     const payload = {
       eventType: 'TEAM_MEMBER_JOINED',

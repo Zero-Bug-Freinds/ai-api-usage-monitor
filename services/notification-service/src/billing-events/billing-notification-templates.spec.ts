@@ -25,6 +25,26 @@ describe('buildBillingBudgetThresholdCopy', () => {
     expect(copy.body).toContain('API 키(Gemini 키 1)');
     expect(copy.body).toContain('예산');
   });
+
+  it('renders English template with API key label and en-US currency', () => {
+    const payload = {
+      schemaVersion: 1,
+      occurredAt: '2026-04-27T00:00:00.000Z',
+      monthStart: '2026-04-01',
+      thresholdPct: 0.8,
+      monthlyTotalUsd: 80,
+      monthlyBudgetUsd: 100,
+    } as BillingBudgetThresholdReachedEventPayload;
+
+    const copy = buildBillingBudgetThresholdCopy(
+      { payload: { ...payload }, apiKeyId: '2', apiKeyAlias: 'Work key' },
+      'en',
+    );
+    expect(copy.title).toBe('Budget threshold reached');
+    expect(copy.body).toContain('API key (Work key)');
+    expect(copy.body).not.toContain('API 키');
+    expect(copy.body).toContain('$80.00');
+  });
 });
 
 describe('buildBillingTeamApiKeyBudgetThresholdCopy', () => {

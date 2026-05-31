@@ -321,7 +321,7 @@ export function NotificationsPage() {
                         <span className="rounded-full border bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">{n.type}</span>
                       ) : null}
                       {unread ? (
-                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">NEW</span>
+                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">새 알림</span>
                       ) : null}
                     </div>
                     <p className="mt-2 whitespace-pre-wrap text-sm text-foreground/90">{n.body}</p>

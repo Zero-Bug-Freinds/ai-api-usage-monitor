@@ -11,6 +11,8 @@ public interface TeamApiKeySnapshotRepository
 
 	Optional<TeamApiKeySnapshotEntity> findByTeamIdAndTeamApiKeyId(Long teamId, Long teamApiKeyId);
 
+	void deleteByTeamIdAndTeamApiKeyId(Long teamId, Long teamApiKeyId);
+
 	List<TeamApiKeySnapshotEntity> findByTeamIdOrderByUpdatedAtDesc(Long teamId);
 
 	List<TeamApiKeySnapshotEntity> findAllByOrderByUpdatedAtDesc();

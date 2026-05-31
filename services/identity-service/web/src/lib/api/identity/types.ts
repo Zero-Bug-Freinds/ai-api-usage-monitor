@@ -96,3 +96,9 @@ export type ProfileUpdateResponse = {
   role: Role
 }
 
+export type ChangePasswordRequest = {
+  currentPassword: string
+  newPassword: string
+  newPasswordConfirm: string
+}
+

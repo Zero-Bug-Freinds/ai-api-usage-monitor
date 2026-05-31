@@ -12,6 +12,7 @@
 - **사용량·집계·대시보드 관점**: 본 문서 **§6·§11**, 다이어그램은 [`docs/c4-architecture-diagrams.md`](c4-architecture-diagrams.md)
 - **서비스별 DB 구성·서비스 간 데이터 전달**(물리/논리 PostgreSQL, 타 서비스 DB 직접 접근 금지, API vs RabbitMQ, 조회 성능): [`docs/msa-database-and-service-integration.md`](msa-database-and-service-integration.md)
 - **Agent Service 이벤트 스냅샷/어시스턴트 개요**: [`docs/agent-service-overview-20260430.md`](agent-service-overview-20260430.md)
+- **회원 탈퇴 — 설계·계약·서비스별 요구사항 (정본)**: [`docs/account-deletion.md`](account-deletion.md)
 
 ---
 
@@ -206,7 +207,8 @@
   - **Identity 외부 API 키 상태 스트림 → 인앱(비동기):** Identity가 **`identity.events`** / **`identity.external-api-key.status-changed`** 로 발행하는 JSON 중, 삭제·활성 등은 **notification-service**가 별도 큐로 소비해 인앱·멱등 키를 만든다([`services/notification-service/README.md`](../services/notification-service/README.md) §「Identity 개인 외부 API 키」). billing-service는 동일 스트림에서 **`EXTERNAL_API_KEY_DELETED`** 만 골라 **개인 지출 집계**를 정리한다([`docs/billing-service-overview-20260412.md`](billing-service-overview-20260412.md) §6.2).
   - **팀 도메인 이벤트 → 인앱(비동기):** **team-service**가 RabbitMQ TopicExchange **`team.events`** 로 발행하는 팀 도메인 이벤트(본문·헤더 `eventType`, 페이로드 정본은 [`docs/contracts/web-team-bff.md`](contracts/web-team-bff.md) §6.2·Java `TeamDomainOutboundEvent`)를 **notification-service**가 큐에서 소비해 `InAppNotification` 행을 생성한다. `type` 필드는 `team:{eventType}` 형태를 사용한다. 동일 이벤트 재전송 시 중복 행 방지를 위해 **`NotificationDelivery.dedupeKey`**(채널 `in-app`)로 멱등 처리한다. `TEAM_INVITATION_ACCEPTED`는 초대한 사용자에게, `TEAM_MEMBER_JOINED`는 **참여한 사용자(`receiverId`)에게만** 인앱을 생성해 초대자에게 수락 알림과 중복되지 않게 한다. **`TEAM_DELETED` 수신 시** notification-service는 `meta.teamId`가 동일한 **`team:TEAM_INVITE_CREATED`** 인앱을 void 처리(`actions` 제거·`staleReason` 등)해, 팀 삭제 후에도 남은 초대 버튼이 보이지 않게 한다. 구현·환경 변수·로컬 Compose는 **`services/notification-service/README.md`** 를 본다.
   - **팀 초대 수락/거절(동기 액션):** `TEAM_INVITE_CREATED` 인앱 알림에는 `meta.actions`로 수락/거절 경로가 포함될 수 있으며, UI는 이를 호출해 **notification-service 액션 API**(`POST /api/team-invitations/{invitationId}/accept|reject`)를 실행한다. notification-service는 team-service의 **내부 API**(`POST /internal/v1/team-invitations/{invitationId}/decision`)로 위임해 멤버십을 적용한다(계약: [`docs/contracts/web-team-bff.md`](contracts/web-team-bff.md) §6.1). team-service가 **HTTP 400/404/409**로 거절하면 해당 초대 인앱 행을 void 처리한 뒤 동일 상태를 클라이언트에 전달한다(타임아웃은 **504**에 가깝게 매핑).
-  - **인앱 목록 UI(Notification `web`):** 기본 뷰는 **읽지 않은 알림만** 표시하고, **읽음 알림 포함** 토글로 읽음 행을 다시 볼 수 있다. `meta.staleReason` 또는 `actionedAt`이 있는 팀 초대는 수락/거절 버튼을 렌더링하지 않는다.
+  - **인앱 목록 UI(Notification `web`):** 기본 뷰는 **읽지 않은 알림만** 표시하고, **읽음 알림 포함** 토글로 읽음 행을 다시 볼 수 있다. `meta.staleReason` 또는 `actionedAt`이 있는 팀 초대는 수락/거절 버튼을 렌더링하지 않는다. 읽지 않은 행 배지는 **`새 알림`**(한국어 UI).
+  - **인앱 copy locale:** 팀·Identity·Billing 예산 임계 등 RabbitMQ 소비 경로는 handler **코드 fallback `ko`**(환경 변수로 `en` 전환 가능). 생성 시점 locale이 `title`/`body`에 고정되며, 기존 영어 행 backfill은 하지 않는다. 정본: [`services/notification-service/README.md`](../services/notification-service/README.md) §「인앱 알림 locale」.
   - 외부 채널(Slack/Email) 등은 별도 연동을 따르며, **Billing 예산 임계**는 이미 RabbitMQ 소비자로 인앱에 연결되어 있다(발행·페이로드 계약: [`docs/billing-outbound-events.md`](billing-outbound-events.md), 구현·환경 변수: **`services/notification-service/README.md`**).
 
 ### 4.10 Team Service
@@ -266,12 +268,10 @@
 - `usage.cost.finalized`
   - 발행 주체: Billing Service (`billing.events` exchange)
   - 소비 주체: Usage Service (`usage-service.usage-cost-finalized.queue`)
-- `identity.user.account-deletion.requested` / `identity.user.account-deletion.ack`
-  - 발행/소비: Identity ↔ Team 계정 삭제 코디네이션
-- `identity.user.account-deletion-requested`
-  - 발행 주체: Identity Service (회원 탈퇴 요청)
-  - 소비 주체: Team Service (해당 사용자 팀 멤버십/초대 정리) 등
-  - 후속 ACK: Team Service는 정리 완료 후 `identity.user.account-deletion-ack` 를 발행해 Identity의 삭제 코디네이션을 완료한다.
+- `identity.user.account-deletion-requested` / `identity.user.account-deletion-ack`
+  - 발행 주체: Identity Service (회원 탈퇴 요청·ACK 수집)
+  - 소비 주체: **billing-service**, **usage-service**, **team-service**(각자 로컬 DB purge 후 ACK) 등 — **정본** [`docs/account-deletion.md`](account-deletion.md)
+  - Identity는 ACK `source`가 **`billing`·`usage`·`team` 모두** 수집된 뒤 `users` 행을 삭제한다.
 - `identity.external-api-key.status-changed` (JSON, Identity → 다중 소비자)
   - 발행 주체: Identity Service — exchange **`identity.events`**, routing key **`identity.external-api-key.status-changed`**(기본; 상태·예산·삭제 페이로드가 같은 스트림에 실릴 수 있음).
   - 소비 주체(예): **usage-service**, **agent-service**, **notification-service**(인앱·삭제 등), **billing-service** — billing은 본문 **`eventType=EXTERNAL_API_KEY_DELETED`** 만 처리해 해당 키의 **개인** 일·월 집계·`billing_user_api_key_seen`를 삭제한다([`docs/billing-service-overview-20260412.md`](billing-service-overview-20260412.md) §6.2).
