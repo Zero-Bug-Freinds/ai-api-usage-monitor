@@ -62,10 +62,21 @@ import {
   type TeamBffApiKeyRow,
 } from "@/lib/usage/dashboard-provider-api-keys"
 import { useDashboardAggregateApiKeySync } from "@/lib/usage/hooks/use-dashboard-aggregate-api-key"
+import { DashboardRequestShareRow } from "@/components/usage/dashboard-request-share-row"
 import { UsageFilterBar } from "@/components/usage/usage-filter-bar"
 import { useFilterStorage } from "@/lib/usage/hooks/use-filter-storage"
-import { DashboardRequestShareRow } from "@/components/usage/dashboard-request-share-row"
 import { labelForProviderCode } from "@/lib/usage/provider-chart"
+import {
+  LATENCY_BAND_FILL,
+  LATENCY_ERROR_RATE_LINE,
+  LATENCY_LEGEND_LABEL_FILL,
+  LATENCY_MAIN_LINE,
+  LATENCY_MS_THRESHOLD,
+  LATENCY_P95_LINE,
+  LATENCY_P99_LINE,
+  LATENCY_SUCCESS_RATE_LINE,
+  LATENCY_THRESHOLD_LINE,
+} from "@/lib/usage/latency-chart-colors"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const AnyLegend = Legend as any
@@ -393,10 +404,6 @@ function RequestVolumeTooltip({ active, label, payload }: RequestVolumeTooltipPr
     </div>
   )
 }
-
-const LATENCY_MS_THRESHOLD = 2000
-const LATENCY_MAIN_LINE = "rgba(91, 33, 182, 0.85)"
-const LATENCY_BAND_FILL = "rgba(139, 92, 246, 0.09)"
 
 /**
  * Recharts `dataKey` / axis field names. Prefer `dataKey={USAGE_CHART_DATA_KEYS.x}` over
@@ -1477,11 +1484,17 @@ export function UsageDashboard() {
                     label={{ value: "비율 (%)", angle: 90, position: "insideRight", offset: 2 }}
                   />
                   <Tooltip content={LatencyStabilityTooltip} cursor={{ stroke: "transparent", fill: "transparent" }} />
-                  <AnyLegend onClick={latencyLegendClick} wrapperStyle={{ cursor: "pointer" }} />
+                  <AnyLegend
+                    onClick={latencyLegendClick}
+                    wrapperStyle={{ cursor: "pointer" }}
+                    formatter={(value: string) => (
+                      <span style={{ color: LATENCY_LEGEND_LABEL_FILL }}>{value}</span>
+                    )}
+                  />
                   <ReferenceLine
                     yAxisId="lat"
                     y={LATENCY_MS_THRESHOLD}
-                    stroke="#ef4444"
+                    stroke={LATENCY_THRESHOLD_LINE}
                     strokeDasharray="4 4"
                     strokeWidth={1}
                   />
@@ -1522,7 +1535,7 @@ export function UsageDashboard() {
                     type="monotone"
                     dataKey={USAGE_CHART_DATA_KEYS.p95LatencyMs}
                     name="P95 지연"
-                    stroke="#818cf8"
+                    stroke={LATENCY_P95_LINE}
                     strokeWidth={1.25}
                     strokeDasharray="4 3"
                     dot={false}
@@ -1534,7 +1547,7 @@ export function UsageDashboard() {
                     type="monotone"
                     dataKey={USAGE_CHART_DATA_KEYS.p99LatencyMs}
                     name="P99 지연"
-                    stroke="#93c5fd"
+                    stroke={LATENCY_P99_LINE}
                     strokeWidth={1.25}
                     strokeDasharray="2 2"
                     dot={false}
@@ -1546,7 +1559,7 @@ export function UsageDashboard() {
                     type="monotone"
                     dataKey={USAGE_CHART_DATA_KEYS.successRate}
                     name="성공률"
-                    stroke="#10b981"
+                    stroke={LATENCY_SUCCESS_RATE_LINE}
                     strokeWidth={1}
                     dot={false}
                     hide={!!latencyLegendHidden.successRate}
@@ -1556,7 +1569,7 @@ export function UsageDashboard() {
                     type="monotone"
                     dataKey={USAGE_CHART_DATA_KEYS.errorRate}
                     name="오류율"
-                    stroke="#f43f5e"
+                    stroke={LATENCY_ERROR_RATE_LINE}
                     strokeWidth={1}
                     dot={false}
                     hide={!!latencyLegendHidden.errorRate}
@@ -1564,7 +1577,7 @@ export function UsageDashboard() {
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
-            <p className="mt-2 text-center text-[11px] text-muted-foreground">
+            <p className="mt-2 text-center text-[11px] font-medium text-[#525252]">
               빨간 점선은 {formatLatencyMsHuman(LATENCY_MS_THRESHOLD)} 임계치입니다. 범례를 클릭하면 시리즈를 끄거나 켤 수 있습니다.
             </p>
           </section>

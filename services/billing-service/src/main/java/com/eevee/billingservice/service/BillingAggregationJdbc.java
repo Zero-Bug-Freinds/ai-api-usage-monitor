@@ -252,4 +252,35 @@ public class BillingAggregationJdbc {
         );
         return new int[] {daily, monthly, seen};
     }
+
+    /**
+     * Deletes all personal aggregate rows for an Identity user (all API keys and periods).
+     * Matching uses {@code lower(trim(user_id))} so email vs numeric id conventions align.
+     *
+     * @return deleted row counts {@code [daily_expenditure_agg, monthly_expenditure_agg, billing_user_api_key_seen]}
+     */
+    public int[] deleteAllPersonalAggregatesForUser(String userId) {
+        int daily = jdbcTemplate.update(
+                """
+                        DELETE FROM daily_expenditure_agg
+                        WHERE lower(trim(user_id)) = lower(trim(?))
+                        """,
+                userId
+        );
+        int monthly = jdbcTemplate.update(
+                """
+                        DELETE FROM monthly_expenditure_agg
+                        WHERE lower(trim(user_id)) = lower(trim(?))
+                        """,
+                userId
+        );
+        int seen = jdbcTemplate.update(
+                """
+                        DELETE FROM billing_user_api_key_seen
+                        WHERE lower(trim(user_id)) = lower(trim(?))
+                        """,
+                userId
+        );
+        return new int[] {daily, monthly, seen};
+    }
 }
