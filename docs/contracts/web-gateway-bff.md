@@ -1,6 +1,6 @@
 # Web(Next.js) ↔ API Gateway — Usage BFF 계약
 
-버전: 1.7  
+버전: 1.8  
 관련: [docs/architecture.md](../architecture.md) §1.3, §10.1, §10.2, §13, [게이트웨이·Proxy 계약](./gateway-proxy.md)(AI 공개 경로·Bearer·`X-User-Id`·라우트·§5.1 Compose·`GATEWAY_SHARED_SECRET`), [Web·Identity BFF 계약](./web-identity-bff.md) §5.1·§6·§9, [저장소 구조](../repository-structure.md) §6, [웹 경계](./web-split-boundary.md)
 
 **소스 트리:** Usage BFF·대시보드 UI의 **정본**은 `services/usage-service/web/` 이다. **공용 UI(Shadcn 래퍼·`cn`)** 는 루트 pnpm workspace 패키지 **`@ai-usage/ui`**(`packages/ui`)를 참조한다([`web-split-boundary.md` §1.1](./web-split-boundary.md), [`repository-structure.md`](../repository-structure.md) §6).
@@ -52,6 +52,7 @@
 | `GET /dashboard/api/usage/dashboard/series/daily?…` | `/api/v1/usage/dashboard/series/daily?…` |
 | `GET /dashboard/api/usage/dashboard/series/monthly?…` | `/api/v1/usage/dashboard/series/monthly?…` |
 | `GET /dashboard/api/usage/dashboard/by-model?…` | `/api/v1/usage/dashboard/by-model?…` |
+| `GET /dashboard/api/usage/dashboard/kpi/latency-insight?…` | `/api/v1/usage/dashboard/kpi/latency-insight?…` |
 | `GET /dashboard/api/usage/logs?…` | `/api/v1/usage/logs?…` |
 
 쿼리 파라미터(기간·페이지 등)는 Usage 서비스 API와 동일하게 전달한다. 응답은 **Usage DTO JSON**(공통 `ApiResponse` 래핑 없음)이 기본이다.
@@ -61,6 +62,35 @@
 - **사용 로그 테이블:** API가 주는 `occurredAt`(ISO-8601)은 브라우저에서 **`Asia/Seoul`(KST)** 기준으로 포맷해 표시한다(`services/usage-service/web/src/lib/usage/format-occurred-at-kst.ts` 등). 헤더 문구는 이에 맞춘다.
 - **집계·요약 카드:** 일자·“오늘” 등 대시보드 집계는 **KST 기준 일자**로 해석/표시하며, 로그 행 시각과 동일한 KST 기준을 사용한다.
 - **차트 색상:** 대시보드 차트 팔레트는 **무채색 계열**로 통일해 UI 톤과 맞춘다(`usage-dashboard.tsx`의 `CHART_COLORS`, 그리드 스트로크 등).
+
+#### 3.1.2 응답 성능 및 안정성 차트(개인·팀별 나의)
+
+**적용 화면:** `services/usage-service/web/src/components/usage/usage-dashboard.tsx` — `dataContext=PERSONAL`·`TEAM_MEMBER_ONLY` 공통.
+
+**상단 안내(비교 배너 vs P95/P99 설명)**
+
+- 문구 정본: `services/usage-service/web/src/lib/usage/messaging/dashboard-messages.ts` (`PERSONAL_DASHBOARD_MESSAGES.latency`, `latencyInsightBannerText()`).
+- `GET …/dashboard/kpi/latency-insight`(BFF 경유) 응답으로 `currentAvgLatencyMs`·`previousAvgLatencyMs`·`changePercent`를 받는다.
+- **데이터 없음**(`insight == null` 또는 `currentAvgLatencyMs == null`): `latency.noData`를 bordered `text-sm` 배너로 표시.
+- **이전 동일 길이 구간과 비교 가능**(`previousAvgLatencyMs != null`): 기존처럼 개선/악화/동일 비교 문장을 bordered `text-sm` 배너로 표시.
+- **현재 구간 데이터는 있으나 이전 구간 비교 불가**(`currentAvgLatencyMs != null` && `previousAvgLatencyMs == null`): `latencyInsightBannerText()`는 **`null`** 을 반환하고, bordered 비교 배너는 **표시하지 않는다**. 대신 `text-xs text-muted-foreground` 스택으로 아래 두 줄을 표시한다(상호 배타).
+  - `P95 지연:` + `latency.p95Explain` — *전체 요청 중 가장 빠른 95%의 요청이 완료되기까지 걸린 시간 (상위 5%의 느린 유저가 겪은 지연)*
+  - `P99 지연:` + `latency.p99Explain` — *전체 요청 중 가장 빠른 99%의 요청이 완료되기까지 걸린 시간 (상위 1%의 극단적으로 느린 유저가 겪은 지연)*
+- 과거 `latency.noCompare`(“이전 동일 길이 구간의 평균 지연과 비교할 수 없습니다.”) 문구는 **제거**되었다.
+
+**P95/P99 지연선(색상 유지·패턴만 구분)**
+
+- Min–Max 분포 영역(`LATENCY_BAND_FILL`)·평균 지연·성공률/오류율·2s 기준선·툴팁·`latencyChartRows` 매핑은 변경하지 않는다.
+- P95/P99 `Line`의 **`stroke` hex는 기존 값 유지**(`#818cf8`, `#93c5fd`). 아래만 조정해 한눈에 구분한다.
+
+| 시리즈 | `strokeDasharray` | `strokeWidth` | 비고 |
+|--------|-------------------|---------------|------|
+| P95 지연 | `8 5` | `1.5` | 긴 대시 |
+| P99 지연 | `2 6` | `1.25` | 촘촘한 점선 |
+
+- 선택: `strokeLinecap="round"`. `dot`·이중선·애니메이션 추가는 하지 않는다.
+
+**회귀 테스트:** `services/usage-service/web/src/lib/usage/messaging/dashboard-messages.test.ts` — 비교 불가 시 `latencyInsightBannerText()` → `toBeNull()`.
 
 ### 3.2 프론트 호출·401
 

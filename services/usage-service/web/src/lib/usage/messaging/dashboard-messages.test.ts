@@ -51,8 +51,12 @@ describe("latencyInsightBannerText", () => {
       PERSONAL_DASHBOARD_MESSAGES.latency.noData,
     )
     expect(
-      latencyInsightBannerText({ currentAvgLatencyMs: 10, previousAvgLatencyMs: null }, "전일 동기 대비", fmt),
-    ).toBe(PERSONAL_DASHBOARD_MESSAGES.latency.noCompare)
+      latencyInsightBannerText(
+        { currentAvgLatencyMs: 10, previousAvgLatencyMs: null, changePercent: null },
+        "전일 동기 대비",
+        fmt,
+      ),
+    ).toBeNull()
   })
 })
 
