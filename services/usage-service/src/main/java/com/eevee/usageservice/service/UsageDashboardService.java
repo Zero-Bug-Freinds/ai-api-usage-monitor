@@ -25,6 +25,7 @@ import com.eevee.usageservice.repository.analytics.UsageAnalyticsJdbcRepository;
 import com.eevee.usageservice.service.filter.ApiKeyCredentialFilter;
 import com.eevee.usageservice.service.filter.UsageApiKeyFilterConsolidationService;
 import com.eevee.usageservice.service.filter.UsageApiKeyFilterResolutionService;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -50,6 +51,7 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.Map;
 
@@ -1259,7 +1261,8 @@ public class UsageDashboardService {
                 e.getUpstreamHost(),
                 e.getStreaming(),
                 e.isRequestSuccessful(),
-                e.getUpstreamStatusCode()
+                e.getUpstreamStatusCode(),
+                jsonNodeToProviderTokenDetailsMap(details)
         );
     }
 
@@ -1315,6 +1318,17 @@ public class UsageDashboardService {
             return null;
         }
         return node.get(fieldName).longValue();
+    }
+
+    private Map<String, Object> jsonNodeToProviderTokenDetailsMap(JsonNode details) {
+        if (details == null || !details.isObject() || details.isEmpty()) {
+            return null;
+        }
+        try {
+            return objectMapper.convertValue(details, new TypeReference<Map<String, Object>>() {});
+        } catch (Exception ex) {
+            return null;
+        }
     }
 
     private Range validateRange(LocalDate from, LocalDate toInclusive) {

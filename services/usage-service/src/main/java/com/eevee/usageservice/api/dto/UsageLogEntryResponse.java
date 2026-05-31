@@ -2,6 +2,7 @@ package com.eevee.usageservice.api.dto;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 
 public record UsageLogEntryResponse(
@@ -29,6 +30,8 @@ public record UsageLogEntryResponse(
         String upstreamHost,
         Boolean streaming,
         boolean requestSuccessful,
-        Integer upstreamStatusCode
+        Integer upstreamStatusCode,
+        /** Raw provider_token_details JSON from DB (snake_case keys); null when absent or unparseable. */
+        Map<String, Object> providerTokenDetails
 ) {
 }

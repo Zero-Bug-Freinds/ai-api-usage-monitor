@@ -145,9 +145,14 @@ public class UsageRecordedService {
         model = effectiveModelName(model, event.provider());
         Long estimatedReasoningTokens = resolveReasoningTokens(completionReasoningTokens);
         Long normalizedCompletion = normalizeCompletionTokens(event.provider(), completion, prompt, total, estimatedReasoningTokens);
-        String providerTokenDetailsJson = buildProviderTokenDetailsJson(event.provider(), promptCachedTokens, promptAudioTokens,
-                completionReasoningTokens, completionAudioTokens,
-                completionAcceptedPredictionTokens, completionRejectedPredictionTokens);
+        String providerTokenDetailsJson = buildProviderTokenDetailsJson(
+                promptCachedTokens,
+                promptAudioTokens,
+                completionReasoningTokens,
+                completionAudioTokens,
+                completionAcceptedPredictionTokens,
+                completionRejectedPredictionTokens
+        );
         boolean successful = Boolean.TRUE.equals(event.requestSuccessful());
         return new UsageRecordedLogEntity(
                 event.eventId(),
@@ -178,16 +183,15 @@ public class UsageRecordedService {
         );
     }
 
-    private String buildProviderTokenDetailsJson(AiProvider provider,
-                                                 Long promptCachedTokens,
+    /**
+     * Provider-agnostic breakdown map (snake_case keys). Any non-null TokenUsage breakdown field is stored.
+     */
+    private String buildProviderTokenDetailsJson(Long promptCachedTokens,
                                                  Long promptAudioTokens,
                                                  Long completionReasoningTokens,
                                                  Long completionAudioTokens,
                                                  Long completionAcceptedPredictionTokens,
                                                  Long completionRejectedPredictionTokens) {
-        if (provider != AiProvider.OPENAI) {
-            return null;
-        }
         var map = new java.util.LinkedHashMap<String, Long>();
         if (promptCachedTokens != null) {
             map.put("prompt_cached_tokens", promptCachedTokens);
@@ -213,7 +217,7 @@ public class UsageRecordedService {
         try {
             return objectMapper.writeValueAsString(map);
         } catch (JsonProcessingException e) {
-            log.warn("Failed to serialize provider_token_details, skipping. provider={}", provider, e);
+            log.warn("Failed to serialize provider_token_details, skipping.", e);
             return null;
         }
     }
