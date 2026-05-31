@@ -12,6 +12,7 @@
 - **사용량·집계·대시보드 관점**: 본 문서 **§6·§11**, 다이어그램은 [`docs/c4-architecture-diagrams.md`](c4-architecture-diagrams.md)
 - **서비스별 DB 구성·서비스 간 데이터 전달**(물리/논리 PostgreSQL, 타 서비스 DB 직접 접근 금지, API vs RabbitMQ, 조회 성능): [`docs/msa-database-and-service-integration.md`](msa-database-and-service-integration.md)
 - **Agent Service 이벤트 스냅샷/어시스턴트 개요**: [`docs/agent-service-overview-20260430.md`](agent-service-overview-20260430.md)
+- **회원 탈퇴 — 설계·계약·서비스별 요구사항 (정본)**: [`docs/account-deletion.md`](account-deletion.md)
 
 ---
 
@@ -267,12 +268,10 @@
 - `usage.cost.finalized`
   - 발행 주체: Billing Service (`billing.events` exchange)
   - 소비 주체: Usage Service (`usage-service.usage-cost-finalized.queue`)
-- `identity.user.account-deletion.requested` / `identity.user.account-deletion.ack`
-  - 발행/소비: Identity ↔ Team 계정 삭제 코디네이션
-- `identity.user.account-deletion-requested`
-  - 발행 주체: Identity Service (회원 탈퇴 요청)
-  - 소비 주체: Team Service (해당 사용자 팀 멤버십/초대 정리) 등
-  - 후속 ACK: Team Service는 정리 완료 후 `identity.user.account-deletion-ack` 를 발행해 Identity의 삭제 코디네이션을 완료한다.
+- `identity.user.account-deletion-requested` / `identity.user.account-deletion-ack`
+  - 발행 주체: Identity Service (회원 탈퇴 요청·ACK 수집)
+  - 소비 주체: **billing-service**, **usage-service**, **team-service**(각자 로컬 DB purge 후 ACK) 등 — **정본** [`docs/account-deletion.md`](account-deletion.md)
+  - Identity는 ACK `source`가 **`billing`·`usage`·`team` 모두** 수집된 뒤 `users` 행을 삭제한다.
 - `identity.external-api-key.status-changed` (JSON, Identity → 다중 소비자)
   - 발행 주체: Identity Service — exchange **`identity.events`**, routing key **`identity.external-api-key.status-changed`**(기본; 상태·예산·삭제 페이로드가 같은 스트림에 실릴 수 있음).
   - 소비 주체(예): **usage-service**, **agent-service**, **notification-service**(인앱·삭제 등), **billing-service** — billing은 본문 **`eventType=EXTERNAL_API_KEY_DELETED`** 만 처리해 해당 키의 **개인** 일·월 집계·`billing_user_api_key_seen`를 삭제한다([`docs/billing-service-overview-20260412.md`](billing-service-overview-20260412.md) §6.2).

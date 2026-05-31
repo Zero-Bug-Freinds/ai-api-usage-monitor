@@ -103,11 +103,12 @@ RabbitMQ는 **메시지 브로커**로, 수신 서비스가 바쁘거나 연결�
 - 이벤트 스키마 변경은 **버전·호환 정책**과 함께 관리한다.
 - “참조 데이터 최신성”이 즉시 필요하면 API 조회와 조합하거나, **로컬 캐시·프로젝션** 전략을 문서화한다.
 
-### 6.4 Identity ↔ Team 탈퇴 동기화(적용 예시)
+### 6.4 Identity 회원 탈퇴 — 이벤트 기반 정리(적용 예시)
 
 - Identity는 회원 탈퇴 요청 시 `identity.events` 교환기로 `identity.user.account-deletion-requested` 이벤트를 발행한다.
-- Team은 전용 큐를 바인딩해 이벤트를 구독하고, Team DB에서 해당 사용자의 멤버십·초대 데이터를 멱등하게 정리한다.
-- Team은 정리 완료 후 `identity.user.account-deletion-ack` 이벤트를 발행하고, Identity는 ACK를 수신해 최종 탈퇴 코디네이션을 진행한다.
+- **billing-service**, **usage-service**, **team-service** 등은 각자 전용 큐를 바인딩해 이벤트를 구독하고, **자기 DB**에서 해당 사용자 데이터를 멱등하게 정리한다.
+- 정리가 끝난 서비스는 `identity.user.account-deletion-ack` 로 ACK를 발행한다(`source`: `billing` \| `usage` \| `team`). Identity는 **세 ACK가 모두** 수집된 뒤에만 `users` 행을 삭제한다.
+- **notification-service**, **agent-service** 등 ACK 게이트 밖 서비스의 정리 범위·우선순위는 [`docs/account-deletion.md`](account-deletion.md)를 본다.
 - 이 흐름에서도 서비스 간 DB 직접 접근은 금지하며, 데이터 정합은 이벤트 기반 eventual consistency로 맞춘다.
 
 ---
