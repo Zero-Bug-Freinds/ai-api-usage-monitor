@@ -25,6 +25,7 @@ import {
   resolveConsoleNavLink,
   resolveWebEdgeLogoutPathsFromEnv,
 } from "./console-nav"
+import { AI_USAGE_NOTIFICATIONS_CHANGED_EVENT } from "./notification-events"
 
 type TeamSidebarItem = {
   id: string
@@ -37,6 +38,30 @@ const TEAM_SUB_MENU = [
 ] as const
 const AI_USAGE_LOGOUT_EVENT = "ai-usage:logout"
 const LOCAL_STORAGE_KEYS_TO_PRESERVE_ON_LOGOUT = ["team.dismissedExpiredInvitationNoticeIds"] as const
+
+async function fetchNotificationUnreadCount(profile: ConsoleProfile): Promise<number | null> {
+  try {
+    const res = await fetch(notificationUnreadCountFetchUrl(profile), {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+    })
+
+    if (!res.ok) {
+      return null
+    }
+
+    const json: unknown = await res.json()
+    const value = (json as { unreadCount?: unknown } | null)?.unreadCount
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+      return null
+    }
+
+    return value
+  } catch {
+    return null
+  }
+}
 
 const ICONS: Record<ConsoleNavId, ReactNode> = {
   usageHome: <LayoutDashboard className="size-[1.125rem] shrink-0" aria-hidden />,
@@ -157,43 +182,34 @@ export function ConsoleSidebarInner({
 
   React.useEffect(() => {
     let cancelled = false
-    let timer: ReturnType<typeof setInterval> | null = null
 
     const rawPollMs = process.env.NEXT_PUBLIC_NOTIFICATION_POLL_MS
     const pollMs = Math.max(1_000, Number.parseInt(rawPollMs ?? "", 10) || 20_000)
 
     async function fetchUnreadCount() {
-      try {
-        const res = await fetch(notificationUnreadCountFetchUrl(profile), {
-          method: "GET",
-          credentials: "include",
-          cache: "no-store",
-        })
-
-        if (!res.ok) {
-          if (!cancelled) setUnreadCount(null)
-          return
-        }
-
-        const json: unknown = await res.json()
-        const value = (json as { unreadCount?: unknown } | null)?.unreadCount
-        if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
-          if (!cancelled) setUnreadCount(null)
-          return
-        }
-
-        if (!cancelled) setUnreadCount(value)
-      } catch {
-        if (!cancelled) setUnreadCount(null)
-      }
+      const value = await fetchNotificationUnreadCount(profile)
+      if (!cancelled) setUnreadCount(value)
     }
 
     void fetchUnreadCount()
-    timer = setInterval(fetchUnreadCount, pollMs)
+    const timer = setInterval(() => void fetchUnreadCount(), pollMs)
+
+    const onNotificationsChanged = () => void fetchUnreadCount()
+    const onVisibilityOrFocus = () => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return
+      void fetchUnreadCount()
+    }
+
+    window.addEventListener(AI_USAGE_NOTIFICATIONS_CHANGED_EVENT, onNotificationsChanged)
+    window.addEventListener("visibilitychange", onVisibilityOrFocus)
+    window.addEventListener("focus", onVisibilityOrFocus)
 
     return () => {
       cancelled = true
-      if (timer) clearInterval(timer)
+      clearInterval(timer)
+      window.removeEventListener(AI_USAGE_NOTIFICATIONS_CHANGED_EVENT, onNotificationsChanged)
+      window.removeEventListener("visibilitychange", onVisibilityOrFocus)
+      window.removeEventListener("focus", onVisibilityOrFocus)
     }
   }, [profile])
 

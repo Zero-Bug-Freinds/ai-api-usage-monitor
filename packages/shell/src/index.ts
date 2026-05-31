@@ -27,6 +27,10 @@ export {
   resolveIdentityLogoutPathsFromEnv,
 } from "./console-shell"
 export { ConsoleShellInAppToastClient } from "./console-shell-in-app-toast-client"
+export {
+  AI_USAGE_NOTIFICATIONS_CHANGED_EVENT,
+  dispatchNotificationsChanged,
+} from "./notification-events"
 
 /** Alias for billing layouts (same layout as `ConsoleShell`). */
 export { ConsoleShell as BillingConsoleShell } from "./console-shell"

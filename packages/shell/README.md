@@ -16,6 +16,20 @@ Cross-app navigation (`console-nav.ts`):
 
 See `docs/aws-github-oidc-ecr-ssm.md` (GitHub Environment `NEXT_PUBLIC_*`, ALB DNS) and `.env.deploy.example`.
 
+## Sidebar notification badge (unread count)
+
+`ConsoleSidebarInner` (`console-sidebar.tsx`) shows a red badge on the **알림** nav item when `GET …/in-app-notifications/unread-count` returns `unreadCount > 0`. The count includes **pending team invites** (same server rule as before; not filtered on the client).
+
+| Mechanism | Behavior |
+|-----------|----------|
+| **Polling** | On mount and every `NEXT_PUBLIC_NOTIFICATION_POLL_MS` (minimum **1s**; default **20s** if unset). |
+| **Immediate refresh** | `window` event `ai-usage:notifications-changed` — dispatch with `dispatchNotificationsChanged()` from `@ai-usage/shell` (`notification-events.ts`). |
+| **Tab / window focus** | `visibilitychange` (when `document.visibilityState === "visible"`) and `focus` each trigger one refetch. |
+
+Notification `web` calls `dispatchNotificationsChanged()` after successful **read one**, **read all**, and **team invite accept/reject** so the badge updates without waiting for the poll interval. Contract: [`docs/contracts/web-notification-bff.md`](../../docs/contracts/web-notification-bff.md) §4.7.
+
+Unread fetch URL is built by `notificationUnreadCountFetchUrl(profile)` in `console-nav.ts` (same-origin `/notifications/api/notification/…` at web-edge).
+
 ## In-app notification toasts (`ConsoleShell`)
 
 `ConsoleShell` wraps non-notification profiles with a client subtree that polls the notification BFF and shows up to five toasts (bottom-right). **`profile === "notification"`** skips that subtree so notification-web’s own toast stack is not duplicated.
@@ -34,7 +48,7 @@ The listener calls a fixed browser path at web-edge:
 
 It does **not** use `NEXT_PUBLIC_BASE_PATH` from the embedding app, so embedded bundles under `/billing`, `/teams`, etc. still hit the notification app on the **current origin**.
 
-Optional: `NEXT_PUBLIC_NOTIFICATION_POLL_MS` (default 10s, minimum 2s).
+Optional: `NEXT_PUBLIC_NOTIFICATION_POLL_MS` — **toasts** default **10s**, minimum **2s** (`in-app-notification-toast-listener.tsx`). **Sidebar badge** uses the same env var with default **20s**, minimum **1s** (`console-sidebar.tsx`).
 
 ### Manual verification
 

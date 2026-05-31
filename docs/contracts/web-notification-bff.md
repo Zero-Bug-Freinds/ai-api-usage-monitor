@@ -1,6 +1,6 @@
 # Web(Next.js) ↔ Notification Service — Notification BFF 계약
 
-버전: 1.4  
+버전: 1.5  
 관련: [web-split-boundary.md](./web-split-boundary.md), [web-identity-bff.md](./web-identity-bff.md)(세션), [`docker/web-edge/nginx.conf.template`](../../docker/web-edge/nginx.conf.template), [architecture.md](../architecture.md) §4.9·§6·§10.2·§13, [web-team-bff.md](./web-team-bff.md) §6.2(팀 도메인 이벤트 스키마), [notification-service-gateway-integration-guide.md](../notification-service-gateway-integration-guide.md) §2(게이트웨이 신뢰 헤더)
 
 **소스 트리:** Notification `web`(UI+BFF)의 **정본**은 `services/notification-service/web/` 이다. Notification 백엔드(Nest+Prisma)는 `services/notification-service/` 이다.
@@ -37,7 +37,7 @@ Notification `web`은 Next `basePath=/notifications`를 사용한다.
 | `API_GATEWAY_URL` | Gateway 베이스 URL(트레일링 슬래시 없음). `gateway` 모드에서 BFF가 `{base}/api/notification/{segments...}` 로 프록시할 때 사용. |
 | `NOTIFICATION_SERVICE_URL` | `direct` 모드에서 Nest 베이스 URL(예: `http://localhost:8096/api`). |
 | `NOTIFICATION_INTERNAL_SECRET` | (선택) 과거에는 BFF가 Nest로 넘겼으나, **Gateway 경유 사용자 호출**에서는 전달하지 않는다. 서버 간 내부 호출에서만 사용. |
-| `NEXT_PUBLIC_NOTIFICATION_POLL_MS` | (선택) UI 폴링 주기(ms). 기본값은 앱 설정에 따름 |
+| `NEXT_PUBLIC_NOTIFICATION_POLL_MS` | (선택) UI 폴링 주기(ms). **인앱 토스트**(`@ai-usage/shell`): 미설정 시 10s·최소 2s. **사이드바 미확인 배지**: 미설정 시 20s·최소 1s. 읽음 처리 직후 배지는 §4.7 이벤트로 폴링을 기다리지 않음 |
 
 구현 정본: `services/notification-service/web/src/app/api/notification/[[...path]]/route.ts` 및 `notification-bff-proxy.ts`.
 
@@ -129,6 +129,21 @@ Notification `web`은 Next `basePath=/notifications`를 사용한다.
 ### 4.6 캐시 정책
 
 - BFF 응답에는 `Cache-Control: no-store`를 강제한다.
+
+### 4.7 콘솔 사이드바 미확인 배지(클라이언트 동기화)
+
+알림 목록 UI(`services/notification-service/web`)와 콘솔 사이드바(`@ai-usage/shell` `ConsoleSidebarInner`)는 **별도 React 서브트리**이므로, 읽음 처리만으로는 배지 state가 자동으로 맞지 않는다. 서버 `unread-count` 계약(§4.3)은 그대로 두고, 브라우저에서만 아래를 적용한다.
+
+| 구성 요소 | 역할 |
+|-----------|------|
+| `packages/shell/src/notification-events.ts` | `AI_USAGE_NOTIFICATIONS_CHANGED_EVENT` (`ai-usage:notifications-changed`), `dispatchNotificationsChanged()` |
+| `console-sidebar.tsx` | `unread-count` 폴링 + 이벤트·`visibilitychange`·`focus` 시 1회 재조회 |
+| `notifications-page.tsx` | `markRead` / `markAllRead` / 팀 초대 수락·거절 **성공 직후** `dispatchNotificationsChanged()` |
+
+- **배지 count 로직(서버):** 대기 중 팀 초대는 계속 `unreadCount`에 포함한다(기존과 동일). 목록의 **모두 읽음**은 `isPendingTeamInviteRow`인 행을 제외한다(클라이언트·서버 정책 정본: Notification `web` 구현).
+- **수동 확인:** `/notifications`에서 읽음·모두 읽음·초대 처리 후 **약 1초 이내** 사이드바 배지 감소; usage·billing 등 동일 shell을 쓰는 앱에서 동일.
+
+상세·폴링 기본값: [`packages/shell/README.md`](../../packages/shell/README.md) §「Sidebar notification badge」.
 
 ---
 

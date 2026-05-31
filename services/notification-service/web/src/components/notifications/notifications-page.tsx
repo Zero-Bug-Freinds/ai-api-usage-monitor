@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Check, Loader2, MailOpen } from "lucide-react"
 
+import { dispatchNotificationsChanged } from "@ai-usage/shell"
 import { Button, cn } from "@ai-usage/ui"
 
 import type { InAppNotification, InAppNotificationListResponse } from "./notification-types"
@@ -190,6 +191,7 @@ export function NotificationsPage() {
     try {
       await markRead(id)
       setItems((prev) => prev.map((n) => (n.id === id ? { ...n, readAt: new Date().toISOString() } : n)))
+      dispatchNotificationsChanged()
     } catch (e) {
       setError(e instanceof Error ? e.message : "읽음 처리에 실패했습니다")
     } finally {
@@ -206,6 +208,7 @@ export function NotificationsPage() {
         await postAction(path)
         setLocallyResolvedInviteIds((prev) => new Set(prev).add(notificationId))
         await loadFirst({ silent: true })
+        dispatchNotificationsChanged()
         setLocallyResolvedInviteIds((prev) => {
           const next = new Set(prev)
           next.delete(notificationId)
@@ -237,6 +240,7 @@ export function NotificationsPage() {
           return { ...n, readAt: new Date().toISOString() }
         }),
       )
+      dispatchNotificationsChanged()
     } catch (e) {
       setError(e instanceof Error ? e.message : "전체 읽음 처리에 실패했습니다")
     } finally {
