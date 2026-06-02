@@ -1,5 +1,5 @@
 # <Team Project> AI Usage & Billing Platform (MSA) 아키텍처 문서
-버전: 0.6.5
+버전: 0.6.6
 
 ---
 
@@ -9,7 +9,8 @@
   - 본 문서(`architecture.md`)는 **이 팀 프로젝트의 구조·스택·서비스 분해**를 다룬다. 위 이론 문서는 구현과 무관한 **일반 설명**을 위한 참고 자료이다.
 - **이벤트 소비·발행 흐름**(Proxy `UsageRecordedEvent` → usage·billing 소비, Billing `UsageCostFinalizedEvent` → usage 등): 본 문서 **§6**, 공유 타입·AMQP는 [`libs/usage-events`](../libs/usage-events) · 상세는 [`docs/billing-service-overview-20260412.md`](billing-service-overview-20260412.md)(부록 A 포함) · Billing이 RabbitMQ로 **추가 발행**하는 스트림(개인 키 예산 임계·팀 API 키 예산 임계·비용 정정 완료 등)은 [`docs/billing-outbound-events.md`](billing-outbound-events.md)
 - **팀 도메인 이벤트 → 인앱 알림**: Team Service 발행 `team.events` / notification-service 소비·인앱 저장 — 본 문서 **§4.9·§6**, 페이로드 계약은 [`docs/contracts/web-team-bff.md`](contracts/web-team-bff.md) §6.2
-- **사용량·집계·대시보드 관점**: 본 문서 **§6·§11**, 다이어그램은 [`docs/c4-architecture-diagrams.md`](c4-architecture-diagrams.md)
+- **MSA 구조도 한눈에 (as-is)**: [`docs/msa-architecture-overview.md`](msa-architecture-overview.md) — 서비스·DB·web-edge·Gateway·RabbitMQ 요약 다이어그램
+- **사용량·집계·대시보드·C4 상세**: 본 문서 **§6·§11**, C4 모델·컴포넌트는 [`docs/c4-architecture-diagrams.md`](c4-architecture-diagrams.md) (v1.0)
 - **서비스별 DB 구성·서비스 간 데이터 전달**(물리/논리 PostgreSQL, 타 서비스 DB 직접 접근 금지, API vs RabbitMQ, 조회 성능): [`docs/msa-database-and-service-integration.md`](msa-database-and-service-integration.md)
 - **Agent Service 이벤트 스냅샷/어시스턴트 개요**: [`docs/agent-service-overview-20260430.md`](agent-service-overview-20260430.md)
 - **회원 탈퇴 — 설계·계약·서비스별 요구사항 (정본)**: [`docs/account-deletion.md`](account-deletion.md)
