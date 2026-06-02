@@ -3,14 +3,17 @@
 이 문서는 목표 설계가 아니라, 현재 저장소에 존재하는 구현 코드 기준으로
 시스템 아키텍처를 C4 모델(C1 → C4)로 정리한다.
 
-**문서 버전:** 0.9 (web-edge `:8888` 단일 진입·Gateway 계층·Proxy→Usage RabbitMQ 비동기 흐름 정합 반영)
+**문서 버전:** 1.0 (`agent-service`·`agent-web`·`postgres-agent`·web-edge `/agent`·Team `web`/DB 반영; `docs/architecture.md` v0.6.6·`docs/repository-structure.md` §2.1과 정합)
+
+**MSA 한눈 요약(다이어그램 모음):** [`docs/msa-architecture-overview.md`](msa-architecture-overview.md) — 본 문서는 C4·컴포넌트·코드 수준 상세를 담는다.
 
 분석 대상:
 - **`services/identity-service/web`** (정본: 랜딩·인증·설정/org UI + `/api/auth/**`·`/api/identity/**` BFF)
 - **`services/usage-service/web`** (정본: 대시보드 UI + `/api/usage/**` BFF → 게이트웨이)
-- **`services/team-service/web`** (정본: 팀 생성/조회/초대 UI + `/api/team/v1/**` BFF)
+- **`services/team-service/web`** (정본: 팀 생성/조회/초대 UI + `/teams/api/**`·`/api/team/v1/**` BFF)
 - **`services/billing-service/web`** (정본: 지출·비용 UI + `/api/expenditure/**` BFF → 게이트웨이 `/api/v1/expenditure/**`; 팀 월 롤업은 전용 `POST …/team/month-rollup`에서 멤버 검증 후 동일 게이트웨이로 전달)
 - **`services/notification-service/web`** (정본: 인앱 알림 UI + BFF → `notification-service` REST)
+- **`services/agent-service/web`** (정본: Agent UI `basePath=/agent` + `/agent/api/v1/agents/**` BFF → `agent-service` REST, Gateway 경유 없음)
 - `apps/web` (과도기·레거시; 안내용 `README` 위주 — 런타임 정본 아님)
 - `services/api-gateway-service`
 - `services/proxy-service`
@@ -19,10 +22,18 @@
 - `services/team-service`
 - `services/billing-service`
 - `services/notification-service`
+- `services/agent-service`
 - `libs/usage-events`
+- `docker/web-edge/nginx.conf.template`, `docker-compose.yml`
 - 서비스별 `application.yml`/`application.properties`
 - `test-report/` (팀·실험 보고·원인 분석 메모, 런타임 코드 아님)
 - `experiment-logic/` (로컬·네트워크·호출 경로 등 실험 정리, 런타임 코드 아님)
+
+**논리 서비스만 문서에 있고 별도 `services/` 배포 단위가 없는 것:** Quota Service(§4.8), Analytics & Reporting(§4.7), 독립 API Key Service(§4.4 — 구현은 `identity-service` 경계). 아래 다이어그램은 **실제 폴더·Compose 기준 as-is** 만 표시한다.
+
+## MSA 한 장 요약 (As-Is)
+
+전체 구조·web-edge·Gateway·이벤트·배포 다이어그램은 **[`msa-architecture-overview.md`](msa-architecture-overview.md)** 에 모았다. 아래 C1부터는 동일 as-is 기준의 **시스템 컨텍스트·컨테이너·컴포넌트** 상세이다.
 
 ## C1 - System Context
 
@@ -37,10 +48,12 @@ flowchart TB
     subgraph platform["AI Usage Platform (As-Is)"]
       direction TB
       webEdge["web-edge<br/>nginx :8888"]
-      identityWeb["Identity Web<br/>services/identity-service/web"]
-      usageWeb["Usage Web<br/>services/usage-service/web"]
-      billingWeb["Billing Web<br/>services/billing-service/web"]
-      notifWeb["Notification Web<br/>services/notification-service/web"]
+      identityWeb["Identity Web"]
+      usageWeb["Usage Web"]
+      billingWeb["Billing Web"]
+      teamWeb["Team Web<br/>basePath=/teams"]
+      notifWeb["Notification Web"]
+      agentWeb["Agent Web<br/>basePath=/agent"]
       gateway["API Gateway Service"]
       proxy["Proxy Service"]
       identity["Identity Service (Spring)"]
@@ -48,6 +61,7 @@ flowchart TB
       billing["Billing Service (Spring)"]
       team["Team Service (Spring)"]
       notification["Notification Service (NestJS)"]
+      agent["Agent Service (Spring)"]
     end
 
     subgraph ext["External systems"]
@@ -63,40 +77,56 @@ flowchart TB
       appDb["PostgreSQL (app)"]
       usageDb["PostgreSQL (usage_db)"]
       billingDb["PostgreSQL (billing_db)"]
+      teamDb["PostgreSQL (team_db)"]
       notifDb["PostgreSQL (notification_db)"]
+      agentDb["PostgreSQL (agent_db)"]
     end
 
     browser -->|HTTP 8888| webEdge
     webEdge -->|/| identityWeb
     webEdge -->|/dashboard*| usageWeb
     webEdge -->|/billing*| billingWeb
+    webEdge -->|/teams*| teamWeb
     webEdge -->|/notifications*| notifWeb
+    webEdge -->|/agent*| agentWeb
     webEdge -->|/api/v1*| gateway
     identityWeb -->|BFF /api/auth·identity| identity
     usageWeb -->|BFF /api/usage| gateway
     billingWeb -->|BFF → /api/v1/expenditure| gateway
+    teamWeb -->|BFF /teams/api · /api/team/v1| team
     notifWeb -->|BFF| notification
+    agentWeb -->|BFF /agent/api/v1/agents| agent
     client -->|Auth API| identity
     client -->|AI API via web-edge| webEdge
     gateway -->|/proxy| proxy
     gateway -->|/api/v1/expenditure| billing
+    gateway -->|/api/v1/usage etc.| usage
+    gateway -->|/api/team etc.| team
 
     proxy -->|relay| openai
     proxy -->|relay| anthropic
     proxy -->|relay| google
     proxy -->|internal /internal/api-keys| identity
-    proxy -->|publish| rabbit
+    proxy -->|publish usage.recorded| rabbit
 
     usage -->|consume usage.recorded| rabbit
     usage -->|consume usage.cost.finalized| rabbit
     billing -->|consume usage.recorded| rabbit
-    billing -->|publish usage.cost.finalized| rabbit
+    billing -->|publish billing.events| rabbit
+    team -->|publish team.events| rabbit
     team -->|consume account-deletion| rabbit
+    identity -->|publish identity.events| rabbit
+    notification -->|consume billing·team·identity| rabbit
+    agent -->|consume identity·usage snapshots| rabbit
     billing -.->|optional GET budget| identity
+    team -.->|HTTP user verify · billing rollup| identity
+    team -.->|HTTP| billing
     identity -->|JPA| appDb
     usage -->|JPA| usageDb
     billing -->|JPA| billingDb
+    team -->|JPA| teamDb
     notification -->|Prisma| notifDb
+    agent -->|JPA| agentDb
 ```
 
 ## C2 - Container Diagram
@@ -109,24 +139,29 @@ Person(client, "Developer/User", "Auth and AI API consumer")
 Person(browserUser, "Browser user", "Web UI and same-origin BFF")
 
 System_Boundary(platform, "AI Usage Platform") {
-    Container(webEdge, "web-edge", "Nginx", "단일 진입점 :8888; /api/v1*→Gateway; path 기반 web 분기")
+    Container(webEdge, "web-edge", "Nginx", "단일 진입점 :8888; path→각 web; /api/v1*→Gateway")
     Container(idWeb, "Identity Web", "Next.js 15", "랜딩·인증·설정; /api/auth/* · /api/identity/* BFF")
     Container(usWeb, "Usage Web", "Next.js 15", "대시보드 /dashboard; BFF → Gateway")
     Container(billWeb, "Billing Web", "Next.js 15", "지출·비용; /api/expenditure/* BFF → Gateway /api/v1/expenditure")
-    Container(ntfWeb, "Notification Web", "Next.js 15", "인앱 알림; BFF → notification-service REST")
-    Container(gateway, "API Gateway", "Spring Cloud Gateway", "JWT; /api/v1/ai→/proxy; trust headers; /api/v1/expenditure→Billing")
-    Container(proxy, "Proxy Service", "Spring WebFlux", "Relay; usage parse; MQ publish; key→Identity")
-    Container(identity, "Identity Service", "Spring + JPA", "Signup/login, JWT")
-    Container(usage, "Usage Service", "Spring + MQ + JPA", "Consume usage-recorded + usage.cost.finalized; usage log + api key metadata")
-    Container(billing, "Billing Service", "Spring + MQ + JPA", "Consume usage-recorded; cost aggregates; publish usage.cost.finalized; optional Identity budget HTTP")
-    Container(team, "Team Service", "Spring + JPA + MQ", "Team domain + account deletion coordination listener")
-    Container(notification, "Notification Service", "NestJS + Prisma", "In-app notifications API + team.events MQ consumer")
+    Container(teamWeb, "Team Web", "Next.js", "팀 UI /teams; BFF /teams/api · /api/team/v1 → team-service")
+    Container(ntfWeb, "Notification Web", "Next.js 15", "인앱 알림 /notifications; BFF → notification-service REST")
+    Container(agentWeb, "Agent Web", "Next.js 15", "Agent UI /agent; BFF → agent-service REST (Gateway 미경유)")
+    Container(gateway, "API Gateway", "Spring Cloud Gateway", "JWT; /api/v1/ai→/proxy; trust headers; domain HTTP routes")
+    Container(proxy, "Proxy Service", "Spring WebFlux", "Relay; usage parse; MQ publish; key→Identity; DB 없음")
+    Container(identity, "Identity Service", "Spring + JPA", "Signup/login, JWT, org, external API keys")
+    Container(usage, "Usage Service", "Spring + MQ + JPA", "Consume usage-recorded + usage.cost.finalized; usage log")
+    Container(billing, "Billing Service", "Spring + MQ + JPA", "Consume usage-recorded; aggregates; publish billing.events")
+    Container(team, "Team Service", "Spring + JPA + MQ", "Team domain; publish team.events; account-deletion listener")
+    Container(notification, "Notification Service", "NestJS + Prisma", "In-app API; consume billing·team·identity events")
+    Container(agent, "Agent Service", "Spring + MQ + JPA", "Snapshots; budget/policy assistants; consume identity·usage events")
 
-    ContainerQueue(rabbit, "RabbitMQ", "AMQP", "usage.events(usage.recorded), billing.events(usage.cost.finalized), account-deletion events")
+    ContainerQueue(rabbit, "RabbitMQ", "AMQP", "usage.events, billing.events, identity.events, team.events")
     ContainerDb(appDb, "PostgreSQL (app)", "RDB", "Identity domain data")
     ContainerDb(usageDb, "PostgreSQL (usage_db)", "RDB", "Usage logs")
     ContainerDb(billingDb, "PostgreSQL (billing_db)", "RDB", "Billing aggregates")
+    ContainerDb(teamDb, "PostgreSQL (team_db)", "RDB", "Team domain data")
     ContainerDb(notifDb, "PostgreSQL (notification_db)", "RDB", "In-app notifications")
+    ContainerDb(agentDb, "PostgreSQL (agent_db)", "RDB", "Agent snapshots & signals")
 }
 
 System_Ext(openai, "OpenAI API", "LLM provider")
@@ -137,32 +172,42 @@ Rel(browserUser, webEdge, "HTTP :8888 단일 진입", "HTTP")
 Rel(webEdge, idWeb, "default /", "HTTP")
 Rel(webEdge, usWeb, "/dashboard* + usage BFF", "HTTP")
 Rel(webEdge, billWeb, "/billing* + expenditure BFF", "HTTP")
+Rel(webEdge, teamWeb, "/teams* + team BFF paths", "HTTP")
 Rel(webEdge, ntfWeb, "/notifications* + notification BFF", "HTTP")
+Rel(webEdge, agentWeb, "/agent* + agent BFF", "HTTP")
 Rel(webEdge, gateway, "/api/v1*", "HTTP")
 Rel(idWeb, identity, "auth/settings/org BFF → Identity REST", "HTTPS")
 Rel(usWeb, gateway, "usage BFF → /api/v1/usage/...", "HTTPS")
 Rel(billWeb, gateway, "expenditure BFF → /api/v1/expenditure", "HTTPS")
+Rel(teamWeb, team, "team BFF → team-service REST", "HTTPS")
 Rel(ntfWeb, notification, "notification BFF → REST", "HTTPS")
+Rel(agentWeb, agent, "agent BFF → /api/v1/agents (direct)", "HTTPS")
 Rel(client, identity, "auth API direct", "HTTPS")
 Rel(client, webEdge, "AI request /api/v1/ai/**", "HTTP")
 Rel(gateway, proxy, "forward + trust headers", "HTTP")
 Rel(gateway, billing, "billing-http route", "HTTP")
+Rel(gateway, usage, "usage-http route", "HTTP")
+Rel(gateway, team, "team-http route", "HTTP")
 
 Rel(proxy, identity, "internal API keys per user", "HTTP")
 Rel(proxy, openai, "relay", "HTTPS")
 Rel(proxy, anthropic, "relay", "HTTPS")
 Rel(proxy, google, "relay", "HTTPS")
-Rel(proxy, rabbit, "publish events", "AMQP")
+Rel(proxy, rabbit, "publish usage.recorded", "AMQP")
 
-Rel(usage, rabbit, "consume usage-service.queue + usage-service.usage-cost-finalized.queue", "AMQP")
-Rel(billing, rabbit, "consume billing-service.queue", "AMQP")
-Rel(billing, rabbit, "publish usage.cost.finalized", "AMQP")
-Rel(team, rabbit, "consume team.account-deletion.requested.queue", "AMQP")
+Rel(usage, rabbit, "consume usage-service.queue + usage-cost-finalized", "AMQP")
+Rel(billing, rabbit, "consume billing-service.queue; publish billing.events", "AMQP")
+Rel(team, rabbit, "publish team.events; consume account-deletion", "AMQP")
+Rel(identity, rabbit, "publish identity.events", "AMQP")
+Rel(notification, rabbit, "consume billing·team·identity", "AMQP")
+Rel(agent, rabbit, "consume identity·usage snapshot events", "AMQP")
 Rel(billing, identity, "optional monthly budget HTTP", "HTTPS")
 Rel(identity, appDb, "read/write", "JPA")
 Rel(usage, usageDb, "read/write", "JPA")
 Rel(billing, billingDb, "read/write", "JPA")
+Rel(team, teamDb, "read/write", "JPA")
 Rel(notification, notifDb, "read/write", "Prisma")
+Rel(agent, agentDb, "read/write", "JPA")
 ```
 
 ## C3 - Component Diagram (Cross-Service Runtime Flow)
@@ -234,7 +279,7 @@ flowchart TB
   BL -.->|IdentityBudgetClient (optional)| ID
 ```
 
-**C3 보충:** `Notification Service` 는 브라우저 BFF → REST·DB 경로 외에도 team 도메인 RabbitMQ 이벤트를 소비한다. 본 절 핵심은 Proxy→MQ→Usage/Billing 비동기 체인이며, 알림 경로는 `docs/architecture.md` §6·§12 및 `docs/contracts/web-notification-bff.md`를 함께 본다.
+**C3 보충:** `Notification Service` 는 브라우저 BFF → REST·DB 경로 외에도 `billing.events`·`team.events`·`identity.events` 를 소비한다. `Agent Service` 는 `identity.events`(외부 API 키 스냅샷) 및 usage 관련 스냅샷 이벤트를 소비해 `agent_db` 에 적재한다(상세: [`docs/agent-service-overview-20260430.md`](agent-service-overview-20260430.md)). 본 절 핵심은 Proxy→MQ→Usage/Billing 비동기 체인이며, 알림·Agent 경로는 `docs/architecture.md` §6·§12 및 각 계약 문서를 함께 본다.
 
 ## C4 - Code Diagram (Proxy Relay Core)
 
@@ -669,6 +714,15 @@ flowchart TD
 **Notification Web (정본)**  
 - `services/notification-service/web/src/app/api/notification/[[...path]]/route.ts`  
 
+**Agent Web (정본)**  
+- `services/agent-service/web/src/app/api/v1/agents/**/route.ts` (BFF → `agent-service` REST)  
+- `services/agent-service/web/src/components/agent/agent-shell.tsx`  
+
+**Agent Service (Spring)**  
+- `services/agent-service/src/main/java/com/zerobugfreinds/ai_agent_service/mq/` (Identity·usage 이벤트 소비)  
+- `services/agent-service/src/main/java/com/zerobugfreinds/ai_agent_service/service/IdentityApiKeySnapshotService.java`  
+- `services/agent-service/README.md`  
+
 **Billing Service (Spring)**  
 - `services/billing-service/src/main/java/com/eevee/billingservice/consumer/BillingUsageRecordedEventListener.java`  
 - `services/billing-service/src/main/java/com/eevee/billingservice/service/BillingRecordedService.java`  
@@ -690,7 +744,8 @@ flowchart TD
 - `services/proxy-service/src/main/java/com/eevee/proxyservice/provider/GoogleProviderHandler.java`
 - `services/proxy-service/src/main/java/com/eevee/proxyservice/security/UserContext.java`
 - `services/proxy-service/src/main/java/com/eevee/proxyservice/mq/UsageEventPublisher.java`
-- `docker-compose.yml` (프록시·게이트웨이·RabbitMQ·`postgres-billing`·`postgres-notification`·선택 `billing-web`/`notification-web` 프로파일; 호스트 `bootRun` 전제는 `architecture.md`·본 문서 C1 참고)
+- `docker-compose.yml` (프록시·게이트웨이·RabbitMQ·서비스별 `postgres-*`·`profile: web` 시 `*-web`·`web-edge`; 호스트 `bootRun` 전제는 `architecture.md`·본 문서 C1 참고)
+- `docker/web-edge/nginx.conf.template` (`/teams`·`/agent`·`/dashboard`·`/billing`·`/notifications` 분기)
 - `test-report/`, `experiment-logic/` (문서 전용, 위 § 저장소 문서·실험 디렉터리)
 - `services/usage-service/src/main/java/com/eevee/usageservice/consumer/UsageRecordedEventListener.java`
 - `services/usage-service/src/main/java/com/eevee/usageservice/service/UsageRecordedService.java`

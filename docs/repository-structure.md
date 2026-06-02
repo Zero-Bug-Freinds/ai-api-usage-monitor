@@ -40,10 +40,13 @@ Gradle/Maven 등 **빌드 도구는 팀 설정을 따른다.** 본 문서는 **�
 - **`libs/`**: 아래 §3의 **허용 범위만** 공유한다(JVM·이벤트·계약 위주).
 - **`packages/`** (pnpm workspace): **`@ai-usage/ui`** — **UI 토큰, 공용 Shadcn 래퍼, `cn`** 등 얇은 프리미티브만. **`@ai-usage/shell`** — 콘솔 공통 **레이아웃·사이드바**와 **브라우저 공개 경로(라우팅 소유권)** 를 한곳에서 조립하는 패키지(identity / usage / billing 각 `web/` 의 `basePath`·`web-edge`·`NEXT_PUBLIC_*` 와 맞물리게 유지). 알림 메뉴 미확인 배지·읽음 후 즉시 갱신은 `notification-events.ts`(`dispatchNotificationsChanged`) 및 [`packages/shell/README.md`](packages/shell/README.md) §「Sidebar notification badge」·[`docs/contracts/web-notification-bff.md`](contracts/web-notification-bff.md) §4.7. 도메인 비즈니스 로직 공유는 하지 않는다(`docs/repository-structure.md` §3와 동일한 취지). usage 등 `basePath` 가 있는 앱에서 `next/link`만으로 타 앱 경로(`/settings` 등)를 쓰면 `/dashboard/settings` 처럼 잘못 붙을 수 있으므로, shell 은 필요 시 **루트 절대 경로 `<a href>` 또는 동일 오리진 절대 URL** 로 정본 경로를 맞춘다. Next Docker 빌드는 저장소 루트 context 로 `packages/ui`·`packages/shell` 을 함께 복사한다.
 - **`docs/`**: 팀 문서의 정본.
-- **`docker-compose.yml`**: **저장소 루트**에 두어 로컬에서 DB·브로커·캐시 등을 한 번에 기동하기 쉽게 한다. **배포·로컬 스택은 `docs/architecture.md` §10.1 패턴 B(백엔드·프론트 이미지 분리·Compose)** 를 따르며, 애플리케이션은 **서비스별 Spring 이미지 + 해당 서비스 `web/` Next 이미지**로 올리고 Compose·엣지 프록시로 연결한다(`profile: web` → **`identity-web`**, **`usage-web`**, **`web-edge`**). 단일 도메인용 Nginx 설정은 **`docker/web-edge/nginx.conf`**(호스트 포트 기본 `WEB_EDGE_PORT`=`8888`). Compose는 루트 **`.env`**만 자동 로드한다(`.env.example`은 샘플). **`GATEWAY_SHARED_SECRET`** 등은 Compose가 빈 문자열로 주입하면 Spring 기본값이 무력화될 수 있으므로 **루트 `.env.example` 주석·`docs/contracts/gateway-proxy.md` §5**를 따른다.
+- **`docker-compose.yml`**: **저장소 루트**에 두어 로컬에서 DB·브로커·캐시 등을 한 번에 기동하기 쉽게 한다. **배포·로컬 스택은 `docs/architecture.md` §10.1 패턴 B(백엔드·프론트 이미지 분리·Compose)** 를 따르며, 애플리케이션은 **서비스별 Spring 이미지 + 해당 서비스 `web/` Next 이미지**로 올리고 Compose·엣지 프록시로 연결한다(`profile: web` → **`identity-web`**, **`usage-web`**, **`billing-web`**, **`team-web`**, **`notification-web`**, **`agent-web`**, **`web-edge`** 등). 단일 도메인용 Nginx 설정은 **`docker/web-edge/nginx.conf.template`**(호스트 포트 기본 `WEB_EDGE_PORT`=`8888`). Compose는 루트 **`.env`**만 자동 로드한다(`.env.example`은 샘플). **`GATEWAY_SHARED_SECRET`** 등은 Compose가 빈 문자열로 주입하면 Spring 기본값이 무력화될 수 있으므로 **루트 `.env.example` 주석·`docs/contracts/gateway-proxy.md` §5**를 따른다.
 - **로컬 PostgreSQL:** 루트 Compose 에 **서비스별 전용 PostgreSQL 컨테이너**를 둔다(`postgres` → identity 등용 `app`, `postgres-team` → **team-service** 용 `team_db`·`TEAM_POSTGRES_*`, `postgres-usage` → **usage-service** 용 `usage_db`·`USAGE_POSTGRES_*`, `postgres-billing` → **billing-service** 용 `billing_db`·`BILLING_POSTGRES_*`, `postgres-agent` → **agent-service** 용 `agent_db`·`AGENT_POSTGRES_*`). 서비스 간 JDBC 교차 접근은 하지 않는다(`docker-compose.yml`, `docker/postgres/init/`, `.env.example` 참고). **identity-service** 의 `POSTGRES_*` 설정은 다른 서비스 작업에서 **변경하지 않는다.** 상세는 [`docs/msa-database-and-service-integration.md`](msa-database-and-service-integration.md)를 본다.
 
 ### 2.1 현재 저장소의 실제 서비스 트리(코드 기준)
+
+MSA 구조도(서비스·DB·Gateway·이벤트): [`msa-architecture-overview.md`](msa-architecture-overview.md).
+
 - `services/api-gateway-service`
 - `services/proxy-service`
 - `services/identity-service` + `services/identity-service/web`
@@ -51,8 +54,10 @@ Gradle/Maven 등 **빌드 도구는 팀 설정을 따른다.** 본 문서는 **�
 - `services/billing-service` + `services/billing-service/web`
 - `services/team-service` + `services/team-service/web` (Pages Router, `basePath=/teams`)
 - `services/notification-service` + `services/notification-service/web`
+- `services/agent-service` + `services/agent-service/web` (App Router, `basePath=/agent`)
 - `apps/web` (선택: web-host — 운영 진입은 `team-service/web` + `web-edge`)
 - `packages/ui`, `packages/shell`
+- `libs/usage-events` (Proxy·Usage·Billing 등이 공유하는 usage 이벤트 페이로드)
 
 ---
 
@@ -103,6 +108,7 @@ Gradle/Maven 등 **빌드 도구는 팀 설정을 따른다.** 본 문서는 **�
 |------|----------------|--------------------------------------|-----------|
 | Billing(지출·집계 BFF) | `services/billing-service/` | `services/billing-service/web/` | 백엔드·이벤트·BFF·팀 롤업 하드닝: [`billing-service-overview-20260412.md`](billing-service-overview-20260412.md) §4–§5, §4.10 · 경로 표: [`web-split-boundary.md`](contracts/web-split-boundary.md) §2.7 |
 | Notification(인앱 알림 UI·BFF) | `services/notification-service/`(Nest/Prisma) | `services/notification-service/web/` | [`web-notification-bff.md`](contracts/web-notification-bff.md) |
+| Agent(예산·정책 추천 UI·BFF) | `services/agent-service/` | `services/agent-service/web/` (`basePath=/agent`) | [`agent-service-overview-20260430.md`](agent-service-overview-20260430.md) · 경로: [`web-split-boundary.md`](contracts/web-split-boundary.md) §2 |
 
 - **라우트·BFF 경계 표:** [`web-split-boundary.md`](contracts/web-split-boundary.md)
 - **공유 프론트 자산:** 루트 **`pnpm` workspace**(`pnpm-workspace.yaml`, 루트 `package.json`, **`pnpm-lock.yaml`**)와 **`@ai-usage/ui`**(토큰·Shadcn 래퍼·`cn`), **`@ai-usage/shell`**(콘솔 네비·공개 경로 헬퍼)을 공유한다. 도메인 로직은 §3와 같이 서비스 경계 밖으로 복사하지 않는다. 콘솔 사이드바에 탭을 추가하는 절차는 [`howto-add-console-sidebar-route.md`](howto-add-console-sidebar-route.md)를 본다.
@@ -112,6 +118,6 @@ Gradle/Maven 등 **빌드 도구는 팀 설정을 따른다.** 본 문서는 **�
 
 - **도메인별 UI·BFF**는 `services/<svc>/web/`에 둔다. **운영 단일 도메인**에서는 **`web-edge`** 가 `/dashboard`·`/teams` 등을 각 `web`으로 프록시하며, 팀 UI 정본은 **`services/team-service/web/`**(`team-web`)이다.
 - **`apps/web`** 은 로컬·실험용 App Router 셸일 수 있다. **Module Federation·`web-mfe/`·`/mfe/usage`는 사용하지 않는다**(역사: [`mfe-pages-only-remote-split-guidance-20260414.md`](mfe-pages-only-remote-split-guidance-20260414.md)).
-- **단일 도메인:** 엣지 역프록시로 경로를 합친다. 로컬 Compose는 **`web-edge`** + `docker/web-edge/nginx.conf` — `/dashboard` → `/dashboard/`(308), **`/dashboard/`** 접두만 usage `web`, **`/api/v1/`** 접두는 API Gateway(버퍼링 끔·장시간 응답), 나머지는 identity `web`(`/dashboard2` 는 Usage가 아님). 상세: `docs/architecture.md` §10.2, `docs/contracts/web-split-boundary.md` §2.3.
+- **단일 도메인:** 엣지 역프록시로 경로를 합친다. 로컬 Compose는 **`web-edge`** + `docker/web-edge/nginx.conf.template` — `/dashboard`·`/billing`·`/teams`·`/notifications`·`/agent` 는 각 `web`, **`/api/v1/`** 접두는 API Gateway, `/teams/api/*`·`/api/team/v1/*` 는 Team BFF. 상세: `docs/architecture.md` §10.2, `docs/contracts/web-split-boundary.md` §2.
 - **게이트웨이·Proxy:** [`gateway-proxy.md`](contracts/gateway-proxy.md) §1.1·§3·§9 — **게이트웨이 팀·각 `web` BFF 담당**이 `API_GATEWAY_URL` 등을 합의한다.
 - **미들웨어·보호 라우트** 정본: [`web-identity-bff.md`](contracts/web-identity-bff.md) §6.2, [`web-split-boundary.md`](contracts/web-split-boundary.md) §3.
